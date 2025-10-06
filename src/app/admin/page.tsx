@@ -110,8 +110,9 @@ export default function AdminPage() {
   const isAdmin = userProfile?.isAdmin === true;
 
   // --- Data Fetching Hooks ---
+  // IMPORTANT: This ref is now dependent on `isAdmin`. It will be null until the current user is confirmed to be an admin.
   const allUsersCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !isAdmin) return null;
+    if (!firestore || !isAdmin) return null; // Only fetch if user is an admin
     return collection(firestore, 'users');
   }, [firestore, isAdmin]);
 
@@ -136,11 +137,12 @@ export default function AdminPage() {
     if (!isUserLoading && !user) {
       router.push('/login');
     }
-     if (!isUserProfileLoading && userProfile && !userProfile.isAdmin) {
+     // Redirect non-admins away after profile has loaded and confirmed not an admin
+     if (!isUserLoading && !isUserProfileLoading && userProfile && !isAdmin) {
       toast({ variant: 'destructive', title: 'Access Denied', description: 'You do not have permission to access this page.' });
       router.push('/');
     }
-  }, [user, isUserLoading, router, userProfile, isUserProfileLoading, toast]);
+  }, [user, isUserLoading, router, userProfile, isUserProfileLoading, isAdmin, toast]);
 
 
   const fetchSessionDataCounts = useCallback(async () => {
@@ -378,10 +380,10 @@ export default function AdminPage() {
     router.push(`/testing?${queryParams}`);
   };
 
-  if (isUserLoading || isUserProfileLoading || !isAdmin) {
+  if (isUserLoading || isUserProfileLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
-        <p className="text-lg">Loading admin data...</p>
+        <p className="text-lg">Verifying administrator access...</p>
       </div>
     );
   }
@@ -577,6 +579,48 @@ export default function AdminPage() {
     );
   }
 
+  const renderUserManagement = () => {
+    if (isAllUsersLoading && isAdmin) { // Only show loading if we expect data
+        return <p>Loading users...</p>;
+    }
+    if (allUsersError) {
+        return (
+            <div className="text-destructive">
+                <p>Error loading users:</p>
+                <p className="text-sm">Could not retrieve the user list. This is likely a permissions issue. Please ensure the Firestore Security Rules allow admins to list users.</p>
+            </div>
+        );
+    }
+    if (allUsers) {
+        return (
+            <ScrollArea className="h-72">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>Email</TableHead>
+                            <TableHead>Role</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {allUsers.map(u => (
+                            <TableRow key={u.id} className={u.id === selectedUserId ? "bg-accent/50" : ""}>
+                                <TableCell>{u.email}</TableCell>
+                                <TableCell>{u.isAdmin ? 'Admin' : 'User'}</TableCell>
+                                <TableCell className="text-right">
+                                    <Button variant="outline" size="sm" onClick={() => setSelectedUserId(u.id)}>Manage Data</Button>
+                                    <Button variant="ghost" size="sm" className="ml-2" onClick={() => viewUserTests(u.id)}>View Tests</Button>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </ScrollArea>
+        );
+    }
+    return null; // Return null if not admin or data is not yet available
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
       <header className="w-full max-w-7xl mx-auto mb-6">
@@ -608,38 +652,7 @@ export default function AdminPage() {
                 </CardDescription>
             </CardHeader>
             <CardContent>
-                 {isAllUsersLoading && <p>Loading users...</p>}
-                 {allUsersError && (
-                    <div className="text-destructive">
-                        <p>Error loading users:</p>
-                        <p className="text-sm">Could not retrieve the user list. This is likely a permissions issue. Please ensure the Firestore Security Rules allow admins to list users.</p>
-                    </div>
-                )}
-                {!isAllUsersLoading && !allUsersError && allUsers && (
-                    <ScrollArea className="h-72">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Email</TableHead>
-                                    <TableHead>Role</TableHead>
-                                    <TableHead className="text-right">Actions</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {allUsers.map(u => (
-                                    <TableRow key={u.id} className={u.id === selectedUserId ? "bg-accent/50" : ""}>
-                                        <TableCell>{u.email}</TableCell>
-                                        <TableCell>{u.isAdmin ? 'Admin' : 'User'}</TableCell>
-                                        <TableCell className="text-right">
-                                            <Button variant="outline" size="sm" onClick={() => setSelectedUserId(u.id)}>Manage Data</Button>
-                                            <Button variant="ghost" size="sm" className="ml-2" onClick={() => viewUserTests(u.id)}>View Tests</Button>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </ScrollArea>
-                )}
+                 {renderUserManagement()}
             </CardContent>
         </Card>
         
@@ -708,5 +721,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-    
