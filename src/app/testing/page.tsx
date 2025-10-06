@@ -51,12 +51,12 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Home, Cog } from 'lucide-react';
+import { Cog } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc } from '@/firebase';
-import { collection, writeBatch, getDocs, query, doc, where } from 'firebase/firestore';
+import { collection, writeBatch, getDocs, query, doc, where, CollectionReference } from 'firebase/firestore';
 
 
 type SensorData = {
@@ -87,11 +87,8 @@ type TestSession = {
     endTime?: string;
     status: 'RUNNING' | 'COMPLETED' | 'SCRAPPED';
     sensorConfigurationId: string;
+    measurementType: 'DEMO' | 'ARDUINO';
 };
-
-
-type ConnectionState = 'DISCONNECTED' | 'CONNECTED' | 'DEMO';
-
 
 function TestingComponent() {
   const router = useRouter();
@@ -100,8 +97,6 @@ function TestingComponent() {
   const preselectedSessionId = searchParams.get('sessionId');
 
   const [activeTab, setActiveTab] = useState('live');
-  const [connectionState, setConnectionState] = useState<ConnectionState>('DISCONNECTED');
-  const [isMeasuring, setIsMeasuring] = useState(false);
   const [localDataLog, setLocalDataLog] = useState<SensorData[]>([]);
   const [currentValue, setCurrentValue] = useState<number | null>(null);
   const [sensitivity, setSensitivity] = useState(0.98);
@@ -115,6 +110,7 @@ function TestingComponent() {
 
   const [chartInterval, setChartInterval] = useState<string>("60");
   const [chartKey, setChartKey] = useState<number>(Date.now());
+  const [isConnecting, setIsConnecting] = useState(false);
 
   const { toast } = useToast();
   const { firestore } = useFirebase();
@@ -133,7 +129,6 @@ function TestingComponent() {
       firestore,
       sensorDataCollectionRef: null as CollectionReference | null,
       activeTestSessionId,
-      activeSensorConfigId,
   });
 
 
@@ -195,28 +190,22 @@ function TestingComponent() {
   useEffect(() => {
       stateRef.current.firestore = firestore;
       stateRef.current.activeTestSessionId = activeTestSessionId;
-      stateRef.current.activeSensorConfigId = activeSensorConfigId;
-      if (firestore && activeSensorConfigId) {
-        stateRef.current.sensorDataCollectionRef = collection(firestore, `sensor_configurations/${activeSensorConfigId}/sensor_data`);
-      } else {
-        stateRef.current.sensorDataCollectionRef = null;
-      }
-  }, [firestore, activeTestSessionId, activeSensorConfigId]);
+  }, [firestore, activeTestSessionId]);
   
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
       setCurrentValue(newDataPoint.value);
-      setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
       
-      const { firestore: currentFirestore, activeTestSessionId: currentSessionId, sensorDataCollectionRef: currentSensorDataRef } = stateRef.current;
-      
-      if (currentFirestore && currentSensorDataRef) {
-          const dataToSave = {...newDataPoint};
-          if (currentSessionId) {
-              dataToSave.testSessionId = currentSessionId;
-          }
-          addDocumentNonBlocking(currentSensorDataRef, dataToSave);
+      const { firestore: currentFirestore, activeTestSessionId: currentSessionId } = stateRef.current;
+
+      if (currentFirestore && currentSessionId && activeSensorConfigId) {
+          const sensorDataRef = collection(currentFirestore, `sensor_configurations/${activeSensorConfigId}/sensor_data`);
+          const dataToSave = {...newDataPoint, testSessionId: currentSessionId};
+          addDocumentNonBlocking(sensorDataRef, dataToSave);
+      } else {
+        // Fallback for non-session based data collection
+        setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
       }
-  }, []);
+  }, [activeSensorConfigId]);
 
   const dataLog = useMemo(() => {
     const log = firestore ? cloudDataLog : localDataLog;
@@ -250,91 +239,88 @@ function TestingComponent() {
   }, [sensorConfig]);
   
   const sendSerialCommand = useCallback(async (command: 's' | 'p') => {
-    if (connectionState !== 'CONNECTED' || !portRef.current?.writable) return;
+    if (!portRef.current?.writable) return;
     const writer = portRef.current.writable.getWriter();
     try {
       const encoder = new TextEncoder();
       await writer.write(encoder.encode(command));
     } catch (error) {
       console.error("Send failed:", error);
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Could not send command.',
-      });
     } finally {
       writer.releaseLock();
     }
-  }, [toast, connectionState]);
+  }, []);
 
   const stopDemoMode = useCallback(() => {
     if (demoIntervalRef.current) {
         clearInterval(demoIntervalRef.current);
         demoIntervalRef.current = null;
     }
-    setConnectionState('DISCONNECTED');
-    setIsMeasuring(false);
-    toast({
-        title: 'Demo ended',
-        description: 'Data simulation has been stopped.',
-    });
-  }, [toast]);
+  }, []);
 
   const handleDisconnect = useCallback(async () => {
-    if (connectionState === 'DEMO') {
-        stopDemoMode();
-        return;
-    }
-
+    stopDemoMode();
     if (!portRef.current) return;
-
-    readLoopActiveRef.current = false;
     
-    if (isMeasuring) {
-      await sendSerialCommand('p');
-    }
+    readLoopActiveRef.current = false;
+    await sendSerialCommand('p');
 
     try {
       if (readerRef.current) {
         await readerRef.current.cancel();
-        // The lock is released automatically by cancel()
         readerRef.current = null;
       }
       
       await portRef.current.close();
       portRef.current = null;
-      setConnectionState('DISCONNECTED');
-      setIsMeasuring(false);
-      toast({
-        title: 'Disconnected',
-        description: 'Disconnected from Arduino.',
-      });
     } catch (error) {
       console.error('Error disconnecting:', error);
-      // Ignore errors if the device was already lost
       if ((error as Error).message.includes("The device has been lost")) {
           portRef.current = null;
-          setConnectionState('DISCONNECTED');
-          setIsMeasuring(false);
-          return;
       }
-      toast({
-        variant: 'destructive',
-        title: 'Disconnect failed',
-        description: (error as Error).message,
-      });
     }
-  }, [isMeasuring, toast, sendSerialCommand, connectionState, stopDemoMode]);
+  }, [sendSerialCommand, stopDemoMode]);
+
+  useEffect(() => {
+      if (runningTestSession?.measurementType === 'DEMO' && !demoIntervalRef.current) {
+        let trend = 1000;
+        let direction = -1;
+
+        demoIntervalRef.current = setInterval(() => {
+            const change = Math.random() * 5 + 1;
+            trend += change * direction;
+            if (trend <= 150) direction = 1;
+            if (trend >= 1020) direction = -1;
+
+            const noise = (Math.random() - 0.5) * 10;
+            const value = Math.round(Math.max(0, Math.min(1023, trend + noise)));
+
+            const newDataPoint = {
+                timestamp: new Date().toISOString(),
+                value: value,
+            };
+            handleNewDataPoint(newDataPoint);
+        }, 500);
+
+      } else if (runningTestSession?.measurementType === 'ARDUINO' && !readLoopActiveRef.current) {
+        readFromSerial();
+      } else if (!runningTestSession) {
+         stopDemoMode();
+         if(portRef.current) handleDisconnect();
+      }
+
+      return () => {
+          stopDemoMode();
+      };
+  }, [runningTestSession, handleNewDataPoint, stopDemoMode, handleDisconnect]);
+
 
   const readFromSerial = useCallback(async () => {
     if (!portRef.current?.readable || readLoopActiveRef.current) return;
 
     readLoopActiveRef.current = true;
     const textDecoder = new TextDecoderStream();
-    
-    // Watch for the port being closed, which happens on disconnect
     const readableStreamClosed = portRef.current.readable.pipeTo(textDecoder.writable);
-    
     readerRef.current = textDecoder.readable.getReader();
 
     let partialLine = '';
@@ -343,10 +329,7 @@ function TestingComponent() {
         try {
             const { value, done } = await readerRef.current.read();
             
-            if (done) {
-                // Reader has been released, loop will be stopped by readLoopActiveRef.current = false
-                break;
-            }
+            if (done) break;
            
             partialLine += value;
             let lines = partialLine.split('\n');
@@ -360,134 +343,58 @@ function TestingComponent() {
                         timestamp: new Date().toISOString(),
                         value: sensorValue
                     };
-                    // Use the function from the component scope, which is stable due to useCallback
                     handleNewDataPoint(newDataPoint);
                 }
             });
         } catch (error) {
             console.error('Error reading data:', error);
             if (readLoopActiveRef.current) {
-                 toast({
-                    variant: 'destructive',
-                    title: 'Connection Lost',
-                    description: 'The device may have been unplugged.',
-                });
-                await handleDisconnect(); // This will set readLoopActiveRef to false
+                toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
+                if (runningTestSession) {
+                    handleStopTestSession(runningTestSession.id);
+                }
             }
-            break; // Exit the loop on error
+            break; 
         }
     }
-    // Final cleanup
+    
     if(readerRef.current){
-        try {
-            readerRef.current.releaseLock();
-        } catch {}
+        try { readerRef.current.releaseLock(); } catch {}
     }
     readLoopActiveRef.current = false;
-  }, [toast, handleDisconnect, handleNewDataPoint]);
+  }, [toast, handleNewDataPoint, runningTestSession, handleStopTestSession]);
 
 
   const handleConnect = async () => {
-    if (connectionState !== 'DISCONNECTED') {
-        await handleDisconnect();
-        return;
-    }
+    if (isConnecting || runningTestSession) return;
     
     try {
       if ('serial' in navigator) {
+        setIsConnecting(true);
         const port = await (navigator.serial as any).requestPort();
         portRef.current = port;
         await port.open({ baudRate: 9600 });
-        setConnectionState('CONNECTED');
-        setIsMeasuring(true);
-        readFromSerial();
-
-        toast({
-          title: 'Connected',
-          description: 'Successfully connected to Arduino. Receiving data.',
-        });
+        
+        await handleStartNewTestSession({ measurementType: 'ARDUINO' });
+        
+        toast({ title: 'Connected', description: 'Successfully connected to Arduino. Session started.' });
       } else {
-        toast({
-          variant: 'destructive',
-          title: 'Error',
-          description: 'Web Serial API is not supported by this browser.',
-        });
+        toast({ variant: 'destructive', title: 'Error', description: 'Web Serial API is not supported by this browser.' });
       }
     } catch (error) {
       console.error('Error connecting:', error);
       if ((error as Error).name !== 'NotFoundError') {
-        toast({
-            variant: 'destructive',
-            title: 'Connection Failed',
-            description: (error as Error).message || 'Could not establish a connection.',
-        });
+        toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish a connection.' });
       }
+    } finally {
+        setIsConnecting(false);
     }
   };
 
   const handleStartDemo = () => {
-    if (connectionState !== 'DISCONNECTED') {
-        handleDisconnect();
-        return;
-    }
-    setConnectionState('DEMO');
-    setIsMeasuring(true);
-    if (!firestore) {
-      setLocalDataLog([]);
-    }
-    setCurrentValue(null);
-
-    let trend = 1000;
-    let direction = -1;
-
-    demoIntervalRef.current = setInterval(() => {
-        const change = Math.random() * 5 + 1;
-        trend += change * direction;
-        if (trend <= 150) direction = 1;
-        if (trend >= 1020) direction = -1;
-
-        const noise = (Math.random() - 0.5) * 10;
-        const value = Math.round(Math.max(0, Math.min(1023, trend + noise)));
-
-        const newDataPoint = {
-            timestamp: new Date().toISOString(),
-            value: value,
-        };
-        handleNewDataPoint(newDataPoint);
-    }, 500);
-
-    toast({
-        title: 'Demo Started',
-        description: 'Simulated sensor data is being generated.',
-    });
+    handleStartNewTestSession({ measurementType: 'DEMO' });
   };
-
-  const handleToggleMeasurement = async () => {
-    if (connectionState === 'DEMO') {
-        if(isMeasuring) {
-            if (demoIntervalRef.current) clearInterval(demoIntervalRef.current);
-            setIsMeasuring(false);
-            toast({ title: 'Demo paused'});
-        } else {
-            setConnectionState('DISCONNECTED');
-            handleStartDemo();
-        }
-        return;
-    }
-
-    if (connectionState !== 'CONNECTED') return;
-
-    const newIsMeasuring = !isMeasuring;
-    await sendSerialCommand(newIsMeasuring ? 's' : 'p');
-    setIsMeasuring(newIsMeasuring);
-    if(newIsMeasuring && !readLoopActiveRef.current){
-        readFromSerial();
-    }
-    toast({
-        title: newIsMeasuring ? 'Measurement started' : 'Measurement stopped',
-    });
-  };
-
+  
   const handleAnalysis = async () => {
     setIsAnalyzing(true);
     setAnalysisResult(null);
@@ -693,13 +600,15 @@ function TestingComponent() {
     setTempTestSession(prev => ({...prev, [field]: value}));
   };
 
-  const handleStartNewTestSession = () => {
-    if (!tempTestSession || !tempTestSession.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
+  const handleStartNewTestSession = async (options: { measurementType: 'DEMO' | 'ARDUINO' }) => {
+    const sessionDetails = tempTestSession || { productIdentifier: `${options.measurementType} Session`};
+
+    if (!sessionDetails.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
         toast({variant: 'destructive', title: 'Error', description: 'Please provide a product identifier and select a sensor.'});
         return;
     }
 
-    if (testSessions?.find(s => s.status === 'RUNNING')) {
+    if (runningTestSession) {
         toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
         return;
     }
@@ -707,22 +616,23 @@ function TestingComponent() {
     const newSessionId = doc(collection(firestore, '_')).id;
     const newSession: TestSession = {
       id: newSessionId,
-      productIdentifier: tempTestSession.productIdentifier,
-      serialNumber: tempTestSession.serialNumber || '',
-      model: tempTestSession.model || '',
-      description: tempTestSession.description || '',
+      productIdentifier: sessionDetails.productIdentifier,
+      serialNumber: sessionDetails.serialNumber || '',
+      model: sessionDetails.model || '',
+      description: sessionDetails.description || '',
       startTime: new Date().toISOString(),
       status: 'RUNNING',
       sensorConfigurationId: activeSensorConfigId,
+      measurementType: options.measurementType,
     };
     
-    addDocumentNonBlocking(testSessionsCollectionRef, newSession);
+    await setDocumentNonBlocking(doc(testSessionsCollectionRef, newSessionId), newSession, { merge: false });
     setActiveTestSessionId(newSessionId);
     setTempTestSession(null);
     toast({ title: 'New Test Session Started', description: `Product: ${newSession.productIdentifier}`});
   };
 
-  const handleStopTestSession = (sessionId: string) => {
+  const handleStopTestSession = useCallback((sessionId: string) => {
       if (!testSessionsCollectionRef) return;
       const sessionRef = doc(testSessionsCollectionRef, sessionId);
       updateDocumentNonBlocking(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
@@ -730,7 +640,7 @@ function TestingComponent() {
           setActiveTestSessionId(null);
       }
       toast({title: 'Test Session Ended'});
-  };
+  }, [testSessionsCollectionRef, activeTestSessionId]);
 
 
   const chartData = useMemo(() => {
@@ -749,55 +659,26 @@ function TestingComponent() {
   const displayValue = currentValue !== null ? convertRawValue(currentValue) : null;
   const displayDecimals = sensorConfig.decimalPlaces;
 
-  const getButtonText = () => {
-    if (connectionState === 'CONNECTED') return 'Disconnect';
-    if (connectionState === 'DEMO') return 'End Demo';
-    return 'Connect to Arduino';
-  }
 
   const renderLiveTab = () => (
-    <>
-      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-          <CardHeader className="pb-4">
-            <div className="flex justify-between items-center">
-              <CardTitle className="text-2xl text-center">
-                  Live Control
-              </CardTitle>
-               {runningTestSession && (
-                <div className="text-right">
-                    <p className="font-semibold text-primary">Live Test: {runningTestSession.productIdentifier}</p>
-                    <p className="text-sm text-muted-foreground">Started: {new Date(runningTestSession.startTime).toLocaleTimeString('en-US')}</p>
-                </div>
-              )}
-            </div>
-            <CardDescription className="text-center">
-              Connect your Arduino or start Demo Mode.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-wrap items-center justify-center gap-4">
-            <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession}>
-              {getButtonText()}
-            </Button>
-            {connectionState === 'DISCONNECTED' && (
-                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession}>
-                    Start Demo
-                </Button>
-            )}
-            {connectionState !== 'DISCONNECTED' && (
-              <Button
-                variant={isMeasuring ? 'destructive' : 'secondary'}
-                onClick={handleToggleMeasurement}
-                className="btn-shine shadow-md transition-transform transform hover:-translate-y-1"
-                disabled={!!runningTestSession}
-              >
-                {isMeasuring ? 'Stop Measurement' : 'Start Measurement'}
-              </Button>
-            )}
-            
-          </CardContent>
-           {(runningTestSession) && <CardFooter><p className="text-center text-sm text-muted-foreground w-full">Live controls are disabled while a test session is active.</p></CardFooter>}
-        </Card>
-    </>
+    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-2xl text-center">
+              Live Control
+          </CardTitle>
+          <CardDescription className="text-center">
+            Start a measurement via Arduino or Demo mode.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center justify-center gap-4">
+          <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession || isConnecting}>
+            {isConnecting ? 'Connecting...' : 'Connect to Arduino'}
+          </Button>
+          <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession}>
+              Start Demo
+          </Button>
+        </CardContent>
+      </Card>
   );
 
   const renderFileTab = () => (
@@ -876,7 +757,7 @@ function TestingComponent() {
                 <Input id="description" placeholder="Internal R&D..." value={tempTestSession.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
               </div>
               <div className="flex justify-center gap-4">
-                <Button onClick={handleStartNewTestSession} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Start Session</Button>
+                <Button onClick={() => handleStartNewTestSession({ measurementType: 'DEMO' })} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Start Session</Button>
                 <Button variant="ghost" onClick={() => setTempTestSession(null)}>Cancel</Button>
               </div>
             </div>
@@ -888,9 +769,10 @@ function TestingComponent() {
                     <div>
                         <p className="font-semibold">{runningTestSession.productIdentifier}</p>
                         <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US')} - {runningTestSession.status}</p>
+                         <p className="text-xs font-mono text-primary">{runningTestSession.measurementType}</p>
                     </div>
                     <div className="flex gap-2">
-                        <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop</Button>
+                        <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
                     </div>
                 </div>
             </Card>
@@ -1069,6 +951,7 @@ function TestingComponent() {
                     step={0.001}
                     value={[sensitivity]}
                     onValueChange={(value) => setSensitivity(value[0])}
+                    className="[&>span:first-child]:h-2 [&>span:first-child>span]:h-2 [&>span:last-child]:h-5 [&>span:last-child]:w-5"
                   />
                 </div>
                 <div className="flex gap-4 justify-center">

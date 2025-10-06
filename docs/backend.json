@@ -140,9 +140,10 @@
             "startTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test started." },
             "endTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test ended." },
             "status": { "type": "string", "enum": ["RUNNING", "COMPLETED", "SCRAPPED"], "description": "The status of the test session." },
-            "sensorConfigurationId": { "type": "string", "description": "The sensor configuration used for this test." }
+            "sensorConfigurationId": { "type": "string", "description": "The sensor configuration used for this test." },
+            "measurementType": { "type": "string", "enum": ["DEMO", "ARDUINO"], "description": "The source of the measurement data." }
         },
-        "required": ["id", "productIdentifier", "startTime", "status", "sensorConfigurationId"]
+        "required": ["id", "productIdentifier", "startTime", "status", "sensorConfigurationId", "measurementType"]
     }
   },
   "auth": {
