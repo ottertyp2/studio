@@ -38,6 +38,7 @@ import {
 } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Slider } from '@/components/ui/slider';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   LineChart,
   Line,
@@ -51,6 +52,8 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
+import { useFirebase } from '@/firebase';
+import { initiateAnonymousSignIn } from '@/firebase/non-blocking-login';
 
 
 type SensorData = {
@@ -71,6 +74,7 @@ type ConnectionState = 'DISCONNECTED' | 'CONNECTED' | 'DEMO';
 
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState('live');
   const [connectionState, setConnectionState] = useState<ConnectionState>('DISCONNECTED');
   const [isMeasuring, setIsMeasuring] = useState(false);
   const [dataLog, setDataLog] = useState<SensorData[]>([]);
@@ -92,8 +96,8 @@ export default function Home() {
   const [chartInterval, setChartInterval] = useState<string>("60");
   const [chartKey, setChartKey] = useState<number>(Date.now());
 
-
   const { toast } = useToast();
+  const { auth, user, isUserLoading } = useFirebase();
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
   const readLoopActiveRef = useRef<boolean>(false);
@@ -144,7 +148,6 @@ export default function Home() {
         description: 'Die Datensimulation wurde gestoppt.',
     });
   }, [toast]);
-
 
   const handleDisconnect = useCallback(async () => {
     if (connectionState === 'DEMO') {
@@ -545,17 +548,23 @@ export default function Home() {
     if (connectionState === 'DEMO') return 'Demo beenden';
     return 'Mit Arduino verbinden';
   }
+  
+  const handleLogin = () => {
+      if (auth) {
+        initiateAnonymousSignIn(auth);
+        toast({ title: 'Anonymer Login wird versucht...'})
+      }
+  }
 
-  return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
-      <header className="w-full max-w-7xl mx-auto mb-6">
-        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+  const renderLiveTab = () => (
+    <>
+      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
           <CardHeader className="pb-4">
-            <CardTitle className="text-3xl text-center bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-              BioThrust Live Dashboard
+            <CardTitle className="text-2xl text-center">
+                Live-Steuerung
             </CardTitle>
             <CardDescription className="text-center">
-              Verbinden Sie Ihren Arduino, starten Sie den Demo-Modus oder sehen Sie sich die Cloud-Daten an.
+              Verbinden Sie Ihren Arduino oder starten Sie den Demo-Modus.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center justify-center gap-4">
@@ -576,26 +585,7 @@ export default function Home() {
                 {isMeasuring ? 'Messung stoppen' : 'Messung starten'}
               </Button>
             )}
-            <div className="flex items-center gap-2">
-              <Label htmlFor="chartInterval">Diagramm-Zeitraum:</Label>
-              <Select value={chartInterval} onValueChange={setChartInterval}>
-                <SelectTrigger id="chartInterval" className="w-[150px] bg-white/80">
-                  <SelectValue placeholder="Select interval" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="60">1 Minute</SelectItem>
-                  <SelectItem value="300">5 Minuten</SelectItem>
-                  <SelectItem value="900">15 Minuten</SelectItem>
-                  <SelectItem value="all">Alle Daten</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-                <Button onClick={handleExportCSV} variant="outline">Export CSV</Button>
-                <Button onClick={() => importFileRef.current?.click()} variant="outline">Import CSV</Button>
-                <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
-            </div>
-             <AlertDialog>
+            <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1">Daten löschen</Button>
               </AlertDialogTrigger>
@@ -615,16 +605,101 @@ export default function Home() {
             </AlertDialog>
           </CardContent>
         </Card>
+    </>
+  );
+
+  const renderFileTab = () => (
+      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+        <CardHeader>
+            <CardTitle>Datei-Operationen (CSV)</CardTitle>
+            <CardDescription>
+                Exportieren Sie die aktuellen Daten oder importieren Sie eine vorhandene Log-Datei.
+            </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center justify-center gap-4">
+            <Button onClick={handleExportCSV} variant="outline">Export CSV</Button>
+            <Button onClick={() => importFileRef.current?.click()} variant="outline">Import CSV</Button>
+            <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
+        </CardContent>
+      </Card>
+  );
+  
+  const renderCloudTab = () => (
+      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+        <CardHeader>
+            <CardTitle>Cloud-Synchronisation</CardTitle>
+            <CardDescription>
+                Melden Sie sich an, um Daten in der Cloud zu speichern und live zu teilen.
+            </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 text-center">
+            {isUserLoading ? (
+                <p>Authentifizierung wird geladen...</p>
+            ) : user ? (
+                <div className='space-y-2'>
+                    <p>Angemeldet als: <span className='font-mono'>{user.uid}</span></p>
+                    <p className='text-sm text-muted-foreground'>(Anonymer Benutzer)</p>
+                    <Button onClick={() => auth.signOut()} variant="secondary">Abmelden</Button>
+                </div>
+            ) : (
+                <Button onClick={handleLogin}>Anonym Anmelden</Button>
+            )}
+        </CardContent>
+      </Card>
+  );
+
+  return (
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
+      <header className="w-full max-w-7xl mx-auto mb-6">
+        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-3xl text-center bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
+              BioThrust Live Dashboard
+            </CardTitle>
+            <CardDescription className="text-center">
+              Echtzeit-Sensordatenanalyse mit Arduino, CSV und Cloud-Anbindung
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="live">Live (Arduino)</TabsTrigger>
+                    <TabsTrigger value="file">Datei (CSV)</TabsTrigger>
+                    <TabsTrigger value="cloud">Cloud</TabsTrigger>
+                </TabsList>
+            </Tabs>
+          </CardContent>
+        </Card>
       </header>
 
       <main className="w-full max-w-7xl mx-auto space-y-6">
+        <div className="space-y-6">
+            {activeTab === 'live' && renderLiveTab()}
+            {activeTab === 'file' && renderFileTab()}
+            {activeTab === 'cloud' && renderCloudTab()}
+        </div>
+
         <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
           <CardHeader>
             <div className="flex justify-between items-center">
-              <CardTitle>Live-Diagramm ({sensorConfig.unit})</CardTitle>
-              <Button onClick={handleResetZoom} variant="outline" size="sm" className="transition-transform transform hover:-translate-y-0.5">
-                Zoom zurücksetzen
-              </Button>
+              <CardTitle>Datenvisualisierung ({sensorConfig.unit})</CardTitle>
+              <div className='flex items-center gap-2'>
+                 <Label htmlFor="chartInterval" className="whitespace-nowrap">Zeitraum:</Label>
+                  <Select value={chartInterval} onValueChange={setChartInterval}>
+                    <SelectTrigger id="chartInterval" className="w-[150px] bg-white/80">
+                      <SelectValue placeholder="Select interval" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="60">1 Minute</SelectItem>
+                      <SelectItem value="300">5 Minuten</SelectItem>
+                      <SelectItem value="900">15 Minuten</SelectItem>
+                      <SelectItem value="all">Alle Daten</SelectItem>
+                    </SelectContent>
+                  </Select>
+                <Button onClick={handleResetZoom} variant="outline" size="sm" className="transition-transform transform hover:-translate-y-0.5">
+                    Zoom zurücksetzen
+                </Button>
+              </div>
             </div>
             <CardDescription>
               Tipp: Mit dem Mausrad zoomen und mit gedrückter Maustaste ziehen, um zu scrollen.
@@ -645,7 +720,7 @@ export default function Home() {
                   <YAxis
                     stroke="hsl(var(--muted-foreground))"
                     domain={['dataMin', 'dataMax']}
-                    tickFormatter={(tick) => tick.toFixed(displayDecimals)}
+                    tickFormatter={(tick) => typeof tick === 'number' ? tick.toFixed(displayDecimals) : tick}
                   />
                   <Tooltip
                     contentStyle={{
@@ -703,64 +778,7 @@ export default function Home() {
                 </CardContent>
               </Card>
             </div>
-          </div>
-
-          <div className="space-y-6">
-            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-              <CardHeader>
-                <CardTitle>Sensor-Konfiguration</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="conversionMode">Anzeige-Modus</Label>
-                  <Select value={tempSensorConfig.mode} onValueChange={(value) => handleConfigChange('mode', value)}>
-                    <SelectTrigger id="conversionMode">
-                      <SelectValue placeholder="Select mode" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="RAW">RAW (0-1023)</SelectItem>
-                      <SelectItem value="VOLTAGE">Spannung (V)</SelectItem>
-                      <SelectItem value="CUSTOM">Benutzerdefiniert</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                 {tempSensorConfig.mode === 'CUSTOM' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div>
-                            <Label htmlFor="sensorUnitInput">Einheit</Label>
-                            <Input id="sensorUnitInput" value={tempSensorConfig.unit} onChange={(e) => handleConfigChange('unit', e.target.value)} />
-                        </div>
-                        <div>
-                            <Label htmlFor="minValueInput">Minimalwert</Label>
-                            <Input id="minValueInput" type="number" value={tempSensorConfig.min} onChange={(e) => handleConfigChange('min', parseFloat(e.target.value))} />
-                        </div>
-                        <div>
-                            <Label htmlFor="maxValueInput">Maximalwert</Label>
-                            <Input id="maxValueInput" type="number" value={tempSensorConfig.max} onChange={(e) => handleConfigChange('max', parseFloat(e.target.value))} />
-                        </div>
-                    </div>
-                 )}
-                 {tempSensorConfig.mode !== 'RAW' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {tempSensorConfig.mode === 'VOLTAGE' && (
-                            <div>
-                                <Label htmlFor="arduinoVoltageInput">Referenzspannung (V)</Label>
-                                <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage} onChange={(e) => handleConfigChange('arduinoVoltage', parseFloat(e.target.value))} />
-                            </div>
-                        )}
-                        <div>
-                            <Label htmlFor="decimalPlacesInput">Dezimalstellen</Label>
-                            <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces} onChange={(e) => handleConfigChange('decimalPlaces', e.target.value)} />
-                        </div>
-                    </div>
-                 )}
-                 <div className="flex justify-center">
-                    <Button onClick={handleApplySettings} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Anwenden</Button>
-                 </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+             <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
               <CardHeader>
                 <CardTitle>Intelligente Leck-Analyse</CardTitle>
               </CardHeader>
@@ -825,6 +843,61 @@ export default function Home() {
               </CardContent>
             </Card>
           </div>
+
+          <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+              <CardHeader>
+                <CardTitle>Sensor-Konfiguration</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="conversionMode">Anzeige-Modus</Label>
+                  <Select value={tempSensorConfig.mode} onValueChange={(value) => handleConfigChange('mode', value)}>
+                    <SelectTrigger id="conversionMode">
+                      <SelectValue placeholder="Select mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="RAW">RAW (0-1023)</SelectItem>
+                      <SelectItem value="VOLTAGE">Spannung (V)</SelectItem>
+                      <SelectItem value="CUSTOM">Benutzerdefiniert</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                 {tempSensorConfig.mode === 'CUSTOM' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <Label htmlFor="sensorUnitInput">Einheit</Label>
+                            <Input id="sensorUnitInput" value={tempSensorConfig.unit} onChange={(e) => handleConfigChange('unit', e.target.value)} />
+                        </div>
+                        <div>
+                            <Label htmlFor="minValueInput">Minimalwert</Label>
+                            <Input id="minValueInput" type="number" value={tempSensorConfig.min} onChange={(e) => handleConfigChange('min', parseFloat(e.target.value))} />
+                        </div>
+                        <div>
+                            <Label htmlFor="maxValueInput">Maximalwert</Label>
+                            <Input id="maxValueInput" type="number" value={tempSensorConfig.max} onChange={(e) => handleConfigChange('max', parseFloat(e.target.value))} />
+                        </div>
+                    </div>
+                 )}
+                 {tempSensorConfig.mode !== 'RAW' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {tempSensorConfig.mode === 'VOLTAGE' && (
+                            <div>
+                                <Label htmlFor="arduinoVoltageInput">Referenzspannung (V)</Label>
+                                <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage} onChange={(e) => handleConfigChange('arduinoVoltage', parseFloat(e.target.value))} />
+                            </div>
+                        )}
+                        <div>
+                            <Label htmlFor="decimalPlacesInput">Dezimalstellen</Label>
+                            <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces} onChange={(e) => handleConfigChange('decimalPlaces', e.target.value)} />
+                        </div>
+                    </div>
+                 )}
+                 <div className="flex justify-center">
+                    <Button onClick={handleApplySettings} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Anwenden</Button>
+                 </div>
+              </CardContent>
+            </Card>
+
         </div>
       </main>
     </div>
