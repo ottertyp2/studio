@@ -85,23 +85,27 @@ export default function SignupPage() {
       });
       router.push('/');
     } catch (error) {
-      let errorMessage = 'An unexpected error occurred.';
+      let errorMessage = 'An unexpected error occurred. Please try again.';
       if (error instanceof FirebaseError) {
         switch (error.code) {
           case 'auth/email-already-in-use':
-            errorMessage = 'This username is already taken.';
+            errorMessage = 'This username is already taken. Please choose a different one.';
             break;
           case 'auth/weak-password':
-            errorMessage = 'Password is too weak. Please use at least 6 characters.';
+            errorMessage = 'Password is too weak. It must be at least 6 characters long.';
             break;
           case 'auth/invalid-email':
-            errorMessage = 'The username is not valid. Please try a different one.';
+            errorMessage = 'The username is not a valid email format. Please try a different one.';
             break;
           default:
-            errorMessage = "Could not create account. Please try again.";
+            // Provide the specific error message from Firebase for unhandled cases.
+            errorMessage = error.message;
             break;
         }
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
       }
+      
       toast({
         variant: 'destructive',
         title: 'Sign Up Failed',
