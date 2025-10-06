@@ -53,9 +53,8 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
-import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection } from '@/firebase';
+import { useFirebase, useUser, useMemoFirebase, useCollection, initiateAnonymousSignIn, addDocumentNonBlocking } from '@/firebase';
 import { collection } from 'firebase/firestore';
-import { initiateAnonymousSignIn } from '@/firebase/non-blocking-login';
 
 
 type SensorData = {
