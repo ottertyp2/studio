@@ -264,11 +264,11 @@ export default function AdminPage() {
       toast({title: 'Test Session Ended'});
   };
   
-  const viewLiveTest = () => {
-    if (!viewingUserId || !activeTestSessionId) return;
+  const viewLiveTest = (sessionId: string) => {
+    if (!viewingUserId) return;
     const queryParams = new URLSearchParams({
         userId: viewingUserId,
-        sessionId: activeTestSessionId
+        sessionId: sessionId,
     }).toString();
     router.push(`/testing?${queryParams}`);
   }
@@ -359,7 +359,7 @@ export default function AdminPage() {
         <CardContent>
           {!tempTestSession && !runningSession && (
             <div className="flex justify-center">
-              <Button onClick={() => setTempTestSession({})} disabled={!viewingUserId}>
+              <Button onClick={() => setTempTestSession({})} disabled={!viewingUserId || !activeSensorConfigId}>
                 Start New Test Session
               </Button>
             </div>
@@ -405,7 +405,7 @@ export default function AdminPage() {
                          <div className="flex gap-2">
                              {session.status === 'RUNNING' && (
                                 <>
-                                    <Button size="sm" variant="outline" onClick={() => viewLiveTest()}>View Live</Button>
+                                    <Button size="sm" variant="outline" onClick={() => viewLiveTest(session.id)}>View Live</Button>
                                     <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session.id)}>Stop</Button>
                                 </>
                             )}

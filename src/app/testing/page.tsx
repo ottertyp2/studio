@@ -79,7 +79,11 @@ type SensorConfig = {
 type TestSession = {
     id: string;
     productIdentifier: string;
+    serialNumber: string;
+    model: string;
+    description: string;
     startTime: string;
+    endTime?: string;
     status: 'RUNNING' | 'COMPLETED' | 'SCRAPPED';
     sensorConfigurationId: string;
 };
@@ -112,6 +116,8 @@ function TestingComponent() {
   
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
   const [activeTestSessionId, setActiveTestSessionId] = useState<string | null>(adminSessionId);
+  const [tempTestSession, setTempTestSession] = useState<Partial<TestSession> | null>(null);
+
 
   const [chartInterval, setChartInterval] = useState<string>("60");
   const [chartKey, setChartKey] = useState<number>(Date.now());
@@ -652,6 +658,50 @@ function TestingComponent() {
     }
   };
 
+  const handleTestSessionFieldChange = (field: keyof TestSession, value: any) => {
+    if (!tempTestSession) return;
+    setTempTestSession(prev => ({...prev, [field]: value}));
+  };
+
+  const handleStartNewTestSession = () => {
+    if (!tempTestSession || !tempTestSession.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
+        toast({variant: 'destructive', title: 'Error', description: 'Please provide a product identifier and select a sensor.'});
+        return;
+    }
+
+    if (testSessions?.find(s => s.status === 'RUNNING')) {
+        toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
+        return;
+    }
+
+    const newSessionId = doc(collection(firestore, '_')).id;
+    const newSession: TestSession = {
+      id: newSessionId,
+      productIdentifier: tempTestSession.productIdentifier,
+      serialNumber: tempTestSession.serialNumber || '',
+      model: tempTestSession.model || '',
+      description: tempTestSession.description || '',
+      startTime: new Date().toISOString(),
+      status: 'RUNNING',
+      sensorConfigurationId: activeSensorConfigId,
+    };
+    
+    addDocumentNonBlocking(testSessionsCollectionRef, newSession);
+    setActiveTestSessionId(newSessionId);
+    setTempTestSession(null);
+    toast({ title: 'New Test Session Started', description: `Product: ${newSession.productIdentifier}`});
+  };
+
+  const handleStopTestSession = (sessionId: string) => {
+      if (!testSessionsCollectionRef) return;
+      const sessionRef = doc(testSessionsCollectionRef, sessionId);
+      updateDocumentNonBlocking(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
+      if (activeTestSessionId === sessionId) {
+          setActiveTestSessionId(null);
+      }
+      toast({title: 'Test Session Ended'});
+  };
+
 
   const chartData = useMemo(() => {
     const now = new Date();
@@ -723,7 +773,8 @@ function TestingComponent() {
             )}
             
           </CardContent>
-           {(runningTestSession || isViewingAsAdmin) && <CardFooter><p className="text-center text-sm text-muted-foreground w-full">Live controls are disabled while a remote test session is active or when viewing as an admin.</p></CardFooter>}
+           {(runningTestSession || isViewingAsAdmin) && !isViewingAsAdmin && <CardFooter><p className="text-center text-sm text-muted-foreground w-full">Live controls are disabled while a remote test session is active.</p></CardFooter>}
+            {isViewingAsAdmin && <CardFooter><p className="text-center text-sm text-muted-foreground w-full">Live controls are disabled when viewing as an admin.</p></CardFooter>}
         </Card>
     </>
   );
@@ -761,8 +812,77 @@ function TestingComponent() {
                 </AlertDialogContent>
             </AlertDialog>
         </CardContent>
+        {isViewingAsAdmin && <CardFooter><p className="text-center text-sm text-muted-foreground w-full">File operations are disabled when viewing as an admin.</p></CardFooter>}
       </Card>
   );
+
+  const renderTestSessionManager = () => {
+    // Admins manage this on the admin page
+    if (isViewingAsAdmin) return null;
+
+    return (
+      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+        <CardHeader>
+          <CardTitle>Test Sessions</CardTitle>
+          <CardDescription>
+            Start a new test session to associate data with a specific product.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!tempTestSession && !runningTestSession && (
+            <div className="flex justify-center">
+              <Button onClick={() => setTempTestSession({})} disabled={!viewingUserId}>
+                Start New Test Session
+              </Button>
+            </div>
+          )}
+
+          {tempTestSession && !runningTestSession && (
+            <div className="space-y-4">
+              <CardTitle className="text-lg">New Test Session</CardTitle>
+              <div>
+                <Label htmlFor="productIdentifier">Product Identifier</Label>
+                <Input id="productIdentifier" placeholder="[c.su300.8b.b]-187" value={tempTestSession.productIdentifier || ''} onChange={e => handleTestSessionFieldChange('productIdentifier', e.target.value)} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                 <div>
+                    <Label htmlFor="serialNumber">Serial Number</Label>
+                    <Input id="serialNumber" placeholder="187" value={tempTestSession.serialNumber || ''} onChange={e => handleTestSessionFieldChange('serialNumber', e.target.value)} />
+                </div>
+                <div>
+                    <Label htmlFor="model">Model</Label>
+                    <Input id="model" placeholder="c.su300.8b.b" value={tempTestSession.model || ''} onChange={e => handleTestSessionFieldChange('model', e.target.value)} />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="description">Description</Label>
+                <Input id="description" placeholder="Internal R&D..." value={tempTestSession.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
+              </div>
+              <div className="flex justify-center gap-4">
+                <Button onClick={handleStartNewTestSession}>Start Session</Button>
+                <Button variant="ghost" onClick={() => setTempTestSession(null)}>Cancel</Button>
+              </div>
+            </div>
+          )}
+          
+           {runningTestSession && (
+             <Card className='p-3 mb-2 border-primary'>
+                <div className="flex justify-between items-center">
+                    <div>
+                        <p className="font-semibold">{runningTestSession.productIdentifier}</p>
+                        <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US')} - {runningTestSession.status}</p>
+                    </div>
+                    <div className="flex gap-2">
+                        <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop</Button>
+                    </div>
+                </div>
+            </Card>
+           )}
+
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
@@ -795,9 +915,14 @@ function TestingComponent() {
       </header>
 
       <main className="w-full max-w-7xl mx-auto space-y-6">
-        <div className="space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
             {activeTab === 'live' && renderLiveTab()}
             {activeTab === 'file' && renderFileTab()}
+          </div>
+          <div className="lg:col-span-1">
+            {renderTestSessionManager()}
+          </div>
         </div>
 
         <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
