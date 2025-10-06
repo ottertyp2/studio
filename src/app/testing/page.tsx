@@ -111,6 +111,7 @@ function TestingComponent() {
   const [chartKey, setChartKey] = useState<number>(Date.now());
   
   const [isConnected, setIsConnected] = useState(false);
+  const [isMeasuring, setIsMeasuring] = useState(false);
   
   const { toast } = useToast();
   const { firestore } = useFirebase();
@@ -118,7 +119,7 @@ function TestingComponent() {
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
   const writerRef = useRef<any>(null);
-  const readingRef = useRef<boolean>(readingRef.current);
+  const readingRef = useRef<boolean>(false);
 
   const importFileRef = useRef<HTMLInputElement>(null);
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -141,6 +142,11 @@ function TestingComponent() {
       testSessions: testSessions || [] as TestSession[]
   });
 
+  useEffect(() => {
+    stateRef.current = { firestore, selectedSessionIds, activeSensorConfigId, testSessions: testSessions || [] };
+  }, [firestore, selectedSessionIds, activeSensorConfigId, testSessions]);
+
+
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
     return collection(firestore, `sensor_configurations`);
@@ -148,16 +154,14 @@ function TestingComponent() {
   
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
 
-  useEffect(() => {
-    stateRef.current = { firestore, selectedSessionIds, activeSensorConfigId, testSessions: testSessions || [] };
-  }, [firestore, selectedSessionIds, activeSensorConfigId, testSessions]);
-
-
-
   const runningTestSession = useMemo(() => {
     return testSessions?.find(s => s.status === 'RUNNING');
   }, [testSessions]);
   
+  useEffect(() => {
+    setIsMeasuring(!!runningTestSession);
+  }, [runningTestSession]);
+
   const activeTestSession = useMemo(() => {
     if (selectedSessionIds.length !== 1) return null;
     return testSessions?.find(s => s.id === selectedSessionIds[0]) ?? null;
@@ -213,8 +217,8 @@ function TestingComponent() {
     const { firestore: currentFirestore, activeSensorConfigId: currentSensorConfigId } = stateRef.current;
     
     // Use a fresh check for the running session inside the callback
-    if (currentFirestore && stateRef.current.testSessions.find(s => s.status === 'RUNNING')?.id && currentSensorConfigId) {
-        const currentRunningSession = stateRef.current.testSessions.find(s => s.status === 'RUNNING');
+    const currentRunningSession = stateRef.current.testSessions.find(s => s.status === 'RUNNING');
+    if (currentFirestore && currentRunningSession && currentSensorConfigId) {
         if (currentRunningSession) {
             const sensorDataRef = collection(currentFirestore, `sensor_configurations/${currentSensorConfigId}/sensor_data`);
             const dataToSave = {...newDataPoint, testSessionId: currentRunningSession.id};
@@ -283,50 +287,21 @@ function TestingComponent() {
         stopDemoMode();
       }
       
-      // Only send pause command if this client is the one connected
       if (session?.measurementType === 'ARDUINO' && isConnected) {
-        await sendSerialCommand('p');
+        // We don't send 'p' anymore, just stop logging the data
       }
   
-      // Update Firestore after sending commands
       const sessionRef = doc(firestore, `test_sessions`, sessionId);
       await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
   
       if (selectedSessionIds.includes(sessionId)) {
         if (selectedSessionIds.length === 1) {
-          setSelectedSessionIds([]);
+          // Keep it selected for analysis
         }
       }
       toast({ title: 'Test Session Ended' });
-  }, [firestore, isConnected, selectedSessionIds, sendSerialCommand, stopDemoMode, testSessionsCollectionRef, toast]);
-
-  const disconnectSerial = useCallback(async () => {
-    if (portRef.current) {
-        const runningArduinoSession = stateRef.current.testSessions.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
-        if (runningArduinoSession) {
-            await handleStopTestSession(runningArduinoSession.id);
-        }
-        
-        readingRef.current = false;
-        if(readerRef.current) {
-          try { await readerRef.current.cancel(); } catch {}
-        }
-        if(writerRef.current) {
-          try { writerRef.current.releaseLock(); } catch {}
-        }
-        
-        try {
-            await portRef.current.close();
-        } catch(e) {
-            console.error("Error closing port", e);
-        } finally {
-            portRef.current = null;
-            setIsConnected(false);
-            toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
-        }
-    }
-  }, [handleStopTestSession, toast]);
-
+  }, [firestore, isConnected, selectedSessionIds, stopDemoMode, testSessionsCollectionRef, toast]);
+  
   const readFromSerial = useCallback(async () => {
     if (!portRef.current?.readable || readingRef.current) return;
     
@@ -359,9 +334,9 @@ function TestingComponent() {
             });
         } catch (error) {
             console.error('Error reading data:', error);
-            if (!portRef.current.readable) {
+            if (!portRef.current?.readable) {
               toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
-              await disconnectSerial();
+              // The disconnect function will be called from handleConnect/disconnectSerial
             }
             break; 
         }
@@ -374,10 +349,36 @@ function TestingComponent() {
     }
     try { await readableStreamClosed.catch(() => {}); } catch {}
     readingRef.current = false;
-  }, [handleNewDataPoint, toast, disconnectSerial]);
+  }, [handleNewDataPoint, toast]);
 
+  const disconnectSerial = useCallback(async () => {
+    if (portRef.current) {
+        const runningArduinoSession = stateRef.current.testSessions.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
+        if (runningArduinoSession) {
+            await handleStopTestSession(runningArduinoSession.id);
+        }
+        
+        readingRef.current = false;
+        if(readerRef.current) {
+          try { await readerRef.current.cancel(); } catch {}
+        }
+        if(writerRef.current) {
+          try { writerRef.current.releaseLock(); } catch {}
+        }
+        
+        try {
+            await portRef.current.close();
+        } catch(e) {
+            console.error("Error closing port", e);
+        } finally {
+            portRef.current = null;
+            setIsConnected(false);
+            toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
+        }
+    }
+  }, [handleStopTestSession, toast]);
 
-   const handleConnect = useCallback(async () => {
+  const handleConnect = useCallback(async () => {
     if (portRef.current) {
         await disconnectSerial();
     } else { 
@@ -404,6 +405,7 @@ function TestingComponent() {
         }
     }
   }, [toast, readFromSerial, disconnectSerial]);
+
 
   const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', productIdentifier: string }) => {
     const sessionDetails = tempTestSession || { productIdentifier: options.productIdentifier };
@@ -446,6 +448,7 @@ function TestingComponent() {
 
     if (arduinoSession) {
       await handleStopTestSession(arduinoSession.id);
+      await sendSerialCommand('p');
     } else {
       const newSession = await handleStartNewTestSession({ measurementType: 'ARDUINO', productIdentifier: `Arduino Session ${new Date().toLocaleTimeString()}`});
       if (newSession) {
@@ -784,7 +787,7 @@ function TestingComponent() {
             <Button 
                 onClick={handleConnect} 
                 className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" 
-                disabled={!!runningTestSession && !isConnected}
+                disabled={!!runningTestSession}
             >
                 {isConnected ? 'Disconnect from Arduino' : 'Connect to Arduino'}
             </Button>
