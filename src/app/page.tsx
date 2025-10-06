@@ -1,6 +1,6 @@
-
 'use client';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -54,8 +54,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
-import { useFirebase, useUser, useMemoFirebase, initiateAnonymousSignIn, addDocumentNonBlocking, useCollection } from '@/firebase';
-
+import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection } from '@/firebase';
 import { collection } from 'firebase/firestore';
 
 
@@ -104,6 +103,7 @@ export default function Home() {
   const { toast } = useToast();
   const { firestore, auth } = useFirebase();
   const { user, isUserLoading } = useUser();
+  const router = useRouter();
 
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
@@ -111,6 +111,12 @@ export default function Home() {
   const importFileRef = useRef<HTMLInputElement>(null);
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  useEffect(() => {
+    if (!isUserLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, isUserLoading, router]);
 
   const sensorDataCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -131,7 +137,7 @@ export default function Home() {
     setCurrentValue(newDataPoint.value);
     if (user && !isUserLoading && sensorDataCollectionRef) {
       addDocumentNonBlocking(sensorDataCollectionRef, newDataPoint);
-    } else {
+    } else if (!user) { // Only update local log if not logged in
       setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
     }
   }, [user, isUserLoading, sensorDataCollectionRef]);
@@ -621,11 +627,19 @@ export default function Home() {
     return 'Mit Arduino verbinden';
   }
   
-  const handleLogin = () => {
-      if (auth) {
-        initiateAnonymousSignIn(auth);
-        toast({ title: 'Anonymer Login wird versucht...'})
-      }
+  const handleSignOut = () => {
+    if (auth) {
+      auth.signOut();
+      toast({ title: 'Erfolgreich abgemeldet.' });
+    }
+  }
+
+  if (isUserLoading || (!user && !isUserLoading)) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
+        <p className="text-lg">Loading authentication...</p>
+      </div>
+    );
   }
 
   const renderLiveTab = () => (
@@ -703,7 +717,7 @@ export default function Home() {
         <CardHeader>
             <CardTitle>Cloud-Synchronisation</CardTitle>
             <CardDescription>
-                Melden Sie sich an, um Daten in der Cloud zu speichern und live zu teilen.
+                Sie sind angemeldet. Ihre Daten werden in der Cloud gespeichert.
             </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 text-center">
@@ -711,13 +725,10 @@ export default function Home() {
                 <p>Authentifizierung wird geladen...</p>
             ) : user ? (
                 <div className='space-y-2'>
-                    <p>Angemeldet als: <span className='font-mono text-sm break-all'>{user.uid}</span></p>
-                    <p className='text-sm text-muted-foreground'>(Anonymer Benutzer)</p>
-                    <Button onClick={() => auth.signOut()} variant="secondary">Abmelden</Button>
+                    <p>Angemeldet als: <span className='font-mono text-sm break-all'>{user.email}</span></p>
+                    <Button onClick={handleSignOut} variant="secondary">Abmelden</Button>
                 </div>
-            ) : (
-                <Button onClick={handleLogin}>Anonym Anmelden</Button>
-            )}
+            ) : null}
         </CardContent>
       </Card>
   );
@@ -802,7 +813,7 @@ export default function Home() {
                       borderColor: 'hsl(var(--border))',
                       backdropFilter: 'blur(4px)',
                     }}
-                    formatter={(value: number, name: string) => [`${Number(value).toFixed(displayDecimals)} ${sensorConfig.unit}`, name]}
+                    formatter={(value: number) => [`${Number(value).toFixed(displayDecimals)} ${sensorConfig.unit}`]}
                   />
                   <Legend />
                   <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" fill="url(#colorValue)" name="Sensorwert" dot={false} strokeWidth={2} />
@@ -977,5 +988,3 @@ export default function Home() {
     </div>
   );
 }
-
-    
