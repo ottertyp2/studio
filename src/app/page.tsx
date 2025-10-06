@@ -55,13 +55,11 @@ type SensorConfig = {
     arduinoVoltage: number;
 };
 
-type ChartDataPoint = {
-    name: string;
-    value: number;
-};
+type ConnectionState = 'DISCONNECTED' | 'CONNECTED' | 'DEMO';
+
 
 export default function Home() {
-  const [isConnected, setIsConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<ConnectionState>('DISCONNECTED');
   const [isMeasuring, setIsMeasuring] = useState(false);
   const [dataLog, setDataLog] = useState<SensorData[]>([]);
   const [currentValue, setCurrentValue] = useState<number | null>(null);
@@ -87,6 +85,7 @@ export default function Home() {
   const readerRef = useRef<any>(null);
   const readLoopActiveRef = useRef<boolean>(false);
   const importFileRef = useRef<HTMLInputElement>(null);
+  const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const convertRawValue = useCallback((rawValue: number) => {
     if (rawValue === null || rawValue === undefined) return rawValue;
@@ -101,9 +100,9 @@ export default function Home() {
         return rawValue;
     }
   }, [sensorConfig]);
-
+  
   const sendSerialCommand = useCallback(async (command: 's' | 'p') => {
-    if (!portRef.current?.writable) return;
+    if (connectionState !== 'CONNECTED' || !portRef.current?.writable) return;
     const writer = portRef.current.writable.getWriter();
     try {
       const encoder = new TextEncoder();
@@ -118,24 +117,45 @@ export default function Home() {
     } finally {
       writer.releaseLock();
     }
+  }, [toast, connectionState]);
+
+  const stopDemoMode = useCallback(() => {
+    if (demoIntervalRef.current) {
+        clearInterval(demoIntervalRef.current);
+        demoIntervalRef.current = null;
+    }
+    setConnectionState('DISCONNECTED');
+    setIsMeasuring(false);
+    toast({
+        title: 'Demo beendet',
+        description: 'Die Datensimulation wurde gestoppt.',
+    });
   }, [toast]);
 
+
   const handleDisconnect = useCallback(async () => {
+    if (connectionState === 'DEMO') {
+        stopDemoMode();
+        return;
+    }
+
     if (!portRef.current) return;
-    readLoopActiveRef.current = false; 
+
+    readLoopActiveRef.current = false;
     
+    if (isMeasuring) {
+      await sendSerialCommand('p');
+    }
+
     try {
-      if (isMeasuring) {
-        await sendSerialCommand('p');
-        setIsMeasuring(false);
-      }
       if (readerRef.current) {
         await readerRef.current.cancel();
       }
       
       await portRef.current.close();
       portRef.current = null;
-      setIsConnected(false);
+      setConnectionState('DISCONNECTED');
+      setIsMeasuring(false);
       toast({
         title: 'Getrennt',
         description: 'Die Verbindung zum Arduino wurde getrennt.',
@@ -148,7 +168,7 @@ export default function Home() {
         description: (error as Error).message,
       });
     }
-  }, [isMeasuring, toast, sendSerialCommand]);
+  }, [isMeasuring, toast, sendSerialCommand, connectionState, stopDemoMode]);
 
   const readFromSerial = useCallback(async () => {
     if (!portRef.current?.readable || readLoopActiveRef.current) return;
@@ -156,7 +176,7 @@ export default function Home() {
     readLoopActiveRef.current = true;
     const textDecoder = new TextDecoderStream();
     try {
-        const readableStreamClosed = portRef.current.readable.pipeTo(textDecoder.writable);
+        portRef.current.readable.pipeTo(textDecoder.writable);
         readerRef.current = textDecoder.readable.getReader();
     } catch(e) {
         console.error("Error setting up reader", e);
@@ -169,12 +189,11 @@ export default function Home() {
     while (true) {
         try {
             const { value, done } = await readerRef.current.read();
-            if (done) {
+            if (done || !readLoopActiveRef.current) {
+                readerRef.current.releaseLock();
                 break;
             }
-            if (!readLoopActiveRef.current) {
-                break;
-            }
+           
             partialLine += value;
             let lines = partialLine.split('\n');
             partialLine = lines.pop() || '';
@@ -193,8 +212,8 @@ export default function Home() {
             });
         } catch (error) {
             console.error('Fehler beim Lesen der Daten:', error);
-            if (!portRef.current?.readable) {
-                toast({
+            if (readLoopActiveRef.current && !portRef.current?.readable) {
+                 toast({
                     variant: 'destructive',
                     title: 'Verbindung verloren',
                     description: 'Die Verbindung zum Gerät wurde unterbrochen.',
@@ -205,57 +224,101 @@ export default function Home() {
         }
     }
     readLoopActiveRef.current = false;
-    if (readerRef.current) {
-        try {
-            readerRef.current.releaseLock();
-        } catch (e) {
-            // Ignore error, reader is already released
-        }
-    }
   }, [toast, handleDisconnect]);
 
 
   const handleConnect = async () => {
-    if (isConnected) {
-      await handleDisconnect();
-    } else {
-      try {
-        if ('serial' in navigator) {
-          const port = await (navigator.serial as any).requestPort();
-          portRef.current = port;
-          await port.open({ baudRate: 9600 });
-          setIsConnected(true);
-          toast({
-            title: 'Verbunden',
-            description: 'Erfolgreich mit dem Arduino verbunden.',
-          });
-          
-          await sendSerialCommand('s');
-          setIsMeasuring(true);
-          readFromSerial();
+    if (connectionState !== 'DISCONNECTED') {
+        await handleDisconnect();
+        return;
+    }
+    
+    try {
+      if ('serial' in navigator) {
+        const port = await (navigator.serial as any).requestPort();
+        portRef.current = port;
+        await port.open({ baudRate: 9600 });
+        setConnectionState('CONNECTED');
+        
+        await sendSerialCommand('s');
+        setIsMeasuring(true);
+        readFromSerial();
 
-        } else {
-          toast({
-            variant: 'destructive',
-            title: 'Fehler',
-            description:
-              'Web Serial API wird von diesem Browser nicht unterstützt.',
-          });
-        }
-      } catch (error) {
-        console.error('Fehler beim Verbinden:', error);
+        toast({
+          title: 'Verbunden',
+          description: 'Erfolgreich mit dem Arduino verbunden. Daten werden empfangen.',
+        });
+      } else {
         toast({
           variant: 'destructive',
-          title: 'Verbindung fehlgeschlagen',
-          description:
-            (error as Error).message ||
-            'Es konnte keine Verbindung hergestellt werden.',
+          title: 'Fehler',
+          description: 'Web Serial API wird von diesem Browser nicht unterstützt.',
+        });
+      }
+    } catch (error) {
+      console.error('Fehler beim Verbinden:', error);
+      if ((error as Error).name !== 'NotFoundError') {
+        toast({
+            variant: 'destructive',
+            title: 'Verbindung fehlgeschlagen',
+            description: (error as Error).message || 'Es konnte keine Verbindung hergestellt werden.',
         });
       }
     }
   };
 
+  const handleStartDemo = () => {
+    if (connectionState !== 'DISCONNECTED') {
+        handleDisconnect();
+        return;
+    }
+    setConnectionState('DEMO');
+    setIsMeasuring(true);
+    setDataLog([]);
+    setCurrentValue(null);
+
+    let trend = 1000;
+    let direction = -1;
+
+    demoIntervalRef.current = setInterval(() => {
+        const change = Math.random() * 5 + 1;
+        trend += change * direction;
+        if (trend <= 150) direction = 1;
+        if (trend >= 1020) direction = -1;
+
+        const noise = (Math.random() - 0.5) * 10;
+        const value = Math.round(Math.max(0, Math.min(1023, trend + noise)));
+
+        const newDataPoint = {
+            timestamp: new Date().toISOString(),
+            value: value,
+        };
+        setCurrentValue(value);
+        setDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
+    }, 500);
+
+    toast({
+        title: 'Demo gestartet',
+        description: 'Simulierte Sensordaten werden generiert.',
+    });
+  };
+
   const handleToggleMeasurement = async () => {
+    if (connectionState === 'DEMO') {
+        if(isMeasuring) {
+            if (demoIntervalRef.current) clearInterval(demoIntervalRef.current);
+            setIsMeasuring(false);
+            toast({ title: 'Demo pausiert'});
+        } else {
+            handleStartDemo();
+            setConnectionState('DEMO');
+            setIsMeasuring(true);
+        }
+        return;
+    }
+
+    if (connectionState !== 'CONNECTED') return;
+
     const newIsMeasuring = !isMeasuring;
     await sendSerialCommand(newIsMeasuring ? 's' : 'p');
     setIsMeasuring(newIsMeasuring);
@@ -348,7 +411,6 @@ export default function Home() {
           newConfig.unit = 'V';
           break;
         case 'CUSTOM':
-          // Keep the last custom unit or default to something
           newConfig.unit = tempSensorConfig.unit !== 'RAW' && tempSensorConfig.unit !== 'V' ? tempSensorConfig.unit : 'bar';
           break;
       }
@@ -399,7 +461,10 @@ export default function Home() {
           return;
         }
 
-        if (!results.data.length || !('timestamp' in results.data[0]) || !('value' in results.data[0])) {
+        const hasTimestamp = results.meta.fields?.includes('timestamp');
+        const hasValue = results.meta.fields?.includes('value');
+
+        if (!results.data.length || !hasTimestamp || !hasValue) {
             toast({ variant: 'destructive', title: 'Importfehler', description: 'Die CSV-Datei muss die Spalten "timestamp" und "value" enthalten.' });
             return;
         }
@@ -420,7 +485,6 @@ export default function Home() {
         toast({ title: 'Daten erfolgreich importiert', description: `${importedData.length} Datenpunkte geladen.` });
       }
     });
-    // Reset file input
     if(importFileRef.current) {
         importFileRef.current.value = '';
     }
@@ -443,6 +507,12 @@ export default function Home() {
   const displayValue = currentValue !== null ? convertRawValue(currentValue) : null;
   const displayDecimals = sensorConfig.mode === 'RAW' ? 0 : 2;
 
+  const getButtonText = () => {
+    if (connectionState === 'CONNECTED') return 'Trennen';
+    if (connectionState === 'DEMO') return 'Demo beenden';
+    return 'Mit Arduino verbinden';
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
       <header className="w-full max-w-7xl mx-auto mb-6">
@@ -452,14 +522,19 @@ export default function Home() {
               BioThrust Live Dashboard
             </CardTitle>
             <CardDescription className="text-center">
-              Verbinden Sie Ihren Arduino oder sehen Sie sich die Cloud-Daten an.
+              Verbinden Sie Ihren Arduino, starten Sie den Demo-Modus oder sehen Sie sich die Cloud-Daten an.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center justify-center gap-4">
             <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
-              {isConnected ? 'Trennen' : 'Mit Arduino verbinden'}
+              {getButtonText()}
             </Button>
-            {isConnected && (
+            {connectionState === 'DISCONNECTED' && (
+                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1">
+                    Demo starten
+                </Button>
+            )}
+            {connectionState !== 'DISCONNECTED' && (
               <Button
                 variant={isMeasuring ? 'destructive' : 'secondary'}
                 onClick={handleToggleMeasurement}
