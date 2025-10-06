@@ -48,3 +48,9 @@ export * from './non-blocking-updates';
 export * from './non-blocking-login';
 export * from './errors';
 export * from './error-emitter';
+export {
+  setDoc as setDocument,
+  addDoc as addDocument,
+  updateDoc as updateDocument,
+  deleteDoc as deleteDocument,
+} from 'firebase/firestore';

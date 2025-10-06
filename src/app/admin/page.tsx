@@ -41,7 +41,7 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Home } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc } from '@/firebase';
+import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where } from 'firebase/firestore';
 
 
@@ -66,7 +66,7 @@ type TestSession = {
     id: string;
     productIdentifier: string;
     serialNumber: string;
-    model: string;
+model: string;
     description: string;
     startTime: string;
     endTime?: string;
@@ -328,39 +328,49 @@ export default function AdminPage() {
       toast({title: 'Test Session Ended'});
   };
   
-    const handleDeleteTestSession = async (session: TestSession) => {
+  const handleDeleteTestSession = async (session: TestSession) => {
     if (!firestore || !viewingUserId) return;
 
-    const batch = writeBatch(firestore);
-
-    // 1. Delete the session document
-    const sessionRef = doc(firestore, `users/${viewingUserId}/test_sessions`, session.id);
-    batch.delete(sessionRef);
-
-    // 2. Query and delete all associated sensor data
+    // 1. Query and delete all associated sensor data
     const sensorDataRef = collection(firestore, `users/${viewingUserId}/sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
     const q = query(sensorDataRef, where("testSessionId", "==", session.id));
-    
-    try {
-        const querySnapshot = await getDocs(q);
+
+    getDocs(q).then(querySnapshot => {
+        const batch = writeBatch(firestore);
+
+        // Delete associated sensor data
         querySnapshot.forEach(doc => {
             batch.delete(doc.ref);
         });
 
-        await batch.commit();
-        toast({
-            title: 'Session Deleted',
-            description: `Session for "${session.productIdentifier}" and its ${querySnapshot.size} data points have been deleted.`
+        // Delete the session document itself
+        const sessionRef = doc(firestore, `users/${viewingUserId}/test_sessions`, session.id);
+        batch.delete(sessionRef);
+
+        // Commit the batch
+        batch.commit()
+            .then(() => {
+                toast({
+                    title: 'Session Deleted',
+                    description: `Session for "${session.productIdentifier}" and its ${querySnapshot.size} data points have been deleted.`
+                });
+            })
+            .catch(serverError => {
+                const permissionError = new FirestorePermissionError({
+                    path: `users/${viewingUserId}/test_sessions/${session.id}`,
+                    operation: 'delete',
+                });
+                errorEmitter.emit('permission-error', permissionError);
+            });
+
+    }).catch(serverError => {
+        // This catch block handles errors from the getDocs() call (the 'list' operation)
+        const permissionError = new FirestorePermissionError({
+            path: `users/${viewingUserId}/sensor_configurations/${session.sensorConfigurationId}/sensor_data`,
+            operation: 'list',
         });
-        
-    } catch (error) {
-        console.error("Error deleting session and its data:", error);
-        toast({
-            variant: 'destructive',
-            title: 'Deletion Failed',
-            description: 'Could not delete the session and its associated data.'
-        });
-    }
+        errorEmitter.emit('permission-error', permissionError);
+    });
   };
 
   const viewUserTests = (userId: string) => {
@@ -694,5 +704,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-    
