@@ -73,9 +73,8 @@ export default function Home() {
             description: 'Erfolgreich mit dem Arduino verbunden.',
           });
           
-          // Automatically start measurement on connect
-          setIsMeasuring(true);
           await sendSerialCommand('s');
+          setIsMeasuring(true);
           readFromSerial();
 
         } else {
@@ -273,14 +272,14 @@ export default function Home() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center justify-center gap-4">
-            <Button onClick={handleConnect} className="bg-gradient-to-r from-sky-500 to-sky-600 text-white shadow-md transition-transform transform hover:scale-105">
+            <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
               {isConnected ? 'Trennen' : 'Mit Arduino verbinden'}
             </Button>
             {isConnected && (
               <Button
-                variant={isMeasuring ? 'destructive' : 'default'}
+                variant={isMeasuring ? 'destructive' : 'secondary'}
                 onClick={handleToggleMeasurement}
-                className="shadow-md transition-transform transform hover:scale-105"
+                className="btn-shine shadow-md transition-transform transform hover:-translate-y-1"
               >
                 {isMeasuring ? 'Messung stoppen' : 'Messung starten'}
               </Button>
@@ -308,7 +307,7 @@ export default function Home() {
           <CardHeader>
             <div className="flex justify-between items-center">
               <CardTitle>Live-Diagramm (RAW)</CardTitle>
-              <Button variant="outline" size="sm" className="transition-transform transform hover:scale-105">
+              <Button variant="outline" size="sm" className="transition-transform transform hover:-translate-y-0.5">
                 Zoom zurücksetzen
               </Button>
             </div>
@@ -320,6 +319,12 @@ export default function Home() {
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData}>
+                  <defs>
+                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="hsl(var(--chart-1))" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                   <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" />
                   <YAxis stroke="hsl(var(--muted-foreground))" />
@@ -331,7 +336,7 @@ export default function Home() {
                     }}
                   />
                   <Legend />
-                  <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name="Sensorwert" dot={false} strokeWidth={2} />
+                  <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" fill="url(#colorValue)" name="Sensorwert" dot={false} strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -346,7 +351,7 @@ export default function Home() {
                   <CardTitle className="text-lg">Aktueller Wert</CardTitle>
                 </CardHeader>
                 <CardContent className="flex flex-col items-center">
-                  <p className="text-5xl font-bold text-primary">{currentValue ?? '-'}</p>
+                  <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">{currentValue ?? '-'}</p>
                   <p className="text-lg text-muted-foreground">RAW</p>
                 </CardContent>
               </Card>
@@ -455,10 +460,10 @@ export default function Home() {
                   />
                 </div>
                 <div className="flex gap-4 justify-center">
-                  <Button onClick={handleAnalysis} disabled={isAnalyzing} className="bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-md transition-transform transform hover:scale-105">
+                  <Button onClick={handleAnalysis} disabled={isAnalyzing} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
                       {isAnalyzing ? 'Analysiere...' : 'Druckverlauf analysieren'}
                     </Button>
-                    <Button variant="destructive" className="shadow-md transition-transform transform hover:scale-105">Datenbank löschen</Button>
+                    <Button variant="destructive" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1">Datenbank löschen</Button>
                 </div>
                 <div className="text-center text-muted-foreground pt-4">
                     {analysisResult ? (

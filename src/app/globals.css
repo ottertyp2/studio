@@ -14,21 +14,21 @@ body {
     --card-foreground: 224 71% 4%;
     --popover: 0 0% 100%;
     --popover-foreground: 224 71% 4%;
-    --primary: 198 100% 48%; /* Sky Blue */
+    --primary: 210 100% 56%; /* Brighter Blue */
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222 47% 11.2%;
     --muted: 210 40% 96.1%;
     --muted-foreground: 215 20% 65.1%;
-    --accent: 170 87% 55%; /* Teal */
-    --accent-foreground: 222 47% 11.2%;
+    --accent: 260 100% 65%; /* Vibrant Purple/Blue */
+    --accent-foreground: 210 40% 98%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 198 100% 48%;
-    --chart-1: 198 100% 48%; /* Sky Blue */
-    --chart-2: 170 87% 55%; /* Teal */
+    --ring: 210 100% 56%;
+    --chart-1: 210 100% 56%; /* Brighter Blue */
+    --chart-2: 260 100% 65%; /* Vibrant Purple/Blue */
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
@@ -42,21 +42,21 @@ body {
     --card-foreground: 210 40% 98%;
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
-    --primary: 198 100% 48%;
+    --primary: 210 100% 56%;
     --primary-foreground: 210 40% 98%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%;
-    --accent: 170 87% 55%;
+    --accent: 260 100% 65%;
     --accent-foreground: 210 40% 98%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 198 100% 48%;
-    --chart-1: 198 100% 48%;
-    --chart-2: 170 87% 55%;
+    --ring: 210 100% 56%;
+    --chart-1: 210 100% 56%;
+    --chart-2: 260 100% 65%;
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
@@ -69,5 +69,20 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .btn-shine {
+    @apply relative overflow-hidden;
+  }
+  .btn-shine::after {
+    content: '';
+    @apply absolute top-0 -left-[150%] w-[100%] h-full;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+    transition: left 0.6s ease;
+  }
+  .btn-shine:hover::after {
+    @apply left-[150%];
   }
 }
