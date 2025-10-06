@@ -51,7 +51,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Cog } from 'lucide-react';
+import { Cog, X as XIcon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
@@ -104,9 +104,8 @@ function TestingComponent() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
-  const [activeTestSessionId, setActiveTestSessionId] = useState<string | null>(preselectedSessionId);
+  const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>(preselectedSessionId ? [preselectedSessionId] : []);
   const [tempTestSession, setTempTestSession] = useState<Partial<TestSession> | null>(null);
-
 
   const [chartInterval, setChartInterval] = useState<string>("60");
   const [chartKey, setChartKey] = useState<number>(Date.now());
@@ -127,7 +126,7 @@ function TestingComponent() {
   
   const startThresholdRef = useRef<HTMLInputElement>(null);
   const endThresholdRef = useRef<HTMLInputElement>(null);
-
+  
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
     return collection(firestore, `sensor_configurations`);
@@ -144,14 +143,14 @@ function TestingComponent() {
   
   const stateRef = useRef({
       firestore,
-      activeTestSessionId,
+      selectedSessionIds,
       activeSensorConfigId,
       testSessions: [] as TestSession[]
   });
 
   useEffect(() => {
-    stateRef.current = { firestore, activeTestSessionId, activeSensorConfigId, testSessions: testSessions || [] };
-  }, [firestore, activeTestSessionId, activeSensorConfigId, testSessions]);
+    stateRef.current = { firestore, selectedSessionIds, activeSensorConfigId, testSessions: testSessions || [] };
+  }, [firestore, selectedSessionIds, activeSensorConfigId, testSessions]);
 
 
   const runningTestSession = useMemo(() => {
@@ -159,18 +158,18 @@ function TestingComponent() {
   }, [testSessions]);
   
   const activeTestSession = useMemo(() => {
-    if (!activeTestSessionId) return null;
-    return testSessions?.find(s => s.id === activeTestSessionId) ?? null;
-  }, [testSessions, activeTestSessionId]);
+    if (selectedSessionIds.length !== 1) return null;
+    return testSessions?.find(s => s.id === selectedSessionIds[0]) ?? null;
+  }, [testSessions, selectedSessionIds]);
   
   useEffect(() => {
-    if (runningTestSession && activeTestSessionId !== runningTestSession.id) {
-        setActiveTestSessionId(runningTestSession.id);
+    if (runningTestSession && !selectedSessionIds.includes(runningTestSession.id)) {
+        setSelectedSessionIds([runningTestSession.id]);
         if (runningTestSession.sensorConfigurationId) {
             setActiveSensorConfigId(runningTestSession.sensorConfigurationId);
         }
     }
-  }, [runningTestSession, activeTestSessionId]);
+  }, [runningTestSession, selectedSessionIds]);
 
 
   const sensorConfig: SensorConfig = useMemo(() => {
@@ -195,14 +194,16 @@ function TestingComponent() {
     
     let q = query(collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`));
 
-    if (activeTestSessionId) {
-        q = query(q, where('testSessionId', '==', activeTestSessionId));
+    if (selectedSessionIds.length > 0) {
+        // Firestore 'in' query is limited to 30 elements.
+        // If more sessions are needed, multiple queries would be required.
+        q = query(q, where('testSessionId', 'in', selectedSessionIds.slice(0, 30)));
     } else {
         return null;
     }
     
     return q;
-  }, [firestore, sensorConfig.id, activeTestSessionId]);
+  }, [firestore, sensorConfig.id, selectedSessionIds]);
 
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
   
@@ -210,21 +211,25 @@ function TestingComponent() {
       setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
       setCurrentValue(newDataPoint.value);
       
-      const { firestore: currentFirestore, activeTestSessionId: currentSessionId, activeSensorConfigId: currentSensorConfigId } = stateRef.current;
+      const { firestore: currentFirestore, selectedSessionIds: currentSessionIds, activeSensorConfigId: currentSensorConfigId } = stateRef.current;
+      const currentSessionId = currentSessionIds.length > 0 ? currentSessionIds[0] : null;
 
       if (currentFirestore && currentSessionId && currentSensorConfigId) {
-          const sensorDataRef = collection(currentFirestore, `sensor_configurations/${currentSensorConfigId}/sensor_data`);
-          const dataToSave = {...newDataPoint, testSessionId: currentSessionId};
-          addDocumentNonBlocking(sensorDataRef, dataToSave);
+          const session = stateRef.current.testSessions.find(s => s.id === currentSessionId);
+          if (session?.status === 'RUNNING') {
+             const sensorDataRef = collection(currentFirestore, `sensor_configurations/${currentSensorConfigId}/sensor_data`);
+             const dataToSave = {...newDataPoint, testSessionId: currentSessionId};
+             addDocumentNonBlocking(sensorDataRef, dataToSave);
+          }
       }
   }, []);
 
   const dataLog = useMemo(() => {
-    const log = (firestore && activeTestSessionId) ? cloudDataLog : localDataLog;
+    const log = (firestore && selectedSessionIds.length > 0) ? cloudDataLog : localDataLog;
     if (!log) return [];
     
     return [...log].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [firestore, cloudDataLog, localDataLog, activeTestSessionId]);
+  }, [firestore, cloudDataLog, localDataLog, selectedSessionIds]);
   
   useEffect(() => {
     if (dataLog && dataLog.length > 0) {
@@ -248,6 +253,13 @@ function TestingComponent() {
     }
   }, [sensorConfig]);
   
+  const stopDemoMode = useCallback(() => {
+    if (demoIntervalRef.current) {
+        clearInterval(demoIntervalRef.current);
+        demoIntervalRef.current = null;
+    }
+  }, []);
+
   const sendSerialCommand = useCallback(async (command: 's' | 'p') => {
     if (!portRef.current?.writable) return;
     try {
@@ -261,13 +273,6 @@ function TestingComponent() {
         writerRef.current.releaseLock();
         writerRef.current = null;
       }
-    }
-  }, []);
-
-  const stopDemoMode = useCallback(() => {
-    if (demoIntervalRef.current) {
-        clearInterval(demoIntervalRef.current);
-        demoIntervalRef.current = null;
     }
   }, []);
   
@@ -285,102 +290,16 @@ function TestingComponent() {
           await sendSerialCommand('p');
       }
 
-      if (activeTestSessionId === sessionId) {
-          setActiveTestSessionId(null);
+      if (selectedSessionIds.includes(sessionId)) {
+          // If it was the only session, clear selection. Otherwise, keep others.
+          if (selectedSessionIds.length === 1) {
+            setSelectedSessionIds([]);
+          }
       }
       toast({title: 'Test Session Ended'});
-  }, [testSessionsCollectionRef, firestore, activeTestSessionId, toast, stopDemoMode, testSessions, sendSerialCommand]);
+  }, [testSessionsCollectionRef, firestore, selectedSessionIds, toast, stopDemoMode, testSessions, sendSerialCommand]);
 
-  const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', productIdentifier: string }) => {
-    const sessionDetails = tempTestSession || { productIdentifier: options.productIdentifier };
-
-    if (!sessionDetails.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
-        toast({variant: 'destructive', title: 'Error', description: 'Please provide a product identifier and select a sensor.'});
-        return null;
-    }
-
-    const {testSessions: currentTestSessions} = stateRef.current;
-
-    if (currentTestSessions?.find(s => s.status === 'RUNNING')) {
-        toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
-        return null;
-    }
-
-    const newSessionId = doc(collection(firestore, '_')).id;
-    const newSession: TestSession = {
-      id: newSessionId,
-      productIdentifier: sessionDetails.productIdentifier,
-      serialNumber: sessionDetails.serialNumber || '',
-      model: sessionDetails.model || '',
-      description: sessionDetails.description || '',
-      startTime: new Date().toISOString(),
-      status: 'RUNNING',
-      sensorConfigurationId: activeSensorConfigId,
-      measurementType: options.measurementType,
-    };
-    
-    await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
-    setActiveTestSessionId(newSessionId);
-    setTempTestSession(null);
-    toast({ title: 'New Test Session Started', description: `Product: ${newSession.productIdentifier}`});
-    return newSession;
-  }, [activeSensorConfigId, firestore, testSessionsCollectionRef, tempTestSession, toast]);
-  
-  const readFromSerial = useCallback(async () => {
-    if (!portRef.current?.readable || readingRef.current) return;
-    
-    readingRef.current = true;
-    const textDecoder = new TextDecoderStream();
-    const readableStreamClosed = portRef.current.readable.pipeTo(textDecoder.writable);
-    readerRef.current = textDecoder.readable.getReader();
-    
-    let partialLine = '';
-    
-    while (readingRef.current) {
-        try {
-            const { value, done } = await readerRef.current.read();
-            if (done) break;
-            
-            partialLine += value;
-            let lines = partialLine.split('\n');
-            partialLine = lines.pop() || '';
-            
-            lines.forEach(line => {
-                if (line.trim() === '') return;
-                const sensorValue = parseInt(line.trim());
-                if (!isNaN(sensorValue)) {
-                    const newDataPoint = {
-                        timestamp: new Date().toISOString(),
-                        value: sensorValue
-                    };
-                    handleNewDataPoint(newDataPoint);
-                }
-            });
-        } catch (error) {
-            console.error('Error reading data:', error);
-            if (!portRef.current.readable) {
-              toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
-              const { activeTestSessionId: currentSessionId } = stateRef.current;
-              if (currentSessionId) {
-                handleStopTestSession(currentSessionId);
-              }
-              handleConnect(); // This will trigger disconnect
-            }
-            break; 
-        }
-    }
-    
-    if (readerRef.current) {
-        try { await readerRef.current.cancel(); } catch {}
-        readerRef.current.releaseLock();
-        readerRef.current = null;
-    }
-    try { await readableStreamClosed.catch(() => {}); } catch {}
-    
-  }, [handleNewDataPoint, toast, handleStopTestSession]);
-
-
-  const handleConnect = useCallback(async () => {
+   const handleConnect = useCallback(async () => {
     if (portRef.current) {
         const { testSessions: currentTestSessions } = stateRef.current;
         const arduinoSession = currentTestSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
@@ -430,6 +349,96 @@ function TestingComponent() {
     }
   }, [toast, readFromSerial, sendSerialCommand, handleStopTestSession]);
 
+
+  const readFromSerial = useCallback(async () => {
+    if (!portRef.current?.readable || readingRef.current) return;
+    
+    readingRef.current = true;
+    const textDecoder = new TextDecoderStream();
+    const readableStreamClosed = portRef.current.readable.pipeTo(textDecoder.writable);
+    readerRef.current = textDecoder.readable.getReader();
+    
+    let partialLine = '';
+    
+    while (readingRef.current) {
+        try {
+            const { value, done } = await readerRef.current.read();
+            if (done) break;
+            
+            partialLine += value;
+            let lines = partialLine.split('\n');
+            partialLine = lines.pop() || '';
+            
+            lines.forEach(line => {
+                if (line.trim() === '') return;
+                const sensorValue = parseInt(line.trim());
+                if (!isNaN(sensorValue)) {
+                    const newDataPoint = {
+                        timestamp: new Date().toISOString(),
+                        value: sensorValue
+                    };
+                    handleNewDataPoint(newDataPoint);
+                }
+            });
+        } catch (error) {
+            console.error('Error reading data:', error);
+            if (!portRef.current.readable) {
+              toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
+              const { testSessions: currentTestSessions } = stateRef.current;
+              const runningArduinoSession = currentTestSessions.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
+              if (runningArduinoSession) {
+                handleStopTestSession(runningArduinoSession.id);
+              }
+              handleConnect(); 
+            }
+            break; 
+        }
+    }
+    
+    if (readerRef.current) {
+        try { await readerRef.current.cancel(); } catch {}
+        readerRef.current.releaseLock();
+        readerRef.current = null;
+    }
+    try { await readableStreamClosed.catch(() => {}); } catch {}
+    
+  }, [handleNewDataPoint, toast, handleConnect, handleStopTestSession]);
+
+  const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', productIdentifier: string }) => {
+    const sessionDetails = tempTestSession || { productIdentifier: options.productIdentifier };
+
+    if (!sessionDetails.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
+        toast({variant: 'destructive', title: 'Error', description: 'Please provide a product identifier and select a sensor.'});
+        return null;
+    }
+
+    const {testSessions: currentTestSessions} = stateRef.current;
+
+    if (currentTestSessions?.find(s => s.status === 'RUNNING')) {
+        toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
+        return null;
+    }
+
+    const newSessionId = doc(collection(firestore, '_')).id;
+    const newSession: TestSession = {
+      id: newSessionId,
+      productIdentifier: sessionDetails.productIdentifier,
+      serialNumber: sessionDetails.serialNumber || '',
+      model: sessionDetails.model || '',
+      description: sessionDetails.description || '',
+      startTime: new Date().toISOString(),
+      status: 'RUNNING',
+      sensorConfigurationId: activeSensorConfigId,
+      measurementType: options.measurementType,
+    };
+    
+    await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
+    setSelectedSessionIds([newSessionId]);
+    setTempTestSession(null);
+    toast({ title: 'New Test Session Started', description: `Product: ${newSession.productIdentifier}`});
+    return newSession;
+  }, [activeSensorConfigId, firestore, testSessionsCollectionRef, tempTestSession, toast]);
+
   const toggleMeasurement = useCallback(async () => {
     const { testSessions: currentTestSessions } = stateRef.current;
     const arduinoSession = currentTestSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
@@ -444,6 +453,7 @@ function TestingComponent() {
       }
     }
   }, [sendSerialCommand, handleStartNewTestSession, handleStopTestSession]);
+
 
   useEffect(() => {
       if (runningTestSession) {
@@ -478,6 +488,10 @@ function TestingComponent() {
 
 
   const handleStartDemo = () => {
+    if (runningTestSession) {
+        toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
+        return;
+    }
     handleStartNewTestSession({ measurementType: 'DEMO', productIdentifier: 'Demo Session' });
   };
   
@@ -505,8 +519,8 @@ function TestingComponent() {
       .reverse()
       .map(d => ({ ...d, convertedValue: convertRawValue(d.value) }));
       
-    let startIndex = chronologicalData.findIndex(d => d.convertedValue >= startThreshold);
-    let endIndex = chronologicalData.findIndex((d, i) => i > startIndex && d.convertedValue <= endThreshold);
+    let startIndex = chronologicalData.findIndex(d => (d.convertedValue as number) >= startThreshold);
+    let endIndex = chronologicalData.findIndex((d, i) => i > startIndex && (d.convertedValue as number) <= endThreshold);
 
     if (startIndex === -1 || endIndex === -1) {
         toast({
@@ -557,13 +571,11 @@ function TestingComponent() {
   }
   
   const handleClearData = async () => {
-    if (firestore && sensorConfig.id) {
+    if (firestore && sensorConfig.id && selectedSessionIds.length > 0) {
       try {
         const baseCollectionRef = collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`);
 
-        const q = activeTestSessionId 
-          ? query(baseCollectionRef, where("testSessionId", "==", activeTestSessionId))
-          : query(baseCollectionRef);
+        const q = query(baseCollectionRef, where("testSessionId", "in", selectedSessionIds));
 
         const querySnapshot = await getDocs(q);
         const batch = writeBatch(firestore);
@@ -573,7 +585,7 @@ function TestingComponent() {
         await batch.commit();
         toast({
           title: 'Cloud Data Deleted',
-          description: `All relevant sensor data for the current view has been removed from the cloud.`
+          description: `All sensor data for the selected session(s) has been removed from the cloud.`
         });
       } catch (error) {
         console.error("Error deleting cloud data:", error);
@@ -583,7 +595,7 @@ function TestingComponent() {
           description: (error as Error).message
         });
       }
-    } else {
+    } else if (selectedSessionIds.length === 0) {
         setLocalDataLog([]);
         setCurrentValue(null);
         toast({
@@ -620,7 +632,7 @@ function TestingComponent() {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `datalog_${sensorConfig.id}_${activeTestSessionId || 'local'}.csv`);
+    link.setAttribute('download', `datalog_${sensorConfig.id}_${selectedSessionIds.join('-') || 'local'}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -633,8 +645,8 @@ function TestingComponent() {
     const file = event.target.files?.[0];
     if (!file || !firestore) return;
 
-    if (!activeTestSessionId) {
-        toast({ variant: 'destructive', title: 'Import Error', description: 'Please start or select a test session before importing data.' });
+    if (selectedSessionIds.length !== 1) {
+        toast({ variant: 'destructive', title: 'Import Error', description: 'Please select a single test session before importing data.' });
         return;
     }
     
@@ -643,6 +655,7 @@ function TestingComponent() {
         return;
     }
 
+    const currentSessionId = selectedSessionIds[0];
 
     Papa.parse(file, {
       header: true,
@@ -665,12 +678,12 @@ function TestingComponent() {
         const importedData: SensorData[] = results.data.map((row: any) => ({
           timestamp: row.timestamp,
           value: parseFloat(row.raw_value),
-          testSessionId: activeTestSessionId || undefined,
+          testSessionId: currentSessionId,
         })).filter(d => d.timestamp && !isNaN(d.value));
         
         importedData.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-        if (firestore && sensorConfig.id && activeTestSessionId) {
+        if (firestore && sensorConfig.id && currentSessionId) {
           setIsSyncing(true);
           const baseCollectionRef = collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`);
           const batch = writeBatch(firestore);
@@ -686,7 +699,6 @@ function TestingComponent() {
               toast({ variant: 'destructive', title: 'Cloud Import Error', description: 'Some data could not be uploaded.' });
             })
             .finally(() => setIsSyncing(false));
-
         }
       }
     });
@@ -703,20 +715,42 @@ function TestingComponent() {
   const chartData = useMemo(() => {
     const now = new Date();
     let visibleData = [...dataLog].reverse();
+
     if (chartInterval !== 'all') {
       const intervalSeconds = parseInt(chartInterval, 10);
       visibleData = visibleData.filter(dp => (now.getTime() - new Date(dp.timestamp).getTime()) / 1000 <= intervalSeconds);
     }
+
+    if (selectedSessionIds.length > 1) {
+        const dataBySession: { [sessionId: string]: {name: string, value: number | null}[] } = {};
+        
+        selectedSessionIds.forEach(id => {
+            dataBySession[id] = [];
+        });
+
+        visibleData.forEach(d => {
+            if (d.testSessionId && dataBySession[d.testSessionId]) {
+                dataBySession[d.testSessionId].push({
+                    name: new Date(d.timestamp).toLocaleTimeString('en-US'),
+                    value: convertRawValue(d.value)
+                });
+            }
+        });
+        return dataBySession;
+    }
+
     return visibleData.map(d => ({
         name: new Date(d.timestamp).toLocaleTimeString('en-US'),
         value: convertRawValue(d.value)
     }));
-  }, [dataLog, chartInterval, convertRawValue]);
+  }, [dataLog, chartInterval, convertRawValue, selectedSessionIds]);
+
   
   const displayValue = currentValue !== null ? convertRawValue(currentValue) : null;
   const displayDecimals = sensorConfig.decimalPlaces;
   
   const isArduinoMeasurementRunning = runningTestSession?.measurementType === 'ARDUINO';
+  const chartColors = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))"];
 
 
   const renderLiveTab = () => (
@@ -764,13 +798,13 @@ function TestingComponent() {
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-center gap-4">
             <Button onClick={handleExportCSV} variant="outline" disabled={isSyncing}>Export CSV</Button>
-            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing || !activeSensorConfigId || !activeTestSessionId}>
+            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing || !activeSensorConfigId || selectedSessionIds.length !== 1}>
               {isSyncing ? 'Importing...' : 'Import CSV'}
             </Button>
             <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
              <AlertDialog>
                 <AlertDialogTrigger asChild>
-                <Button variant="destructive" className="ml-4" disabled={!activeSensorConfigId || !!runningTestSession}>Clear Data</Button>
+                <Button variant="destructive" className="ml-4" disabled={!activeSensorConfigId || !!runningTestSession || selectedSessionIds.length === 0}>Clear Data</Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                 <AlertDialogHeader>
@@ -900,7 +934,7 @@ function TestingComponent() {
         <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
           <CardHeader>
             <div className="flex justify-between items-center flex-wrap gap-4">
-              <div className='flex items-center gap-4'>
+              <div className='flex items-center gap-4 flex-wrap'>
                 <CardTitle>Data Visualization</CardTitle>
                 <div className='flex items-center gap-2'>
                     <Label htmlFor="sensorConfigSelect" className="whitespace-nowrap">Sensor:</Label>
@@ -916,18 +950,20 @@ function TestingComponent() {
                     </Select>
                 </div>
                  <div className='flex items-center gap-2'>
-                    <Label htmlFor="sessionFilter" className="whitespace-nowrap">Session:</Label>
-                    <Select value={activeTestSessionId || 'all'} onValueChange={(val) => setActiveTestSessionId(val === 'all' ? null : val)}>
+                    <Label htmlFor="sessionFilter" className="whitespace-nowrap">Session(s):</Label>
+                    <Select onValueChange={(val) => setSelectedSessionIds(prev => prev.includes(val) ? prev : [...prev, val])}>
                         <SelectTrigger id="sessionFilter" className="w-[250px] bg-white/80">
-                            <SelectValue placeholder="Select a session" />
+                            <SelectValue placeholder="Select sessions to compare..." />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="all">All Data (No Session)</SelectItem>
                             {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            testSessions?.map(s => <SelectItem key={s.id} value={s.id}>{s.productIdentifier} ({s.status})</SelectItem>)}
+                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productIdentifier} ({s.status})</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
+                 {selectedSessionIds.length > 0 && (
+                  <Button onClick={() => setSelectedSessionIds([])} variant="secondary" size="sm">Clear Selection</Button>
+                )}
               </div>
               <div className='flex items-center gap-2'>
                  <Label htmlFor="chartInterval" className="whitespace-nowrap">Time Range:</Label>
@@ -947,14 +983,27 @@ function TestingComponent() {
                 </Button>
               </div>
             </div>
-            <CardDescription>
-              Tip: Zoom with your mouse wheel and drag to pan.
-            </CardDescription>
+            {selectedSessionIds.length > 0 && (
+                <div className="pt-2 flex flex-wrap gap-2 items-center">
+                    <p className="text-sm text-muted-foreground">Comparing:</p>
+                    {selectedSessionIds.map(id => {
+                        const session = testSessions?.find(s => s.id === id);
+                        return (
+                             <div key={id} className="flex items-center gap-1 bg-muted text-muted-foreground px-2 py-1 rounded-md text-xs">
+                                <span>{session?.productIdentifier || id}</span>
+                                <button onClick={() => setSelectedSessionIds(prev => prev.filter(sid => sid !== id))} className="text-muted-foreground hover:text-foreground">
+                                    <XIcon className="h-3 w-3" />
+                                </button>
+                            </div>
+                        )
+                    })}
+                </div>
+            )}
           </CardHeader>
           <CardContent>
             <div className="h-80">
               <ResponsiveContainer key={chartKey} width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                <LineChart margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.8}/>
@@ -962,7 +1011,7 @@ function TestingComponent() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
-                  <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" />
+                  <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" allowDuplicatedCategory={false} />
                   <YAxis
                     stroke="hsl(var(--muted-foreground))"
                     domain={['dataMin', 'dataMax']}
@@ -974,10 +1023,19 @@ function TestingComponent() {
                       borderColor: 'hsl(var(--border))',
                       backdropFilter: 'blur(4px)',
                     }}
-                    formatter={(value: number) => [`${Number(value).toFixed(displayDecimals)} ${sensorConfig.unit}`]}
+                    formatter={(value: number, name: string) => [`${Number(value).toFixed(displayDecimals)} ${sensorConfig.unit}`, name]}
                   />
                   <Legend />
-                  <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" fill="url(#colorValue)" name={`${sensorConfig.name} (${sensorConfig.unit})`} dot={false} strokeWidth={2} />
+                  {Array.isArray(chartData) ? (
+                     <Line type="monotone" data={chartData} dataKey="value" stroke="hsl(var(--chart-1))" fill="url(#colorValue)" name={`${sensorConfig.name} (${sensorConfig.unit})`} dot={false} strokeWidth={2} />
+                  ) : (
+                    Object.entries(chartData).map(([sessionId, data], index) => {
+                       const session = testSessions?.find(s => s.id === sessionId);
+                       return (
+                         <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={session?.productIdentifier || sessionId} dot={false} strokeWidth={2} />
+                       )
+                    })
+                  )}
                 </LineChart>
               </ResponsiveContainer>
             </div>
