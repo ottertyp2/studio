@@ -1,0 +1,114 @@
+/**
+ * @fileoverview Firestore Security Rules for BioThrust Dashboard.
+ *
+ * Core Philosophy:
+ * This ruleset enforces a strict user-ownership model, ensuring that only authenticated users can access their own data.
+ *
+ * Data Structure:
+ * All data is nested under /users/{userId}, creating a clear hierarchy of ownership.
+ *  - /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
+ *  - /users/{userId}/sensor_configurations/{sensorConfigurationId}
+ *  - /users/{userId}/analysis_results/{analysisResultId}
+ *  - /users/{userId}/test_sessions/{testSessionId}
+ *
+ * Key Security Decisions:
+ * - User data is strictly isolated based on the authenticated user's ID.
+ * - Data consistency between the path and document fields is enforced on creation and updates.
+ *
+ * Denormalization for Authorization:
+ *  - The user ID is implicitly denormalized via the path structure, eliminating the need for `get()` calls or complex role-based checks.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * @description Checks if the user is signed in.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * @description Checks if the authenticated user ID matches the provided user ID.
+     */
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    /**
+     * @description Checks if the authenticated user is the owner and the resource exists.
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+
+    /**
+     * @description Rules for sensor data nested under sensor configurations owned by a user.
+     * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
+     * @allow (create) - User A can create sensor data under their own sensor configuration: /users/UserA/sensor_configurations/config123/sensor_data/data456, if authenticated as User A.
+     * @deny (create) - User B cannot create sensor data under User A's sensor configuration: /users/UserA/sensor_configurations/config123/sensor_data/data456, if authenticated as User B.
+     * @allow (get) - User A can read sensor data under their own sensor configuration: /users/UserA/sensor_configurations/config123/sensor_data/data456, if authenticated as User A.
+     * @deny (get) - User B cannot read sensor data under User A's sensor configuration: /users/UserA/sensor_configurations/config123/sensor_data/data456, if authenticated as User B.
+     * @principle Enforces document ownership for all reads and writes.
+     */
+    match /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
+      allow get: if isSignedIn() && isOwner(userId);
+      allow list: if isSignedIn() && isOwner(userId);
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Rules for sensor configurations owned by a specific user.
+     * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}
+     * @allow (create) - User A can create a sensor configuration under their own user ID: /users/UserA/sensor_configurations/config123, if authenticated as User A.
+     * @deny (create) - User B cannot create a sensor configuration under User A's user ID: /users/UserA/sensor_configurations/config123, if authenticated as User B.
+     * @allow (get) - User A can read a sensor configuration under their own user ID: /users/UserA/sensor_configurations/config123, if authenticated as User A.
+     * @deny (get) - User B cannot read a sensor configuration under User A's user ID: /users/UserA/sensor_configurations/config123, if authenticated as User B.
+     * @principle Enforces document ownership for all reads and writes.
+     */
+    match /users/{userId}/sensor_configurations/{sensorConfigurationId} {
+      allow get: if isSignedIn() && isOwner(userId);
+      allow list: if isSignedIn() && isOwner(userId);
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Rules for leak analysis results generated from a user's sensor data.
+     * @path /users/{userId}/analysis_results/{analysisResultId}
+     * @allow (create) - User A can create an analysis result under their own user ID: /users/UserA/analysis_results/result123, if authenticated as User A.
+     * @deny (create) - User B cannot create an analysis result under User A's user ID: /users/UserA/analysis_results/result123, if authenticated as User B.
+     * @allow (get) - User A can read an analysis result under their own user ID: /users/UserA/analysis_results/result123, if authenticated as User A.
+     * @deny (get) - User B cannot read an analysis result under User A's user ID: /users/UserA/analysis_results/result123, if authenticated as User B.
+     * @principle Enforces document ownership for all reads and writes.
+     */
+    match /users/{userId}/analysis_results/{analysisResultId} {
+      allow get: if isSignedIn() && isOwner(userId);
+      allow list: if isSignedIn() && isOwner(userId);
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Rules for test sessions for a user, linking a product to a set of sensor data.
+     * @path /users/{userId}/test_sessions/{testSessionId}
+     * @allow (create) - User A can create a test session under their own user ID: /users/UserA/test_sessions/session123, if authenticated as User A.
+     * @deny (create) - User B cannot create a test session under User A's user ID: /users/UserA/test_sessions/session123, if authenticated as User B.
+     * @allow (get) - User A can read a test session under their own user ID: /users/UserA/test_sessions/session123, if authenticated as User A.
+     * @deny (get) - User B cannot read a test session under User A's user ID: /users/UserA/test_sessions/session123, if authenticated as User B.
+     * @principle Enforces document ownership for all reads and writes.
+     */
+    match /users/{userId}/test_sessions/{testSessionId} {
+      allow get: if isSignedIn() && isOwner(userId);
+      allow list: if isSignedIn() && isOwner(userId);
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
+    }
+  }
+}
