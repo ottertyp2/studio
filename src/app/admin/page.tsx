@@ -90,7 +90,7 @@ export default function AdminPage() {
   const { user, isUserLoading } = useUser();
   const router = useRouter();
   
-  const viewingUserId = selectedUserId ?? user?.uid;
+  const viewingUserId = selectedUserId;
 
   const userProfileRef = useMemoFirebase(() => {
     if (!firestore || !user?.uid) return null;
@@ -566,7 +566,7 @@ export default function AdminPage() {
                                                       <AlertDialogHeader>
                                                           <AlertDialogTitle>Delete Configuration?</AlertDialogTitle>
                                                           <AlertDialogDescription>
-                                                          Are you sure you want to delete the configuration "{c.name}"? All associated data will be lost.
+                                                          Are you sure you want to delete the configuration "{c.name}"? This action cannot be undone.
                                                           </AlertDialogDescription>
                                                       </AlertDialogHeader>
                                                       <AlertDialogFooter>
@@ -597,3 +597,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    
