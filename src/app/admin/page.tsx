@@ -83,7 +83,6 @@ type UserProfile = {
 }
 
 export default function AdminPage() {
-  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
@@ -110,43 +109,13 @@ export default function AdminPage() {
 
   const isAdmin = userProfile?.isAdmin === true;
 
-  useEffect(() => {
-    if (!isUserLoading && !user) {
-      router.push('/login');
-    }
-     if (!isUserProfileLoading && userProfile && !userProfile.isAdmin) {
-      toast({ variant: 'destructive', title: 'Access Denied', description: 'You do not have permission to access this page.' });
-      router.push('/');
-    }
-  }, [user, isUserLoading, router, userProfile, isUserProfileLoading, toast]);
-
-
-  useEffect(() => {
-    const fetchUsers = async () => {
-      if (!firestore || !isAdmin) return;
-      try {
-        const usersCollectionRef = collection(firestore, 'users');
-        const userSnapshot = await getDocs(query(usersCollectionRef));
-        const userList = userSnapshot.docs.map(doc => ({
-          uid: doc.id,
-          email: doc.data().email || doc.id,
-          createdAt: doc.data().createdAt,
-          isAdmin: doc.data().isAdmin || false,
-        }));
-        setAllUsers(userList);
-      } catch (error) {
-         const permissionError = new FirestorePermissionError({
-            path: 'users',
-            operation: 'list',
-         });
-         errorEmitter.emit('permission-error', permissionError);
-      }
-    };
-    if(isAdmin) {
-        fetchUsers();
-    }
+  // --- Data Fetching Hooks ---
+  const allUsersCollectionRef = useMemoFirebase(() => {
+    if (!firestore || !isAdmin) return null;
+    return collection(firestore, 'users');
   }, [firestore, isAdmin]);
 
+  const { data: allUsers, isLoading: isAllUsersLoading, error: allUsersError } = useCollection<UserProfile>(allUsersCollectionRef);
 
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !viewingUserId) return null;
@@ -162,6 +131,18 @@ export default function AdminPage() {
 
   const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
   
+  // --- Effects ---
+  useEffect(() => {
+    if (!isUserLoading && !user) {
+      router.push('/login');
+    }
+     if (!isUserProfileLoading && userProfile && !userProfile.isAdmin) {
+      toast({ variant: 'destructive', title: 'Access Denied', description: 'You do not have permission to access this page.' });
+      router.push('/');
+    }
+  }, [user, isUserLoading, router, userProfile, isUserProfileLoading, toast]);
+
+
   const fetchSessionDataCounts = useCallback(async () => {
     if (!firestore || !viewingUserId || !testSessions || !sensorConfigs) return;
     
@@ -477,7 +458,7 @@ export default function AdminPage() {
         <CardHeader>
           <CardTitle>Test Sessions</CardTitle>
           <CardDescription>
-            Manage test sessions for the selected user: {allUsers.find(u => u.uid === selectedUserId)?.email || 'N/A'}
+            Manage test sessions for the selected user: {allUsers?.find(u => u.id === selectedUserId)?.email || 'N/A'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -627,29 +608,38 @@ export default function AdminPage() {
                 </CardDescription>
             </CardHeader>
             <CardContent>
-                <ScrollArea className="h-72">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Email</TableHead>
-                                <TableHead>Role</TableHead>
-                                <TableHead className="text-right">Actions</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {allUsers.map(u => (
-                                <TableRow key={u.uid} className={u.uid === selectedUserId ? "bg-accent/50" : ""}>
-                                    <TableCell>{u.email}</TableCell>
-                                    <TableCell>{u.isAdmin ? 'Admin' : 'User'}</TableCell>
-                                    <TableCell className="text-right">
-                                        <Button variant="outline" size="sm" onClick={() => setSelectedUserId(u.uid)}>Manage Data</Button>
-                                        <Button variant="ghost" size="sm" className="ml-2" onClick={() => viewUserTests(u.uid)}>View Tests</Button>
-                                    </TableCell>
+                 {isAllUsersLoading && <p>Loading users...</p>}
+                 {allUsersError && (
+                    <div className="text-destructive">
+                        <p>Error loading users:</p>
+                        <p className="text-sm">Could not retrieve the user list. This is likely a permissions issue. Please ensure the Firestore Security Rules allow admins to list users.</p>
+                    </div>
+                )}
+                {!isAllUsersLoading && !allUsersError && allUsers && (
+                    <ScrollArea className="h-72">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Email</TableHead>
+                                    <TableHead>Role</TableHead>
+                                    <TableHead className="text-right">Actions</TableHead>
                                 </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </ScrollArea>
+                            </TableHeader>
+                            <TableBody>
+                                {allUsers.map(u => (
+                                    <TableRow key={u.id} className={u.id === selectedUserId ? "bg-accent/50" : ""}>
+                                        <TableCell>{u.email}</TableCell>
+                                        <TableCell>{u.isAdmin ? 'Admin' : 'User'}</TableCell>
+                                        <TableCell className="text-right">
+                                            <Button variant="outline" size="sm" onClick={() => setSelectedUserId(u.id)}>Manage Data</Button>
+                                            <Button variant="ghost" size="sm" className="ml-2" onClick={() => viewUserTests(u.id)}>View Tests</Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </ScrollArea>
+                )}
             </CardContent>
         </Card>
         
@@ -660,7 +650,7 @@ export default function AdminPage() {
                       <CardHeader>
                           <CardTitle>Sensor Management</CardTitle>
                           <CardDescription>
-                              Manage sensor configurations for {allUsers.find(u => u.uid === selectedUserId)?.email || 'the selected user'}.
+                              Manage sensor configurations for {allUsers?.find(u => u.id === selectedUserId)?.email || 'the selected user'}.
                           </CardDescription>
                       </CardHeader>
                       <CardContent>
@@ -718,3 +708,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    
