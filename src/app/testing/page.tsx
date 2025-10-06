@@ -127,16 +127,9 @@ function TestingComponent() {
   const startThresholdRef = useRef<HTMLInputElement>(null);
   const endThresholdRef = useRef<HTMLInputElement>(null);
   
-  const sensorConfigsCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
-    return collection(firestore, `sensor_configurations`);
-  }, [firestore]);
-
-  const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
-
   const testSessionsCollectionRef = useMemoFirebase(() => {
-      if (!firestore) return null;
-      return collection(firestore, `test_sessions`);
+    if (!firestore) return null;
+    return collection(firestore, `test_sessions`);
   }, [firestore]);
   
   const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
@@ -145,13 +138,19 @@ function TestingComponent() {
       firestore,
       selectedSessionIds,
       activeSensorConfigId,
-      testSessions: [] as TestSession[]
+      testSessions: testSessions || [] as TestSession[]
   });
 
   useEffect(() => {
     stateRef.current = { firestore, selectedSessionIds, activeSensorConfigId, testSessions: testSessions || [] };
   }, [firestore, selectedSessionIds, activeSensorConfigId, testSessions]);
 
+  const sensorConfigsCollectionRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, `sensor_configurations`);
+  }, [firestore]);
+
+  const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
 
   const runningTestSession = useMemo(() => {
     return testSessions?.find(s => s.status === 'RUNNING');
@@ -195,8 +194,6 @@ function TestingComponent() {
     let q = query(collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`));
 
     if (selectedSessionIds.length > 0) {
-        // Firestore 'in' query is limited to 30 elements.
-        // If more sessions are needed, multiple queries would be required.
         q = query(q, where('testSessionId', 'in', selectedSessionIds.slice(0, 30)));
     } else {
         return null;
@@ -211,16 +208,14 @@ function TestingComponent() {
       setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
       setCurrentValue(newDataPoint.value);
       
-      const { firestore: currentFirestore, selectedSessionIds: currentSessionIds, activeSensorConfigId: currentSensorConfigId } = stateRef.current;
-      const currentSessionId = currentSessionIds.length > 0 ? currentSessionIds[0] : null;
+      const { firestore: currentFirestore, activeSensorConfigId: currentSensorConfigId } = stateRef.current;
+      const currentRunningSession = stateRef.current.testSessions.find(s => s.status === 'RUNNING');
 
-      if (currentFirestore && currentSessionId && currentSensorConfigId) {
-          const session = stateRef.current.testSessions.find(s => s.id === currentSessionId);
-          if (session?.status === 'RUNNING') {
-             const sensorDataRef = collection(currentFirestore, `sensor_configurations/${currentSensorConfigId}/sensor_data`);
-             const dataToSave = {...newDataPoint, testSessionId: currentSessionId};
-             addDocumentNonBlocking(sensorDataRef, dataToSave);
-          }
+
+      if (currentFirestore && currentRunningSession?.id && currentSensorConfigId) {
+          const sensorDataRef = collection(currentFirestore, `sensor_configurations/${currentSensorConfigId}/sensor_data`);
+          const dataToSave = {...newDataPoint, testSessionId: currentRunningSession.id};
+          addDocumentNonBlocking(sensorDataRef, dataToSave);
       }
   }, []);
 
@@ -291,13 +286,69 @@ function TestingComponent() {
       }
 
       if (selectedSessionIds.includes(sessionId)) {
-          // If it was the only session, clear selection. Otherwise, keep others.
           if (selectedSessionIds.length === 1) {
             setSelectedSessionIds([]);
           }
       }
       toast({title: 'Test Session Ended'});
   }, [testSessionsCollectionRef, firestore, selectedSessionIds, toast, stopDemoMode, testSessions, sendSerialCommand]);
+
+  const readFromSerial = useCallback(async () => {
+    if (!portRef.current?.readable || readingRef.current) return;
+    
+    readingRef.current = true;
+    const textDecoder = new TextDecoderStream();
+    const readableStreamClosed = portRef.current.readable.pipeTo(textDecoder.writable);
+    readerRef.current = textDecoder.readable.getReader();
+    
+    let partialLine = '';
+    
+    while (readingRef.current) {
+        try {
+            const { value, done } = await readerRef.current.read();
+            if (done) break;
+            
+            partialLine += value;
+            let lines = partialLine.split('\n');
+            partialLine = lines.pop() || '';
+            
+            lines.forEach(line => {
+                if (line.trim() === '') return;
+                const sensorValue = parseInt(line.trim());
+                if (!isNaN(sensorValue)) {
+                    const newDataPoint = {
+                        timestamp: new Date().toISOString(),
+                        value: sensorValue
+                    };
+                    handleNewDataPoint(newDataPoint);
+                }
+            });
+        } catch (error) {
+            console.error('Error reading data:', error);
+            if (!portRef.current.readable) {
+              toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
+              const { testSessions: currentTestSessions } = stateRef.current;
+              const runningArduinoSession = currentTestSessions.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
+              if (runningArduinoSession) {
+                handleStopTestSession(runningArduinoSession.id);
+              }
+              // This function reference needs to be stable and defined before readFromSerial
+              // To break the circular dependency, we'll call a disconnect function instead of handleConnect
+              // For now, we assume disconnect logic is handled within handleStopTestSession and by the user re-clicking connect
+            }
+            break; 
+        }
+    }
+    
+    if (readerRef.current) {
+        try { await readerRef.current.cancel(); } catch {}
+        readerRef.current.releaseLock();
+        readerRef.current = null;
+    }
+    try { await readableStreamClosed.catch(() => {}); } catch {}
+    readingRef.current = false;
+  }, [handleNewDataPoint, toast, handleStopTestSession]);
+
 
    const handleConnect = useCallback(async () => {
     if (portRef.current) {
@@ -348,61 +399,6 @@ function TestingComponent() {
         }
     }
   }, [toast, readFromSerial, sendSerialCommand, handleStopTestSession]);
-
-
-  const readFromSerial = useCallback(async () => {
-    if (!portRef.current?.readable || readingRef.current) return;
-    
-    readingRef.current = true;
-    const textDecoder = new TextDecoderStream();
-    const readableStreamClosed = portRef.current.readable.pipeTo(textDecoder.writable);
-    readerRef.current = textDecoder.readable.getReader();
-    
-    let partialLine = '';
-    
-    while (readingRef.current) {
-        try {
-            const { value, done } = await readerRef.current.read();
-            if (done) break;
-            
-            partialLine += value;
-            let lines = partialLine.split('\n');
-            partialLine = lines.pop() || '';
-            
-            lines.forEach(line => {
-                if (line.trim() === '') return;
-                const sensorValue = parseInt(line.trim());
-                if (!isNaN(sensorValue)) {
-                    const newDataPoint = {
-                        timestamp: new Date().toISOString(),
-                        value: sensorValue
-                    };
-                    handleNewDataPoint(newDataPoint);
-                }
-            });
-        } catch (error) {
-            console.error('Error reading data:', error);
-            if (!portRef.current.readable) {
-              toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
-              const { testSessions: currentTestSessions } = stateRef.current;
-              const runningArduinoSession = currentTestSessions.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
-              if (runningArduinoSession) {
-                handleStopTestSession(runningArduinoSession.id);
-              }
-              handleConnect(); 
-            }
-            break; 
-        }
-    }
-    
-    if (readerRef.current) {
-        try { await readerRef.current.cancel(); } catch {}
-        readerRef.current.releaseLock();
-        readerRef.current = null;
-    }
-    try { await readableStreamClosed.catch(() => {}); } catch {}
-    
-  }, [handleNewDataPoint, toast, handleConnect, handleStopTestSession]);
 
   const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', productIdentifier: string }) => {
     const sessionDetails = tempTestSession || { productIdentifier: options.productIdentifier };
@@ -519,7 +515,7 @@ function TestingComponent() {
       .reverse()
       .map(d => ({ ...d, convertedValue: convertRawValue(d.value) }));
       
-    let startIndex = chronologicalData.findIndex(d => (d.convertedValue as number) >= startThreshold);
+    let startIndex = chronologicalData.findIndex(d => (d.convertedValue as number) <= startThreshold);
     let endIndex = chronologicalData.findIndex((d, i) => i > startIndex && (d.convertedValue as number) <= endThreshold);
 
     if (startIndex === -1 || endIndex === -1) {
