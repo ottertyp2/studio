@@ -78,13 +78,16 @@ export default function SignupPage() {
 
     try {
       if (!auth || !firestore) throw new Error('Auth or Firestore service not available');
-      const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
+
+      const finalUsername = values.email.includes('@') ? values.email : `${values.email}@biothrust.local`;
+
+      const userCredential = await createUserWithEmailAndPassword(auth, finalUsername, values.password);
       const user = userCredential.user;
 
       const userProfileRef = doc(firestore, 'users', user.uid);
 
       await setDoc(userProfileRef, {
-        email: user.email,
+        email: values.email, // Store the original username
         createdAt: new Date().toISOString(),
         isAdmin: values.isAdmin,
       });
@@ -105,10 +108,11 @@ export default function SignupPage() {
             errorMessage = 'The password is too weak. Please choose a stronger password.';
             break;
           case 'auth/invalid-email':
+             // This case should be rare now, but we'll keep a generic message
             errorMessage = 'The username is not valid. Please try a different one.';
             break;
           default:
-            errorMessage = error.message;
+            errorMessage = "Could not create account. Please try again.";
             break;
         }
       }

@@ -54,20 +54,24 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       if (!auth) throw new Error("Auth service not available");
-      await signInWithEmailAndPassword(auth, values.email, values.password);
+      
+      // Append dummy domain if it's not an email format
+      const finalUsername = values.email.includes('@') ? values.email : `${values.email}@biothrust.local`;
+
+      await signInWithEmailAndPassword(auth, finalUsername, values.password);
       toast({
         title: 'Login Successful',
         description: "You're now logged in.",
       });
       router.push('/');
     } catch (error) {
-      let errorMessage = 'An unexpected error occurred.';
+      let errorMessage = 'Invalid username or password.';
        if (error instanceof FirebaseError) {
         // Treat all auth errors as a generic invalid credential message.
         if (['auth/user-not-found', 'auth/wrong-password', 'auth/invalid-credential', 'auth/invalid-email'].includes(error.code)) {
             errorMessage = 'Invalid username or password.';
         } else {
-            errorMessage = error.message;
+            errorMessage = "An unexpected error occurred. Please try again.";
         }
       }
       toast({

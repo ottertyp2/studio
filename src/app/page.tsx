@@ -173,7 +173,11 @@ export default function Home() {
     if (sensorConfigs && sensorConfigs.length > 0 && !activeSensorConfigId) {
         setActiveSensorConfigId(sensorConfigs[0].id);
     }
-  }, [sensorConfigs, activeSensorConfigId]);
+     // When user changes, reset active config unless admin is viewing someone else
+    if (!selectedUserId) {
+        setActiveSensorConfigId(sensorConfigs?.[0]?.id || null);
+    }
+  }, [sensorConfigs, activeSensorConfigId, selectedUserId]);
 
   const sensorDataCollectionRef = useMemoFirebase(() => {
     if (!firestore || !viewingUserId || !activeSensorConfigId) return null;
@@ -872,7 +876,7 @@ export default function Home() {
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-center gap-4">
             <Button onClick={handleExportCSV} variant="outline" disabled={isSyncing}>Export CSV</Button>
-            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing || (isAdmin && selectedUserId !== user?.uid) || !activeSensorConfigId}>
+            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing || (isAdmin && selectedUserId !== user?.uid && !!selectedUserId) || !activeSensorConfigId}>
               {isSyncing ? 'Importiere...' : 'Import CSV'}
             </Button>
             <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
@@ -893,7 +897,7 @@ export default function Home() {
                 <p>Authentifizierung wird geladen...</p>
             ) : user ? (
                 <div className='space-y-4'>
-                    <p>Angemeldet als: <span className='font-mono text-sm break-all'>{user.email || user.uid}</span></p>
+                    <p>Angemeldet als: <span className='font-mono text-sm break-all'>{userProfile?.email || user.uid}</span></p>
                     {isAdmin && <UserSelectionMenu onUserSelected={setSelectedUserId} />}
                     <Button onClick={handleSignOut} variant="secondary">Abmelden</Button>
                     <AlertDialog>
@@ -1000,7 +1004,7 @@ export default function Home() {
         <CardContent>
           {!tempTestSession && !runningSession && (
             <div className="flex justify-center">
-              <Button onClick={() => setTempTestSession({})} disabled={!activeSensorConfigId}>
+              <Button onClick={() => setTempTestSession({})} disabled={!activeSensorConfigId || (!!selectedUserId && selectedUserId !== user?.uid)}>
                 Start New Test Session
               </Button>
             </div>
@@ -1059,7 +1063,7 @@ export default function Home() {
                             <p className="text-sm text-muted-foreground">{new Date(session.startTime).toLocaleString('de-DE')} - {session.status}</p>
                         </div>
                         {session.status === 'RUNNING' && (
-                            <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session.id)}>Stop</Button>
+                            <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session.id)} disabled={!!selectedUserId && selectedUserId !== user?.uid}>Stop</Button>
                         )}
                     </div>
                 </Card>
@@ -1323,7 +1327,7 @@ export default function Home() {
                   {isAdmin ? (
                     <>
                       <div className="flex justify-center mb-4">
-                          <Button onClick={handleNewSensorConfig}>Neue Konfiguration</Button>
+                          <Button onClick={handleNewSensorConfig} disabled={!!selectedUserId && selectedUserId !== user?.uid}>Neue Konfiguration</Button>
                       </div>
                       <ScrollArea className="h-96">
                           <div className="space-y-4">
@@ -1332,10 +1336,10 @@ export default function Home() {
                                       <div className='flex justify-between items-center'>
                                           <p className='font-semibold'>{c.name}</p>
                                           <div className='flex gap-2'>
-                                              <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Bearbeiten</Button>
+                                              <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)} disabled={!!selectedUserId && selectedUserId !== user?.uid}>Bearbeiten</Button>
                                               <AlertDialog>
                                                 <AlertDialogTrigger asChild>
-                                                  <Button size="sm" variant="destructive">Löschen</Button>
+                                                  <Button size="sm" variant="destructive" disabled={!!selectedUserId && selectedUserId !== user?.uid}>Löschen</Button>
                                                 </AlertDialogTrigger>
                                                 <AlertDialogContent>
                                                   <AlertDialogHeader>
