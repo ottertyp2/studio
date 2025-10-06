@@ -66,7 +66,7 @@ type TestSession = {
     id: string;
     productIdentifier: string;
     serialNumber: string;
-model: string;
+    model: string;
     description: string;
     startTime: string;
     endTime?: string;
@@ -123,7 +123,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     const fetchUsers = async () => {
-      if (!firestore) return;
+      if (!firestore || !isAdmin) return;
       try {
         const usersCollectionRef = collection(firestore, 'users');
         const userSnapshot = await getDocs(query(usersCollectionRef));
@@ -135,7 +135,12 @@ export default function AdminPage() {
         }));
         setAllUsers(userList);
       } catch (error) {
-        console.error("Failed to fetch users:", error);
+         console.error("Failed to fetch users:", error);
+         const permissionError = new FirestorePermissionError({
+            path: 'users',
+            operation: 'list',
+         });
+         errorEmitter.emit('permission-error', permissionError);
       }
     };
     if(isAdmin) {
@@ -164,10 +169,20 @@ export default function AdminPage() {
     const counts: Record<string, number> = {};
 
     for (const session of testSessions) {
-      const sensorDataRef = collection(firestore, `users/${viewingUserId}/sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
-      const q = query(sensorDataRef, where('testSessionId', '==', session.id));
-      const snapshot = await getDocs(q);
-      counts[session.id] = snapshot.size;
+      try {
+        const sensorDataRef = collection(firestore, `users/${viewingUserId}/sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
+        const q = query(sensorDataRef, where('testSessionId', '==', session.id));
+        const snapshot = await getDocs(q);
+        counts[session.id] = snapshot.size;
+      } catch (serverError) {
+          const permissionError = new FirestorePermissionError({
+              path: `users/${viewingUserId}/sensor_configurations/${session.sensorConfigurationId}/sensor_data`,
+              operation: 'list',
+          });
+          errorEmitter.emit('permission-error', permissionError);
+          // Stop trying to fetch more counts if one fails
+          break;
+      }
     }
     setSessionDataCounts(counts);
 
