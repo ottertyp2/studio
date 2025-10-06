@@ -739,7 +739,7 @@ function TestingComponent() {
               {getButtonText()}
             </Button>
             {connectionState === 'DISCONNECTED' && (
-                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession}>
+                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translatey-1" disabled={!!runningTestSession}>
                     Start Demo
                 </Button>
             )}
@@ -747,7 +747,7 @@ function TestingComponent() {
               <Button
                 variant={isMeasuring ? 'destructive' : 'secondary'}
                 onClick={handleToggleMeasurement}
-                className="btn-shine shadow-md transition-transform transform hover:-translate-y-1"
+                className="btn-shine shadow-md transition-transform transform hover:-translatey-1"
                 disabled={!!runningTestSession}
               >
                 {isMeasuring ? 'Stop Measurement' : 'Start Measurement'}
@@ -776,7 +776,7 @@ function TestingComponent() {
             <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
              <AlertDialog>
                 <AlertDialogTrigger asChild>
-                <Button variant="destructive" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1 ml-4" disabled={!activeSensorConfigId || !!runningTestSession}>Clear Data</Button>
+                <Button variant="destructive" className="ml-4" disabled={!activeSensorConfigId || !!runningTestSession}>Clear Data</Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                 <AlertDialogHeader>
