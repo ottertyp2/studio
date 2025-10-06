@@ -26,7 +26,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useFirebase, setDocumentNonBlocking } from '@/firebase';
 import { FirebaseError } from 'firebase/app';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDocs, collection } from 'firebase/firestore';
+import { doc, getDocs, collection, query, limit } from 'firebase/firestore';
 
 
 export default function SignupPage() {
@@ -58,8 +58,10 @@ export default function SignupPage() {
       if (!auth || !firestore) throw new Error('Auth or Firestore service not available');
 
       // Check if any users exist to determine if this is the first user
+      // We limit to 1 document for efficiency. If we get 1, we know it's not the first.
       const usersCollectionRef = collection(firestore, 'users');
-      const existingUsersSnapshot = await getDocs(usersCollectionRef);
+      const q = query(usersCollectionRef, limit(1));
+      const existingUsersSnapshot = await getDocs(q);
       const isFirstUser = existingUsersSnapshot.empty;
 
       // Append dummy domain if it's not an email format
@@ -87,21 +89,7 @@ export default function SignupPage() {
     } catch (error) {
       let errorMessage = 'An unexpected error occurred. Please try again.';
       if (error instanceof FirebaseError) {
-        switch (error.code) {
-          case 'auth/email-already-in-use':
-            errorMessage = 'This username is already taken. Please choose a different one.';
-            break;
-          case 'auth/weak-password':
-            errorMessage = 'Password is too weak. It must be at least 6 characters long.';
-            break;
-          case 'auth/invalid-email':
-            errorMessage = 'The username is not a valid email format. Please try a different one.';
-            break;
-          default:
-            // Provide the specific error message from Firebase for unhandled cases.
-            errorMessage = error.message;
-            break;
-        }
+        errorMessage = error.message; // Display the specific Firebase error message
       } else if (error instanceof Error) {
         errorMessage = error.message;
       }
