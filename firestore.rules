@@ -1,98 +1,142 @@
+/**
+ * @fileoverview Firestore Security Rules for BioThrust Dashboard.
+ *
+ * Core Philosophy:
+ * This ruleset enforces a strict user-ownership model, ensuring that only authenticated users can access their own data.
+ *
+ * Data Structure:
+ * All data is nested under /users/{userId}, creating a clear hierarchy of ownership.
+ *  - /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
+ *  - /users/{userId}/sensor_configurations/{sensorConfigurationId}
+ *  - /users/{userId}/analysis_results/{analysisResultId}
+ *  - /users/{userId}/test_sessions/{testSessionId}
+ *
+ * Key Security Decisions:
+ * - User data is strictly isolated based on the authenticated user's ID.
+ * - Only authenticated users can create, read, update, and delete data within their own user ID space.
+ * - No public listing of user data is allowed.
+ *
+ * Denormalization for Authorization:
+ *  - The data model inherently supports authorization independence through its path-based ownership structure.
+ */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Checks if the request is authenticated.
-     * @path N/A
-     * @allow N/A
-     * @deny N/A
-     * @principle Authentication check.
+     * @description Secure sensor data points associated with a specific sensor configuration owned by a user.
+     * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
+     * @allow (create) - Authenticated user creates a new sensor data point under their sensor configuration.
+     * @deny (create) - User attempts to create a sensor data point under another user's ID.
+     * @allow (get, list) - Authenticated user reads their own sensor data points.
+     * @deny (get, list) - User attempts to read sensor data points belonging to another user.
+     * @allow (update, delete) - Authenticated user updates or deletes their own sensor data points.
+     * @deny (update, delete) - User attempts to update or delete sensor data points belonging to another user.
+     * @principle Enforces document ownership for writes and restricts access to a user's own data tree.
+     */
+    match /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
+      // Allow reads: get and list
+      allow get: if isSignedIn() && isOwner(userId);
+      allow list: if isSignedIn() && isOwner(userId);
+
+      // Allow writes: create, update, delete
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isSignedIn() && isExistingOwner(userId);
+      allow delete: if isSignedIn() && isExistingOwner(userId);
+    }
+
+    /**
+     * @description Secure sensor configurations owned by a specific user.
+     * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}
+     * @allow (create) - Authenticated user creates a new sensor configuration under their ID.
+     * @deny (create) - User attempts to create a sensor configuration under another user's ID.
+     * @allow (get, list) - Authenticated user reads their own sensor configurations.
+     * @deny (get, list) - User attempts to read sensor configurations belonging to another user.
+     * @allow (update, delete) - Authenticated user updates or deletes their own sensor configurations.
+     * @deny (update, delete) - User attempts to update or delete sensor configurations belonging to another user.
+     * @principle Enforces document ownership for writes and restricts access to a user's own data tree.
+     */
+    match /users/{userId}/sensor_configurations/{sensorConfigurationId} {
+      // Allow reads: get and list
+      allow get: if isSignedIn() && isOwner(userId);
+      allow list: if isSignedIn() && isOwner(userId);
+
+      // Allow writes: create, update, delete
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isSignedIn() && isExistingOwner(userId);
+      allow delete: if isSignedIn() && isExistingOwner(userId);
+    }
+
+    /**
+     * @description Secure leak analysis results generated from a user's sensor data.
+     * @path /users/{userId}/analysis_results/{analysisResultId}
+     * @allow (create) - Authenticated user creates a new analysis result under their ID.
+     * @deny (create) - User attempts to create an analysis result under another user's ID.
+     * @allow (get, list) - Authenticated user reads their own analysis results.
+     * @deny (get, list) - User attempts to read analysis results belonging to another user.
+     * @allow (update, delete) - Authenticated user updates or deletes their own analysis results.
+     * @deny (update, delete) - User attempts to update or delete analysis results belonging to another user.
+     * @principle Enforces document ownership for writes and restricts access to a user's own data tree.
+     */
+    match /users/{userId}/analysis_results/{analysisResultId} {
+      // Allow reads: get and list
+      allow get: if isSignedIn() && isOwner(userId);
+      allow list: if isSignedIn() && isOwner(userId);
+
+      // Allow writes: create, update, delete
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isSignedIn() && isExistingOwner(userId);
+      allow delete: if isSignedIn() && isExistingOwner(userId);
+    }
+
+    /**
+     * @description Secure test sessions for a user, linking a product to a set of sensor data.
+     * @path /users/{userId}/test_sessions/{testSessionId}
+     * @allow (create) - Authenticated user creates a new test session under their ID.
+     * @deny (create) - User attempts to create a test session under another user's ID.
+     * @allow (get, list) - Authenticated user reads their own test sessions.
+     * @deny (get, list) - User attempts to read test sessions belonging to another user.
+     * @allow (update, delete) - Authenticated user updates or deletes their own test sessions.
+     * @deny (update, delete) - User attempts to update or delete test sessions belonging to another user.
+     * @principle Enforces document ownership for writes and restricts access to a user's own data tree.
+     */
+    match /users/{userId}/test_sessions/{testSessionId} {
+          // Allow reads: get and list
+          allow get: if isSignedIn() && isOwner(userId);
+          allow list: if isSignedIn() && isOwner(userId);
+
+          // Allow writes: create, update, delete
+          allow create: if isSignedIn() && isOwner(userId);
+          allow update: if isSignedIn() && isExistingOwner(userId);
+          allow delete: if isSignedIn() && isExistingOwner(userId);
+    }
+
+    // --- Helper functions ---
+
+    /**
+     * @description Checks if the user is signed in.
+     * @return {boolean} True if the user is signed in, false otherwise.
      */
     function isSignedIn() {
       return request.auth != null;
     }
 
     /**
-     * @description Checks if the requested user ID matches the authenticated user's ID.
-     * @path N/A
-     * @allow N/A
-     * @deny N/A
-     * @principle Authorization check.
+     * @description Checks if the user ID matches the authenticated user's ID.
+     * @param {string} userId The user ID to check.
+     * @return {boolean} True if the user ID matches the authenticated user's ID, false otherwise.
      */
     function isOwner(userId) {
-      return request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     /**
-     * @description Checks if the requested user ID matches the authenticated user's ID and the resource exists.
-     * @path N/A
-     * @allow N/A
-     * @deny N/A
-     * @principle Authorization and existence check.
+     * @description Checks if the user is the owner of an existing document.
+     * @param {string} userId The user ID to check.
+     * @return {boolean} True if the user ID matches the authenticated user's ID and the document exists.
      */
     function isExistingOwner(userId) {
       return isOwner(userId) && resource != null;
-    }
-
-    /**
-     * @description Rules for sensor data under a user's sensor configuration.
-     * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
-     * @allow (create) User A creates sensor data under their own sensor configuration.
-     * @deny (create) User A attempts to create sensor data under User B's sensor configuration.
-     * @principle Enforces document ownership for writes.
-     */
-    match /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
-      allow get: if isSignedIn() && isOwner(userId);
-      allow list: if isSignedIn() && isOwner(userId);
-      allow create: if isSignedIn() && isOwner(userId == request.auth.uid);
-      allow update: if isSignedIn() && isOwner(userId == request.auth.uid);
-      allow delete: if isSignedIn() && isOwner(userId == request.auth.uid);
-    }
-
-    /**
-     * @description Rules for sensor configurations under a user.
-     * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}
-     * @allow (create) User A creates a sensor configuration under their own user ID.
-     * @deny (create) User A attempts to create a sensor configuration under User B's user ID.
-     * @principle Enforces document ownership for writes.
-     */
-    match /users/{userId}/sensor_configurations/{sensorConfigurationId} {
-      allow get: if isSignedIn() && isOwner(userId);
-      allow list: if isSignedIn() && isOwner(userId);
-      allow create: if isSignedIn() && isOwner(userId == request.auth.uid);
-      allow update: if isSignedIn() && isOwner(userId == request.auth.uid);
-      allow delete: if isSignedIn() && isOwner(userId == request.auth.uid);
-    }
-
-    /**
-     * @description Rules for analysis results under a user.
-     * @path /users/{userId}/analysis_results/{analysisResultId}
-     * @allow (create) User A creates an analysis result under their own user ID.
-     * @deny (create) User A attempts to create an analysis result under User B's user ID.
-     * @principle Enforces document ownership for writes.
-     */
-    match /users/{userId}/analysis_results/{analysisResultId} {
-      allow get: if isSignedIn() && isOwner(userId);
-      allow list: if isSignedIn() && isOwner(userId);
-      allow create: if isSignedIn() && isOwner(userId == request.auth.uid);
-      allow update: if isSignedIn() && isOwner(userId == request.auth.uid);
-      allow delete: if isSignedIn() && isOwner(userId == request.auth.uid);
-    }
-
-     /**
-      * @description Rules for test sessions under a user.
-      * @path /users/{userId}/test_sessions/{testSessionId}
-      * @allow (create) User A creates a test session under their own user ID.
-      * @deny (create) User A attempts to create a test session under User B's user ID.
-      * @principle Enforces document ownership for writes.
-      */
-    match /users/{userId}/test_sessions/{testSessionId} {
-       allow get: if isSignedIn() && isOwner(userId);
-       allow list: if isSignedIn() && isOwner(userId);
-       allow create: if isSignedIn() && isOwner(userId == request.auth.uid);
-       allow update: if isSignedIn() && isOwner(userId == request.auth.uid);
-       allow delete: if isSignedIn() && isOwner(userId == request.auth.uid);
     }
   }
 }

@@ -22,12 +22,11 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import { useFirebase } from '@/firebase';
+import { useFirebase, setDocumentNonBlocking } from '@/firebase';
 import { FirebaseError } from 'firebase/app';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
 
 
 export default function SignupPage() {
@@ -40,12 +39,8 @@ export default function SignupPage() {
     defaultValues: {
       email: '',
       password: '',
-      isAdmin: false,
-      masterPassword: '',
     },
   });
-
-  const isAdminValue = form.watch('isAdmin');
 
   const onSubmit = async (values: any) => {
     if (!values.email || !values.password) {
@@ -56,42 +51,30 @@ export default function SignupPage() {
         });
         return;
     }
-    if (values.isAdmin && !values.masterPassword) {
-        toast({
-            variant: 'destructive',
-            title: 'Sign Up Failed',
-            description: 'Master password is required to create an admin account.',
-        });
-        return;
-    }
-
+    
     setIsLoading(true);
-
-    if (values.isAdmin && values.masterPassword !== process.env.NEXT_PUBLIC_ADMIN_MASTER_PASSWORD) {
-      toast({
-        variant: 'destructive',
-        title: 'Sign Up Failed',
-        description: 'The master password is incorrect.',
-      });
-      setIsLoading(false);
-      return;
-    }
 
     try {
       if (!auth || !firestore) throw new Error('Auth or Firestore service not available');
 
+      // Append dummy domain if it's not an email format
       const finalUsername = values.email.includes('@') ? values.email : `${values.email}@biothrust.local`;
 
       const userCredential = await createUserWithEmailAndPassword(auth, finalUsername, values.password);
       const user = userCredential.user;
 
       const userProfileRef = doc(firestore, 'users', user.uid);
+      
+      const isFirstUser = (process.env.NEXT_PUBLIC_IS_FIRST_USER === 'true');
 
-      await setDoc(userProfileRef, {
+      // The non-blocking call is safe here because it's a 'create' operation
+      // for a new user, and the security rules should permit users to create their own profile.
+      setDocumentNonBlocking(userProfileRef, {
         email: values.email, // Store the original username
         createdAt: new Date().toISOString(),
-        isAdmin: values.isAdmin,
-      });
+        // Make the very first user an admin by default.
+        isAdmin: isFirstUser,
+      }, { merge: false });
 
       toast({
         title: 'Account Created',
@@ -167,35 +150,6 @@ export default function SignupPage() {
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="isAdmin"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                    <FormControl>
-                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                    <div className="space-y-1 leading-none">
-                      <FormLabel>Create as Admin</FormLabel>
-                    </div>
-                  </FormItem>
-                )}
-              />
-              {isAdminValue && (
-                <FormField
-                  control={form.control}
-                  name="masterPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Master Password</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="Enter master password" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? 'Creating Account...' : 'Sign Up'}
               </Button>

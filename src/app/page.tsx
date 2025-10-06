@@ -67,7 +67,7 @@ export default function HubPage() {
             BioThrust Dashboard
           </CardTitle>
           <CardDescription>
-            Welcome, {userProfile?.email || user.uid}. What would you like to do?
+            Welcome, {userProfile?.email || user.email || user.uid}. What would you like to do?
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
