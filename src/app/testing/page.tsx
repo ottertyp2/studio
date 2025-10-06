@@ -202,7 +202,6 @@ function TestingComponent() {
           const dataToSave = {...newDataPoint, testSessionId: currentSessionId};
           addDocumentNonBlocking(sensorDataRef, dataToSave);
       } else {
-        // Fallback for non-session based data collection
         setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
       }
   }, [activeSensorConfigId]);
@@ -281,39 +280,15 @@ function TestingComponent() {
     }
   }, [sendSerialCommand, stopDemoMode]);
 
-  useEffect(() => {
-      if (runningTestSession?.measurementType === 'DEMO' && !demoIntervalRef.current) {
-        let trend = 1000;
-        let direction = -1;
-
-        demoIntervalRef.current = setInterval(() => {
-            const change = Math.random() * 5 + 1;
-            trend += change * direction;
-            if (trend <= 150) direction = 1;
-            if (trend >= 1020) direction = -1;
-
-            const noise = (Math.random() - 0.5) * 10;
-            const value = Math.round(Math.max(0, Math.min(1023, trend + noise)));
-
-            const newDataPoint = {
-                timestamp: new Date().toISOString(),
-                value: value,
-            };
-            handleNewDataPoint(newDataPoint);
-        }, 500);
-
-      } else if (runningTestSession?.measurementType === 'ARDUINO' && !readLoopActiveRef.current) {
-        readFromSerial();
-      } else if (!runningTestSession) {
-         stopDemoMode();
-         if(portRef.current) handleDisconnect();
+    const handleStopTestSession = useCallback((sessionId: string) => {
+      if (!testSessionsCollectionRef) return;
+      const sessionRef = doc(testSessionsCollectionRef, sessionId);
+      updateDocumentNonBlocking(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
+      if (activeTestSessionId === sessionId) {
+          setActiveTestSessionId(null);
       }
-
-      return () => {
-          stopDemoMode();
-      };
-  }, [runningTestSession, handleNewDataPoint, stopDemoMode, handleDisconnect]);
-
+      toast({title: 'Test Session Ended'});
+  }, [testSessionsCollectionRef, activeTestSessionId, toast]);
 
   const readFromSerial = useCallback(async () => {
     if (!portRef.current?.readable || readLoopActiveRef.current) return;
@@ -364,6 +339,70 @@ function TestingComponent() {
     readLoopActiveRef.current = false;
   }, [toast, handleNewDataPoint, runningTestSession, handleStopTestSession]);
 
+  useEffect(() => {
+      if (runningTestSession?.measurementType === 'DEMO' && !demoIntervalRef.current) {
+        let trend = 1000;
+        let direction = -1;
+
+        demoIntervalRef.current = setInterval(() => {
+            const change = Math.random() * 5 + 1;
+            trend += change * direction;
+            if (trend <= 150) direction = 1;
+            if (trend >= 1020) direction = -1;
+
+            const noise = (Math.random() - 0.5) * 10;
+            const value = Math.round(Math.max(0, Math.min(1023, trend + noise)));
+
+            const newDataPoint = {
+                timestamp: new Date().toISOString(),
+                value: value,
+            };
+            handleNewDataPoint(newDataPoint);
+        }, 500);
+
+      } else if (runningTestSession?.measurementType === 'ARDUINO' && !readLoopActiveRef.current) {
+        readFromSerial();
+      } else if (!runningTestSession) {
+         stopDemoMode();
+         if(portRef.current) handleDisconnect();
+      }
+
+      return () => {
+          stopDemoMode();
+      };
+  }, [runningTestSession, handleNewDataPoint, stopDemoMode, handleDisconnect, readFromSerial]);
+
+  const handleStartNewTestSession = async (options: { measurementType: 'DEMO' | 'ARDUINO' }) => {
+    const sessionDetails = tempTestSession || { productIdentifier: `${options.measurementType} Session`};
+
+    if (!sessionDetails.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
+        toast({variant: 'destructive', title: 'Error', description: 'Please provide a product identifier and select a sensor.'});
+        return;
+    }
+
+    if (runningTestSession) {
+        toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
+        return;
+    }
+
+    const newSessionId = doc(collection(firestore, '_')).id;
+    const newSession: TestSession = {
+      id: newSessionId,
+      productIdentifier: sessionDetails.productIdentifier,
+      serialNumber: sessionDetails.serialNumber || '',
+      model: sessionDetails.model || '',
+      description: sessionDetails.description || '',
+      startTime: new Date().toISOString(),
+      status: 'RUNNING',
+      sensorConfigurationId: activeSensorConfigId,
+      measurementType: options.measurementType,
+    };
+    
+    await setDocumentNonBlocking(doc(testSessionsCollectionRef, newSessionId), newSession, { merge: false });
+    setActiveTestSessionId(newSessionId);
+    setTempTestSession(null);
+    toast({ title: 'New Test Session Started', description: `Product: ${newSession.productIdentifier}`});
+  };
 
   const handleConnect = async () => {
     if (isConnecting || runningTestSession) return;
@@ -599,49 +638,6 @@ function TestingComponent() {
     if (!tempTestSession) return;
     setTempTestSession(prev => ({...prev, [field]: value}));
   };
-
-  const handleStartNewTestSession = async (options: { measurementType: 'DEMO' | 'ARDUINO' }) => {
-    const sessionDetails = tempTestSession || { productIdentifier: `${options.measurementType} Session`};
-
-    if (!sessionDetails.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
-        toast({variant: 'destructive', title: 'Error', description: 'Please provide a product identifier and select a sensor.'});
-        return;
-    }
-
-    if (runningTestSession) {
-        toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
-        return;
-    }
-
-    const newSessionId = doc(collection(firestore, '_')).id;
-    const newSession: TestSession = {
-      id: newSessionId,
-      productIdentifier: sessionDetails.productIdentifier,
-      serialNumber: sessionDetails.serialNumber || '',
-      model: sessionDetails.model || '',
-      description: sessionDetails.description || '',
-      startTime: new Date().toISOString(),
-      status: 'RUNNING',
-      sensorConfigurationId: activeSensorConfigId,
-      measurementType: options.measurementType,
-    };
-    
-    await setDocumentNonBlocking(doc(testSessionsCollectionRef, newSessionId), newSession, { merge: false });
-    setActiveTestSessionId(newSessionId);
-    setTempTestSession(null);
-    toast({ title: 'New Test Session Started', description: `Product: ${newSession.productIdentifier}`});
-  };
-
-  const handleStopTestSession = useCallback((sessionId: string) => {
-      if (!testSessionsCollectionRef) return;
-      const sessionRef = doc(testSessionsCollectionRef, sessionId);
-      updateDocumentNonBlocking(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
-      if (activeTestSessionId === sessionId) {
-          setActiveTestSessionId(null);
-      }
-      toast({title: 'Test Session Ended'});
-  }, [testSessionsCollectionRef, activeTestSessionId]);
-
 
   const chartData = useMemo(() => {
     const now = new Date();
