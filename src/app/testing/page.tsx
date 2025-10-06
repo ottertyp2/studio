@@ -199,7 +199,6 @@ function TestingComponent() {
     }
 
     if (firestore && sensorDataCollectionRef) {
-      // sensorDataCollectionRef can be a query, we need a collection ref for adding docs
       const baseCollectionRef = collection(firestore!, `sensor_configurations/${activeSensorConfigId}/sensor_data`);
       addDocumentNonBlocking(baseCollectionRef, dataToSave);
     }
@@ -716,7 +715,7 @@ function TestingComponent() {
 
   const renderLiveTab = () => (
     <>
-      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
           <CardHeader className="pb-4">
             <div className="flex justify-between items-center">
               <CardTitle className="text-2xl text-center">
@@ -760,7 +759,7 @@ function TestingComponent() {
   );
 
   const renderFileTab = () => (
-      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
         <CardHeader>
             <CardTitle>File Operations (CSV)</CardTitle>
             <CardDescription>
@@ -797,7 +796,7 @@ function TestingComponent() {
 
   const renderTestSessionManager = () => {
     return (
-      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
         <CardHeader>
           <CardTitle>Test Sessions</CardTitle>
           <CardDescription>
@@ -807,7 +806,7 @@ function TestingComponent() {
         <CardContent>
           {!tempTestSession && !runningTestSession && (
             <div className="flex justify-center">
-              <Button onClick={() => setTempTestSession({})}>
+              <Button onClick={() => setTempTestSession({})} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
                 Start New Test Session
               </Button>
             </div>
