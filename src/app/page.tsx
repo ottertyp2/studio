@@ -42,7 +42,7 @@ export default function HubPage() {
   const handleSignOut = () => {
     if (auth) {
       auth.signOut();
-      toast({ title: 'Erfolgreich abgemeldet.' });
+      toast({ title: 'Successfully signed out.' });
       router.push('/login');
     }
   };
@@ -67,7 +67,7 @@ export default function HubPage() {
             BioThrust Dashboard
           </CardTitle>
           <CardDescription>
-            Willkommen, {userProfile?.email || user.uid}. Was möchten Sie tun?
+            Welcome, {userProfile?.email || user.uid}. What would you like to do?
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -77,7 +77,7 @@ export default function HubPage() {
             onClick={() => router.push('/testing')}
           >
             <FlaskConical className="mr-4 h-6 w-6" />
-            Zur Testumgebung
+            Go to Testing Environment
           </Button>
 
           {isAdmin && (
@@ -88,7 +88,7 @@ export default function HubPage() {
               onClick={() => router.push('/admin')}
             >
               <Cog className="mr-4 h-6 w-6" />
-              Zum Admin Panel
+              Go to Admin Panel
             </Button>
           )}
 
@@ -98,7 +98,7 @@ export default function HubPage() {
             onClick={handleSignOut}
           >
             <LogOut className="mr-2 h-4 w-4" />
-            Abmelden
+            Sign Out
           </Button>
         </CardContent>
       </Card>

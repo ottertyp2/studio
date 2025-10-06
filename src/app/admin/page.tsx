@@ -97,7 +97,7 @@ export default function AdminPage() {
       router.push('/login');
     }
      if (!isUserProfileLoading && userProfile && !userProfile.isAdmin) {
-      toast({ variant: 'destructive', title: 'Zugriff verweigert', description: 'Sie haben keine Berechtigung, auf diese Seite zuzugreifen.' });
+      toast({ variant: 'destructive', title: 'Access Denied', description: 'You do not have permission to access this page.' });
       router.push('/');
     }
   }, [user, isUserLoading, router, userProfile, isUserProfileLoading, toast]);
@@ -166,11 +166,11 @@ export default function AdminPage() {
 
   const handleSaveSensorConfig = () => {
     if (!tempSensorConfig || !tempSensorConfig.name || tempSensorConfig.name.trim() === '') {
-        toast({ variant: 'destructive', title: 'Ungültige Eingabe', description: 'Der Name der Konfiguration darf nicht leer sein.'});
+        toast({ variant: 'destructive', title: 'Invalid Input', description: 'Configuration name cannot be empty.'});
         return;
     }
     if (tempSensorConfig.mode === 'CUSTOM' && (!tempSensorConfig.unit || tempSensorConfig.unit.trim() === '')) {
-        toast({ variant: 'destructive', title: 'Ungültige Eingabe', description: 'Die Einheit darf nicht leer sein.'});
+        toast({ variant: 'destructive', title: 'Invalid Input', description: 'The unit cannot be empty.'});
         return;
     }
     if (!firestore || !viewingUserId) return;
@@ -191,8 +191,8 @@ export default function AdminPage() {
     setDocumentNonBlocking(configRef, configToSave, { merge: true });
     
     toast({
-        title: 'Konfiguration gespeichert',
-        description: `Die Sensorkonfiguration "${configToSave.name}" wurde gespeichert.`
+        title: 'Configuration Saved',
+        description: `The sensor configuration "${configToSave.name}" has been saved.`
     });
     setTempSensorConfig(null);
   };
@@ -213,7 +213,7 @@ export default function AdminPage() {
     if (!firestore || !viewingUserId || !configId) return;
     const configRef = doc(firestore, `users/${viewingUserId}/sensor_configurations`, configId);
     deleteDocumentNonBlocking(configRef);
-    toast({ title: "Konfiguration gelöscht" });
+    toast({ title: "Configuration Deleted" });
     if (activeSensorConfigId === configId) {
         setActiveSensorConfigId(sensorConfigs?.[0]?.id || null);
     }
@@ -227,12 +227,12 @@ export default function AdminPage() {
 
   const handleStartNewTestSession = () => {
     if (!tempTestSession || !tempTestSession.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
-        toast({variant: 'destructive', title: 'Fehler', description: 'Bitte geben Sie eine Produktkennung an und wählen Sie einen Sensor aus.'});
+        toast({variant: 'destructive', title: 'Error', description: 'Please provide a product identifier and select a sensor.'});
         return;
     }
 
     if (testSessions?.find(s => s.status === 'RUNNING')) {
-        toast({variant: 'destructive', title: 'Fehler', description: 'Eine Testsitzung läuft bereits für diesen Benutzer.'});
+        toast({variant: 'destructive', title: 'Error', description: 'A test session is already running for this user.'});
         return;
     }
 
@@ -251,7 +251,7 @@ export default function AdminPage() {
     addDocumentNonBlocking(testSessionsCollectionRef, newSession);
     setActiveTestSessionId(newSessionId);
     setTempTestSession(null);
-    toast({ title: 'Neue Testsitzung gestartet', description: `Produkt: ${newSession.productIdentifier}`});
+    toast({ title: 'New Test Session Started', description: `Product: ${newSession.productIdentifier}`});
   };
 
   const handleStopTestSession = (sessionId: string) => {
@@ -261,7 +261,7 @@ export default function AdminPage() {
       if (activeTestSessionId === sessionId) {
           setActiveTestSessionId(null);
       }
-      toast({title: 'Testsitzung beendet'});
+      toast({title: 'Test Session Ended'});
   };
 
   if (isUserLoading || isUserProfileLoading || !isAdmin) {
@@ -277,7 +277,7 @@ export default function AdminPage() {
     return (
         <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
             <CardHeader>
-                <CardTitle>{tempSensorConfig.id ? 'Konfiguration bearbeiten' : 'Neue Konfiguration erstellen'}</CardTitle>
+                <CardTitle>{tempSensorConfig.id ? 'Edit Configuration' : 'Create New Configuration'}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
                  <div>
@@ -285,30 +285,30 @@ export default function AdminPage() {
                     <Input id="configName" value={tempSensorConfig.name || ''} onChange={(e) => handleConfigChange('name', e.target.value)} />
                 </div>
                 <div>
-                  <Label htmlFor="conversionMode">Anzeige-Modus</Label>
+                  <Label htmlFor="conversionMode">Display Mode</Label>
                   <Select value={tempSensorConfig.mode} onValueChange={(value) => handleConfigChange('mode', value)}>
                     <SelectTrigger id="conversionMode">
                       <SelectValue placeholder="Select mode" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="RAW">RAW (0-1023)</SelectItem>
-                      <SelectItem value="VOLTAGE">Spannung (V)</SelectItem>
-                      <SelectItem value="CUSTOM">Benutzerdefiniert</SelectItem>
+                      <SelectItem value="VOLTAGE">Voltage (V)</SelectItem>
+                      <SelectItem value="CUSTOM">Custom</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                  {tempSensorConfig.mode === 'CUSTOM' && (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
-                            <Label htmlFor="sensorUnitInput">Einheit</Label>
+                            <Label htmlFor="sensorUnitInput">Unit</Label>
                             <Input id="sensorUnitInput" value={tempSensorConfig.unit} onChange={(e) => handleConfigChange('unit', e.target.value)} />
                         </div>
                         <div>
-                            <Label htmlFor="minValueInput">Minimalwert</Label>
+                            <Label htmlFor="minValueInput">Minimum Value</Label>
                             <Input id="minValueInput" type="number" value={tempSensorConfig.min} onChange={(e) => handleConfigChange('min', parseFloat(e.target.value))} />
                         </div>
                         <div>
-                            <Label htmlFor="maxValueInput">Maximalwert</Label>
+                            <Label htmlFor="maxValueInput">Maximum Value</Label>
                             <Input id="maxValueInput" type="number" value={tempSensorConfig.max} onChange={(e) => handleConfigChange('max', parseFloat(e.target.value))} />
                         </div>
                     </div>
@@ -317,19 +317,19 @@ export default function AdminPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {tempSensorConfig.mode === 'VOLTAGE' && (
                             <div>
-                                <Label htmlFor="arduinoVoltageInput">Referenzspannung (V)</Label>
+                                <Label htmlFor="arduinoVoltageInput">Reference Voltage (V)</Label>
                                 <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage} onChange={(e) => handleConfigChange('arduinoVoltage', parseFloat(e.target.value))} />
                             </div>
                         )}
                         <div>
-                            <Label htmlFor="decimalPlacesInput">Dezimalstellen</Label>
+                            <Label htmlFor="decimalPlacesInput">Decimal Places</Label>
                             <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces} onChange={(e) => handleConfigChange('decimalPlaces', e.target.value)} />
                         </div>
                     </div>
                  )}
                  <div className="flex justify-center gap-4">
-                    <Button onClick={handleSaveSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Speichern</Button>
-                    <Button onClick={() => setTempSensorConfig(null)} variant="ghost">Abbrechen</Button>
+                    <Button onClick={handleSaveSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Save</Button>
+                    <Button onClick={() => setTempSensorConfig(null)} variant="ghost">Cancel</Button>
                  </div>
               </CardContent>
         </Card>
@@ -395,7 +395,7 @@ export default function AdminPage() {
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">All Data (No Session)</SelectItem>
-                            {isTestSessionsLoading ? <SelectItem value="loading" disabled>Lade...</SelectItem> :
+                            {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
                             testSessions?.map(s => <SelectItem key={s.id} value={s.id}>{s.productIdentifier} ({s.status})</SelectItem>)}
                         </SelectContent>
                     </Select>
@@ -407,7 +407,7 @@ export default function AdminPage() {
                     <div className="flex justify-between items-center">
                         <div>
                             <p className="font-semibold">{session.productIdentifier}</p>
-                            <p className="text-sm text-muted-foreground">{new Date(session.startTime).toLocaleString('de-DE')} - {session.status}</p>
+                            <p className="text-sm text-muted-foreground">{new Date(session.startTime).toLocaleString('en-US')} - {session.status}</p>
                         </div>
                         {session.status === 'RUNNING' && (
                             <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session.id)}>Stop</Button>
@@ -465,7 +465,7 @@ export default function AdminPage() {
                 </Button>
             </div>
             <CardDescription>
-              Verwalten Sie Benutzer, Sensoren und Testsitzungen.
+              Manage users, sensors, and test sessions.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -475,9 +475,9 @@ export default function AdminPage() {
        
         <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
             <CardHeader>
-                <CardTitle>Benutzer-Verwaltung</CardTitle>
+                <CardTitle>User Management</CardTitle>
                 <CardDescription>
-                    Wählen Sie einen Benutzer aus, um dessen Daten, Sensoren und Testsitzungen anzuzeigen und zu verwalten.
+                    Select a user to view and manage their data, sensors, and test sessions.
                 </CardDescription>
             </CardHeader>
             <CardContent>
@@ -489,16 +489,16 @@ export default function AdminPage() {
             <div className="space-y-6">
                 <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
                     <CardHeader>
-                        <CardTitle>Sensor-Verwaltung</CardTitle>
+                        <CardTitle>Sensor Management</CardTitle>
                         <CardDescription>
-                            Verwalten Sie die Sensorkonfigurationen für den ausgewählten Benutzer.
+                            Manage sensor configurations for the selected user.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="flex justify-center mb-4">
-                            <Button onClick={handleNewSensorConfig} disabled={!viewingUserId}>Neue Konfiguration</Button>
+                            <Button onClick={handleNewSensorConfig} disabled={!viewingUserId}>New Configuration</Button>
                         </div>
-                         {isSensorConfigsLoading ? <p>Lade Sensoren...</p> :
+                         {isSensorConfigsLoading ? <p>Loading sensors...</p> :
                         <ScrollArea className="h-96">
                             <div className="space-y-4">
                                 {sensorConfigs?.map(c => (
@@ -509,21 +509,21 @@ export default function AdminPage() {
                                                 <p className="text-sm text-muted-foreground">{c.mode} ({c.unit})</p>
                                             </div>
                                             <div className='flex gap-2'>
-                                                <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Bearbeiten</Button>
+                                                <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
                                                 <AlertDialog>
                                                     <AlertDialogTrigger asChild>
-                                                    <Button size="sm" variant="destructive">Löschen</Button>
+                                                    <Button size="sm" variant="destructive">Delete</Button>
                                                     </AlertDialogTrigger>
                                                     <AlertDialogContent>
                                                     <AlertDialogHeader>
-                                                        <AlertDialogTitle>Konfiguration löschen?</AlertDialogTitle>
+                                                        <AlertDialogTitle>Delete Configuration?</AlertDialogTitle>
                                                         <AlertDialogDescription>
-                                                        Sind Sie sicher, dass Sie die Konfiguration "{c.name}" löschen möchten? Alle zugehörigen Daten gehen verloren.
+                                                        Are you sure you want to delete the configuration "{c.name}"? All associated data will be lost.
                                                         </AlertDialogDescription>
                                                     </AlertDialogHeader>
                                                     <AlertDialogFooter>
-                                                        <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-                                                        <AlertDialogAction onClick={() => handleDeleteSensorConfig(c.id)}>Löschen</AlertDialogAction>
+                                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                        <AlertDialogAction onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
                                                     </AlertDialogFooter>
                                                     </AlertDialogContent>
                                                 </AlertDialog>

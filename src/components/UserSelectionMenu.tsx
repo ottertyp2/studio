@@ -61,13 +61,13 @@ export function UserSelectionMenu({ onUserSelected }: UserSelectionMenuProps) {
 
   return (
     <div className="space-y-2">
-      <Label htmlFor="user-selection">Daten anzeigen von:</Label>
+      <Label htmlFor="user-selection">View data from:</Label>
       <Select onValueChange={handleValueChange} value={selectedUser || 'none'}>
         <SelectTrigger id="user-selection">
-          <SelectValue placeholder="Benutzer auswählen..." />
+          <SelectValue placeholder="Select a user..." />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="none">Eigenen Daten</SelectItem>
+          <SelectItem value="none">My Own Data</SelectItem>
           {users.map(user => (
             <SelectItem key={user.uid} value={user.uid}>
               {user.email}

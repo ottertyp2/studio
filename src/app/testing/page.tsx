@@ -215,11 +215,11 @@ export default function TestingPage() {
       const encoder = new TextEncoder();
       await writer.write(encoder.encode(command));
     } catch (error) {
-      console.error("Senden fehlgeschlagen:", error);
+      console.error("Send failed:", error);
       toast({
         variant: 'destructive',
-        title: 'Fehler',
-        description: 'Befehl konnte nicht gesendet werden.',
+        title: 'Error',
+        description: 'Could not send command.',
       });
     } finally {
       writer.releaseLock();
@@ -234,8 +234,8 @@ export default function TestingPage() {
     setConnectionState('DISCONNECTED');
     setIsMeasuring(false);
     toast({
-        title: 'Demo beendet',
-        description: 'Die Datensimulation wurde gestoppt.',
+        title: 'Demo ended',
+        description: 'Data simulation has been stopped.',
     });
   }, [toast]);
 
@@ -265,15 +265,15 @@ export default function TestingPage() {
       setConnectionState('DISCONNECTED');
       setIsMeasuring(false);
       toast({
-        title: 'Getrennt',
-        description: 'Die Verbindung zum Arduino wurde getrennt.',
+        title: 'Disconnected',
+        description: 'Disconnected from Arduino.',
       });
     } catch (error) {
-      console.error('Fehler beim Trennen:', error);
+      console.error('Error disconnecting:', error);
       if ((error as Error).message.includes("The device has been lost")) return;
       toast({
         variant: 'destructive',
-        title: 'Trennen fehlgeschlagen',
+        title: 'Disconnect failed',
         description: (error as Error).message,
       });
     }
@@ -326,12 +326,12 @@ export default function TestingPage() {
                 }
             });
         } catch (error) {
-            console.error('Fehler beim Lesen der Daten:', error);
+            console.error('Error reading data:', error);
             if (readLoopActiveRef.current && (readableStreamClosed || !portRef.current?.readable)) {
                  toast({
                     variant: 'destructive',
-                    title: 'Verbindung verloren',
-                    description: 'Die Verbindung zum Gerät wurde unterbrochen.',
+                    title: 'Connection Lost',
+                    description: 'The connection to the device was interrupted.',
                 });
                 await handleDisconnect();
             }
@@ -358,23 +358,23 @@ export default function TestingPage() {
         readFromSerial();
 
         toast({
-          title: 'Verbunden',
-          description: 'Erfolgreich mit dem Arduino verbunden. Daten werden empfangen.',
+          title: 'Connected',
+          description: 'Successfully connected to Arduino. Receiving data.',
         });
       } else {
         toast({
           variant: 'destructive',
-          title: 'Fehler',
-          description: 'Web Serial API wird von diesem Browser nicht unterstützt.',
+          title: 'Error',
+          description: 'Web Serial API is not supported by this browser.',
         });
       }
     } catch (error) {
-      console.error('Fehler beim Verbinden:', error);
+      console.error('Error connecting:', error);
       if ((error as Error).name !== 'NotFoundError') {
         toast({
             variant: 'destructive',
-            title: 'Verbindung fehlgeschlagen',
-            description: (error as Error).message || 'Es konnte keine Verbindung hergestellt werden.',
+            title: 'Connection Failed',
+            description: (error as Error).message || 'Could not establish a connection.',
         });
       }
     }
@@ -412,8 +412,8 @@ export default function TestingPage() {
     }, 500);
 
     toast({
-        title: 'Demo gestartet',
-        description: 'Simulierte Sensordaten werden generiert.',
+        title: 'Demo Started',
+        description: 'Simulated sensor data is being generated.',
     });
   };
 
@@ -422,7 +422,7 @@ export default function TestingPage() {
         if(isMeasuring) {
             if (demoIntervalRef.current) clearInterval(demoIntervalRef.current);
             setIsMeasuring(false);
-            toast({ title: 'Demo pausiert'});
+            toast({ title: 'Demo paused'});
         } else {
             setConnectionState('DISCONNECTED');
             handleStartDemo();
@@ -439,7 +439,7 @@ export default function TestingPage() {
         readFromSerial();
     }
     toast({
-        title: newIsMeasuring ? 'Messung gestartet' : 'Messung gestoppt',
+        title: newIsMeasuring ? 'Measurement started' : 'Measurement stopped',
     });
   };
 
@@ -457,8 +457,8 @@ export default function TestingPage() {
     if (startIndex === -1 || endIndex === -1) {
         toast({
             variant: "destructive",
-            title: "Analyse nicht möglich",
-            description: "Start- oder End-Schwellenwert im aktuellen Datensatz nicht gefunden."
+            title: "Analysis not possible",
+            description: "Start or end threshold not found in the current data set."
         });
         setIsAnalyzing(false);
         return;
@@ -469,8 +469,8 @@ export default function TestingPage() {
     if (dataSegment.length < 2) {
         toast({
             variant: "destructive",
-            title: "Analyse nicht möglich",
-            description: "Nicht genügend Datenpunkte zwischen den Schwellenwerten."
+            title: "Analysis not possible",
+            description: "Not enough data points between thresholds."
         });
         setIsAnalyzing(false);
         return;
@@ -487,11 +487,11 @@ export default function TestingPage() {
       const result = await analyzePressureTrendForLeaks(input);
       setAnalysisResult(result);
     } catch (error) {
-      console.error('Fehler bei der Leck-Analyse:', error);
+      console.error('Error during leak analysis:', error);
       toast({
         variant: 'destructive',
-        title: 'Analyse fehlgeschlagen',
-        description: 'Bei der Kommunikation mit dem AI-Service ist ein Fehler aufgetreten.',
+        title: 'Analysis Failed',
+        description: 'An error occurred while communicating with the AI service.',
       });
     } finally {
       setIsAnalyzing(false);
@@ -516,14 +516,14 @@ export default function TestingPage() {
         });
         await batch.commit();
         toast({
-          title: 'Cloud-Daten gelöscht',
-          description: `Alle relevanten Sensordaten für die aktuelle Konfiguration wurden aus der Cloud entfernt.`
+          title: 'Cloud Data Deleted',
+          description: `All relevant sensor data for the current configuration has been removed from the cloud.`
         });
       } catch (error) {
         console.error("Error deleting cloud data:", error);
         toast({
           variant: 'destructive',
-          title: 'Fehler beim Löschen der Cloud-Daten',
+          title: 'Error Deleting Cloud Data',
           description: (error as Error).message
         });
       }
@@ -531,15 +531,15 @@ export default function TestingPage() {
         setLocalDataLog([]);
         setCurrentValue(null);
         toast({
-            title: 'Lokale Daten gelöscht',
-            description: 'Alle aufgezeichneten Daten wurden aus dem lokalen Log entfernt.'
+            title: 'Local Data Cleared',
+            description: 'All recorded data has been removed from the local log.'
         })
     }
   }
 
   const handleExportCSV = () => {
     if (dataLog.length === 0) {
-      toast({ title: 'Keine Daten zum Exportieren' });
+      toast({ title: 'No data to export' });
       return;
     }
 
@@ -559,7 +559,7 @@ export default function TestingPage() {
     link.click();
     document.body.removeChild(link);
 
-    toast({ title: 'Daten erfolgreich exportiert' });
+    toast({ title: 'Data exported successfully' });
   };
 
   const handleImportCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -571,7 +571,7 @@ export default function TestingPage() {
       skipEmptyLines: true,
       complete: (results) => {
         if (results.errors.length > 0) {
-          toast({ variant: 'destructive', title: 'Importfehler', description: 'Die CSV-Datei konnte nicht gelesen werden.' });
+          toast({ variant: 'destructive', title: 'Import Error', description: 'Could not read the CSV file.' });
           console.error(results.errors);
           return;
         }
@@ -580,7 +580,7 @@ export default function TestingPage() {
         const hasValue = results.meta.fields?.includes('value');
 
         if (!results.data.length || !hasTimestamp || !hasValue) {
-            toast({ variant: 'destructive', title: 'Importfehler', description: 'Die CSV-Datei muss die Spalten "timestamp" und "value" enthalten.' });
+            toast({ variant: 'destructive', title: 'Import Error', description: 'CSV file must contain "timestamp" and "value" columns.' });
             return;
         }
 
@@ -601,10 +601,10 @@ export default function TestingPage() {
           });
           batch.commit()
             .then(() => {
-              toast({ title: 'Daten erfolgreich in die Cloud importiert', description: `${importedData.length} Datenpunkte hochgeladen.` });
+              toast({ title: 'Data successfully imported to cloud', description: `${importedData.length} data points uploaded.` });
             })
             .catch(() => {
-              toast({ variant: 'destructive', title: 'Fehler beim Cloud-Import', description: 'Einige Daten konnten nicht hochgeladen werden.' });
+              toast({ variant: 'destructive', title: 'Cloud Import Error', description: 'Some data could not be uploaded.' });
             })
             .finally(() => setIsSyncing(false));
 
@@ -615,7 +615,7 @@ export default function TestingPage() {
             } else {
                 setCurrentValue(null);
             }
-            toast({ title: 'Daten erfolgreich importiert', description: `${importedData.length} Datenpunkte geladen.` });
+            toast({ title: 'Data imported successfully', description: `${importedData.length} data points loaded.` });
         }
       }
     });
@@ -633,7 +633,7 @@ export default function TestingPage() {
       visibleData = visibleData.filter(dp => (now.getTime() - new Date(dp.timestamp).getTime()) / 1000 <= intervalSeconds);
     }
     return visibleData.map(d => ({
-        name: new Date(d.timestamp).toLocaleTimeString('de-DE'),
+        name: new Date(d.timestamp).toLocaleTimeString('en-US'),
         value: convertRawValue(d.value)
     }));
   }, [dataLog, chartInterval, convertRawValue]);
@@ -642,9 +642,9 @@ export default function TestingPage() {
   const displayDecimals = sensorConfig.decimalPlaces;
 
   const getButtonText = () => {
-    if (connectionState === 'CONNECTED') return 'Trennen';
-    if (connectionState === 'DEMO') return 'Demo beenden';
-    return 'Mit Arduino verbinden';
+    if (connectionState === 'CONNECTED') return 'Disconnect';
+    if (connectionState === 'DEMO') return 'End Demo';
+    return 'Connect to Arduino';
   }
 
   if (isUserLoading) {
@@ -661,17 +661,17 @@ export default function TestingPage() {
           <CardHeader className="pb-4">
             <div className="flex justify-between items-center">
               <CardTitle className="text-2xl text-center">
-                  Live-Steuerung
+                  Live Control
               </CardTitle>
               {runningTestSession && (
                 <div className="text-right">
                     <p className="font-semibold text-primary">Live Test: {runningTestSession.productIdentifier}</p>
-                    <p className="text-sm text-muted-foreground">Gestartet: {new Date(runningTestSession.startTime).toLocaleTimeString('de-DE')}</p>
+                    <p className="text-sm text-muted-foreground">Started: {new Date(runningTestSession.startTime).toLocaleTimeString('en-US')}</p>
                 </div>
               )}
             </div>
             <CardDescription className="text-center">
-              Verbinden Sie Ihren Arduino oder starten Sie den Demo-Modus.
+              Connect your Arduino or start Demo Mode.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center justify-center gap-4">
@@ -680,7 +680,7 @@ export default function TestingPage() {
             </Button>
             {connectionState === 'DISCONNECTED' && (
                 <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession}>
-                    Demo starten
+                    Start Demo
                 </Button>
             )}
             {connectionState !== 'DISCONNECTED' && (
@@ -690,12 +690,12 @@ export default function TestingPage() {
                 className="btn-shine shadow-md transition-transform transform hover:-translate-y-1"
                 disabled={!!runningTestSession}
               >
-                {isMeasuring ? 'Messung stoppen' : 'Messung starten'}
+                {isMeasuring ? 'Stop Measurement' : 'Start Measurement'}
               </Button>
             )}
             
           </CardContent>
-           {runningTestSession && <CardFooter><p className="text-center text-sm text-muted-foreground w-full">Trennen/Demo ist deaktiviert, während eine Testsitzung läuft. Beenden Sie die Sitzung im Admin-Panel.</p></CardFooter>}
+           {runningTestSession && <CardFooter><p className="text-center text-sm text-muted-foreground w-full">Disconnect/Demo is disabled while a test session is running. End the session in the Admin Panel.</p></CardFooter>}
         </Card>
     </>
   );
@@ -703,32 +703,32 @@ export default function TestingPage() {
   const renderFileTab = () => (
       <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
         <CardHeader>
-            <CardTitle>Datei-Operationen (CSV)</CardTitle>
+            <CardTitle>File Operations (CSV)</CardTitle>
             <CardDescription>
-                Exportieren Sie die aktuellen Daten oder importieren Sie eine vorhandene Log-Datei.
+                Export the current data or import an existing log file.
             </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-center gap-4">
             <Button onClick={handleExportCSV} variant="outline" disabled={isSyncing}>Export CSV</Button>
             <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing || !activeSensorConfigId}>
-              {isSyncing ? 'Importiere...' : 'Import CSV'}
+              {isSyncing ? 'Importing...' : 'Import CSV'}
             </Button>
             <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
              <AlertDialog>
                 <AlertDialogTrigger asChild>
-                <Button variant="destructive" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1 ml-4" disabled={!activeSensorConfigId || !!runningTestSession}>Daten löschen</Button>
+                <Button variant="destructive" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1 ml-4" disabled={!activeSensorConfigId || !!runningTestSession}>Clear Data</Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>Sind Sie sicher?</AlertDialogTitle>
+                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                     <AlertDialogDescription>
-                    Diese Aktion kann nicht rückgängig gemacht werden. Dadurch werden die aufgezeichneten
-                    Sensordaten für die ausgewählte Konfiguration dauerhaft gelöscht.
+                    This action cannot be undone. This will permanently delete the recorded
+                    sensor data for the selected configuration.
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                    <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleClearData}>Löschen</AlertDialogAction>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleClearData}>Delete</AlertDialogAction>
                 </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
@@ -752,14 +752,14 @@ export default function TestingPage() {
             </div>
 
             <CardDescription className="text-center">
-              Echtzeit-Sensordatenanalyse mit Arduino, CSV und Cloud-Anbindung
+              Real-time sensor data analysis with Arduino, CSV, and Cloud integration.
             </CardDescription>
           </CardHeader>
           <CardContent>
              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                 <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="live">Live (Arduino)</TabsTrigger>
-                    <TabsTrigger value="file">Datei (CSV)</TabsTrigger>
+                    <TabsTrigger value="file">File (CSV)</TabsTrigger>
                 </TabsList>
             </Tabs>
           </CardContent>
@@ -776,15 +776,15 @@ export default function TestingPage() {
           <CardHeader>
             <div className="flex justify-between items-center flex-wrap gap-4">
               <div className='flex items-center gap-4'>
-                <CardTitle>Datenvisualisierung</CardTitle>
+                <CardTitle>Data Visualization</CardTitle>
                 <div className='flex items-center gap-2'>
                     <Label htmlFor="sensorConfigSelect" className="whitespace-nowrap">Sensor:</Label>
                     <Select value={activeSensorConfigId || ''} onValueChange={setActiveSensorConfigId} disabled={!!runningTestSession || !user}>
                         <SelectTrigger id="sensorConfigSelect" className="w-[200px] bg-white/80">
-                        <SelectValue placeholder="Sensor auswählen" />
+                        <SelectValue placeholder="Select a sensor" />
                         </SelectTrigger>
                         <SelectContent>
-                            {isSensorConfigsLoading ? <SelectItem value="loading" disabled>Lade...</SelectItem> :
+                            {isSensorConfigsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
                             sensorConfigs?.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)
                             }
                         </SelectContent>
@@ -792,25 +792,25 @@ export default function TestingPage() {
                 </div>
               </div>
               <div className='flex items-center gap-2'>
-                 <Label htmlFor="chartInterval" className="whitespace-nowrap">Zeitraum:</Label>
+                 <Label htmlFor="chartInterval" className="whitespace-nowrap">Time Range:</Label>
                   <Select value={chartInterval} onValueChange={setChartInterval}>
                     <SelectTrigger id="chartInterval" className="w-[150px] bg-white/80">
                       <SelectValue placeholder="Select interval" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="60">1 Minute</SelectItem>
-                      <SelectItem value="300">5 Minuten</SelectItem>
-                      <SelectItem value="900">15 Minuten</SelectItem>
-                      <SelectItem value="all">Alle Daten</SelectItem>
+                      <SelectItem value="300">5 Minutes</SelectItem>
+                      <SelectItem value="900">15 Minutes</SelectItem>
+                      <SelectItem value="all">All Data</SelectItem>
                     </SelectContent>
                   </Select>
                 <Button onClick={handleResetZoom} variant="outline" size="sm" className="transition-transform transform hover:-translate-y-0.5">
-                    Zoom zurücksetzen
+                    Reset Zoom
                 </Button>
               </div>
             </div>
             <CardDescription>
-              Tipp: Mit dem Mausrad zoomen und mit gedrückter Maustaste ziehen, um zu scrollen.
+              Tip: Zoom with your mouse wheel and drag to pan.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -850,19 +850,19 @@ export default function TestingPage() {
           <div className="lg:col-span-2">
              <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
               <CardHeader>
-                <CardTitle>Intelligente Leck-Analyse</CardTitle>
+                <CardTitle>Intelligent Leak Analysis</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label htmlFor="analysisModel">Analyse-Modell</Label>
+                  <Label htmlFor="analysisModel">Analysis Model</Label>
                   <Select defaultValue="linear_leak">
                     <SelectTrigger id="analysisModel">
                       <SelectValue placeholder="Select model" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="linear_leak">Linearer Abfall = Leck</SelectItem>
+                      <SelectItem value="linear_leak">Linear Drop = Leak</SelectItem>
                       <SelectItem value="nonlinear_leak">
-                        Nicht-linearer Abfall = Leck
+                        Non-linear Drop = Leak
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -873,12 +873,12 @@ export default function TestingPage() {
                     <Input id="startThresholdInput" type="number" defaultValue="800" />
                   </div>
                   <div>
-                    <Label htmlFor="endThresholdInput">Ende (RAW)</Label>
+                    <Label htmlFor="endThresholdInput">End (RAW)</Label>
                     <Input id="endThresholdInput" type="number" defaultValue="200" />
                   </div>
                 </div>
                 <div>
-                  <Label htmlFor="sensitivitySlider">Empfindlichkeit (R²): {sensitivity}</Label>
+                  <Label htmlFor="sensitivitySlider">Sensitivity (R²): {sensitivity}</Label>
                   <Slider
                     id="sensitivitySlider"
                     min={0.8}
@@ -890,7 +890,7 @@ export default function TestingPage() {
                 </div>
                 <div className="flex gap-4 justify-center">
                   <Button onClick={handleAnalysis} disabled={isAnalyzing} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
-                      {isAnalyzing ? 'Analysiere...' : 'Druckverlauf analysieren'}
+                      {isAnalyzing ? 'Analyzing...' : 'Analyze Pressure Curve'}
                     </Button>
                 </div>
                 <div className="text-center text-muted-foreground pt-4">
@@ -900,13 +900,13 @@ export default function TestingPage() {
                         {analysisResult.analysisResult}
                         </p>
                         <p className="text-sm">
-                        R²-Wert: {analysisResult.rSquared.toFixed(4)} | Analysierte Punkte: {analysisResult.analyzedDataPoints}
+                        R-squared: {analysisResult.rSquared.toFixed(4)} | Analyzed Points: {analysisResult.analyzedDataPoints}
                         </p>
                     </>
                     ) : (
                     <>
                         <p className="font-semibold">-</p>
-                        <p className="text-sm">R²-Wert: - | Analysierter Bereich: -</p>
+                        <p className="text-sm">R-squared: - | Analyzed Range: -</p>
                     </>
                     )}
                 </div>
@@ -917,7 +917,7 @@ export default function TestingPage() {
           <div className="lg:col-span-1 grid grid-rows-2 gap-6">
               <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
                 <CardHeader>
-                  <CardTitle className="text-lg">Aktueller Wert</CardTitle>
+                  <CardTitle className="text-lg">Current Value</CardTitle>
                 </CardHeader>
                 <CardContent className="flex flex-col items-center">
                   <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
@@ -928,21 +928,21 @@ export default function TestingPage() {
               </Card>
               <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
                 <CardHeader>
-                  <CardTitle>Daten-Log</CardTitle>
+                  <CardTitle>Data Log</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ScrollArea className="h-64">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Zeitstempel</TableHead>
-                          <TableHead className="text-right">Wert ({sensorConfig.unit})</TableHead>
+                          <TableHead>Timestamp</TableHead>
+                          <TableHead className="text-right">Value ({sensorConfig.unit})</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {dataLog.map((entry: any, index: number) => (
                           <TableRow key={entry.id || index}>
-                            <TableCell>{new Date(entry.timestamp).toLocaleTimeString('de-DE')}</TableCell>
+                            <TableCell>{new Date(entry.timestamp).toLocaleTimeString('en-US')}</TableCell>
                             <TableCell className="text-right">{convertRawValue(entry.value).toFixed(displayDecimals)}</TableCell>
                           </TableRow>
                         ))}
