@@ -1,6 +1,6 @@
 'use client';
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -76,10 +76,31 @@ type SensorConfig = {
     decimalPlaces: number;
 };
 
+type TestSession = {
+    id: string;
+    productIdentifier: string;
+    startTime: string;
+    status: 'RUNNING' | 'COMPLETED' | 'SCRAPPED';
+    sensorConfigurationId: string;
+};
+
+
 type ConnectionState = 'DISCONNECTED' | 'CONNECTED' | 'DEMO';
 
 
-export default function TestingPage() {
+function TestingComponent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const adminUserId = searchParams.get('userId');
+  const adminSessionId = searchParams.get('sessionId');
+
+  const { user, isUserLoading } = useUser();
+  
+  // Determine which user's data to view
+  const viewingUserId = adminUserId || user?.uid;
+
+
   const [activeTab, setActiveTab] = useState('live');
   const [connectionState, setConnectionState] = useState<ConnectionState>('DISCONNECTED');
   const [isMeasuring, setIsMeasuring] = useState(false);
@@ -90,15 +111,13 @@ export default function TestingPage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
-  const [activeTestSessionId, setActiveTestSessionId] = useState<string | null>(null);
+  const [activeTestSessionId, setActiveTestSessionId] = useState<string | null>(adminSessionId);
 
   const [chartInterval, setChartInterval] = useState<string>("60");
   const [chartKey, setChartKey] = useState<number>(Date.now());
 
   const { toast } = useToast();
   const { firestore } = useFirebase();
-  const { user, isUserLoading } = useUser();
-  const router = useRouter();
 
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
@@ -106,6 +125,8 @@ export default function TestingPage() {
   const importFileRef = useRef<HTMLInputElement>(null);
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  
+  const isViewingAsAdmin = !!adminUserId;
 
   useEffect(() => {
     if (!isUserLoading && !user) {
@@ -114,52 +135,59 @@ export default function TestingPage() {
   }, [user, isUserLoading, router]);
 
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user?.uid) return null;
-    return collection(firestore, `users/${user.uid}/sensor_configurations`);
-  }, [firestore, user?.uid]);
+    if (!firestore || !viewingUserId) return null;
+    return collection(firestore, `users/${viewingUserId}/sensor_configurations`);
+  }, [firestore, viewingUserId]);
 
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
-      if (!firestore || !user?.uid) return null;
-      return collection(firestore, `users/${user.uid}/test_sessions`);
-  }, [firestore, user?.uid]);
+      if (!firestore || !viewingUserId) return null;
+      return collection(firestore, `users/${viewingUserId}/test_sessions`);
+  }, [firestore, viewingUserId]);
   
-  const { data: testSessions } = useCollection(testSessionsCollectionRef);
-  const runningTestSession = useMemo(() => testSessions?.find(s => s.status === 'RUNNING'), [testSessions]);
+  const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
+  
+  const runningTestSession = useMemo(() => {
+    if (isViewingAsAdmin && adminSessionId) {
+        return testSessions?.find(s => s.id === adminSessionId && s.status === 'RUNNING');
+    }
+    return testSessions?.find(s => s.status === 'RUNNING');
+  }, [testSessions, isViewingAsAdmin, adminSessionId]);
 
   useEffect(() => {
-    if (runningTestSession) {
+    if (runningTestSession && !adminSessionId) {
       setActiveTestSessionId(runningTestSession.id);
       setActiveSensorConfigId(runningTestSession.sensorConfigurationId);
-    } else {
-      setActiveTestSessionId(null);
     }
-  }, [runningTestSession]);
+  }, [runningTestSession, adminSessionId]);
 
 
   const sensorConfig: SensorConfig = useMemo(() => {
-    if (!sensorConfigs || !activeSensorConfigId) {
+    const selectedConfig = sensorConfigs?.find(c => c.id === activeSensorConfigId);
+    if (!selectedConfig) {
         return { id: 'default', name: 'Default', mode: 'RAW', unit: 'RAW', min: 0, max: 1023, arduinoVoltage: 5, decimalPlaces: 0 };
     }
-    return sensorConfigs.find(c => c.id === activeSensorConfigId) ?? { id: 'default', name: 'Default', mode: 'RAW', unit: 'RAW', min: 0, max: 1023, arduinoVoltage: 5, decimalPlaces: 0 };
+    return selectedConfig;
   }, [sensorConfigs, activeSensorConfigId]);
 
   useEffect(() => {
-    if (sensorConfigs && sensorConfigs.length > 0 && !activeSensorConfigId && !runningTestSession) {
+    if (runningTestSession) {
+        setActiveSensorConfigId(runningTestSession.sensorConfigurationId);
+    } else if (sensorConfigs && sensorConfigs.length > 0 && !activeSensorConfigId) {
         setActiveSensorConfigId(sensorConfigs[0].id);
     }
   }, [sensorConfigs, activeSensorConfigId, runningTestSession]);
 
   const sensorDataCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user?.uid || !activeSensorConfigId) return null;
-    return collection(firestore, `users/${user.uid}/sensor_configurations/${activeSensorConfigId}/sensor_data`);
-  }, [firestore, user?.uid, activeSensorConfigId]);
+    if (!firestore || !viewingUserId || !activeSensorConfigId) return null;
+    return collection(firestore, `users/${viewingUserId}/sensor_configurations/${activeSensorConfigId}/sensor_data`);
+  }, [firestore, viewingUserId, activeSensorConfigId]);
   
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
 
   const dataLog = useMemo(() => {
-    const log = user && !isUserLoading ? cloudDataLog : localDataLog;
+    const log = viewingUserId ? cloudDataLog : localDataLog;
     if (!log) return [];
     
     let filteredLog = [...log];
@@ -168,7 +196,7 @@ export default function TestingPage() {
     }
     
     return filteredLog.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [user, isUserLoading, cloudDataLog, localDataLog, activeTestSessionId]);
+  }, [viewingUserId, cloudDataLog, localDataLog, activeTestSessionId]);
   
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
     setCurrentValue(newDataPoint.value);
@@ -178,12 +206,12 @@ export default function TestingPage() {
         dataToSave.testSessionId = activeTestSessionId;
     }
 
-    if (user && !isUserLoading && sensorDataCollectionRef) {
+    if (viewingUserId && sensorDataCollectionRef) {
       addDocumentNonBlocking(sensorDataCollectionRef, dataToSave);
     } else {
       setLocalDataLog(prevLog => [dataToSave, ...prevLog].slice(0, 1000));
     }
-  }, [user, isUserLoading, sensorDataCollectionRef, activeTestSessionId]);
+  }, [viewingUserId, sensorDataCollectionRef, activeTestSessionId]);
 
   useEffect(() => {
     if (dataLog && dataLog.length > 0) {
@@ -503,7 +531,7 @@ export default function TestingPage() {
   }
   
   const handleClearData = async () => {
-    if (user && !isUserLoading && sensorDataCollectionRef) {
+    if (viewingUserId && sensorDataCollectionRef) {
       try {
         const q = activeTestSessionId 
           ? query(sensorDataCollectionRef, where("testSessionId", "==", activeTestSessionId))
@@ -592,7 +620,7 @@ export default function TestingPage() {
         
         importedData.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-        if (user && !isUserLoading && sensorDataCollectionRef) {
+        if (viewingUserId && sensorDataCollectionRef) {
           setIsSyncing(true);
           const batch = writeBatch(firestore);
           importedData.forEach(dataPoint => {
@@ -663,7 +691,7 @@ export default function TestingPage() {
               <CardTitle className="text-2xl text-center">
                   Live Control
               </CardTitle>
-              {runningTestSession && (
+               {runningTestSession && (
                 <div className="text-right">
                     <p className="font-semibold text-primary">Live Test: {runningTestSession.productIdentifier}</p>
                     <p className="text-sm text-muted-foreground">Started: {new Date(runningTestSession.startTime).toLocaleTimeString('en-US')}</p>
@@ -675,11 +703,11 @@ export default function TestingPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center justify-center gap-4">
-            <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession}>
+            <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession || isViewingAsAdmin}>
               {getButtonText()}
             </Button>
             {connectionState === 'DISCONNECTED' && (
-                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession}>
+                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession || isViewingAsAdmin}>
                     Start Demo
                 </Button>
             )}
@@ -688,14 +716,14 @@ export default function TestingPage() {
                 variant={isMeasuring ? 'destructive' : 'secondary'}
                 onClick={handleToggleMeasurement}
                 className="btn-shine shadow-md transition-transform transform hover:-translate-y-1"
-                disabled={!!runningTestSession}
+                disabled={!!runningTestSession || isViewingAsAdmin}
               >
                 {isMeasuring ? 'Stop Measurement' : 'Start Measurement'}
               </Button>
             )}
             
           </CardContent>
-           {runningTestSession && <CardFooter><p className="text-center text-sm text-muted-foreground w-full">Disconnect/Demo is disabled while a test session is running. End the session in the Admin Panel.</p></CardFooter>}
+           {(runningTestSession || isViewingAsAdmin) && <CardFooter><p className="text-center text-sm text-muted-foreground w-full">Live controls are disabled while a remote test session is active or when viewing as an admin.</p></CardFooter>}
         </Card>
     </>
   );
@@ -710,13 +738,13 @@ export default function TestingPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-center gap-4">
             <Button onClick={handleExportCSV} variant="outline" disabled={isSyncing}>Export CSV</Button>
-            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing || !activeSensorConfigId}>
+            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing || !activeSensorConfigId || isViewingAsAdmin}>
               {isSyncing ? 'Importing...' : 'Import CSV'}
             </Button>
             <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
              <AlertDialog>
                 <AlertDialogTrigger asChild>
-                <Button variant="destructive" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1 ml-4" disabled={!activeSensorConfigId || !!runningTestSession}>Clear Data</Button>
+                <Button variant="destructive" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1 ml-4" disabled={!activeSensorConfigId || !!runningTestSession || isViewingAsAdmin}>Clear Data</Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                 <AlertDialogHeader>
@@ -751,7 +779,7 @@ export default function TestingPage() {
                 </Button>
             </div>
 
-            <CardDescription className="text-center">
+            <CardDescription>
               Real-time sensor data analysis with Arduino, CSV, and Cloud integration.
             </CardDescription>
           </CardHeader>
@@ -779,7 +807,7 @@ export default function TestingPage() {
                 <CardTitle>Data Visualization</CardTitle>
                 <div className='flex items-center gap-2'>
                     <Label htmlFor="sensorConfigSelect" className="whitespace-nowrap">Sensor:</Label>
-                    <Select value={activeSensorConfigId || ''} onValueChange={setActiveSensorConfigId} disabled={!!runningTestSession || !user}>
+                    <Select value={activeSensorConfigId || ''} onValueChange={setActiveSensorConfigId} disabled={!!runningTestSession || !viewingUserId}>
                         <SelectTrigger id="sensorConfigSelect" className="w-[200px] bg-white/80">
                         <SelectValue placeholder="Select a sensor" />
                         </SelectTrigger>
@@ -787,6 +815,19 @@ export default function TestingPage() {
                             {isSensorConfigsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
                             sensorConfigs?.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)
                             }
+                        </SelectContent>
+                    </Select>
+                </div>
+                 <div className='flex items-center gap-2'>
+                    <Label htmlFor="sessionFilter" className="whitespace-nowrap">Session:</Label>
+                    <Select value={activeTestSessionId || 'all'} onValueChange={(val) => setActiveTestSessionId(val === 'all' ? null : val)}>
+                        <SelectTrigger id="sessionFilter" className="w-[250px] bg-white/80">
+                            <SelectValue placeholder="Select a session" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Data (No Session)</SelectItem>
+                            {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                            testSessions?.map(s => <SelectItem key={s.id} value={s.id}>{s.productIdentifier} ({s.status})</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
@@ -956,4 +997,12 @@ export default function TestingPage() {
       </main>
     </div>
   );
+}
+
+export default function TestingPage() {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <TestingComponent />
+        </Suspense>
+    )
 }

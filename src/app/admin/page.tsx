@@ -263,6 +263,15 @@ export default function AdminPage() {
       }
       toast({title: 'Test Session Ended'});
   };
+  
+  const viewLiveTest = () => {
+    if (!viewingUserId || !activeTestSessionId) return;
+    const queryParams = new URLSearchParams({
+        userId: viewingUserId,
+        sessionId: activeTestSessionId
+    }).toString();
+    router.push(`/testing?${queryParams}`);
+  }
 
   if (isUserLoading || isUserProfileLoading || !isAdmin) {
     return (
@@ -385,33 +394,22 @@ export default function AdminPage() {
           )}
 
           <div className="space-y-4 mt-6">
-            <div className="flex justify-between items-center">
-                <CardTitle className="text-lg">Session History</CardTitle>
-                <div className='flex items-center gap-2'>
-                    <Label htmlFor="sessionFilter" className="whitespace-nowrap">View Session:</Label>
-                    <Select value={activeTestSessionId || 'all'} onValueChange={(val) => setActiveTestSessionId(val === 'all' ? null : val)}>
-                        <SelectTrigger id="sessionFilter" className="w-[250px] bg-white/80">
-                            <SelectValue placeholder="Select a session" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All Data (No Session)</SelectItem>
-                            {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            testSessions?.map(s => <SelectItem key={s.id} value={s.id}>{s.productIdentifier} ({s.status})</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                </div>
-            </div>
              <ScrollArea className="h-64">
               {testSessions?.map(session => (
-                <Card key={session.id} className="p-3 mb-2">
+                <Card key={session.id} className={`p-3 mb-2 ${session.status === 'RUNNING' ? 'border-primary' : ''}`}>
                     <div className="flex justify-between items-center">
                         <div>
                             <p className="font-semibold">{session.productIdentifier}</p>
                             <p className="text-sm text-muted-foreground">{new Date(session.startTime).toLocaleString('en-US')} - {session.status}</p>
                         </div>
-                        {session.status === 'RUNNING' && (
-                            <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session.id)}>Stop</Button>
-                        )}
+                         <div className="flex gap-2">
+                             {session.status === 'RUNNING' && (
+                                <>
+                                    <Button size="sm" variant="outline" onClick={() => viewLiveTest()}>View Live</Button>
+                                    <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session.id)}>Stop</Button>
+                                </>
+                            )}
+                         </div>
                     </div>
                 </Card>
               ))}
