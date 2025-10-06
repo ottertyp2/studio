@@ -51,11 +51,11 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Home } from 'lucide-react';
+import { Home, Cog } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
-import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc } from '@/firebase';
+import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc } from '@/firebase';
 import { collection, writeBatch, getDocs, query, doc, where } from 'firebase/firestore';
 
 
@@ -97,13 +97,7 @@ function TestingComponent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const adminUserId = searchParams.get('userId');
-  const adminSessionId = searchParams.get('sessionId');
-
-  const { user, isUserLoading } = useUser();
-  
-  // Determine which user's data to view
-  const viewingUserId = adminUserId || user?.uid;
+  const preselectedSessionId = searchParams.get('sessionId');
 
   const [activeTab, setActiveTab] = useState('live');
   const [connectionState, setConnectionState] = useState<ConnectionState>('DISCONNECTED');
@@ -115,7 +109,7 @@ function TestingComponent() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
-  const [activeTestSessionId, setActiveTestSessionId] = useState<string | null>(adminSessionId);
+  const [activeTestSessionId, setActiveTestSessionId] = useState<string | null>(preselectedSessionId);
   const [tempTestSession, setTempTestSession] = useState<Partial<TestSession> | null>(null);
 
 
@@ -132,25 +126,18 @@ function TestingComponent() {
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   
-  const isViewingAsAdmin = !!adminUserId;
-
-  useEffect(() => {
-    if (!isUserLoading && !user) {
-      router.push('/login');
-    }
-  }, [user, isUserLoading, router]);
 
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !viewingUserId) return null;
-    return collection(firestore, `users/${viewingUserId}/sensor_configurations`);
-  }, [firestore, viewingUserId]);
+    if (!firestore) return null;
+    return collection(firestore, `sensor_configurations`);
+  }, [firestore]);
 
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
-      if (!firestore || !viewingUserId) return null;
-      return collection(firestore, `users/${viewingUserId}/test_sessions`);
-  }, [firestore, viewingUserId]);
+      if (!firestore) return null;
+      return collection(firestore, `test_sessions`);
+  }, [firestore]);
   
   const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
   
@@ -159,11 +146,11 @@ function TestingComponent() {
   }, [testSessions]);
 
   useEffect(() => {
-    if (runningTestSession && !adminSessionId) {
+    if (runningTestSession && !preselectedSessionId) {
       setActiveTestSessionId(runningTestSession.id);
       setActiveSensorConfigId(runningTestSession.sensorConfigurationId);
     }
-  }, [runningTestSession, adminSessionId]);
+  }, [runningTestSession, preselectedSessionId]);
 
 
   const sensorConfig: SensorConfig = useMemo(() => {
@@ -183,24 +170,24 @@ function TestingComponent() {
   }, [sensorConfigs, activeSensorConfigId, runningTestSession]);
 
   const sensorDataCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !viewingUserId || !activeSensorConfigId) return null;
-    let q = query(collection(firestore, `users/${viewingUserId}/sensor_configurations/${activeSensorConfigId}/sensor_data`));
+    if (!firestore || !activeSensorConfigId) return null;
+    let q = query(collection(firestore, `sensor_configurations/${activeSensorConfigId}/sensor_data`));
 
     if (activeTestSessionId) {
         q = query(q, where('testSessionId', '==', activeTestSessionId));
     }
     
     return q;
-  }, [firestore, viewingUserId, activeSensorConfigId, activeTestSessionId]);
+  }, [firestore, activeSensorConfigId, activeTestSessionId]);
 
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
 
   const dataLog = useMemo(() => {
-    const log = viewingUserId ? cloudDataLog : localDataLog;
+    const log = firestore ? cloudDataLog : localDataLog;
     if (!log) return [];
     
     return [...log].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [viewingUserId, cloudDataLog, localDataLog]);
+  }, [firestore, cloudDataLog, localDataLog]);
   
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
     setCurrentValue(newDataPoint.value);
@@ -210,14 +197,14 @@ function TestingComponent() {
         dataToSave.testSessionId = activeTestSessionId;
     }
 
-    if (viewingUserId && sensorDataCollectionRef) {
+    if (firestore && sensorDataCollectionRef) {
       // sensorDataCollectionRef can be a query, we need a collection ref for adding docs
-      const baseCollectionRef = collection(firestore!, `users/${viewingUserId}/sensor_configurations/${activeSensorConfigId}/sensor_data`);
+      const baseCollectionRef = collection(firestore!, `sensor_configurations/${activeSensorConfigId}/sensor_data`);
       addDocumentNonBlocking(baseCollectionRef, dataToSave);
     } else {
       setLocalDataLog(prevLog => [dataToSave, ...prevLog].slice(0, 1000));
     }
-  }, [viewingUserId, sensorDataCollectionRef, activeTestSessionId, firestore, activeSensorConfigId]);
+  }, [firestore, sensorDataCollectionRef, activeTestSessionId, activeSensorConfigId]);
 
   useEffect(() => {
     if (dataLog && dataLog.length > 0) {
@@ -421,7 +408,7 @@ function TestingComponent() {
     }
     setConnectionState('DEMO');
     setIsMeasuring(true);
-    if (!user) {
+    if (!firestore) {
       setLocalDataLog([]);
     }
     setCurrentValue(null);
@@ -537,9 +524,9 @@ function TestingComponent() {
   }
   
   const handleClearData = async () => {
-    if (viewingUserId && firestore && activeSensorConfigId) {
+    if (firestore && activeSensorConfigId) {
       try {
-        const baseCollectionRef = collection(firestore, `users/${viewingUserId}/sensor_configurations/${activeSensorConfigId}/sensor_data`);
+        const baseCollectionRef = collection(firestore, `sensor_configurations/${activeSensorConfigId}/sensor_data`);
 
         const q = activeTestSessionId 
           ? query(baseCollectionRef, where("testSessionId", "==", activeTestSessionId))
@@ -628,9 +615,9 @@ function TestingComponent() {
         
         importedData.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-        if (viewingUserId && firestore && activeSensorConfigId) {
+        if (firestore && activeSensorConfigId) {
           setIsSyncing(true);
-          const baseCollectionRef = collection(firestore, `users/${viewingUserId}/sensor_configurations/${activeSensorConfigId}/sensor_data`);
+          const baseCollectionRef = collection(firestore, `sensor_configurations/${activeSensorConfigId}/sensor_data`);
           const batch = writeBatch(firestore);
           importedData.forEach(dataPoint => {
               const docRef = doc(baseCollectionRef);
@@ -728,14 +715,6 @@ function TestingComponent() {
     return 'Connect to Arduino';
   }
 
-  if (isUserLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
-        <p className="text-lg">Loading user data...</p>
-      </div>
-    );
-  }
-
   const renderLiveTab = () => (
     <>
       <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
@@ -756,11 +735,11 @@ function TestingComponent() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center justify-center gap-4">
-            <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession || isViewingAsAdmin}>
+            <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession}>
               {getButtonText()}
             </Button>
             {connectionState === 'DISCONNECTED' && (
-                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession || isViewingAsAdmin}>
+                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession}>
                     Start Demo
                 </Button>
             )}
@@ -769,15 +748,14 @@ function TestingComponent() {
                 variant={isMeasuring ? 'destructive' : 'secondary'}
                 onClick={handleToggleMeasurement}
                 className="btn-shine shadow-md transition-transform transform hover:-translate-y-1"
-                disabled={!!runningTestSession || isViewingAsAdmin}
+                disabled={!!runningTestSession}
               >
                 {isMeasuring ? 'Stop Measurement' : 'Start Measurement'}
               </Button>
             )}
             
           </CardContent>
-           {(runningTestSession || isViewingAsAdmin) && !isViewingAsAdmin && <CardFooter><p className="text-center text-sm text-muted-foreground w-full">Live controls are disabled while a remote test session is active.</p></CardFooter>}
-            {isViewingAsAdmin && <CardFooter><p className="text-center text-sm text-muted-foreground w-full">Live controls are disabled when viewing as an admin.</p></CardFooter>}
+           {(runningTestSession) && <CardFooter><p className="text-center text-sm text-muted-foreground w-full">Live controls are disabled while a test session is active.</p></CardFooter>}
         </Card>
     </>
   );
@@ -792,13 +770,13 @@ function TestingComponent() {
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-center gap-4">
             <Button onClick={handleExportCSV} variant="outline" disabled={isSyncing}>Export CSV</Button>
-            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing || !activeSensorConfigId || isViewingAsAdmin}>
+            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing || !activeSensorConfigId}>
               {isSyncing ? 'Importing...' : 'Import CSV'}
             </Button>
             <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
              <AlertDialog>
                 <AlertDialogTrigger asChild>
-                <Button variant="destructive" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1 ml-4" disabled={!activeSensorConfigId || !!runningTestSession || isViewingAsAdmin}>Clear Data</Button>
+                <Button variant="destructive" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1 ml-4" disabled={!activeSensorConfigId || !!runningTestSession}>Clear Data</Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                 <AlertDialogHeader>
@@ -815,14 +793,10 @@ function TestingComponent() {
                 </AlertDialogContent>
             </AlertDialog>
         </CardContent>
-        {isViewingAsAdmin && <CardFooter><p className="text-center text-sm text-muted-foreground w-full">File operations are disabled when viewing as an admin.</p></CardFooter>}
       </Card>
   );
 
   const renderTestSessionManager = () => {
-    // Admins manage this on the admin page
-    if (isViewingAsAdmin) return null;
-
     return (
       <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
         <CardHeader>
@@ -834,7 +808,7 @@ function TestingComponent() {
         <CardContent>
           {!tempTestSession && !runningTestSession && (
             <div className="flex justify-center">
-              <Button onClick={() => setTempTestSession({})} disabled={!viewingUserId}>
+              <Button onClick={() => setTempTestSession({})}>
                 Start New Test Session
               </Button>
             </div>
@@ -896,9 +870,9 @@ function TestingComponent() {
                 <CardTitle className="text-3xl bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
                 BioThrust Live Dashboard
                 </CardTitle>
-                 <Button onClick={() => router.push('/')} variant="outline" size="icon">
-                    <Home className="h-4 w-4" />
-                    <span className="sr-only">Home</span>
+                 <Button onClick={() => router.push('/admin')} variant="outline">
+                    <Cog className="h-4 w-4 mr-2" />
+                    Manage
                 </Button>
             </div>
 
@@ -935,7 +909,7 @@ function TestingComponent() {
                 <CardTitle>Data Visualization</CardTitle>
                 <div className='flex items-center gap-2'>
                     <Label htmlFor="sensorConfigSelect" className="whitespace-nowrap">Sensor:</Label>
-                    <Select value={activeSensorConfigId || ''} onValueChange={setActiveSensorConfigId} disabled={!!runningTestSession || !viewingUserId}>
+                    <Select value={activeSensorConfigId || ''} onValueChange={setActiveSensorConfigId} disabled={!!runningTestSession}>
                         <SelectTrigger id="sensorConfigSelect" className="w-[200px] bg-white/80">
                         <SelectValue placeholder="Select a sensor" />
                         </SelectTrigger>
@@ -1134,5 +1108,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    

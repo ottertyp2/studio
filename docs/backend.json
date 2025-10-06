@@ -55,34 +55,33 @@
           "type": "string",
           "description": "Unique identifier for the sensor configuration."
         },
+        "name": {
+            "type": "string"
+        },
         "mode": {
           "type": "string",
           "description": "The display mode of the sensor (RAW, VOLTAGE, CUSTOM)."
+        },
+        "unit": {
+            "type": "string"
+        },
+        "min": {
+            "type": "number"
+        },
+        "max": {
+            "type": "number"
         },
         "arduinoVoltage": {
           "type": "number",
           "description": "The reference voltage of the Arduino (used for voltage conversion)."
         },
-        "customUnit": {
-          "type": "string",
-          "description": "The custom unit of measurement for the sensor (used in CUSTOM mode)."
-        },
-        "minValue": {
-          "type": "number",
-          "description": "The minimum value for the sensor (used in CUSTOM mode)."
-        },
-        "maxValue": {
-          "type": "number",
-          "description": "The maximum value for the sensor (used in CUSTOM mode)."
+        "decimalPlaces": {
+            "type": "number"
         }
       },
       "required": [
         "id",
-        "mode",
-        "arduinoVoltage",
-        "customUnit",
-        "minValue",
-        "maxValue"
+        "mode"
       ]
     },
     "AnalysisResult": {
@@ -148,95 +147,50 @@
   },
   "auth": {
     "providers": [
-      "password",
       "anonymous"
     ]
   },
   "firestore": {
     "structure": [
       {
-        "path": "/users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}",
+        "path": "/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}",
         "definition": {
           "entityName": "SensorData",
           "schema": {
             "$ref": "#/backend/entities/SensorData"
           },
-          "description": "Stores sensor data points associated with a specific sensor configuration owned by a user.  Data is isolated to authenticated user via path based ownership",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The unique identifier of the user."
-            },
-            {
-              "name": "sensorConfigurationId",
-              "description": "The unique identifier of the sensor configuration."
-            },
-            {
-              "name": "sensorDataId",
-              "description": "The unique identifier of the sensor data point."
-            }
-          ]
+          "description": "Stores sensor data points associated with a specific sensor configuration."
         }
       },
       {
-        "path": "/users/{userId}/sensor_configurations/{sensorConfigurationId}",
+        "path": "/sensor_configurations/{sensorConfigurationId}",
         "definition": {
           "entityName": "SensorConfiguration",
           "schema": {
             "$ref": "#/backend/entities/SensorConfiguration"
           },
-          "description": "Stores sensor configurations owned by a specific user. Data is isolated to authenticated user via path based ownership",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The unique identifier of the user."
-            },
-            {
-              "name": "sensorConfigurationId",
-              "description": "The unique identifier of the sensor configuration."
-            }
-          ]
+          "description": "Stores all sensor configurations globally."
         }
       },
       {
-        "path": "/users/{userId}/analysis_results/{analysisResultId}",
+        "path": "/analysis_results/{analysisResultId}",
         "definition": {
           "entityName": "AnalysisResult",
           "schema": {
             "$ref": "#/backend/entities/AnalysisResult"
           },
-          "description": "Stores leak analysis results generated from a user's sensor data. Data is isolated to authenticated user via path based ownership.",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The unique identifier of the user."
-            },
-            {
-              "name": "analysisResultId",
-              "description": "The unique identifier of the analysis result."
-            }
-          ]
+          "description": "Stores leak analysis results generated from sensor data."
         }
       },
        {
-        "path": "/users/{userId}/test_sessions/{testSessionId}",
+        "path": "/test_sessions/{testSessionId}",
         "definition": {
           "entityName": "TestSession",
           "schema": { "$ref": "#/backend/entities/TestSession" },
-          "description": "Stores test sessions for a user, linking a product to a set of sensor data.",
-           "params": [
-            {
-              "name": "userId",
-              "description": "The unique identifier of the user."
-            },
-            {
-              "name": "testSessionId",
-              "description": "The unique identifier of the test session."
-            }
-          ]
+          "description": "Stores all test sessions globally."
         }
       }
     ],
-    "reasoning": "This Firestore data structure is designed to support the BioThrust Dashboard application, focusing on real-time sensor data collection, storage, and analysis. The design prioritizes Authorization Independence, clarity, and scalability.\n\n**Authorization Independence and QAPs:**\n\n*   The structure utilizes Path-Based Ownership. All sensor data is stored under a top-level `users/{userId}` collection, ensuring that only the authenticated user can read and write their own data. This avoids the need for complex security rules that rely on `get()` calls, thus satisfying Authorization Independence.\n*   The `sensor_configurations` are also stored under a user id collection, which allows only the current authenticated user to access and read the data and associated data points.\n*   This structure supports secure `list` operations (QAPs) because listing the sensor data under `/users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data` only returns data accessible to the authenticated user.\n*   The `test_sessions` collection is also stored under a user ID, linking specific product tests to the user who ran them."
+    "reasoning": "This Firestore data structure is designed for a single-user or public-access model. All data is stored in global collections, removing any user-specific paths or ownership. This simplifies data access as there is no user authentication or authorization layer to manage. It's suitable for local testing or a fully public dashboard."
   }
 }

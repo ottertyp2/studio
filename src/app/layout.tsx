@@ -1,27 +1,48 @@
-import type {Metadata} from 'next';
-import {Inter} from 'next/font/google';
+'use client';
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
-import { FirebaseClientProvider } from '@/firebase/client-provider';
+import { FirebaseProvider } from '@/firebase/provider';
+import { initializeFirebase } from '@/firebase';
+import { initiateAnonymousSignIn, useAuth } from '@/firebase';
+import { useEffect } from 'react';
 
-const inter = Inter({subsets: ['latin']});
+const inter = Inter({ subsets: ['latin'] });
 
-export const metadata: Metadata = {
-  title: 'Leak Detector',
-  description: 'AI-powered leak detection',
-};
+// export const metadata: Metadata = {
+//   title: 'Leak Detector',
+//   description: 'AI-powered leak detection',
+// };
+
+function AuthWrapper({ children }: { children: React.ReactNode }) {
+  const auth = useAuth();
+  useEffect(() => {
+    initiateAnonymousSignIn(auth);
+  }, [auth]);
+
+  return <>{children}</>;
+}
+
 
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const { firebaseApp, firestore, auth } = initializeFirebase();
   return (
     <html lang="en">
       <body className={inter.className}>
-        <FirebaseClientProvider>
-          {children}
-        </FirebaseClientProvider>
+        <FirebaseProvider
+          firebaseApp={firebaseApp}
+          auth={auth}
+          firestore={firestore}
+        >
+          <AuthWrapper>
+            {children}
+          </AuthWrapper>
+        </FirebaseProvider>
         <Toaster />
       </body>
     </html>

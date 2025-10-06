@@ -39,9 +39,9 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Home } from 'lucide-react';
+import { FlaskConical } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc, errorEmitter, FirestorePermissionError } from '@/firebase';
+import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where } from 'firebase/firestore';
 
 
@@ -75,105 +75,54 @@ type TestSession = {
     dataPointCount?: number;
 };
 
-type UserProfile = {
-  id: string; // Add id to the type
-  uid: string;
-  email: string;
-  createdAt: string;
-  isAdmin?: boolean;
-}
-
 export default function AdminPage() {
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
   const [tempSensorConfig, setTempSensorConfig] = useState<Partial<SensorConfig> | null>(null);
   const [activeTestSessionId, setActiveTestSessionId] = useState<string | null>(null);
   const [tempTestSession, setTempTestSession] = useState<Partial<TestSession> | null>(null);
-  const [emailToPromote, setEmailToPromote] = useState('');
   const [sessionDataCounts, setSessionDataCounts] = useState<Record<string, number>>({});
 
 
   const { toast } = useToast();
   const { firestore } = useFirebase();
-  const { user, isUserLoading } = useUser();
   const router = useRouter();
   
-  // This is the user whose data is being viewed/managed.
-  // It defaults to the logged-in user unless an admin selects another user.
-  const viewingUserId = selectedUserId;
-
-  // --- Admin Verification ---
-  // First, get the profile of the currently logged-in user to check for admin status.
-  const currentUserProfileRef = useMemoFirebase(() => {
-    if (!firestore || !user?.uid) return null;
-    return doc(firestore, `users/${user.uid}`);
-  }, [firestore, user?.uid]);
-
-  const { data: currentUserProfile, isLoading: isCurrentUserProfileLoading } = useDoc<UserProfile>(currentUserProfileRef);
-
-  const isAdmin = currentUserProfile?.isAdmin === true;
-
   // --- Data Fetching Hooks ---
-  // IMPORTANT: This ref is now dependent on `isAdmin`. It will be null until the current user is confirmed to be an admin.
-  const allUsersCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !isAdmin) return null; // Only create ref if user is an admin
-    return collection(firestore, 'users');
-  }, [firestore, isAdmin]);
-
-  const { data: allUsers, isLoading: isAllUsersLoading, error: allUsersError } = useCollection<UserProfile>(allUsersCollectionRef);
-
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !viewingUserId) return null;
-    return collection(firestore, `users/${viewingUserId}/sensor_configurations`);
-  }, [firestore, viewingUserId]);
+    if (!firestore) return null;
+    return collection(firestore, `sensor_configurations`);
+  }, [firestore]);
 
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
-      if (!firestore || !viewingUserId) return null;
-      return collection(firestore, `users/${viewingUserId}/test_sessions`);
-  }, [firestore, viewingUserId]);
+      if (!firestore) return null;
+      return collection(firestore, `test_sessions`);
+  }, [firestore]);
 
   const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
   
   // --- Effects ---
-  useEffect(() => {
-    if (!isUserLoading && !user) {
-      router.push('/login');
-    }
-     // Redirect non-admins away after profile has loaded and confirmed not an admin
-     if (!isUserLoading && !isCurrentUserProfileLoading && currentUserProfile && !isAdmin) {
-      toast({ variant: 'destructive', title: 'Access Denied', description: 'You do not have permission to access this page.' });
-      router.push('/');
-    }
-  }, [user, isUserLoading, router, currentUserProfile, isCurrentUserProfileLoading, isAdmin, toast]);
-
-
   const fetchSessionDataCounts = useCallback(async () => {
-    if (!firestore || !viewingUserId || !testSessions || !sensorConfigs) return;
+    if (!firestore || !testSessions || !sensorConfigs) return;
     
     const counts: Record<string, number> = {};
 
     for (const session of testSessions) {
       try {
-        const sensorDataRef = collection(firestore, `users/${viewingUserId}/sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
+        const sensorDataRef = collection(firestore, `sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
         const q = query(sensorDataRef, where('testSessionId', '==', session.id));
         const snapshot = await getDocs(q);
         counts[session.id] = snapshot.size;
-      } catch (serverError) {
-          const permissionError = new FirestorePermissionError({
-              path: `users/${viewingUserId}/sensor_configurations/${session.sensorConfigurationId}/sensor_data`,
-              operation: 'list',
-          });
-          errorEmitter.emit('permission-error', permissionError);
-          // Stop trying to fetch more counts if one fails
+      } catch (e) {
+          console.error("Error fetching session data counts.", e);
           break;
       }
     }
     setSessionDataCounts(counts);
 
-  }, [firestore, viewingUserId, testSessions, sensorConfigs]);
+  }, [firestore, testSessions, sensorConfigs]);
 
   useEffect(() => {
     if (testSessions && sensorConfigs) {
@@ -183,13 +132,13 @@ export default function AdminPage() {
 
 
   useEffect(() => {
-    // Reset selections when viewing user changes
+    // Reset selections
     setActiveSensorConfigId(null);
     setActiveTestSessionId(null);
     setTempSensorConfig(null);
     setTempTestSession(null);
     setSessionDataCounts({});
-  }, [viewingUserId]);
+  }, []);
 
   useEffect(() => {
     if (sensorConfigs && sensorConfigs.length > 0 && !activeSensorConfigId) {
@@ -239,7 +188,7 @@ export default function AdminPage() {
         toast({ variant: 'destructive', title: 'Invalid Input', description: 'The unit cannot be empty.'});
         return;
     }
-    if (!firestore || !viewingUserId) return;
+    if (!firestore) return;
 
     const configId = tempSensorConfig.id || doc(collection(firestore, '_')).id;
     const configToSave: SensorConfig = {
@@ -253,7 +202,7 @@ export default function AdminPage() {
       decimalPlaces: tempSensorConfig.decimalPlaces || 0,
     }
 
-    const configRef = doc(firestore, `users/${viewingUserId}/sensor_configurations`, configId);
+    const configRef = doc(firestore, `sensor_configurations`, configId);
     setDocumentNonBlocking(configRef, configToSave, { merge: true });
     
     toast({
@@ -276,8 +225,8 @@ export default function AdminPage() {
   };
 
   const handleDeleteSensorConfig = (configId: string) => {
-    if (!firestore || !viewingUserId || !configId) return;
-    const configRef = doc(firestore, `users/${viewingUserId}/sensor_configurations`, configId);
+    if (!firestore || !configId) return;
+    const configRef = doc(firestore, `sensor_configurations`, configId);
     deleteDocumentNonBlocking(configRef);
     toast({ title: "Configuration Deleted" });
     if (activeSensorConfigId === configId) {
@@ -298,7 +247,7 @@ export default function AdminPage() {
     }
 
     if (testSessions?.find(s => s.status === 'RUNNING')) {
-        toast({variant: 'destructive', title: 'Error', description: 'A test session is already running for this user.'});
+        toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
         return;
     }
 
@@ -331,74 +280,42 @@ export default function AdminPage() {
   };
   
   const handleDeleteTestSession = async (session: TestSession) => {
-    if (!firestore || !viewingUserId) return;
+    if (!firestore) return;
 
-    // 1. Query and delete all associated sensor data
-    const sensorDataRef = collection(firestore, `users/${viewingUserId}/sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
+    const sensorDataRef = collection(firestore, `sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
     const q = query(sensorDataRef, where("testSessionId", "==", session.id));
 
     getDocs(q).then(querySnapshot => {
         const batch = writeBatch(firestore);
 
-        // Delete associated sensor data
         querySnapshot.forEach(doc => {
             batch.delete(doc.ref);
         });
 
-        // Delete the session document itself
-        const sessionRef = doc(firestore, `users/${viewingUserId}/test_sessions`, session.id);
+        const sessionRef = doc(firestore, `test_sessions`, session.id);
         batch.delete(sessionRef);
 
-        // Commit the batch
-        batch.commit()
-            .then(() => {
-                toast({
-                    title: 'Session Deleted',
-                    description: `Session for "${session.productIdentifier}" and its ${querySnapshot.size} data points have been deleted.`
-                });
-            })
-            .catch(serverError => {
-                const permissionError = new FirestorePermissionError({
-                    path: `users/${viewingUserId}/test_sessions/${session.id}`,
-                    operation: 'delete',
-                });
-                errorEmitter.emit('permission-error', permissionError);
-            });
+        return batch.commit();
 
-    }).catch(serverError => {
-        // This catch block handles errors from the getDocs() call (the 'list' operation)
-        const permissionError = new FirestorePermissionError({
-            path: `users/${viewingUserId}/sensor_configurations/${session.sensorConfigurationId}/sensor_data`,
-            operation: 'list',
+    }).then(() => {
+        toast({
+            title: 'Session Deleted',
+            description: `Session for "${session.productIdentifier}" and its associated data have been deleted.`
         });
-        errorEmitter.emit('permission-error', permissionError);
+    }).catch(serverError => {
+        console.error("Error deleting session:", serverError);
+         toast({
+            variant: 'destructive',
+            title: 'Error Deleting Session',
+            description: (serverError as Error).message
+        });
     });
   };
-
-  const viewUserTests = (userId: string) => {
-    const queryParams = new URLSearchParams({ userId }).toString();
-    router.push(`/testing?${queryParams}`);
-  };
   
-  const viewSessionData = (userId: string, sessionId: string) => {
-    const queryParams = new URLSearchParams({ userId, sessionId }).toString();
+  const viewSessionData = (sessionId: string) => {
+    const queryParams = new URLSearchParams({ sessionId }).toString();
     router.push(`/testing?${queryParams}`);
   };
-
-  // Loading state while verifying admin status
-  if (isUserLoading || isCurrentUserProfileLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
-        <p className="text-lg">Verifying administrator access...</p>
-      </div>
-    );
-  }
-
-  // Once profile is loaded, if not an admin, this component will trigger a redirect.
-  // We can return null as the redirect is handled in the useEffect.
-  if (!isAdmin) {
-      return null;
-  }
 
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
@@ -472,13 +389,13 @@ export default function AdminPage() {
         <CardHeader>
           <CardTitle>Test Sessions</CardTitle>
           <CardDescription>
-            Manage test sessions for the selected user: {allUsers?.find(u => u.id === selectedUserId)?.email || 'N/A'}
+            Manage test sessions for all products.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {!tempTestSession && !runningSession && (
             <div className="flex justify-center">
-              <Button onClick={() => setTempTestSession({})} disabled={!viewingUserId || !activeSensorConfigId}>
+              <Button onClick={() => setTempTestSession({})} disabled={!activeSensorConfigId}>
                 Start New Test Session
               </Button>
             </div>
@@ -513,9 +430,9 @@ export default function AdminPage() {
           )}
 
           <div className="space-y-4 mt-6">
-             <ScrollArea className="h-64">
-              {testSessions && testSessions.length > 0 ? (
-                isTestSessionsLoading ? <p>Loading sessions...</p> : testSessions?.map(session => (
+             <ScrollArea className="h-96">
+              {isTestSessionsLoading ? <p>Loading sessions...</p> : testSessions && testSessions.length > 0 ? (
+                testSessions?.map(session => (
                     <Card key={session.id} className={`p-3 mb-2 ${session.status === 'RUNNING' ? 'border-primary' : ''}`}>
                         <div className="flex justify-between items-start">
                             <div>
@@ -531,7 +448,7 @@ export default function AdminPage() {
                                 {session.status === 'RUNNING' && (
                                     <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session.id)}>Stop</Button>
                                 )}
-                                <Button size="sm" variant="outline" onClick={() => viewSessionData(viewingUserId!, session.id)}>View Data</Button>
+                                <Button size="sm" variant="outline" onClick={() => viewSessionData(session.id)}>View Data</Button>
                                  <AlertDialog>
                                     <AlertDialogTrigger asChild>
                                         <Button size="sm" variant="destructive" className="bg-red-700/80">Delete</Button>
@@ -554,7 +471,7 @@ export default function AdminPage() {
                     </Card>
                 ))
               ) : (
-                 <p className="text-sm text-muted-foreground text-center">No test sessions found for this user.</p>
+                 <p className="text-sm text-muted-foreground text-center">No test sessions found.</p>
               )}
             </ScrollArea>
           </div>
@@ -564,75 +481,6 @@ export default function AdminPage() {
     );
   }
 
-  const renderAdminTools = () => {
-    return (
-      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-        <CardHeader>
-          <CardTitle>Admin Tools</CardTitle>
-          <CardDescription>Promote a user to an admin role.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label htmlFor="promoteEmail">User Email to Promote</Label>
-            <Input
-              id="promoteEmail"
-              type="email"
-              placeholder="user@example.com"
-              value={emailToPromote}
-              onChange={(e) => setEmailToPromote(e.target.value)}
-            />
-          </div>
-          <Button onClick={() => alert("This would call a Cloud Function.")}>Promote to Admin</Button>
-           <p className="text-xs text-muted-foreground pt-2">
-            Note: This requires a deployed Cloud Function named 'addAdminRole' to work.
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const renderUserManagement = () => {
-    if (isAllUsersLoading) {
-        return <p>Loading users...</p>;
-    }
-    if (allUsersError) {
-        return (
-            <div className="text-destructive">
-                <p>Error loading users:</p>
-                <p className="text-sm">Could not retrieve the user list. This is likely a permissions issue. Please ensure the Firestore Security Rules allow admins to list users.</p>
-            </div>
-        );
-    }
-    if (allUsers) {
-        return (
-            <ScrollArea className="h-72">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Email</TableHead>
-                            <TableHead>Role</TableHead>
-                            <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {allUsers.map(u => (
-                            <TableRow key={u.id} className={u.id === selectedUserId ? "bg-accent/50" : ""}>
-                                <TableCell>{u.email}</TableCell>
-                                <TableCell>{u.isAdmin ? 'Admin' : 'User'}</TableCell>
-                                <TableCell className="text-right">
-                                    <Button variant="outline" size="sm" onClick={() => setSelectedUserId(u.id)}>Manage Data</Button>
-                                    <Button variant="ghost" size="sm" className="ml-2" onClick={() => viewUserTests(u.id)}>View Tests</Button>
-                                </TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
-            </ScrollArea>
-        );
-    }
-    return null; // Return null if not admin or data is not yet available
-  };
-
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
       <header className="w-full max-w-7xl mx-auto mb-6">
@@ -640,15 +488,15 @@ export default function AdminPage() {
           <CardHeader>
             <div className="flex justify-between items-center">
                 <CardTitle className="text-3xl bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                Admin Panel
+                Management Panel
                 </CardTitle>
-                 <Button onClick={() => router.push('/')} variant="outline" size="icon">
-                    <Home className="h-4 w-4" />
-                    <span className="sr-only">Home</span>
+                 <Button onClick={() => router.push('/testing')} variant="outline">
+                    <FlaskConical className="h-4 w-4 mr-2" />
+                    Go to Testing
                 </Button>
             </div>
             <CardDescription>
-              Manage users, sensors, and test sessions.
+              Manage sensor configurations and test sessions.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -656,31 +504,18 @@ export default function AdminPage() {
 
       <main className="w-full max-w-7xl mx-auto space-y-6">
        
-        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-            <CardHeader>
-                <CardTitle>User Management</CardTitle>
-                <CardDescription>
-                    Select a user to view and manage their data, sensors, and test sessions.
-                </CardDescription>
-            </CardHeader>
-            <CardContent>
-                 {renderUserManagement()}
-            </CardContent>
-        </Card>
-        
-        {selectedUserId && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="space-y-6">
                   <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
                       <CardHeader>
                           <CardTitle>Sensor Management</CardTitle>
                           <CardDescription>
-                              Manage sensor configurations for {allUsers?.find(u => u.id === selectedUserId)?.email || 'the selected user'}.
+                              Manage all sensor configurations.
                           </CardDescription>
                       </CardHeader>
                       <CardContent>
                           <div className="flex justify-center mb-4">
-                              <Button onClick={handleNewSensorConfig} disabled={!viewingUserId}>New Configuration</Button>
+                              <Button onClick={handleNewSensorConfig}>New Configuration</Button>
                           </div>
                           {isSensorConfigsLoading ? <p>Loading sensors...</p> :
                           <ScrollArea className="h-96">
@@ -725,10 +560,8 @@ export default function AdminPage() {
               </div>
               <div className="space-y-6">
                   {renderTestSessionManager()}
-                  {renderAdminTools()}
               </div>
           </div>
-        )}
       </main>
     </div>
   );
