@@ -54,7 +54,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
-import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
+import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc } from '@/firebase';
 import { collection, writeBatch, getDocs, query, doc, where } from 'firebase/firestore';
 import { UserSelectionMenu } from '@/components/UserSelectionMenu';
 
@@ -90,6 +90,11 @@ type TestSession = {
 
 type ConnectionState = 'DISCONNECTED' | 'CONNECTED' | 'DEMO';
 
+type UserProfile = {
+  email: string;
+  createdAt: string;
+  isAdmin?: boolean;
+}
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('live');
@@ -123,9 +128,17 @@ export default function Home() {
   const importFileRef = useRef<HTMLInputElement>(null);
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
   
-  const viewingUserId = isAdmin ? selectedUserId ?? user?.uid : user?.uid;
+  const viewingUserId = selectedUserId ?? user?.uid;
+
+  const userProfileRef = useMemoFirebase(() => {
+    if (!firestore || !user?.uid) return null;
+    return doc(firestore, `users/${user.uid}`);
+  }, [firestore, user?.uid]);
+
+  const { data: userProfile, isLoading: isUserProfileLoading } = useDoc<UserProfile>(userProfileRef);
+
+  const isAdmin = userProfile?.isAdmin === true;
 
   useEffect(() => {
     if (!isUserLoading && !user) {
@@ -133,14 +146,6 @@ export default function Home() {
     }
   }, [user, isUserLoading, router]);
 
-  useEffect(() => {
-    user?.getIdTokenResult().then((idTokenResult) => {
-      const claims = idTokenResult.claims;
-      if (claims.admin) {
-        setIsAdmin(true);
-      }
-    });
-  }, [user]);
 
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !viewingUserId) return null;
@@ -157,7 +162,7 @@ export default function Home() {
   const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
 
 
-  const sensorConfig = useMemo(() => {
+  const sensorConfig: SensorConfig = useMemo(() => {
     if (!sensorConfigs || !activeSensorConfigId) {
         return { id: 'default', name: 'Default', mode: 'RAW', unit: 'RAW', min: 0, max: 1023, arduinoVoltage: 5, decimalPlaces: 0 };
     }
@@ -172,13 +177,16 @@ export default function Home() {
 
   const sensorDataCollectionRef = useMemoFirebase(() => {
     if (!firestore || !viewingUserId || !activeSensorConfigId) return null;
+    // Construct the path dynamically based on whether a test session is active.
+    // This is a simplification. For robust querying, you'd likely fetch all data for a sensor
+    // and then filter by testSessionId on the client.
     return collection(firestore, `users/${viewingUserId}/sensor_configurations/${activeSensorConfigId}/sensor_data`);
   }, [firestore, viewingUserId, activeSensorConfigId]);
   
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
 
   const dataLog = useMemo(() => {
-    const log = user ? cloudDataLog : localDataLog;
+    const log = user && !isUserLoading ? cloudDataLog : localDataLog;
     if (!log) return [];
     
     let filteredLog = [...log];
@@ -187,7 +195,7 @@ export default function Home() {
     }
     
     return filteredLog.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [user, cloudDataLog, localDataLog, activeTestSessionId]);
+  }, [user, isUserLoading, cloudDataLog, localDataLog, activeTestSessionId]);
   
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
     setCurrentValue(newDataPoint.value);
@@ -199,7 +207,7 @@ export default function Home() {
 
     if (user && !isUserLoading && sensorDataCollectionRef) {
       addDocumentNonBlocking(sensorDataCollectionRef, dataToSave);
-    } else if (!user) {
+    } else {
       setLocalDataLog(prevLog => [dataToSave, ...prevLog].slice(0, 1000));
     }
   }, [user, isUserLoading, sensorDataCollectionRef, activeTestSessionId]);
@@ -779,25 +787,6 @@ export default function Home() {
     }
   };
 
-  const handlePromoteToAdmin = async () => {
-    if (!emailToPromote) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Please enter a user email.' });
-      return;
-    }
-    toast({ title: 'Promotion Sent', description: 'A request to promote the user has been sent. This requires a Cloud Function to be deployed.' });
-    // In a real application, you would call a Cloud Function here.
-    // For example:
-    // const functions = getFunctions(app, 'us-central1');
-    // const addAdminRole = httpsCallable(functions, 'addAdminRole');
-    // addAdminRole({ email: emailToPromote })
-    //   .then((result) => {
-    //     toast({ title: 'Success', description: (result.data as any).message });
-    //   })
-    //   .catch((error) => {
-    //     toast({ variant: 'destructive', title: 'Error', description: error.message });
-    //   });
-  };
-
 
   const chartData = useMemo(() => {
     const now = new Date();
@@ -828,10 +817,10 @@ export default function Home() {
     }
   }
 
-  if (isUserLoading) {
+  if (isUserLoading || (user && isUserProfileLoading)) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
-        <p className="text-lg">Loading authentication...</p>
+        <p className="text-lg">Loading user data...</p>
       </div>
     );
   }
@@ -1102,7 +1091,7 @@ export default function Home() {
               onChange={(e) => setEmailToPromote(e.target.value)}
             />
           </div>
-          <Button onClick={handlePromoteToAdmin}>Promote to Admin</Button>
+          <Button onClick={() => alert("This would call a Cloud Function.")}>Promote to Admin</Button>
            <p className="text-xs text-muted-foreground pt-2">
             Note: This requires a deployed Cloud Function named 'addAdminRole' to work.
           </p>
@@ -1376,7 +1365,7 @@ export default function Home() {
                 </CardContent>
             </Card>
             {isAdmin && renderTestSessionManager()}
-            {isAdmin && renderAdminTools()}
+            {renderAdminTools()}
           </div>
         </div>
       </main>
