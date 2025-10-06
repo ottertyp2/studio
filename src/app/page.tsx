@@ -54,8 +54,8 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
-import { useFirebase, useUser, useMemoFirebase, initiateAnonymousSignIn, addDocumentNonBlocking } from '@/firebase';
-import { useCollection } from '@/firebase/firestore/use-collection';
+import { useFirebase, useUser, useMemoFirebase, initiateAnonymousSignIn, addDocumentNonBlocking, useCollection } from '@/firebase';
+
 import { collection } from 'firebase/firestore';
 
 
@@ -129,12 +129,12 @@ export default function Home() {
   
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
     setCurrentValue(newDataPoint.value);
-    if (user && sensorDataCollectionRef) {
+    if (user && !isUserLoading && sensorDataCollectionRef) {
       addDocumentNonBlocking(sensorDataCollectionRef, newDataPoint);
     } else {
       setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
     }
-  }, [user, sensorDataCollectionRef]);
+  }, [user, isUserLoading, sensorDataCollectionRef]);
 
   useEffect(() => {
     if (dataLog && dataLog.length > 0) {
@@ -570,7 +570,7 @@ export default function Home() {
         
         importedData.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-        if (user && sensorDataCollectionRef) {
+        if (user && !isUserLoading && sensorDataCollectionRef) {
           setIsSyncing(true);
           const uploadPromises = importedData.map(dataPoint => addDocumentNonBlocking(sensorDataCollectionRef, dataPoint));
           Promise.all(uploadPromises)
@@ -978,3 +978,4 @@ export default function Home() {
   );
 }
 
+    
