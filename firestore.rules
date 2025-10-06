@@ -5,133 +5,110 @@
  * This ruleset enforces a strict user-ownership model, ensuring that only authenticated users can access their own data.
  *
  * Data Structure:
- * All data is nested under /users/{userId}, isolating data per user. This includes sensor configurations, sensor data, test sessions, and analysis results.
+ * All data is nested under /users/{userId}, with further subcollections for sensor configurations, sensor data, analysis results, and test sessions.
  *
  * Key Security Decisions:
  * - Users can only access their own data.
- * - Listing of users is explicitly denied (as per the reported error).
- *
- * Denormalization for Authorization:
- *  - The data model uses path-based ownership, eliminating the need for `get()` calls in rules. The `userId` is already available in the path.
+ * - Data validation is minimal to allow rapid prototyping and iteration.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Prevents listing all users in the 'users' collection.
-     * @path /databases/{database}/documents/users
-     * @allow (get) Allow the retrieval of a specific user document if the user is authenticated (but path is likely wrong)
-     * @deny (list) Listing all users is not permitted.
-     * @principle Prevents unauthorized enumeration of users.
+     * @description Checks if the request is made by a signed-in user.
      */
-    match /users {
-      allow get: if isSignedIn();
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * @description Checks if the authenticated user ID matches the provided user ID.
+     */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * @description Checks if the authenticated user ID matches the provided user ID and the resource exists.
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && exists(resource.data);
+    }
+
+    /**
+     * @description Rules for user documents.
+     * @path /users/{userId}
+     * @allow (create) User with UID 'user123' can create their own user document.
+     * @deny (create) User with UID 'user456' cannot create a user document with ID 'user123'.
+     * @principle Enforces user-ownership for data access.
+     */
+    match /users/{userId} {
+      allow get: if isOwner(userId);
       allow list: if false;
-    }
-
-    /**
-     * @description Enforces access control for sensor data points under a specific user and sensor configuration.
-     * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
-     * @allow (create) Allow creation if the user is signed in and matches the userId.
-     * @allow (get) Allow retrieval if the user is signed in and matches the userId.
-     * @allow (list) Allow listing if the user is signed in and matches the userId.
-     * @allow (update) Allow updating if the user is signed in, matches the userId, and the document exists.
-     * @allow (delete) Allow deletion if the user is signed in, matches the userId, and the document exists.
-     * @deny (create) Deny creation if the user is not signed in or doesn't match the userId.
-     * @deny (get) Deny retrieval if the user is not signed in or doesn't match the userId.
-     * @deny (list) Deny listing if the user is not signed in or doesn't match the userId.
-     * @deny (update) Deny updating if the user is not signed in, doesn't match the userId, or the document doesn't exist.
-     * @deny (delete) Deny deletion if the user is not signed in, doesn't match the userId, or the document doesn't exist.
-     * @principle Enforces document ownership for writes, restricts access to a user's own data tree.
-     */
-    match /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
       allow create: if isSignedIn() && isOwner(userId);
-      allow get: if isSignedIn() && isOwner(userId);
-      allow list: if isSignedIn() && isOwner(userId);
-      allow update: if isSignedIn() && isExistingOwner(userId);
-      allow delete: if isSignedIn() && isExistingOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Enforces access control for sensor configurations owned by a specific user.
+     * @description Rules for sensor configurations.
      * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}
-     * @allow (create) Allow creation if the user is signed in and matches the userId.
-     * @allow (get) Allow retrieval if the user is signed in and matches the userId.
-     * @allow (list) Allow listing if the user is signed in and matches the userId.
-     * @allow (update) Allow updating if the user is signed in, matches the userId, and the document exists.
-     * @allow (delete) Allow deletion if the user is signed in, matches the userId, and the document exists.
-     * @deny (create) Deny creation if the user is not signed in or doesn't match the userId.
-     * @deny (get) Deny retrieval if the user is not signed in or doesn't match the userId.
-     * @deny (list) Deny listing if the user is not signed in or doesn't match the userId.
-     * @deny (update) Deny updating if the user is not signed in, doesn't match the userId, or the document doesn't exist.
-     * @deny (delete) Deny deletion if the user is not signed in, doesn't match the userId, or the document doesn't exist.
-     * @principle Enforces document ownership for writes, restricts access to a user's own data tree.
+     * @allow (create) User with UID 'user123' can create a sensor configuration under their user ID.
+     * @deny (update) User with UID 'user456' cannot update a sensor configuration under user ID 'user123'.
+     * @principle Enforces user-ownership for data access.
      */
     match /users/{userId}/sensor_configurations/{sensorConfigurationId} {
-      allow create: if isSignedIn() && isOwner(userId);
-      allow get: if isSignedIn() && isOwner(userId);
-      allow list: if isSignedIn() && isOwner(userId);
-      allow update: if isSignedIn() && isExistingOwner(userId);
-      allow delete: if isSignedIn() && isExistingOwner(userId);
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Enforces access control for leak analysis results generated from a user's sensor data.
+     * @description Rules for sensor data.
+     * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
+     * @allow (create) User with UID 'user123' can create sensor data under their sensor configuration.
+     * @deny (delete) User with UID 'user456' cannot delete sensor data under user ID 'user123'.
+     * @principle Enforces user-ownership for data access.
+     */
+    match /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Rules for analysis results.
      * @path /users/{userId}/analysis_results/{analysisResultId}
-     * @allow (create) Allow creation if the user is signed in and matches the userId.
-     * @allow (get) Allow retrieval if the user is signed in and matches the userId.
-     * @allow (list) Allow listing if the user is signed in and matches the userId.
-     * @allow (update) Allow updating if the user is signed in, matches the userId, and the document exists.
-     * @allow (delete) Allow deletion if the user is signed in, matches the userId, and the document exists.
-     * @deny (create) Deny creation if the user is not signed in or doesn't match the userId.
-     * @deny (get) Deny retrieval if the user is not signed in or doesn't match the userId.
-     * @deny (list) Deny listing if the user is not signed in or doesn't match the userId.
-     * @deny (update) Deny updating if the user is not signed in, doesn't match the userId, or the document doesn't exist.
-     * @deny (delete) Deny deletion if the user is not signed in, doesn't match the userId, or the document doesn't exist.
-     * @principle Enforces document ownership for writes, restricts access to a user's own data tree.
+     * @allow (create) User with UID 'user123' can create an analysis result under their user ID.
+     * @deny (update) User with UID 'user456' cannot update an analysis result under user ID 'user123'.
+     * @principle Enforces user-ownership for data access.
      */
     match /users/{userId}/analysis_results/{analysisResultId} {
-      allow create: if isSignedIn() && isOwner(userId);
-      allow get: if isSignedIn() && isOwner(userId);
-      allow list: if isSignedIn() && isOwner(userId);
-      allow update: if isSignedIn() && isExistingOwner(userId);
-      allow delete: if isSignedIn() && isExistingOwner(userId);
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
     }
 
-    /**
-     * @description Enforces access control for test sessions for a user, linking a product to a set of sensor data.
+      /**
+     * @description Rules for test sessions.
      * @path /users/{userId}/test_sessions/{testSessionId}
-     * @allow (create) Allow creation if the user is signed in and matches the userId.
-     * @allow (get) Allow retrieval if the user is signed in and matches the userId.
-     * @allow (list) Allow listing if the user is signed in and matches the userId.
-     * @allow (update) Allow updating if the user is signed in, matches the userId, and the document exists.
-     * @allow (delete) Allow deletion if the user is signed in, matches the userId, and the document exists.
-     * @deny (create) Deny creation if the user is not signed in or doesn't match the userId.
-     * @deny (get) Deny retrieval if the user is not signed in or doesn't match the userId.
-     * @deny (list) Deny listing if the user is not signed in or doesn't match the userId.
-     * @deny (update) Deny updating if the user is not signed in, doesn't match the userId, or the document doesn't exist.
-     * @deny (delete) Deny deletion if the user is not signed in, doesn't match the userId, or the document doesn't exist.
+     * @allow (create) User with UID 'user123' can create a test session under their user ID.
+     * @deny (update) User with UID 'user456' cannot update a test session under user ID 'user123'.
+     * @principle Enforces user-ownership for data access.
      */
     match /users/{userId}/test_sessions/{testSessionId} {
-        allow create: if isSignedIn() && isOwner(userId);
-        allow get: if isSignedIn() && isOwner(userId);
-        allow list: if isSignedIn() && isOwner(userId);
-        allow update: if isSignedIn() && isExistingOwner(userId);
-        allow delete: if isSignedIn() && isExistingOwner(userId);
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
     }
-  }
-
-  // Helper functions
-  function isSignedIn() {
-    return request.auth != null;
-  }
-
-  function isOwner(userId) {
-    return request.auth.uid == userId;
-  }
-
-  function isExistingOwner(userId) {
-    return isSignedIn() && isOwner(userId) && resource != null;
   }
 }
