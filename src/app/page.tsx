@@ -604,7 +604,11 @@ export default function Home() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                   <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" />
-                  <YAxis stroke="hsl(var(--muted-foreground))" domain={['dataMin', 'dataMax']}/>
+                  <YAxis
+                    stroke="hsl(var(--muted-foreground))"
+                    domain={['dataMin', 'dataMax']}
+                    tickFormatter={(tick) => tick.toFixed(displayDecimals)}
+                  />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: 'hsl(var(--background) / 0.8)',
@@ -703,7 +707,7 @@ export default function Home() {
                         {tempSensorConfig.mode === 'VOLTAGE' && (
                             <div>
                                 <Label htmlFor="arduinoVoltageInput">Referenzspannung (V)</Label>
-                                <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage} onChange={(e) => handleConfigchange('arduinoVoltage', parseFloat(e.target.value))} />
+                                <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage} onChange={(e) => handleConfigChange('arduinoVoltage', parseFloat(e.target.value))} />
                             </div>
                         )}
                         <div>
