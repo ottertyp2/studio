@@ -1,0 +1,191 @@
+{
+  "entities": {
+    "SensorData": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "SensorData",
+      "type": "object",
+      "description": "Represents a single sensor data reading.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the sensor data entry."
+        },
+        "value": {
+          "type": "number",
+          "description": "The sensor reading value."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Timestamp of when the sensor reading was recorded.  ISO-8601 format recommended.",
+          "format": "date-time"
+        },
+        "unit": {
+          "type": "string",
+          "description": "The unit of measurement for the sensor data (e.g., RAW, Voltage, CUSTOM)."
+        }
+      },
+      "required": [
+        "id",
+        "value",
+        "timestamp",
+        "unit"
+      ]
+    },
+    "SensorConfiguration": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "SensorConfiguration",
+      "type": "object",
+      "description": "Stores the configuration settings for the sensor.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the sensor configuration."
+        },
+        "mode": {
+          "type": "string",
+          "description": "The display mode of the sensor (RAW, VOLTAGE, CUSTOM)."
+        },
+        "unit": {
+          "type": "string",
+          "description": "The unit of measurement for the sensor values."
+        },
+        "min": {
+          "type": "number",
+          "description": "The minimum value for custom sensor configuration."
+        },
+        "max": {
+          "type": "number",
+          "description": "The maximum value for custom sensor configuration."
+        },
+        "arduinoVoltage": {
+          "type": "number",
+          "description": "The Arduino reference voltage for voltage sensor configuration."
+        }
+      },
+      "required": [
+        "id",
+        "mode",
+        "unit",
+        "min",
+        "max",
+        "arduinoVoltage"
+      ]
+    },
+    "LeakAnalysis": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "LeakAnalysis",
+      "type": "object",
+      "description": "Stores the configuration and results for leak analysis.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the leak analysis configuration."
+        },
+        "analysisModel": {
+          "type": "string",
+          "description": "The analysis model used for leak detection (linear_leak, nonlinear_leak)."
+        },
+        "startThreshold": {
+          "type": "number",
+          "description": "The start threshold value for leak analysis."
+        },
+        "endThreshold": {
+          "type": "number",
+          "description": "The end threshold value for leak analysis."
+        },
+        "sensitivity": {
+          "type": "number",
+          "description": "The sensitivity (R²) value for leak analysis."
+        },
+        "result": {
+          "type": "string",
+          "description": "The result of the leak analysis."
+        },
+        "analyzedRange": {
+          "type": "string",
+          "description": "The range of sensor data which was analyzed."
+        }
+      },
+      "required": [
+        "id",
+        "analysisModel",
+        "startThreshold",
+        "endThreshold",
+        "sensitivity",
+        "result",
+        "analyzedRange"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}/sensor_data/{sensorDataId}",
+        "definition": {
+          "entityName": "SensorData",
+          "schema": {
+            "$ref": "#/backend/entities/SensorData"
+          },
+          "description": "Stores individual sensor data readings for a specific user. Includes timestamp and value. The 'userId' path parameter ensures data isolation. Unit also stored to avoid reads.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "sensorDataId",
+              "description": "The unique identifier for the sensor data entry."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/sensor_configurations/{sensorConfigurationId}",
+        "definition": {
+          "entityName": "SensorConfiguration",
+          "schema": {
+            "$ref": "#/backend/entities/SensorConfiguration"
+          },
+          "description": "Stores sensor configuration settings for a specific user. The 'userId' path parameter ensures data isolation.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "sensorConfigurationId",
+              "description": "The unique identifier for the sensor configuration."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/leak_analyses/{leakAnalysisId}",
+        "definition": {
+          "entityName": "LeakAnalysis",
+          "schema": {
+            "$ref": "#/backend/entities/LeakAnalysis"
+          },
+          "description": "Stores leak analysis configurations and results for a specific user. The 'userId' path parameter ensures data isolation.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
+              "name": "leakAnalysisId",
+              "description": "The unique identifier for the leak analysis configuration."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to securely store sensor data, configurations, and analysis results for the BioThrust Dashboard application. It prioritizes authorization independence by storing all data under a user-specific path, eliminating the need for `get()` calls in security rules. Data for each user is segregated under `/users/{userId}`, ensuring that users can only access their own data, which fulfills the QAP requirement. The design includes collections for sensor data (`/users/{userId}/sensor_data`), sensor configurations (`/users/{userId}/sensor_configurations`), and leak analysis results (`/users/{userId}/leak_analyses`). This structure simplifies security rules and ensures data isolation between users."
+  }
+}

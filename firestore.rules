@@ -1,0 +1,98 @@
+/**
+ * @file Firestore Security Rules
+ * @core Philosophy: This ruleset enforces a strict user-ownership model, ensuring that each user can only access their own data.
+ *   All data (sensor readings, configurations, analysis) is stored under a user-specific path (/users/{userId}/...).
+ *   This eliminates the need for complex authorization checks involving `get()` calls to other documents.
+ * @data Structure:
+ *   - /users/{userId}/sensor_data/{sensorDataId}: Stores individual sensor readings.
+ *   - /users/{userId}/sensor_configurations/{sensorConfigurationId}: Stores sensor configuration settings.
+ *   - /users/{userId}/leak_analyses/{leakAnalysisId}: Stores leak analysis configurations and results.
+ * @key Security Decisions:
+ *   - Strict user-ownership: Users can only access data under their own UID.
+ *   - No public listing: Listing of users or their data is not allowed to prevent information disclosure.
+ * @denormalization for Authorization: Data is denormalized to avoid get() calls, simpler rules.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * @description: Secures individual sensor data readings for a specific user.
+     * @path: /users/{userId}/sensor_data/{sensorDataId}
+     * @allow: User 'user123' (create) can create a new sensor reading under /users/user123/sensor_data/data1.
+     * @deny: User 'user456' (create) cannot create a sensor reading under /users/user123/sensor_data/data1.
+     * @principle: Enforces document ownership for writes.
+     */
+    match /users/{userId}/sensor_data/{sensorDataId} {
+      // Allow the user to read their own sensor data.
+      allow get: if isSignedIn() && isOwner(userId);
+      allow list: if isSignedIn() && isOwner(userId);
+
+      // Allow the user to create sensor data, enforcing ownership.
+      allow create: if isSignedIn() && request.auth.uid == userId;
+
+      // Allow the user to update their own sensor data, enforcing ownership and existence.
+      allow update: if isSignedIn() && isExistingOwner(userId) && request.auth.uid == userId;
+
+      // Allow the user to delete their own sensor data, enforcing ownership and existence.
+      allow delete: if isSignedIn() && isExistingOwner(userId) && request.auth.uid == userId;
+    }
+
+    /**
+     * @description: Secures sensor configuration settings for a specific user.
+     * @path: /users/{userId}/sensor_configurations/{sensorConfigurationId}
+     * @allow: User 'user123' (create) can create a new sensor configuration under /users/user123/sensor_configurations/config1.
+     * @deny: User 'user456' (create) cannot create a sensor configuration under /users/user123/sensor_configurations/config1.
+     * @principle: Enforces document ownership for writes.
+     */
+    match /users/{userId}/sensor_configurations/{sensorConfigurationId} {
+      // Allow the user to read their own sensor configurations.
+      allow get: if isSignedIn() && isOwner(userId);
+      allow list: if isSignedIn() && isOwner(userId);
+
+      // Allow the user to create sensor configurations, enforcing ownership.
+      allow create: if isSignedIn() && request.auth.uid == userId;
+
+      // Allow the user to update their own sensor configurations, enforcing ownership and existence.
+      allow update: if isSignedIn() && isExistingOwner(userId) && request.auth.uid == userId;
+
+      // Allow the user to delete their own sensor configurations, enforcing ownership and existence.
+      allow delete: if isSignedIn() && isExistingOwner(userId) && request.auth.uid == userId;
+    }
+
+    /**
+     * @description: Secures leak analysis configurations and results for a specific user.
+     * @path: /users/{userId}/leak_analyses/{leakAnalysisId}
+     * @allow: User 'user123' (create) can create a new leak analysis under /users/user123/leak_analyses/analysis1.
+     * @deny: User 'user456' (create) cannot create a leak analysis under /users/user123/leak_analyses/analysis1.
+     * @principle: Enforces document ownership for writes.
+     */
+    match /users/{userId}/leak_analyses/{leakAnalysisId} {
+      // Allow the user to read their own leak analyses.
+      allow get: if isSignedIn() && isOwner(userId);
+      allow list: if isSignedIn() && isOwner(userId);
+
+      // Allow the user to create leak analyses, enforcing ownership.
+      allow create: if isSignedIn() && request.auth.uid == userId;
+
+      // Allow the user to update their own leak analyses, enforcing ownership and existence.
+      allow update: if isSignedIn() && isExistingOwner(userId) && request.auth.uid == userId;
+
+      // Allow the user to delete their own leak analyses, enforcing ownership and existence.
+      allow delete: if isSignedIn() && isExistingOwner(userId) && request.auth.uid == userId;
+    }
+
+    // --- Helper functions ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function isExistingOwner(userId) {
+        return isOwner(userId) && resource != null;
+    }
+  }
+}
