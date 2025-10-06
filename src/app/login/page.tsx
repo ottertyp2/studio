@@ -4,8 +4,6 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -28,14 +26,7 @@ import { useFirebase } from '@/firebase';
 import { FirebaseError } from 'firebase/app';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 
-const formSchema = z.object({
-  email: z.string().min(1, {
-    message: 'Please enter your username.',
-  }),
-  password: z.string().min(1, {
-    message: 'Please enter your password.',
-  }),
-});
+// No Zod schema for simplest validation
 
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
@@ -43,15 +34,23 @@ export default function LoginPage() {
   const { auth } = useFirebase();
   const { toast } = useToast();
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+  const form = useForm({
     defaultValues: {
       email: '',
       password: '',
     },
   });
 
-  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+  const onSubmit = async (values: {email: string, password: string}) => {
+    if (!values.email || !values.password) {
+        toast({
+            variant: 'destructive',
+            title: 'Login Failed',
+            description: 'Please enter both username and password.',
+        });
+        return;
+    }
+
     setIsLoading(true);
     try {
       if (!auth) throw new Error("Auth service not available");
@@ -63,14 +62,11 @@ export default function LoginPage() {
       router.push('/');
     } catch (error) {
       let errorMessage = 'An unexpected error occurred.';
-      if (error instanceof FirebaseError) {
-        // Firebase treats invalid username and invalid password the same for security.
-        if (['auth/user-not-found', 'auth/wrong-password', 'auth/invalid-credential'].includes(error.code)) {
+       if (error instanceof FirebaseError) {
+        // Treat all auth errors as a generic invalid credential message.
+        if (['auth/user-not-found', 'auth/wrong-password', 'auth/invalid-credential', 'auth/invalid-email'].includes(error.code)) {
             errorMessage = 'Invalid username or password.';
-        } else if (error.code === 'auth/invalid-email') {
-            errorMessage = 'Please enter a valid username (it may look like an email).';
-        }
-         else {
+        } else {
             errorMessage = error.message;
         }
       }

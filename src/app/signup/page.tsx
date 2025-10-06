@@ -4,8 +4,6 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -30,29 +28,6 @@ import { FirebaseError } from 'firebase/app';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 
-const formSchema = z
-  .object({
-    email: z.string().min(1, {
-      message: 'Please enter a username.',
-    }),
-    password: z.string().min(1, {
-      message: 'Please enter a password.',
-    }),
-    isAdmin: z.boolean().default(false),
-    masterPassword: z.string().optional(),
-  })
-  .refine(
-    (data) => {
-      if (data.isAdmin && !data.masterPassword) {
-        return false;
-      }
-      return true;
-    },
-    {
-      message: 'Master password is required to create an admin account.',
-      path: ['masterPassword'],
-    }
-  );
 
 export default function SignupPage() {
   const [isLoading, setIsLoading] = useState(false);
@@ -60,8 +35,7 @@ export default function SignupPage() {
   const { auth, firestore } = useFirebase();
   const { toast } = useToast();
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+  const form = useForm({
     defaultValues: {
       email: '',
       password: '',
@@ -72,7 +46,24 @@ export default function SignupPage() {
 
   const isAdminValue = form.watch('isAdmin');
 
-  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+  const onSubmit = async (values: any) => {
+    if (!values.email || !values.password) {
+        toast({
+            variant: 'destructive',
+            title: 'Sign Up Failed',
+            description: 'Please enter both username and password.',
+        });
+        return;
+    }
+    if (values.isAdmin && !values.masterPassword) {
+        toast({
+            variant: 'destructive',
+            title: 'Sign Up Failed',
+            description: 'Master password is required to create an admin account.',
+        });
+        return;
+    }
+
     setIsLoading(true);
 
     if (values.isAdmin && values.masterPassword !== process.env.NEXT_PUBLIC_ADMIN_MASTER_PASSWORD) {
@@ -90,11 +81,12 @@ export default function SignupPage() {
       const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
       const user = userCredential.user;
 
-      // Create a user profile document in Firestore
-      await setDoc(doc(firestore, 'users', user.uid), {
+      const userProfileRef = doc(firestore, 'users', user.uid);
+
+      await setDoc(userProfileRef, {
         email: user.email,
         createdAt: new Date().toISOString(),
-        isAdmin: values.isAdmin, // Set admin status based on form
+        isAdmin: values.isAdmin,
       });
 
       toast({
@@ -110,10 +102,10 @@ export default function SignupPage() {
             errorMessage = 'This username is already taken.';
             break;
           case 'auth/weak-password':
-            errorMessage = 'The password is too weak.';
+            errorMessage = 'The password is too weak. Please choose a stronger password.';
             break;
           case 'auth/invalid-email':
-            errorMessage = 'The username is not valid (it may need to look like an email).';
+            errorMessage = 'The username is not valid. Please try a different one.';
             break;
           default:
             errorMessage = error.message;
