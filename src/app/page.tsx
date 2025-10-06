@@ -2,14 +2,12 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useUser } from '@/firebase';
+import { useUser, useFirebase, useMemoFirebase, useDoc } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { LogOut, Cog, FlaskConical } from 'lucide-react';
-import { useFirebase } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { doc } from 'firebase/firestore';
-import { useMemoFirebase, useDoc } from '@/firebase';
 
 
 type UserProfile = {
@@ -56,7 +54,9 @@ export default function HubPage() {
   }
   
   if (!user) {
-    return null; // or a login prompt
+    // This can happen briefly between auth state change and router push.
+    // Returning null prevents a flash of the UI before redirect.
+    return null;
   }
 
   return (

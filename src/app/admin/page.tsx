@@ -76,6 +76,7 @@ type TestSession = {
 };
 
 type UserProfile = {
+  id: string; // Add id to the type
   uid: string;
   email: string;
   createdAt: string;
@@ -98,21 +99,25 @@ export default function AdminPage() {
   const { user, isUserLoading } = useUser();
   const router = useRouter();
   
+  // This is the user whose data is being viewed/managed.
+  // It defaults to the logged-in user unless an admin selects another user.
   const viewingUserId = selectedUserId;
 
-  const userProfileRef = useMemoFirebase(() => {
+  // --- Admin Verification ---
+  // First, get the profile of the currently logged-in user to check for admin status.
+  const currentUserProfileRef = useMemoFirebase(() => {
     if (!firestore || !user?.uid) return null;
     return doc(firestore, `users/${user.uid}`);
   }, [firestore, user?.uid]);
 
-  const { data: userProfile, isLoading: isUserProfileLoading } = useDoc<UserProfile>(userProfileRef);
+  const { data: currentUserProfile, isLoading: isCurrentUserProfileLoading } = useDoc<UserProfile>(currentUserProfileRef);
 
-  const isAdmin = userProfile?.isAdmin === true;
+  const isAdmin = currentUserProfile?.isAdmin === true;
 
   // --- Data Fetching Hooks ---
   // IMPORTANT: This ref is now dependent on `isAdmin`. It will be null until the current user is confirmed to be an admin.
   const allUsersCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !isAdmin) return null; // Only fetch if user is an admin
+    if (!firestore || !isAdmin) return null; // Only create ref if user is an admin
     return collection(firestore, 'users');
   }, [firestore, isAdmin]);
 
@@ -138,11 +143,11 @@ export default function AdminPage() {
       router.push('/login');
     }
      // Redirect non-admins away after profile has loaded and confirmed not an admin
-     if (!isUserLoading && !isUserProfileLoading && userProfile && !isAdmin) {
+     if (!isUserLoading && !isCurrentUserProfileLoading && currentUserProfile && !isAdmin) {
       toast({ variant: 'destructive', title: 'Access Denied', description: 'You do not have permission to access this page.' });
       router.push('/');
     }
-  }, [user, isUserLoading, router, userProfile, isUserProfileLoading, isAdmin, toast]);
+  }, [user, isUserLoading, router, currentUserProfile, isCurrentUserProfileLoading, isAdmin, toast]);
 
 
   const fetchSessionDataCounts = useCallback(async () => {
@@ -380,12 +385,19 @@ export default function AdminPage() {
     router.push(`/testing?${queryParams}`);
   };
 
-  if (isUserLoading || isUserProfileLoading) {
+  // Loading state while verifying admin status
+  if (isUserLoading || isCurrentUserProfileLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
         <p className="text-lg">Verifying administrator access...</p>
       </div>
     );
+  }
+
+  // Once profile is loaded, if not an admin, this component will trigger a redirect.
+  // We can return null as the redirect is handled in the useEffect.
+  if (!isAdmin) {
+      return null;
   }
 
   const renderSensorConfigurator = () => {
@@ -417,15 +429,15 @@ export default function AdminPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                             <Label htmlFor="sensorUnitInput">Unit</Label>
-                            <Input id="sensorUnitInput" value={tempSensorConfig.unit} onChange={(e) => handleConfigChange('unit', e.target.value)} />
+                            <Input id="sensorUnitInput" value={tempSensorConfig.unit || ''} onChange={(e) => handleConfigChange('unit', e.target.value)} />
                         </div>
                         <div>
                             <Label htmlFor="minValueInput">Minimum Value</Label>
-                            <Input id="minValueInput" type="number" value={tempSensorConfig.min} onChange={(e) => handleConfigChange('min', parseFloat(e.target.value))} />
+                            <Input id="minValueInput" type="number" value={tempSensorConfig.min || 0} onChange={(e) => handleConfigChange('min', parseFloat(e.target.value))} />
                         </div>
                         <div>
                             <Label htmlFor="maxValueInput">Maximum Value</Label>
-                            <Input id="maxValueInput" type="number" value={tempSensorConfig.max} onChange={(e) => handleConfigChange('max', parseFloat(e.target.value))} />
+                            <Input id="maxValueInput" type="number" value={tempSensorConfig.max || 1023} onChange={(e) => handleConfigChange('max', parseFloat(e.target.value))} />
                         </div>
                     </div>
                  )}
@@ -434,12 +446,12 @@ export default function AdminPage() {
                         {tempSensorConfig.mode === 'VOLTAGE' && (
                             <div>
                                 <Label htmlFor="arduinoVoltageInput">Reference Voltage (V)</Label>
-                                <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage} onChange={(e) => handleConfigChange('arduinoVoltage', parseFloat(e.target.value))} />
+                                <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage || 5} onChange={(e) => handleConfigChange('arduinoVoltage', parseFloat(e.target.value))} />
                             </div>
                         )}
                         <div>
                             <Label htmlFor="decimalPlacesInput">Decimal Places</Label>
-                            <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces} onChange={(e) => handleConfigChange('decimalPlaces', e.target.value)} />
+                            <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces || 0} onChange={(e) => handleConfigChange('decimalPlaces', e.target.value)} />
                         </div>
                     </div>
                  )}
@@ -580,7 +592,7 @@ export default function AdminPage() {
   }
 
   const renderUserManagement = () => {
-    if (isAllUsersLoading && isAdmin) { // Only show loading if we expect data
+    if (isAllUsersLoading) {
         return <p>Loading users...</p>;
     }
     if (allUsersError) {

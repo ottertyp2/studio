@@ -26,7 +26,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useFirebase, setDocumentNonBlocking } from '@/firebase';
 import { FirebaseError } from 'firebase/app';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc } from 'firebase/firestore';
+import { doc, getDocs, collection } from 'firebase/firestore';
 
 
 export default function SignupPage() {
@@ -57,6 +57,11 @@ export default function SignupPage() {
     try {
       if (!auth || !firestore) throw new Error('Auth or Firestore service not available');
 
+      // Check if any users exist to determine if this is the first user
+      const usersCollectionRef = collection(firestore, 'users');
+      const existingUsersSnapshot = await getDocs(usersCollectionRef);
+      const isFirstUser = existingUsersSnapshot.empty;
+
       // Append dummy domain if it's not an email format
       const finalUsername = values.email.includes('@') ? values.email : `${values.email}@biothrust.local`;
 
@@ -65,8 +70,6 @@ export default function SignupPage() {
 
       const userProfileRef = doc(firestore, 'users', user.uid);
       
-      const isFirstUser = (process.env.NEXT_PUBLIC_IS_FIRST_USER === 'true');
-
       // The non-blocking call is safe here because it's a 'create' operation
       // for a new user, and the security rules should permit users to create their own profile.
       setDocumentNonBlocking(userProfileRef, {
@@ -77,7 +80,7 @@ export default function SignupPage() {
       }, { merge: false });
 
       toast({
-        title: 'Account Created',
+        title: isFirstUser ? 'Admin Account Created' : 'Account Created',
         description: "You've been successfully signed up and logged in.",
       });
       router.push('/');
@@ -115,7 +118,7 @@ export default function SignupPage() {
         <CardHeader>
           <CardTitle className="text-2xl text-center">Create an Account</CardTitle>
           <CardDescription className="text-center">
-            Enter your username and password to get started.
+            The first user to sign up will be the administrator.
           </CardDescription>
         </CardHeader>
         <CardContent>
