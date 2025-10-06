@@ -38,15 +38,53 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { Loader2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 export default function Home() {
   const [isMeasuring, setIsMeasuring] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [sensitivity, setSensitivity] = useState(0.98);
+  const { toast } = useToast();
 
-  const handleConnect = () => {
-    // Placeholder for future Web Serial API logic
-    setIsConnected(!isConnected);
+  const handleConnect = async () => {
+    if (isConnected) {
+      // Logic to disconnect will be added later
+      setIsConnected(false);
+      toast({
+        title: 'Getrennt',
+        description: 'Die Verbindung zum Arduino wurde getrennt.',
+      });
+    } else {
+      try {
+        if ('serial' in navigator) {
+          const port = await (navigator.serial as any).requestPort();
+          // The port is now available. We can open it.
+          await port.open({ baudRate: 9600 });
+          setIsConnected(true);
+          toast({
+            title: 'Verbunden',
+            description: 'Erfolgreich mit dem Arduino verbunden.',
+          });
+          // We can start reading from the port here in the future
+        } else {
+          toast({
+            variant: 'destructive',
+            title: 'Fehler',
+            description:
+              'Web Serial API wird von diesem Browser nicht unterstützt.',
+          });
+        }
+      } catch (error) {
+        console.error('Fehler beim Verbinden:', error);
+        toast({
+          variant: 'destructive',
+          title: 'Verbindung fehlgeschlagen',
+          description:
+            (error as Error).message ||
+            'Es konnte keine Verbindung hergestellt werden.',
+        });
+      }
+    }
   };
 
   const handleToggleMeasurement = () => {
@@ -113,9 +151,9 @@ export default function Home() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart
                   data={[
-                    { name: '10:00', uv: 400 },
-                    { name: '10:01', uv: 300 },
-                    { name: '10:02', uv: 200 },
+                    { name: '10:00', value: 400 },
+                    { name: '10:01', value: 300 },
+                    { name: '10:02', value: 200 },
                   ]}
                 >
                   <CartesianGrid strokeDasharray="3 3" />
@@ -123,7 +161,7 @@ export default function Home() {
                   <YAxis />
                   <Tooltip />
                   <Legend />
-                  <Line type="monotone" dataKey="uv" stroke="hsl(var(--chart-1))" />
+                  <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name="Sensorwert" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
