@@ -127,18 +127,6 @@ function TestingComponent() {
   
   const startThresholdRef = useRef<HTMLInputElement>(null);
   const endThresholdRef = useRef<HTMLInputElement>(null);
-  
-  const stateRef = useRef({
-      firestore,
-      activeTestSessionId,
-      activeSensorConfigId,
-      testSessions: [] as TestSession[]
-  });
-
-  useEffect(() => {
-    stateRef.current = { firestore, activeTestSessionId, activeSensorConfigId, testSessions: testSessions || [] };
-  }, [firestore, activeTestSessionId, activeSensorConfigId, testSessions]);
-
 
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -154,6 +142,18 @@ function TestingComponent() {
   
   const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
   
+  const stateRef = useRef({
+      firestore,
+      activeTestSessionId,
+      activeSensorConfigId,
+      testSessions: [] as TestSession[]
+  });
+
+  useEffect(() => {
+    stateRef.current = { firestore, activeTestSessionId, activeSensorConfigId, testSessions: testSessions || [] };
+  }, [firestore, activeTestSessionId, activeSensorConfigId, testSessions]);
+
+
   const runningTestSession = useMemo(() => {
     return testSessions?.find(s => s.status === 'RUNNING');
   }, [testSessions]);
@@ -264,6 +264,33 @@ function TestingComponent() {
     }
   }, []);
 
+  const stopDemoMode = useCallback(() => {
+    if (demoIntervalRef.current) {
+        clearInterval(demoIntervalRef.current);
+        demoIntervalRef.current = null;
+    }
+  }, []);
+  
+  const handleStopTestSession = useCallback(async (sessionId: string) => {
+      if (!testSessionsCollectionRef || !firestore) return;
+      
+      const sessionRef = doc(firestore, `test_sessions`, sessionId);
+      await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
+      
+      const session = testSessions?.find(s => s.id === sessionId);
+      if(session?.measurementType === 'DEMO') {
+          stopDemoMode();
+      }
+      if(session?.measurementType === 'ARDUINO') {
+          await sendSerialCommand('p');
+      }
+
+      if (activeTestSessionId === sessionId) {
+          setActiveTestSessionId(null);
+      }
+      toast({title: 'Test Session Ended'});
+  }, [testSessionsCollectionRef, firestore, activeTestSessionId, toast, stopDemoMode, testSessions, sendSerialCommand]);
+
   const readFromSerial = useCallback(async () => {
     if (!portRef.current?.readable || readingRef.current) return;
     
@@ -298,7 +325,11 @@ function TestingComponent() {
             console.error('Error reading data:', error);
             if (!portRef.current.readable) {
               toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
-              handleConnect();
+              const { activeTestSessionId: currentSessionId } = stateRef.current;
+              if (currentSessionId) {
+                handleStopTestSession(currentSessionId);
+              }
+              handleConnect(); // This will trigger disconnect
             }
             break; 
         }
@@ -311,25 +342,68 @@ function TestingComponent() {
     }
     try { await readableStreamClosed.catch(() => {}); } catch {}
     
-  }, [handleNewDataPoint, toast, handleConnect]);
+  }, [handleNewDataPoint, toast, handleConnect, handleStopTestSession]);
+
+
+  const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', productIdentifier: string }) => {
+    const sessionDetails = tempTestSession || { productIdentifier: options.productIdentifier };
+
+    if (!sessionDetails.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
+        toast({variant: 'destructive', title: 'Error', description: 'Please provide a product identifier and select a sensor.'});
+        return null;
+    }
+
+    const {testSessions: currentTestSessions} = stateRef.current;
+
+    if (currentTestSessions?.find(s => s.status === 'RUNNING')) {
+        toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
+        return null;
+    }
+
+    const newSessionId = doc(collection(firestore, '_')).id;
+    const newSession: TestSession = {
+      id: newSessionId,
+      productIdentifier: sessionDetails.productIdentifier,
+      serialNumber: sessionDetails.serialNumber || '',
+      model: sessionDetails.model || '',
+      description: sessionDetails.description || '',
+      startTime: new Date().toISOString(),
+      status: 'RUNNING',
+      sensorConfigurationId: activeSensorConfigId,
+      measurementType: options.measurementType,
+    };
+    
+    await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
+    setActiveTestSessionId(newSessionId);
+    setTempTestSession(null);
+    toast({ title: 'New Test Session Started', description: `Product: ${newSession.productIdentifier}`});
+    return newSession;
+  }, [activeSensorConfigId, firestore, testSessionsCollectionRef, tempTestSession, toast]);
+
 
   const toggleMeasurement = useCallback(async () => {
-    if (runningTestSession && runningTestSession.measurementType === 'ARDUINO') {
+    const { testSessions: currentTestSessions } = stateRef.current;
+    const arduinoSession = currentTestSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
+
+    if (arduinoSession) {
       await sendSerialCommand('p');
-      handleStopTestSession(runningTestSession.id);
+      handleStopTestSession(arduinoSession.id);
     } else {
       const newSession = await handleStartNewTestSession({ measurementType: 'ARDUINO', productIdentifier: `Arduino Session ${new Date().toLocaleTimeString()}`});
       if (newSession) {
         await sendSerialCommand('s');
       }
     }
-  }, [runningTestSession, sendSerialCommand, handleStartNewTestSession, handleStopTestSession]);
+  }, [sendSerialCommand, handleStartNewTestSession, handleStopTestSession]);
 
 
   const handleConnect = useCallback(async () => {
     if (portRef.current) {
-        if(runningTestSession && runningTestSession.measurementType === 'ARDUINO') {
-          await handleStopTestSession(runningTestSession.id);
+        const { testSessions: currentTestSessions } = stateRef.current;
+        const arduinoSession = currentTestSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
+
+        if(arduinoSession) {
+          await handleStopTestSession(arduinoSession.id);
         }
         readingRef.current = false;
         if(readerRef.current) {
@@ -361,7 +435,6 @@ function TestingComponent() {
             setIsConnected(true);
             toast({ title: 'Connected', description: 'Device connected. Ready to start measurement.' });
             
-            readingRef.current = true;
             readFromSerial();
 
             await sendSerialCommand('p'); 
@@ -372,35 +445,7 @@ function TestingComponent() {
             }
         }
     }
-  }, [runningTestSession, toast, readFromSerial, sendSerialCommand, handleStopTestSession]);
-
-
-  const stopDemoMode = useCallback(() => {
-    if (demoIntervalRef.current) {
-        clearInterval(demoIntervalRef.current);
-        demoIntervalRef.current = null;
-    }
-  }, []);
-  
-  const handleStopTestSession = useCallback(async (sessionId: string) => {
-      if (!testSessionsCollectionRef || !firestore) return;
-      
-      const sessionRef = doc(firestore, `test_sessions`, sessionId);
-      await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
-      
-      const session = testSessions?.find(s => s.id === sessionId);
-      if(session?.measurementType === 'DEMO') {
-          stopDemoMode();
-      }
-      if(session?.measurementType === 'ARDUINO') {
-          await sendSerialCommand('p');
-      }
-
-      if (activeTestSessionId === sessionId) {
-          setActiveTestSessionId(null);
-      }
-      toast({title: 'Test Session Ended'});
-  }, [testSessionsCollectionRef, firestore, activeTestSessionId, toast, stopDemoMode, testSessions, sendSerialCommand]);
+  }, [toast, readFromSerial, sendSerialCommand, handleStopTestSession]);
 
   useEffect(() => {
       if (runningTestSession) {
@@ -433,39 +478,6 @@ function TestingComponent() {
       };
   }, [runningTestSession, handleNewDataPoint, stopDemoMode]);
 
-
-  const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', productIdentifier: string }) => {
-    const sessionDetails = tempTestSession || { productIdentifier: options.productIdentifier };
-
-    if (!sessionDetails.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
-        toast({variant: 'destructive', title: 'Error', description: 'Please provide a product identifier and select a sensor.'});
-        return null;
-    }
-
-    if (runningTestSession) {
-        toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
-        return null;
-    }
-
-    const newSessionId = doc(collection(firestore, '_')).id;
-    const newSession: TestSession = {
-      id: newSessionId,
-      productIdentifier: sessionDetails.productIdentifier,
-      serialNumber: sessionDetails.serialNumber || '',
-      model: sessionDetails.model || '',
-      description: sessionDetails.description || '',
-      startTime: new Date().toISOString(),
-      status: 'RUNNING',
-      sensorConfigurationId: activeSensorConfigId,
-      measurementType: options.measurementType,
-    };
-    
-    await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
-    setActiveTestSessionId(newSessionId);
-    setTempTestSession(null);
-    toast({ title: 'New Test Session Started', description: `Product: ${newSession.productIdentifier}`});
-    return newSession;
-  }, [activeSensorConfigId, firestore, runningTestSession, testSessionsCollectionRef, tempTestSession, toast]);
 
   const handleStartDemo = () => {
     handleStartNewTestSession({ measurementType: 'DEMO', productIdentifier: 'Demo Session' });
@@ -1094,5 +1106,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
