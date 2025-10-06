@@ -15,6 +15,7 @@ import {
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -105,10 +106,9 @@ export default function SignupPage() {
             errorMessage = 'This username is already taken.';
             break;
           case 'auth/weak-password':
-            errorMessage = 'The password is too weak. Please choose a stronger password.';
+            errorMessage = 'Password is too weak. Please use at least 6 characters.';
             break;
           case 'auth/invalid-email':
-             // This case should be rare now, but we'll keep a generic message
             errorMessage = 'The username is not valid. Please try a different one.';
             break;
           default:
@@ -160,6 +160,9 @@ export default function SignupPage() {
                     <FormControl>
                       <Input type="password" placeholder="••••••••" {...field} />
                     </FormControl>
+                    <FormDescription>
+                      Password must be at least 6 characters long.
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
