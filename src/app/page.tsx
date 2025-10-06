@@ -2,6 +2,17 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import {
   Card,
   CardContent,
   CardDescription,
@@ -434,6 +445,15 @@ export default function Home() {
   const handleResetZoom = () => {
     setChartKey(Date.now());
   }
+  
+  const handleClearData = () => {
+    setDataLog([]);
+    setCurrentValue(null);
+    toast({
+        title: 'Daten gelöscht',
+        description: 'Alle aufgezeichneten Daten wurden aus dem Log entfernt.'
+    })
+  }
 
   const handleExportCSV = () => {
     if (dataLog.length === 0) {
@@ -575,6 +595,24 @@ export default function Home() {
                 <Button onClick={() => importFileRef.current?.click()} variant="outline">Import CSV</Button>
                 <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
             </div>
+             <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1">Daten löschen</Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Sind Sie sicher?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Diese Aktion kann nicht rückgängig gemacht werden. Dadurch werden die aufgezeichneten
+                    Sensordaten dauerhaft vom lokalen Log gelöscht.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleClearData}>Löschen</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </CardContent>
         </Card>
       </header>
@@ -766,7 +804,6 @@ export default function Home() {
                   <Button onClick={handleAnalysis} disabled={isAnalyzing} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
                       {isAnalyzing ? 'Analysiere...' : 'Druckverlauf analysieren'}
                     </Button>
-                    <Button variant="destructive" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1">Datenbank löschen</Button>
                 </div>
                 <div className="text-center text-muted-foreground pt-4">
                     {analysisResult ? (
