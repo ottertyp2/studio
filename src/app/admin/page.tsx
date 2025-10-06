@@ -135,7 +135,6 @@ export default function AdminPage() {
         }));
         setAllUsers(userList);
       } catch (error) {
-         console.error("Failed to fetch users:", error);
          const permissionError = new FirestorePermissionError({
             path: 'users',
             operation: 'list',
