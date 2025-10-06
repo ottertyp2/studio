@@ -129,11 +129,12 @@ function TestingComponent() {
       firestore,
       activeTestSessionId,
       activeSensorConfigId,
+      testSessions: [] as TestSession[]
   });
 
   useEffect(() => {
-    stateRef.current = { firestore, activeTestSessionId, activeSensorConfigId };
-  }, [firestore, activeTestSessionId, activeSensorConfigId]);
+    stateRef.current = { firestore, activeTestSessionId, activeSensorConfigId, testSessions: testSessions || [] };
+  }, [firestore, activeTestSessionId, activeSensorConfigId, testSessions]);
 
 
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
@@ -211,10 +212,9 @@ function TestingComponent() {
           const sensorDataRef = collection(currentFirestore, `sensor_configurations/${currentSensorConfigId}/sensor_data`);
           const dataToSave = {...newDataPoint, testSessionId: currentSessionId};
           addDocumentNonBlocking(sensorDataRef, dataToSave);
-      } else {
-        // Fallback to local state if not using cloud features
-        setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
       }
+      // Always update local state for immediate UI feedback
+      setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
   }, []);
 
   const dataLog = useMemo(() => {
@@ -274,7 +274,7 @@ function TestingComponent() {
       const sessionRef = doc(firestore, `test_sessions`, sessionId);
       await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
       
-      const session = testSessions?.find(s => s.id === sessionId);
+      const session = stateRef.current.testSessions?.find(s => s.id === sessionId);
       if(session?.measurementType === 'DEMO') {
           stopDemoMode();
       }
@@ -301,14 +301,12 @@ function TestingComponent() {
           setActiveTestSessionId(null);
       }
       toast({title: 'Test Session Ended'});
-  }, [testSessionsCollectionRef, firestore, activeTestSessionId, toast, sendSerialCommand, stopDemoMode, testSessions]);
+  }, [testSessionsCollectionRef, firestore, activeTestSessionId, toast, sendSerialCommand, stopDemoMode]);
 
   const readFromSerial = useCallback(async () => {
     if (!portRef.current?.readable || readLoopActiveRef.current) return;
 
     readLoopActiveRef.current = true;
-    
-    // Start sending data request command
     await sendSerialCommand('s');
 
     const textDecoder = new TextDecoderStream();
@@ -322,7 +320,6 @@ function TestingComponent() {
             const { value, done } = await readerRef.current.read();
             
             if (done) {
-                // Reader has been released, handled in disconnect.
                 break;
             }
            
@@ -345,8 +342,9 @@ function TestingComponent() {
             console.error('Error reading data:', error);
             if (readLoopActiveRef.current) {
                 toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
-                if (runningTestSession) {
-                    handleStopTestSession(runningTestSession.id);
+                const runningSession = stateRef.current.testSessions.find(s => s.status === 'RUNNING');
+                if (runningSession) {
+                    handleStopTestSession(runningSession.id);
                 }
             }
             break; 
@@ -355,19 +353,15 @@ function TestingComponent() {
     
     try { readerRef.current?.releaseLock(); } catch {}
     readLoopActiveRef.current = false;
-    // readableStreamClosed is a promise that resolves when the stream is closed. 
-    // We don't want to block here, but you can await it if needed elsewhere.
     
-  }, [toast, handleNewDataPoint, runningTestSession, handleStopTestSession, sendSerialCommand]);
+  }, [toast, handleNewDataPoint, handleStopTestSession, sendSerialCommand]);
   
-
-  // Effect for handling measurement modes (DEMO/ARDUINO)
   useEffect(() => {
-      // Cleanup function to stop measurements when component unmounts or session stops
       const cleanup = () => {
           stopDemoMode();
-          if (portRef.current && readLoopActiveRef.current) {
-              handleStopTestSession(runningTestSession!.id);
+          const runningSession = stateRef.current.testSessions.find(s => s.status === 'RUNNING');
+          if (portRef.current && readLoopActiveRef.current && runningSession) {
+              handleStopTestSession(runningSession.id);
           }
       }
 
@@ -393,7 +387,6 @@ function TestingComponent() {
               }, 500);
           }
       } else {
-          // No running session, ensure everything is stopped.
           cleanup();
       }
 
