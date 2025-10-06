@@ -128,6 +128,13 @@ function TestingComponent() {
   
   const startThresholdRef = useRef<HTMLInputElement>(null);
   const endThresholdRef = useRef<HTMLInputElement>(null);
+  
+  const stateRef = useRef({
+      firestore,
+      sensorDataCollectionRef: null as CollectionReference | null,
+      activeTestSessionId,
+      activeSensorConfigId,
+  });
 
 
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
@@ -184,6 +191,32 @@ function TestingComponent() {
   }, [firestore, activeSensorConfigId, activeTestSessionId]);
 
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
+  
+  useEffect(() => {
+      stateRef.current.firestore = firestore;
+      stateRef.current.activeTestSessionId = activeTestSessionId;
+      stateRef.current.activeSensorConfigId = activeSensorConfigId;
+      if (firestore && activeSensorConfigId) {
+        stateRef.current.sensorDataCollectionRef = collection(firestore, `sensor_configurations/${activeSensorConfigId}/sensor_data`);
+      } else {
+        stateRef.current.sensorDataCollectionRef = null;
+      }
+  }, [firestore, activeTestSessionId, activeSensorConfigId]);
+  
+  const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
+      setCurrentValue(newDataPoint.value);
+      setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
+      
+      const { firestore: currentFirestore, activeTestSessionId: currentSessionId, sensorDataCollectionRef: currentSensorDataRef } = stateRef.current;
+      
+      if (currentFirestore && currentSensorDataRef) {
+          const dataToSave = {...newDataPoint};
+          if (currentSessionId) {
+              dataToSave.testSessionId = currentSessionId;
+          }
+          addDocumentNonBlocking(currentSensorDataRef, dataToSave);
+      }
+  }, []);
 
   const dataLog = useMemo(() => {
     const log = firestore ? cloudDataLog : localDataLog;
@@ -192,20 +225,6 @@ function TestingComponent() {
     return [...log].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [firestore, cloudDataLog, localDataLog]);
   
-  const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
-    setCurrentValue(newDataPoint.value);
-    setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
-    
-    const dataToSave = {...newDataPoint};
-    if (activeTestSessionId) {
-        dataToSave.testSessionId = activeTestSessionId;
-    }
-
-    if (firestore && sensorDataCollectionRef) {
-      const baseCollectionRef = collection(firestore!, `sensor_configurations/${activeSensorConfigId}/sensor_data`);
-      addDocumentNonBlocking(baseCollectionRef, dataToSave);
-    }
-  }, [firestore, sensorDataCollectionRef, activeTestSessionId, activeSensorConfigId]);
 
   useEffect(() => {
     if (dataLog && dataLog.length > 0) {
@@ -278,7 +297,7 @@ function TestingComponent() {
     try {
       if (readerRef.current) {
         await readerRef.current.cancel();
-        readerRef.current.releaseLock();
+        // The lock is released automatically by cancel()
         readerRef.current = null;
       }
       
@@ -292,7 +311,13 @@ function TestingComponent() {
       });
     } catch (error) {
       console.error('Error disconnecting:', error);
-      if ((error as Error).message.includes("The device has been lost")) return;
+      // Ignore errors if the device was already lost
+      if ((error as Error).message.includes("The device has been lost")) {
+          portRef.current = null;
+          setConnectionState('DISCONNECTED');
+          setIsMeasuring(false);
+          return;
+      }
       toast({
         variant: 'destructive',
         title: 'Disconnect failed',
@@ -306,29 +331,20 @@ function TestingComponent() {
 
     readLoopActiveRef.current = true;
     const textDecoder = new TextDecoderStream();
-    let readableStreamClosed = false;
     
-    try {
-        const readable = portRef.current.readable.pipeTo(textDecoder.writable);
-        readerRef.current = textDecoder.readable.getReader();
-        
-        readable.catch(() => {
-            readableStreamClosed = true;
-        });
-
-    } catch(e) {
-        console.error("Error setting up reader", e);
-        readLoopActiveRef.current = false;
-        return;
-    }
+    // Watch for the port being closed, which happens on disconnect
+    const readableStreamClosed = portRef.current.readable.pipeTo(textDecoder.writable);
+    
+    readerRef.current = textDecoder.readable.getReader();
 
     let partialLine = '';
     
-    while (true) {
+    while (readLoopActiveRef.current) {
         try {
             const { value, done } = await readerRef.current.read();
-            if (done || !readLoopActiveRef.current) {
-                readerRef.current.releaseLock();
+            
+            if (done) {
+                // Reader has been released, loop will be stopped by readLoopActiveRef.current = false
                 break;
             }
            
@@ -344,21 +360,28 @@ function TestingComponent() {
                         timestamp: new Date().toISOString(),
                         value: sensorValue
                     };
+                    // Use the function from the component scope, which is stable due to useCallback
                     handleNewDataPoint(newDataPoint);
                 }
             });
         } catch (error) {
             console.error('Error reading data:', error);
-            if (readLoopActiveRef.current && (readableStreamClosed || !portRef.current?.readable)) {
+            if (readLoopActiveRef.current) {
                  toast({
                     variant: 'destructive',
                     title: 'Connection Lost',
-                    description: 'The connection to the device was interrupted.',
+                    description: 'The device may have been unplugged.',
                 });
-                await handleDisconnect();
+                await handleDisconnect(); // This will set readLoopActiveRef to false
             }
-            break;
+            break; // Exit the loop on error
         }
+    }
+    // Final cleanup
+    if(readerRef.current){
+        try {
+            readerRef.current.releaseLock();
+        } catch {}
     }
     readLoopActiveRef.current = false;
   }, [toast, handleDisconnect, handleNewDataPoint]);
@@ -469,8 +492,9 @@ function TestingComponent() {
     setIsAnalyzing(true);
     setAnalysisResult(null);
 
-    const startThreshold = parseFloat(startThresholdRef.current?.value || '800');
-    const endThreshold = parseFloat(endThresholdRef.current?.value || '200');
+    const startThreshold = parseFloat(startThresholdRef.current?.value || '0');
+    const endThreshold = parseFloat(endThresholdRef.current?.value || '0');
+
 
     if (isNaN(startThreshold) || isNaN(endThreshold)) {
       toast({
