@@ -118,7 +118,7 @@ function TestingComponent() {
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
   const writerRef = useRef<any>(null);
-  const readingRef = useRef<boolean>(false);
+  const readingRef = useRef<boolean>(readingRef.current);
 
   const importFileRef = useRef<HTMLInputElement>(null);
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -196,7 +196,7 @@ function TestingComponent() {
     let q = query(collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`));
 
     if (selectedSessionIds.length > 0) {
-        q = query(q, where('testSessionId', 'in', selectedSessionIds.slice(0, 30)));
+        q = query(q, where('testSessionId', 'in', selectedSessionIds.slice(0, 10)));
     } else {
         return null;
     }
@@ -207,19 +207,21 @@ function TestingComponent() {
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
   
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
-      setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
-      setCurrentValue(newDataPoint.value);
-      
-      const { firestore: currentFirestore, activeSensorConfigId: currentSensorConfigId } = stateRef.current;
-      const currentRunningSession = stateRef.current.testSessions.find(s => s.status === 'RUNNING');
-
-
-      if (currentFirestore && currentRunningSession?.id && currentSensorConfigId) {
-          const sensorDataRef = collection(currentFirestore, `sensor_configurations/${currentSensorConfigId}/sensor_data`);
-          const dataToSave = {...newDataPoint, testSessionId: currentRunningSession.id};
-          addDocumentNonBlocking(sensorDataRef, dataToSave);
-      }
-  }, []);
+    setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
+    setCurrentValue(newDataPoint.value);
+    
+    const { firestore: currentFirestore, activeSensorConfigId: currentSensorConfigId } = stateRef.current;
+    
+    // Use a fresh check for the running session inside the callback
+    if (currentFirestore && stateRef.current.testSessions.find(s => s.status === 'RUNNING')?.id && currentSensorConfigId) {
+        const currentRunningSession = stateRef.current.testSessions.find(s => s.status === 'RUNNING');
+        if (currentRunningSession) {
+            const sensorDataRef = collection(currentFirestore, `sensor_configurations/${currentSensorConfigId}/sensor_data`);
+            const dataToSave = {...newDataPoint, testSessionId: currentRunningSession.id};
+            addDocumentNonBlocking(sensorDataRef, dataToSave);
+        }
+    }
+}, []);
 
   const dataLog = useMemo(() => {
     const log = (firestore && selectedSessionIds.length > 0) ? cloudDataLog : localDataLog;
@@ -272,30 +274,58 @@ function TestingComponent() {
       }
     }
   }, []);
-
+  
   const handleStopTestSession = useCallback(async (sessionId: string) => {
-    if (!testSessionsCollectionRef || !firestore) return;
-
-    const sessionRef = doc(firestore, `test_sessions`, sessionId);
-    await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
-
-    const session = testSessions?.find(s => s.id === sessionId);
-    if (session?.measurementType === 'DEMO') {
-      stopDemoMode();
-    }
-    // Only send pause command if this client is the one connected
-    if (session?.measurementType === 'ARDUINO' && isConnected) {
-      await sendSerialCommand('p');
-    }
-
-    if (selectedSessionIds.includes(sessionId)) {
-      if (selectedSessionIds.length === 1) {
-        setSelectedSessionIds([]);
+      if (!testSessionsCollectionRef || !firestore) return;
+      const session = stateRef.current.testSessions.find(s => s.id === sessionId);
+  
+      if (session?.measurementType === 'DEMO') {
+        stopDemoMode();
       }
-    }
-    toast({ title: 'Test Session Ended' });
-  }, [testSessionsCollectionRef, firestore, selectedSessionIds, toast, stopDemoMode, testSessions, sendSerialCommand, isConnected]);
+      
+      // Only send pause command if this client is the one connected
+      if (session?.measurementType === 'ARDUINO' && isConnected) {
+        await sendSerialCommand('p');
+      }
+  
+      // Update Firestore after sending commands
+      const sessionRef = doc(firestore, `test_sessions`, sessionId);
+      await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
+  
+      if (selectedSessionIds.includes(sessionId)) {
+        if (selectedSessionIds.length === 1) {
+          setSelectedSessionIds([]);
+        }
+      }
+      toast({ title: 'Test Session Ended' });
+  }, [firestore, isConnected, selectedSessionIds, sendSerialCommand, stopDemoMode, testSessionsCollectionRef, toast]);
 
+  const disconnectSerial = useCallback(async () => {
+    if (portRef.current) {
+        const runningArduinoSession = stateRef.current.testSessions.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
+        if (runningArduinoSession) {
+            await handleStopTestSession(runningArduinoSession.id);
+        }
+        
+        readingRef.current = false;
+        if(readerRef.current) {
+          try { await readerRef.current.cancel(); } catch {}
+        }
+        if(writerRef.current) {
+          try { writerRef.current.releaseLock(); } catch {}
+        }
+        
+        try {
+            await portRef.current.close();
+        } catch(e) {
+            console.error("Error closing port", e);
+        } finally {
+            portRef.current = null;
+            setIsConnected(false);
+            toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
+        }
+    }
+  }, [handleStopTestSession, toast]);
 
   const readFromSerial = useCallback(async () => {
     if (!portRef.current?.readable || readingRef.current) return;
@@ -331,29 +361,7 @@ function TestingComponent() {
             console.error('Error reading data:', error);
             if (!portRef.current.readable) {
               toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
-              const { testSessions: currentTestSessions } = stateRef.current;
-              const runningArduinoSession = currentTestSessions.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
-              if (runningArduinoSession) {
-                // We call a different disconnect function to avoid circular dependencies
-                // This will stop the session globally
-                handleStopTestSession(runningArduinoSession.id);
-                // And handle local cleanup
-                if (portRef.current) {
-                  readingRef.current = false;
-                   if (readerRef.current) {
-                      readerRef.current.cancel().catch(() => {});
-                      readerRef.current.releaseLock();
-                      readerRef.current = null;
-                   }
-                   if (writerRef.current) {
-                      writerRef.current.releaseLock();
-                      writerRef.current = null;
-                   }
-                   portRef.current.close().catch(() => {});
-                   portRef.current = null;
-                   setIsConnected(false);
-                }
-              }
+              await disconnectSerial();
             }
             break; 
         }
@@ -366,27 +374,12 @@ function TestingComponent() {
     }
     try { await readableStreamClosed.catch(() => {}); } catch {}
     readingRef.current = false;
-  }, [handleNewDataPoint, toast, handleStopTestSession]);
+  }, [handleNewDataPoint, toast, disconnectSerial]);
 
 
    const handleConnect = useCallback(async () => {
     if (portRef.current) {
-        readingRef.current = false;
-        if(readerRef.current) {
-          try { await readerRef.current.cancel(); } catch {}
-        }
-        if(writerRef.current) {
-          try { writerRef.current.releaseLock(); } catch {}
-        }
-        try {
-            await portRef.current.close();
-        } catch(e) {
-            console.error("Error closing port", e);
-        } finally {
-            portRef.current = null;
-            setIsConnected(false);
-            toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
-        }
+        await disconnectSerial();
     } else { 
         if (!('serial' in navigator)) {
             toast({ variant: 'destructive', title: 'Unsupported Browser', description: 'Web Serial API is not supported here.' });
@@ -410,7 +403,7 @@ function TestingComponent() {
             }
         }
     }
-  }, [toast, readFromSerial, sendSerialCommand, handleStopTestSession]);
+  }, [toast, readFromSerial, disconnectSerial]);
 
   const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', productIdentifier: string }) => {
     const sessionDetails = tempTestSession || { productIdentifier: options.productIdentifier };
@@ -452,8 +445,7 @@ function TestingComponent() {
     const arduinoSession = currentTestSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
 
     if (arduinoSession) {
-      await sendSerialCommand('p');
-      handleStopTestSession(arduinoSession.id);
+      await handleStopTestSession(arduinoSession.id);
     } else {
       const newSession = await handleStartNewTestSession({ measurementType: 'ARDUINO', productIdentifier: `Arduino Session ${new Date().toLocaleTimeString()}`});
       if (newSession) {
@@ -764,7 +756,18 @@ function TestingComponent() {
   const displayDecimals = sensorConfig.decimalPlaces;
   
   const isArduinoMeasurementRunning = runningTestSession?.measurementType === 'ARDUINO';
-  const chartColors = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))"];
+  const chartColors = [
+    "hsl(var(--chart-1))",
+    "hsl(var(--chart-2))",
+    "hsl(20, 80%, 50%)",
+    "hsl(140, 80%, 50%)",
+    "hsl(300, 80%, 50%)",
+    "hsl(60, 80%, 50%)",
+    "hsl(240, 80%, 70%)",
+    "hsl(0, 0%, 50%)",
+    "hsl(180, 80%, 50%)",
+    "hsl(270, 80%, 60%)"
+  ];
 
 
   const renderLiveTab = () => (
@@ -986,6 +989,8 @@ function TestingComponent() {
                       <SelectValue placeholder="Select interval" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="10">10 Seconds</SelectItem>
+                      <SelectItem value="30">30 Seconds</SelectItem>
                       <SelectItem value="60">1 Minute</SelectItem>
                       <SelectItem value="300">5 Minutes</SelectItem>
                       <SelectItem value="900">15 Minutes</SelectItem>
@@ -1000,10 +1005,11 @@ function TestingComponent() {
             {selectedSessionIds.length > 0 && (
                 <div className="pt-2 flex flex-wrap gap-2 items-center">
                     <p className="text-sm text-muted-foreground">Comparing:</p>
-                    {selectedSessionIds.map(id => {
+                    {selectedSessionIds.map((id, index) => {
                         const session = testSessions?.find(s => s.id === id);
                         return (
-                             <div key={id} className="flex items-center gap-1 bg-muted text-muted-foreground px-2 py-1 rounded-md text-xs">
+                             <div key={id} className="flex items-center gap-2 bg-muted text-muted-foreground px-2 py-1 rounded-md text-xs">
+                                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }}></div>
                                 <span>{session?.productIdentifier || id}</span>
                                 <button onClick={() => setSelectedSessionIds(prev => prev.filter(sid => sid !== id))} className="text-muted-foreground hover:text-foreground">
                                     <XIcon className="h-3 w-3" />
@@ -1176,3 +1182,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
