@@ -42,7 +42,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { FlaskConical } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
-import { collection, doc, query, getDocs, writeBatch, where } from 'firebase/firestore';
+import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc } from 'firebase/firestore';
 
 
 type SensorConfig = {
@@ -72,6 +72,7 @@ type TestSession = {
     endTime?: string;
     status: 'RUNNING' | 'COMPLETED' | 'SCRAPPED';
     sensorConfigurationId: string;
+    measurementType: 'DEMO' | 'ARDUINO';
     dataPointCount?: number;
 };
 
@@ -265,7 +266,7 @@ export default function AdminPage() {
     setTempTestSession(prev => ({...prev, [field]: value}));
   };
 
-  const handleStartNewTestSession = () => {
+  const handleStartNewTestSession = async () => {
     if (!tempTestSession || !tempTestSession.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
         toast({variant: 'destructive', title: 'Error', description: 'Please provide a product identifier and select a sensor.'});
         return;
@@ -276,8 +277,8 @@ export default function AdminPage() {
         return;
     }
 
-    const newSessionId = doc(collection(firestore, '_')).id;
-    const newSession: TestSession = {
+    const newSessionId = doc(collection(firestore!, '_')).id;
+    const newSession: Omit<TestSession, 'dataPointCount'> = {
       id: newSessionId,
       productIdentifier: tempTestSession.productIdentifier,
       serialNumber: tempTestSession.serialNumber || '',
@@ -286,18 +287,19 @@ export default function AdminPage() {
       startTime: new Date().toISOString(),
       status: 'RUNNING',
       sensorConfigurationId: activeSensorConfigId,
+      measurementType: 'DEMO', // Assume admin page only starts DEMO manual sessions
     };
     
-    addDocumentNonBlocking(testSessionsCollectionRef, newSession);
+    await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
     setActiveTestSessionId(newSessionId);
     setTempTestSession(null);
     toast({ title: 'New Test Session Started', description: `Product: ${newSession.productIdentifier}`});
   };
 
   const handleStopTestSession = (sessionId: string) => {
-      if (!testSessionsCollectionRef) return;
-      const sessionRef = doc(testSessionsCollectionRef, sessionId);
-      updateDocumentNonBlocking(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
+      if (!firestore) return;
+      const sessionRef = doc(firestore, 'test_sessions', sessionId);
+      updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
       if (activeTestSessionId === sessionId) {
           setActiveTestSessionId(null);
       }
@@ -306,42 +308,46 @@ export default function AdminPage() {
   
   const handleDeleteTestSession = async (session: TestSession) => {
     if (!firestore) return;
+    const batch = writeBatch(firestore);
 
     // Find the config for the session to know where to look for data
     const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-    if (!config) {
-        toast({variant: 'destructive', title: 'Error', description: 'Could not find sensor config for this session.'});
-        return;
+    let dataDeletedCount = 0;
+
+    // Only attempt to delete sensor data if a config exists
+    if (config) {
+        try {
+            const sensorDataRef = collection(firestore, `sensor_configurations/${config.id}/sensor_data`);
+            const q = query(sensorDataRef, where("testSessionId", "==", session.id));
+            const querySnapshot = await getDocs(q);
+
+            querySnapshot.forEach(doc => {
+                batch.delete(doc.ref);
+            });
+            dataDeletedCount = querySnapshot.size;
+        } catch (e) {
+            console.error("Could not query/delete sensor data, but proceeding to delete session.", e);
+        }
     }
 
-    const sensorDataRef = collection(firestore, `sensor_configurations/${config.id}/sensor_data`);
-    const q = query(sensorDataRef, where("testSessionId", "==", session.id));
+    // Always delete the main session document
+    const sessionRef = doc(firestore, `test_sessions`, session.id);
+    batch.delete(sessionRef);
 
-    getDocs(q).then(querySnapshot => {
-        const batch = writeBatch(firestore);
-
-        querySnapshot.forEach(doc => {
-            batch.delete(doc.ref);
-        });
-
-        const sessionRef = doc(firestore, `test_sessions`, session.id);
-        batch.delete(sessionRef);
-
-        return batch.commit();
-
-    }).then(() => {
+    try {
+        await batch.commit();
         toast({
             title: 'Session Deleted',
-            description: `Session for "${session.productIdentifier}" and its associated data have been deleted.`
+            description: `Session "${session.productIdentifier}" and ${dataDeletedCount} data points deleted.`
         });
-    }).catch(serverError => {
+    } catch (serverError) {
         console.error("Error deleting session:", serverError);
-         toast({
+        toast({
             variant: 'destructive',
             title: 'Error Deleting Session',
             description: (serverError as Error).message
         });
-    });
+    }
   };
   
   const viewSessionData = (sessionId: string) => {
@@ -547,7 +553,7 @@ export default function AdminPage() {
                       </CardHeader>
                       <CardContent>
                           <div className="flex justify-center mb-4">
-                              <Button onClick={handleNewSensorConfig}>New Configuration</Button>
+                              <Button onClick={handleNewSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">New Configuration</Button>
                           </div>
                           {isSensorConfigsLoading ? <p>Loading sensors...</p> :
                           <ScrollArea className="h-96">
