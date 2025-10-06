@@ -1,84 +1,78 @@
 /**
- * @fileoverview Firestore Security Rules for BioThrust Dashboard.
+ * @file Firestore Security Rules for BioThrust Dashboard
  *
- * Core Philosophy:
- * This ruleset enforces a strict user-ownership model, ensuring that only authenticated users can access their own data.
+ * @description This ruleset enforces a strict user-ownership model, ensuring that users can only access their own data.
+ * All data is nested under `/users/{userId}`, providing a clear and secure hierarchy.
  *
  * Data Structure:
- * All data is nested under /users/{userId}, creating a clear separation of user data.
- * - /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}: Stores sensor data points for a specific sensor configuration.
- * - /users/{userId}/sensor_configurations/{sensorConfigurationId}: Stores sensor configurations.
- * - /users/{userId}/analysis_results/{analysisResultId}: Stores analysis results for sensor data.
- * - /users/{userId}/test_sessions/{testSessionId}: Stores test sessions.
+ * - `/users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}`: Stores individual sensor data points.
+ * - `/users/{userId}/sensor_configurations/{sensorConfigurationId}`: Stores sensor configurations.
+ * - `/users/{userId}/analysis_results/{analysisResultId}`: Stores leak analysis results.
+ * - `/users/{userId}/test_sessions/{testSessionId}`: Stores test sessions for a user.
  *
  * Key Security Decisions:
- * - Users can only access data under their own userId.
- * - User listing is disallowed.
+ * - Strict user-ownership: Only the authenticated user can read, create, update, or delete data under their own `userId`.
+ * - No public listing: Listing of user-specific collections (sensor configurations, analysis results, test sessions) is only allowed by the owner.
+ *
+ * Denormalization for Authorization:
+ * - The rules rely on path-based ownership, where the `userId` in the path must match the authenticated user's UID. This avoids the need for `get()` calls to verify ownership.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Checks if the request is authenticated.
-     * @returns {boolean} True if the user is signed in, false otherwise.
+     * @description Checks if the user is signed in.
      */
     function isSignedIn() {
       return request.auth != null;
     }
 
     /**
-     * @description Checks if the requested user ID matches the authenticated user's ID.
-     * @param {string} userId - The user ID to check.
-     * @returns {boolean} True if the user ID matches the authenticated user's ID, false otherwise.
+     * @description Checks if the authenticated user ID matches the provided user ID.
      */
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-     /**
-      * @description Checks if the user is an existing owner, verifying both ownership and document existence.
-      * @param {string} userId - The user ID to check.
-      * @returns {boolean} True if the user is the owner and the resource exists; false otherwise.
-      */
+    /**
+     * @description Checks if the authenticated user is the owner and the document exists.
+     */
     function isExistingOwner(userId) {
       return isOwner(userId) && resource != null;
     }
 
-    match /users/{userId} {
-        allow get: if false;
-        allow list: if false;
-
-        allow create: if isOwner(userId);
-        allow update: if false;
-        allow delete: if false;
-    }
-
     /**
-     * @description Security rules for sensor data nested under user-specific sensor configurations.
+     * @description Rules for sensor data nested under user and sensor configuration.
      * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
-     * @allow (create) - Authenticated user with matching `userId` and correct path can create a sensor data point.
-     * @deny (create) - User tries to create a sensor data point under a different user ID.
-     * @allow (get, list) - Authenticated user with matching `userId` can read sensor data.
-     * @deny (update, delete) - Non-owner tries to modify or delete the sensor data.
-     * @principle Enforces document ownership and prevents unauthorized data access.
+     * @allow (get) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can get sensor data with ID 'sensorData1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @allow (list) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can list sensor data under sensor config 'sensorConfig1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @allow (create) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can create sensor data with ID 'sensorData1' under sensor config 'sensorConfig1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @allow (update) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can update sensor data with ID 'sensorData1' under sensor config 'sensorConfig1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' and the document exists.
+     * @allow (delete) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can delete sensor data with ID 'sensorData1' under sensor config 'sensorConfig1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' and the document exists.
+     * @deny (get) User 'otherUser' cannot get sensor data with ID 'sensorData1' if they are not the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @deny (create) User 'otherUser' cannot create sensor data with ID 'sensorData1' under sensor config 'sensorConfig1' if they are not the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @principle Enforces document ownership for all operations.
      */
     match /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
       allow get: if isOwner(userId);
       allow list: if isOwner(userId);
-      allow create: if isOwner(userId) && request.resource.data.sensorConfigId == sensorConfigurationId;
-      allow update: if isExistingOwner(userId) && request.resource.data.sensorConfigId == resource.data.sensorConfigId;
+      allow create: if isOwner(userId);
+      allow update: if isExistingOwner(userId);
       allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Security rules for sensor configurations owned by a specific user.
+     * @description Rules for sensor configurations owned by a user.
      * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}
-     * @allow (create) - Authenticated user with matching `userId` can create a sensor configuration.
-     * @deny (create) - User tries to create a sensor configuration under a different user ID.
-     * @allow (get, list) - Authenticated user with matching `userId` can read sensor configuration.
-     * @deny (update, delete) - Non-owner tries to modify or delete the sensor configuration.
-     * @principle Enforces document ownership and prevents unauthorized data access.
+     * @allow (get) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can get sensor configuration with ID 'sensorConfig1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @allow (list) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can list sensor configurations if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @allow (create) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can create sensor configuration with ID 'sensorConfig1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @allow (update) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can update sensor configuration with ID 'sensorConfig1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' and the document exists.
+     * @allow (delete) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can delete sensor configuration with ID 'sensorConfig1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' and the document exists.
+     * @deny (get) User 'otherUser' cannot get sensor configuration with ID 'sensorConfig1' if they are not the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @deny (create) User 'otherUser' cannot create sensor configuration with ID 'sensorConfig1' if they are not the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @principle Enforces document ownership for all operations.
      */
     match /users/{userId}/sensor_configurations/{sensorConfigurationId} {
       allow get: if isOwner(userId);
@@ -89,13 +83,16 @@ service cloud.firestore {
     }
 
     /**
-     * @description Security rules for analysis results generated from a user's sensor data.
+     * @description Rules for analysis results owned by a user.
      * @path /users/{userId}/analysis_results/{analysisResultId}
-     * @allow (create) - Authenticated user with matching `userId` can create an analysis result.
-     * @deny (create) - User tries to create an analysis result under a different user ID.
-     * @allow (get, list) - Authenticated user with matching `userId` can read the analysis result.
-     * @deny (update, delete) - Non-owner tries to modify or delete the analysis result.
-     * @principle Enforces document ownership and prevents unauthorized data access.
+     * @allow (get) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can get analysis result with ID 'analysisResult1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @allow (list) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can list analysis results if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @allow (create) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can create analysis result with ID 'analysisResult1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @allow (update) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can update analysis result with ID 'analysisResult1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' and the document exists.
+     * @allow (delete) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can delete analysis result with ID 'analysisResult1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' and the document exists.
+     * @deny (get) User 'otherUser' cannot get analysis result with ID 'analysisResult1' if they are not the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @deny (create) User 'otherUser' cannot create analysis result with ID 'analysisResult1' if they are not the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @principle Enforces document ownership for all operations.
      */
     match /users/{userId}/analysis_results/{analysisResultId} {
       allow get: if isOwner(userId);
@@ -106,13 +103,16 @@ service cloud.firestore {
     }
 
     /**
-     * @description Security rules for test sessions, linking a product to a set of sensor data.
+     * @description Rules for test sessions owned by a user.
      * @path /users/{userId}/test_sessions/{testSessionId}
-     * @allow (create) - Authenticated user with matching `userId` can create a test session.
-     * @deny (create) - User tries to create a test session under a different user ID.
-     * @allow (get, list) - Authenticated user with matching `userId` can read the test session.
-     * @deny (update, delete) - Non-owner tries to modify or delete the test session.
-     * @principle Enforces document ownership and prevents unauthorized data access.
+     * @allow (get) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can get test session with ID 'testSession1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @allow (list) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can list test sessions if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @allow (create) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can create test session with ID 'testSession1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @allow (update) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can update test session with ID 'testSession1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' and the document exists.
+     * @allow (delete) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can delete test session with ID 'testSession1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' and the document exists.
+     * @deny (get) User 'otherUser' cannot get test session with ID 'testSession1' if they are not the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @deny (create) User 'otherUser' cannot create test session with ID 'testSession1' if they are not the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+     * @principle Enforces document ownership for all operations.
      */
     match /users/{userId}/test_sessions/{testSessionId} {
       allow get: if isOwner(userId);
@@ -120,6 +120,21 @@ service cloud.firestore {
       allow create: if isOwner(userId);
       allow update: if isExistingOwner(userId);
       allow delete: if isExistingOwner(userId);
+    }
+
+     /**
+      * @description Rules for user documents.  Allows a user to read their own document.
+      * @path /users/{userId}
+      * @allow (get) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can read their own user document.
+      * @deny (get) User 'otherUser' cannot read user document for user id 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
+      * @principle Restricts access to a user's own data tree.
+      */
+    match /users/{userId} {
+        allow get: if isOwner(userId);
+        allow list: if false;
+        allow create: if false;
+        allow update: if false;
+        allow delete: if false;
     }
   }
 }
