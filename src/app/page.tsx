@@ -53,6 +53,7 @@ type SensorConfig = {
     min: number;
     max: number;
     arduinoVoltage: number;
+    decimalPlaces: number;
 };
 
 type ConnectionState = 'DISCONNECTED' | 'CONNECTED' | 'DEMO';
@@ -73,6 +74,7 @@ export default function Home() {
       min: 0,
       max: 1023,
       arduinoVoltage: 5.0,
+      decimalPlaces: 0,
   });
   
   const [tempSensorConfig, setTempSensorConfig] = useState<SensorConfig>(sensorConfig);
@@ -406,15 +408,26 @@ export default function Home() {
       switch(value) {
         case 'RAW':
           newConfig.unit = 'RAW';
+          newConfig.decimalPlaces = 0;
           break;
         case 'VOLTAGE':
           newConfig.unit = 'V';
+          newConfig.decimalPlaces = 2;
           break;
         case 'CUSTOM':
           newConfig.unit = tempSensorConfig.unit !== 'RAW' && tempSensorConfig.unit !== 'V' ? tempSensorConfig.unit : 'bar';
+          newConfig.decimalPlaces = 2;
           break;
       }
     }
+
+    if (field === 'decimalPlaces') {
+        const num = parseInt(value, 10);
+        if (!isNaN(num) && num >= 0 && num <= 10) {
+            newConfig.decimalPlaces = num;
+        }
+    }
+
     setTempSensorConfig(newConfig);
   }
 
@@ -505,7 +518,7 @@ export default function Home() {
   }, [dataLog, chartInterval, convertRawValue]);
   
   const displayValue = currentValue !== null ? convertRawValue(currentValue) : null;
-  const displayDecimals = sensorConfig.mode === 'RAW' ? 0 : 2;
+  const displayDecimals = sensorConfig.decimalPlaces;
 
   const getButtonText = () => {
     if (connectionState === 'CONNECTED') return 'Trennen';
@@ -685,10 +698,18 @@ export default function Home() {
                         </div>
                     </div>
                  )}
-                 {tempSensorConfig.mode === 'VOLTAGE' && (
-                    <div>
-                        <Label htmlFor="arduinoVoltageInput">Referenzspannung (V)</Label>
-                        <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage} onChange={(e) => handleConfigChange('arduinoVoltage', parseFloat(e.target.value))} />
+                 {tempSensorConfig.mode !== 'RAW' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {tempSensorConfig.mode === 'VOLTAGE' && (
+                            <div>
+                                <Label htmlFor="arduinoVoltageInput">Referenzspannung (V)</Label>
+                                <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage} onChange={(e) => handleConfigchange('arduinoVoltage', parseFloat(e.target.value))} />
+                            </div>
+                        )}
+                        <div>
+                            <Label htmlFor="decimalPlacesInput">Dezimalstellen</Label>
+                            <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces} onChange={(e) => handleConfigChange('decimalPlaces', e.target.value)} />
+                        </div>
                     </div>
                  )}
                  <div className="flex justify-center">
