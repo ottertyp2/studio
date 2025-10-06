@@ -1,140 +1,128 @@
-/**
- * @file Firestore Security Rules for BioThrust Dashboard
- *
- * @description This ruleset enforces a strict user-ownership model, ensuring that users can only access their own data.
- * All data is nested under `/users/{userId}`, providing a clear and secure hierarchy.
- *
- * Data Structure:
- * - `/users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}`: Stores individual sensor data points.
- * - `/users/{userId}/sensor_configurations/{sensorConfigurationId}`: Stores sensor configurations.
- * - `/users/{userId}/analysis_results/{analysisResultId}`: Stores leak analysis results.
- * - `/users/{userId}/test_sessions/{testSessionId}`: Stores test sessions for a user.
- *
- * Key Security Decisions:
- * - Strict user-ownership: Only the authenticated user can read, create, update, or delete data under their own `userId`.
- * - No public listing: Listing of user-specific collections (sensor configurations, analysis results, test sessions) is only allowed by the owner.
- *
- * Denormalization for Authorization:
- * - The rules rely on path-based ownership, where the `userId` in the path must match the authenticated user's UID. This avoids the need for `get()` calls to verify ownership.
- */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
      * @description Checks if the user is signed in.
+     * @path N/A
+     * @allow N/A
+     * @deny N/A
+     * @principle Authentication is required for all operations.
      */
     function isSignedIn() {
       return request.auth != null;
     }
 
     /**
-     * @description Checks if the authenticated user ID matches the provided user ID.
+     * @description Checks if the requested user ID matches the authenticated user's ID.
+     * @path /users/{userId}
+     * @allow User with UID 'user123' (get, create, update, delete)
+     * @deny User with UID 'user456' trying to access 'user123's data (get, create, update, delete)
+     * @principle Enforces user-based ownership.
      */
     function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+      return request.auth.uid == userId;
     }
 
     /**
-     * @description Checks if the authenticated user is the owner and the document exists.
+     * @description Checks if the user is the owner and the resource exists.
+     * @path N/A
+     * @allow N/A
+     * @deny N/A
+     * @principle Validates resource existence for update and delete operations.
      */
     function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
+        return isOwner(userId) && exists(resource);
     }
 
     /**
-     * @description Rules for sensor data nested under user and sensor configuration.
-     * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
-     * @allow (get) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can get sensor data with ID 'sensorData1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @allow (list) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can list sensor data under sensor config 'sensorConfig1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @allow (create) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can create sensor data with ID 'sensorData1' under sensor config 'sensorConfig1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @allow (update) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can update sensor data with ID 'sensorData1' under sensor config 'sensorConfig1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' and the document exists.
-     * @allow (delete) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can delete sensor data with ID 'sensorData1' under sensor config 'sensorConfig1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' and the document exists.
-     * @deny (get) User 'otherUser' cannot get sensor data with ID 'sensorData1' if they are not the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @deny (create) User 'otherUser' cannot create sensor data with ID 'sensorData1' under sensor config 'sensorConfig1' if they are not the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @principle Enforces document ownership for all operations.
+     * @description Prevents listing of the /users collection.
+     * @path /users
+     * @allow N/A
+     * @deny Attempt to list all users.
+     * @principle Prevents unauthorized user discovery.
      */
-    match /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
-      allow delete: if isExistingOwner(userId);
-    }
-
-    /**
-     * @description Rules for sensor configurations owned by a user.
-     * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}
-     * @allow (get) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can get sensor configuration with ID 'sensorConfig1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @allow (list) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can list sensor configurations if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @allow (create) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can create sensor configuration with ID 'sensorConfig1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @allow (update) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can update sensor configuration with ID 'sensorConfig1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' and the document exists.
-     * @allow (delete) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can delete sensor configuration with ID 'sensorConfig1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' and the document exists.
-     * @deny (get) User 'otherUser' cannot get sensor configuration with ID 'sensorConfig1' if they are not the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @deny (create) User 'otherUser' cannot create sensor configuration with ID 'sensorConfig1' if they are not the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @principle Enforces document ownership for all operations.
-     */
-    match /users/{userId}/sensor_configurations/{sensorConfigurationId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
-      allow delete: if isExistingOwner(userId);
-    }
-
-    /**
-     * @description Rules for analysis results owned by a user.
-     * @path /users/{userId}/analysis_results/{analysisResultId}
-     * @allow (get) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can get analysis result with ID 'analysisResult1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @allow (list) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can list analysis results if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @allow (create) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can create analysis result with ID 'analysisResult1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @allow (update) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can update analysis result with ID 'analysisResult1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' and the document exists.
-     * @allow (delete) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can delete analysis result with ID 'analysisResult1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' and the document exists.
-     * @deny (get) User 'otherUser' cannot get analysis result with ID 'analysisResult1' if they are not the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @deny (create) User 'otherUser' cannot create analysis result with ID 'analysisResult1' if they are not the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @principle Enforces document ownership for all operations.
-     */
-    match /users/{userId}/analysis_results/{analysisResultId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
-      allow delete: if isExistingOwner(userId);
-    }
-
-    /**
-     * @description Rules for test sessions owned by a user.
-     * @path /users/{userId}/test_sessions/{testSessionId}
-     * @allow (get) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can get test session with ID 'testSession1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @allow (list) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can list test sessions if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @allow (create) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can create test session with ID 'testSession1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @allow (update) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can update test session with ID 'testSession1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' and the document exists.
-     * @allow (delete) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can delete test session with ID 'testSession1' if they are the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' and the document exists.
-     * @deny (get) User 'otherUser' cannot get test session with ID 'testSession1' if they are not the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @deny (create) User 'otherUser' cannot create test session with ID 'testSession1' if they are not the owner of user ID 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-     * @principle Enforces document ownership for all operations.
-     */
-    match /users/{userId}/test_sessions/{testSessionId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
-      allow delete: if isExistingOwner(userId);
-    }
-
-     /**
-      * @description Rules for user documents.  Allows a user to read their own document.
-      * @path /users/{userId}
-      * @allow (get) User 'mttFCYVvL6SEHlyXY7H6gvmCIXz1' can read their own user document.
-      * @deny (get) User 'otherUser' cannot read user document for user id 'mttFCYVvL6SEHlyXY7H6gvmCIXz1'.
-      * @principle Restricts access to a user's own data tree.
-      */
-    match /users/{userId} {
-        allow get: if isOwner(userId);
+    match /users {
+        allow get: if false;
         allow list: if false;
         allow create: if false;
         allow update: if false;
         allow delete: if false;
+    }
+
+    /**
+     * @description Enforces user-ownership for all data nested under /users/{userId}.
+     * @path /users/{userId}
+     * @allow User with UID 'user123' (create) creates their own user document.
+     * @deny User with UID 'user456' (create) tries to create a document under 'user123'.
+     * @principle Data is isolated to authenticated user via path based ownership.
+     */
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
+
+       /**
+        * @description Manages sensor configurations for a user.
+        * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}
+        * @allow User with UID 'user123' (create, get, update, delete) manages their own sensor configurations.
+        * @deny User with UID 'user456' (create, get, update, delete) tries to manage 'user123's sensor configurations.
+        * @principle Data is isolated to authenticated user via path based ownership.
+        */
+      match /sensor_configurations/{sensorConfigurationId} {
+        allow get: if isOwner(userId);
+        allow list: if false;
+        allow create: if isOwner(userId);
+        allow update: if isExistingOwner(userId);
+        allow delete: if isExistingOwner(userId);
+
+        /**
+         * @description Manages sensor data points associated with a sensor configuration.
+         * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
+         * @allow User with UID 'user123' (create, get, update, delete) manages their own sensor data.
+         * @deny User with UID 'user456' (create, get, update, delete) tries to manage 'user123's sensor data.
+         * @principle Data is isolated to authenticated user via path based ownership.
+         */
+        match /sensor_data/{sensorDataId} {
+          allow get: if isOwner(userId);
+          allow list: if false;
+          allow create: if isOwner(userId);
+          allow update: if isExistingOwner(userId);
+          allow delete: if isExistingOwner(userId);
+        }
+      }
+
+      /**
+       * @description Manages analysis results for a user.
+       * @path /users/{userId}/analysis_results/{analysisResultId}
+       * @allow User with UID 'user123' (create, get, update, delete) manages their own analysis results.
+       * @deny User with UID 'user456' (create, get, update, delete) tries to manage 'user123's analysis results.
+       * @principle Data is isolated to authenticated user via path based ownership.
+       */
+      match /analysis_results/{analysisResultId} {
+        allow get: if isOwner(userId);
+        allow list: if false;
+        allow create: if isOwner(userId);
+        allow update: if isExistingOwner(userId);
+        allow delete: if isExistingOwner(userId);
+      }
+
+      /**
+       * @description Manages test sessions for a user.
+       * @path /users/{userId}/test_sessions/{testSessionId}
+       * @allow User with UID 'user123' (create, get, update, delete) manages their own test sessions.
+       * @deny User with UID 'user456' (create, get, update, delete) tries to manage 'user123's test sessions.
+       * @principle Data is isolated to authenticated user via path based ownership.
+       */
+      match /test_sessions/{testSessionId} {
+        allow get: if isOwner(userId);
+        allow list: if false;
+        allow create: if isOwner(userId);
+        allow update: if isExistingOwner(userId);
+        allow delete: if isExistingOwner(userId);
+      }
     }
   }
 }
