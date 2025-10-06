@@ -54,8 +54,8 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
-import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection } from '@/firebase';
-import { collection, writeBatch, getDocs, query } from 'firebase/firestore';
+import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase';
+import { collection, writeBatch, getDocs, query, doc } from 'firebase/firestore';
 import { UserSelectionMenu } from '@/components/UserSelectionMenu';
 
 
@@ -64,9 +64,9 @@ type SensorData = {
   value: number; // Always RAW value
 };
 
-type SensorDataWithId = SensorData & { id: string };
-
 type SensorConfig = {
+    id: string;
+    name: string;
     mode: 'RAW' | 'VOLTAGE' | 'CUSTOM';
     unit: string;
     min: number;
@@ -89,16 +89,9 @@ export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   
-  const [sensorConfig, setSensorConfig] = useState<SensorConfig>({
-      mode: 'RAW',
-      unit: 'RAW',
-      min: 0,
-      max: 1023,
-      arduinoVoltage: 5.0,
-      decimalPlaces: 0,
-  });
-  
-  const [tempSensorConfig, setTempSensorConfig] = useState<SensorConfig>(sensorConfig);
+  const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
+  const [tempSensorConfig, setTempSensorConfig] = useState<Partial<SensorConfig> | null>(null);
+
   const [chartInterval, setChartInterval] = useState<string>("60");
   const [chartKey, setChartKey] = useState<number>(Date.now());
 
@@ -115,7 +108,7 @@ export default function Home() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   
-  const viewingUserId = isAdmin ? selectedUserId : user?.uid;
+  const viewingUserId = isAdmin ? selectedUserId ?? user?.uid : user?.uid;
 
   useEffect(() => {
     if (!isUserLoading && !user) {
@@ -132,10 +125,30 @@ export default function Home() {
     });
   }, [user]);
 
-  const sensorDataCollectionRef = useMemoFirebase(() => {
+  const sensorConfigsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !viewingUserId) return null;
-    return collection(firestore, `users/${viewingUserId}/sensor_configurations/default/sensor_data`);
+    return collection(firestore, `users/${viewingUserId}/sensor_configurations`);
   }, [firestore, viewingUserId]);
+
+  const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
+
+  const sensorConfig = useMemo(() => {
+    if (!sensorConfigs || !activeSensorConfigId) {
+        return { id: 'default', name: 'Default', mode: 'RAW', unit: 'RAW', min: 0, max: 1023, arduinoVoltage: 5, decimalPlaces: 0 };
+    }
+    return sensorConfigs.find(c => c.id === activeSensorConfigId) ?? { id: 'default', name: 'Default', mode: 'RAW', unit: 'RAW', min: 0, max: 1023, arduinoVoltage: 5, decimalPlaces: 0 };
+  }, [sensorConfigs, activeSensorConfigId]);
+
+  useEffect(() => {
+    if (sensorConfigs && sensorConfigs.length > 0 && !activeSensorConfigId) {
+        setActiveSensorConfigId(sensorConfigs[0].id);
+    }
+  }, [sensorConfigs, activeSensorConfigId]);
+
+  const sensorDataCollectionRef = useMemoFirebase(() => {
+    if (!firestore || !viewingUserId || !activeSensorConfigId) return null;
+    return collection(firestore, `users/${viewingUserId}/sensor_configurations/${activeSensorConfigId}/sensor_data`);
+  }, [firestore, viewingUserId, activeSensorConfigId]);
   
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
 
@@ -148,7 +161,6 @@ export default function Home() {
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
     setCurrentValue(newDataPoint.value);
     if (user && !isUserLoading && sensorDataCollectionRef) {
-      // Admin should not be able to write data to another user's log
       if (isAdmin && selectedUserId && selectedUserId !== user.uid) {
           return;
       }
@@ -453,7 +465,7 @@ export default function Home() {
       dataSegment: dataSegment.map(p => ({ timestamp: p.timestamp, value: p.value })),
       analysisModel: 'linear_leak',
       sensitivity: sensitivity,
-      sensorUnit: 'RAW',
+      sensorUnit: sensorConfig.unit,
     };
 
     try {
@@ -470,23 +482,11 @@ export default function Home() {
       setIsAnalyzing(false);
     }
   };
-  
-  const handleApplySettings = () => {
-    if (tempSensorConfig.mode === 'CUSTOM') {
-      if (tempSensorConfig.unit.trim() === '') {
-        toast({ variant: 'destructive', title: 'Ungültige Eingabe', description: 'Die Einheit darf nicht leer sein.'});
-        return;
-      }
-    }
-    setSensorConfig(tempSensorConfig);
-    toast({
-        title: 'Einstellungen übernommen',
-        description: `Der Anzeigemodus ist jetzt ${tempSensorConfig.mode}.`
-    })
-  }
 
   const handleConfigChange = (field: keyof SensorConfig, value: any) => {
-    let newConfig = {...tempSensorConfig, [field]: value};
+    if (!tempSensorConfig) return;
+
+    let newConfig = {...tempSensorConfig, [field]: value} as SensorConfig;
     
     if (field === 'mode') {
       switch(value) {
@@ -515,6 +515,66 @@ export default function Home() {
     setTempSensorConfig(newConfig);
   }
 
+  const handleSaveSensorConfig = () => {
+    if (!tempSensorConfig || !tempSensorConfig.name || tempSensorConfig.name.trim() === '') {
+        toast({ variant: 'destructive', title: 'Ungültige Eingabe', description: 'Der Name der Konfiguration darf nicht leer sein.'});
+        return;
+    }
+    if (tempSensorConfig.mode === 'CUSTOM' && (!tempSensorConfig.unit || tempSensorConfig.unit.trim() === '')) {
+        toast({ variant: 'destructive', title: 'Ungültige Eingabe', description: 'Die Einheit darf nicht leer sein.'});
+        return;
+    }
+    if (!firestore || !viewingUserId) return;
+
+    const configId = tempSensorConfig.id || doc(collection(firestore, '_')).id;
+    const configToSave: SensorConfig = {
+      id: configId,
+      name: tempSensorConfig.name,
+      mode: tempSensorConfig.mode || 'RAW',
+      unit: tempSensorConfig.unit || 'RAW',
+      min: tempSensorConfig.min || 0,
+      max: tempSensorConfig.max || 1023,
+      arduinoVoltage: tempSensorConfig.arduinoVoltage || 5,
+      decimalPlaces: tempSensorConfig.decimalPlaces || 0,
+    }
+
+    const configRef = doc(firestore, `users/${viewingUserId}/sensor_configurations`, configId);
+    setDocumentNonBlocking(configRef, configToSave, { merge: true });
+    
+    toast({
+        title: 'Konfiguration gespeichert',
+        description: `Die Sensorkonfiguration "${configToSave.name}" wurde gespeichert.`
+    });
+    setTempSensorConfig(null);
+    if (!activeSensorConfigId) {
+        setActiveSensorConfigId(configId);
+    }
+  };
+
+  const handleNewSensorConfig = () => {
+    setTempSensorConfig({
+      name: `New Sensor ${sensorConfigs?.length ? sensorConfigs.length + 1 : 1}`,
+      mode: 'RAW',
+      unit: 'RAW',
+      min: 0,
+      max: 1023,
+      arduinoVoltage: 5,
+      decimalPlaces: 0,
+    });
+  };
+
+  const handleDeleteSensorConfig = (configId: string) => {
+    if (!firestore || !viewingUserId || !configId) return;
+    const configRef = doc(firestore, `users/${viewingUserId}/sensor_configurations`, configId);
+    deleteDocumentNonBlocking(configRef);
+    toast({ title: "Konfiguration gelöscht" });
+    if (activeSensorConfigId === configId) {
+        setActiveSensorConfigId(sensorConfigs?.[0]?.id || null);
+    }
+    setTempSensorConfig(null);
+  };
+
+
   const handleResetZoom = () => {
     setChartKey(Date.now());
   }
@@ -530,7 +590,7 @@ export default function Home() {
         await batch.commit();
         toast({
           title: 'Cloud-Daten gelöscht',
-          description: `Alle Sensordaten für den Benutzer wurden aus der Cloud entfernt.`
+          description: `Alle Sensordaten für die aktuelle Konfiguration wurden aus der Cloud entfernt.`
         });
       } catch (error) {
         console.error("Error deleting cloud data:", error);
@@ -566,7 +626,7 @@ export default function Home() {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', 'datalog.csv');
+    link.setAttribute('download', `datalog_${activeSensorConfigId}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -723,7 +783,7 @@ export default function Home() {
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-center gap-4">
             <Button onClick={handleExportCSV} variant="outline" disabled={isSyncing}>Export CSV</Button>
-            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing || (isAdmin && selectedUserId !== user?.uid)}>
+            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing || (isAdmin && selectedUserId !== user?.uid) || !activeSensorConfigId}>
               {isSyncing ? 'Importiere...' : 'Import CSV'}
             </Button>
             <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
@@ -749,14 +809,14 @@ export default function Home() {
                     <Button onClick={handleSignOut} variant="secondary">Abmelden</Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <Button variant="destructive" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1 ml-4">Daten löschen</Button>
+                        <Button variant="destructive" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1 ml-4" disabled={!activeSensorConfigId}>Daten löschen</Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogTitle>Sind Sie sicher?</AlertDialogTitle>
                           <AlertDialogDescription>
                             Diese Aktion kann nicht rückgängig gemacht werden. Dadurch werden die aufgezeichneten
-                            Sensordaten dauerhaft aus der Cloud gelöscht.
+                            Sensordaten für die ausgewählte Konfiguration dauerhaft aus der Cloud gelöscht.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -770,6 +830,70 @@ export default function Home() {
         </CardContent>
       </Card>
   );
+
+  const renderSensorConfigurator = () => {
+    if (!tempSensorConfig) return null;
+    return (
+        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
+            <CardHeader>
+                <CardTitle>{tempSensorConfig.id ? 'Konfiguration bearbeiten' : 'Neue Konfiguration erstellen'}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                 <div>
+                    <Label htmlFor="configName">Name</Label>
+                    <Input id="configName" value={tempSensorConfig.name || ''} onChange={(e) => handleConfigChange('name', e.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="conversionMode">Anzeige-Modus</Label>
+                  <Select value={tempSensorConfig.mode} onValueChange={(value) => handleConfigChange('mode', value)}>
+                    <SelectTrigger id="conversionMode">
+                      <SelectValue placeholder="Select mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="RAW">RAW (0-1023)</SelectItem>
+                      <SelectItem value="VOLTAGE">Spannung (V)</SelectItem>
+                      <SelectItem value="CUSTOM">Benutzerdefiniert</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                 {tempSensorConfig.mode === 'CUSTOM' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <Label htmlFor="sensorUnitInput">Einheit</Label>
+                            <Input id="sensorUnitInput" value={tempSensorConfig.unit} onChange={(e) => handleConfigChange('unit', e.target.value)} />
+                        </div>
+                        <div>
+                            <Label htmlFor="minValueInput">Minimalwert</Label>
+                            <Input id="minValueInput" type="number" value={tempSensorConfig.min} onChange={(e) => handleConfigChange('min', parseFloat(e.target.value))} />
+                        </div>
+                        <div>
+                            <Label htmlFor="maxValueInput">Maximalwert</Label>
+                            <Input id="maxValueInput" type="number" value={tempSensorConfig.max} onChange={(e) => handleConfigChange('max', parseFloat(e.target.value))} />
+                        </div>
+                    </div>
+                 )}
+                 {tempSensorConfig.mode !== 'RAW' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {tempSensorConfig.mode === 'VOLTAGE' && (
+                            <div>
+                                <Label htmlFor="arduinoVoltageInput">Referenzspannung (V)</Label>
+                                <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage} onChange={(e) => handleConfigChange('arduinoVoltage', parseFloat(e.target.value))} />
+                            </div>
+                        )}
+                        <div>
+                            <Label htmlFor="decimalPlacesInput">Dezimalstellen</Label>
+                            <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces} onChange={(e) => handleConfigChange('decimalPlaces', e.target.value)} />
+                        </div>
+                    </div>
+                 )}
+                 <div className="flex justify-center gap-4">
+                    <Button onClick={handleSaveSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Speichern</Button>
+                    <Button onClick={() => setTempSensorConfig(null)} variant="ghost">Abbrechen</Button>
+                 </div>
+              </CardContent>
+        </Card>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
@@ -788,7 +912,7 @@ export default function Home() {
                 <TabsList className="grid w-full grid-cols-3">
                     <TabsTrigger value="live">Live (Arduino)</TabsTrigger>
                     <TabsTrigger value="file">Datei (CSV)</TabsTrigger>
-                    <TabsTrigger value="cloud">Cloud</TabsTrigger>
+                    <TabsTrigger value="cloud">Cloud & Admin</TabsTrigger>
                 </TabsList>
             </Tabs>
           </CardContent>
@@ -804,8 +928,23 @@ export default function Home() {
 
         <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
           <CardHeader>
-            <div className="flex justify-between items-center">
-              <CardTitle>Datenvisualisierung ({sensorConfig.unit})</CardTitle>
+            <div className="flex justify-between items-center flex-wrap gap-4">
+              <div className='flex items-center gap-4'>
+                <CardTitle>Datenvisualisierung</CardTitle>
+                <div className='flex items-center gap-2'>
+                    <Label htmlFor="sensorConfigSelect" className="whitespace-nowrap">Sensor:</Label>
+                    <Select value={activeSensorConfigId || ''} onValueChange={setActiveSensorConfigId} disabled={!user}>
+                        <SelectTrigger id="sensorConfigSelect" className="w-[200px] bg-white/80">
+                        <SelectValue placeholder="Sensor auswählen" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {isSensorConfigsLoading ? <SelectItem value="loading" disabled>Lade...</SelectItem> :
+                            sensorConfigs?.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)
+                            }
+                        </SelectContent>
+                    </Select>
+                </div>
+              </div>
               <div className='flex items-center gap-2'>
                  <Label htmlFor="chartInterval" className="whitespace-nowrap">Zeitraum:</Label>
                   <Select value={chartInterval} onValueChange={setChartInterval}>
@@ -854,7 +993,7 @@ export default function Home() {
                     formatter={(value: number) => [`${Number(value).toFixed(displayDecimals)} ${sensorConfig.unit}`]}
                   />
                   <Legend />
-                  <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" fill="url(#colorValue)" name="Sensorwert" dot={false} strokeWidth={2} />
+                  <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" fill="url(#colorValue)" name={`${sensorConfig.name} (${sensorConfig.unit})`} dot={false} strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -967,58 +1106,57 @@ export default function Home() {
             </Card>
           </div>
 
-          <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-              <CardHeader>
-                <CardTitle>Sensor-Konfiguration</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="conversionMode">Anzeige-Modus</Label>
-                  <Select value={tempSensorConfig.mode} onValueChange={(value) => handleConfigChange('mode', value)}>
-                    <SelectTrigger id="conversionMode">
-                      <SelectValue placeholder="Select mode" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="RAW">RAW (0-1023)</SelectItem>
-                      <SelectItem value="VOLTAGE">Spannung (V)</SelectItem>
-                      <SelectItem value="CUSTOM">Benutzerdefiniert</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                 {tempSensorConfig.mode === 'CUSTOM' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div>
-                            <Label htmlFor="sensorUnitInput">Einheit</Label>
-                            <Input id="sensorUnitInput" value={tempSensorConfig.unit} onChange={(e) => handleConfigChange('unit', e.target.value)} />
-                        </div>
-                        <div>
-                            <Label htmlFor="minValueInput">Minimalwert</Label>
-                            <Input id="minValueInput" type="number" value={tempSensorConfig.min} onChange={(e) => handleConfigChange('min', parseFloat(e.target.value))} />
-                        </div>
-                        <div>
-                            <Label htmlFor="maxValueInput">Maximalwert</Label>
-                            <Input id="maxValueInput" type="number" value={tempSensorConfig.max} onChange={(e) => handleConfigChange('max', parseFloat(e.target.value))} />
-                        </div>
-                    </div>
-                 )}
-                 {tempSensorConfig.mode !== 'RAW' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {tempSensorConfig.mode === 'VOLTAGE' && (
-                            <div>
-                                <Label htmlFor="arduinoVoltageInput">Referenzspannung (V)</Label>
-                                <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage} onChange={(e) => handleConfigChange('arduinoVoltage', parseFloat(e.target.value))} />
-                            </div>
-                        )}
-                        <div>
-                            <Label htmlFor="decimalPlacesInput">Dezimalstellen</Label>
-                            <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces} onChange={(e) => handleConfigChange('decimalPlaces', e.target.value)} />
-                        </div>
-                    </div>
-                 )}
-                 <div className="flex justify-center">
-                    <Button onClick={handleApplySettings} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Anwenden</Button>
-                 </div>
-              </CardContent>
+            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+                <CardHeader>
+                    <CardTitle>Sensor-Verwaltung</CardTitle>
+                    <CardDescription>
+                        {isAdmin ? 'Verwalten Sie die Sensorkonfigurationen für den ausgewählten Benutzer.' : 'Ihre verfügbaren Sensorkonfigurationen.'}
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {isAdmin ? (
+                    <>
+                      <div className="flex justify-center mb-4">
+                          <Button onClick={handleNewSensorConfig}>Neue Konfiguration</Button>
+                      </div>
+                      <ScrollArea className="h-96">
+                          <div className="space-y-4">
+                              {sensorConfigs?.map(c => (
+                                  <Card key={c.id} className='p-4'>
+                                      <div className='flex justify-between items-center'>
+                                          <p className='font-semibold'>{c.name}</p>
+                                          <div className='flex gap-2'>
+                                              <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Bearbeiten</Button>
+                                              <AlertDialog>
+                                                <AlertDialogTrigger asChild>
+                                                  <Button size="sm" variant="destructive">Löschen</Button>
+                                                </AlertDialogTrigger>
+                                                <AlertDialogContent>
+                                                  <AlertDialogHeader>
+                                                    <AlertDialogTitle>Konfiguration löschen?</AlertDialogTitle>
+                                                    <AlertDialogDescription>
+                                                      Sind Sie sicher, dass Sie die Konfiguration "{c.name}" löschen möchten? Alle zugehörigen Daten gehen verloren.
+                                                    </AlertDialogDescription>
+                                                  </AlertDialogHeader>
+                                                  <AlertDialogFooter>
+                                                    <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                                                    <AlertDialogAction onClick={() => handleDeleteSensorConfig(c.id)}>Löschen</AlertDialogAction>
+                                                  </AlertDialogFooter>
+                                                </AlertDialogContent>
+                                              </AlertDialog>
+
+                                          </div>
+                                      </div>
+                                  </Card>
+                              ))}
+                          </div>
+                      </ScrollArea>
+                    </>
+                  ) : (
+                    <p className="text-muted-foreground text-center">Nur Administratoren können Konfigurationen verwalten.</p>
+                  )}
+                  {isAdmin && renderSensorConfigurator()}
+                </CardContent>
             </Card>
 
         </div>
