@@ -24,8 +24,9 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { useFirebase, initiateEmailSignUp } from '@/firebase';
+import { useFirebase } from '@/firebase';
 import { FirebaseError } from 'firebase/app';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 
 const formSchema = z.object({
   email: z.string().email({
@@ -84,8 +85,6 @@ export default function SignupPage() {
         setIsLoading(false);
     }
   };
-
-  const { createUserWithEmailAndPassword } = require('firebase/auth');
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">

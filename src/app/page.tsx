@@ -634,7 +634,7 @@ export default function Home() {
     }
   }
 
-  if (isUserLoading || (!user && !isUserLoading)) {
+  if (isUserLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
         <p className="text-lg">Loading authentication...</p>

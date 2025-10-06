@@ -24,8 +24,9 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { useFirebase, initiateEmailSignIn } from '@/firebase';
+import { useFirebase } from '@/firebase';
 import { FirebaseError } from 'firebase/app';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 
 const formSchema = z.object({
   email: z.string().email({
@@ -83,10 +84,6 @@ export default function LoginPage() {
       setIsLoading(false);
     }
   };
-  
-  // Need to use the `signInWithEmailAndPassword` directly to get promise for router push
-  const { signInWithEmailAndPassword } = require('firebase/auth');
-
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
