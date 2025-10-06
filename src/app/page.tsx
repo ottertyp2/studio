@@ -55,7 +55,7 @@ import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
 import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
-import { collection, writeBatch, getDocs, query, doc } from 'firebase/firestore';
+import { collection, writeBatch, getDocs, query, doc, where } from 'firebase/firestore';
 import { UserSelectionMenu } from '@/components/UserSelectionMenu';
 
 
@@ -106,6 +106,7 @@ export default function Home() {
   const [tempSensorConfig, setTempSensorConfig] = useState<Partial<SensorConfig> | null>(null);
   const [activeTestSessionId, setActiveTestSessionId] = useState<string | null>(null);
   const [tempTestSession, setTempTestSession] = useState<Partial<TestSession> | null>(null);
+  const [emailToPromote, setEmailToPromote] = useState('');
 
 
   const [chartInterval, setChartInterval] = useState<string>("60");
@@ -197,14 +198,11 @@ export default function Home() {
     }
 
     if (user && !isUserLoading && sensorDataCollectionRef) {
-      if (isAdmin && selectedUserId && selectedUserId !== user.uid) {
-          return;
-      }
       addDocumentNonBlocking(sensorDataCollectionRef, dataToSave);
     } else if (!user) {
       setLocalDataLog(prevLog => [dataToSave, ...prevLog].slice(0, 1000));
     }
-  }, [user, isUserLoading, sensorDataCollectionRef, isAdmin, selectedUserId, activeTestSessionId]);
+  }, [user, isUserLoading, sensorDataCollectionRef, activeTestSessionId]);
 
   useEffect(() => {
     if (dataLog && dataLog.length > 0) {
@@ -660,7 +658,7 @@ export default function Home() {
   }
   
   const handleClearData = async () => {
-    if (user && sensorDataCollectionRef) {
+    if (user && !isUserLoading && sensorDataCollectionRef) {
       try {
         const q = activeTestSessionId 
           ? query(sensorDataCollectionRef, where("testSessionId", "==", activeTestSessionId))
@@ -781,6 +779,25 @@ export default function Home() {
     }
   };
 
+  const handlePromoteToAdmin = async () => {
+    if (!emailToPromote) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Please enter a user email.' });
+      return;
+    }
+    toast({ title: 'Promotion Sent', description: 'A request to promote the user has been sent. This requires a Cloud Function to be deployed.' });
+    // In a real application, you would call a Cloud Function here.
+    // For example:
+    // const functions = getFunctions(app, 'us-central1');
+    // const addAdminRole = httpsCallable(functions, 'addAdminRole');
+    // addAdminRole({ email: emailToPromote })
+    //   .then((result) => {
+    //     toast({ title: 'Success', description: (result.data as any).message });
+    //   })
+    //   .catch((error) => {
+    //     toast({ variant: 'destructive', title: 'Error', description: error.message });
+    //   });
+  };
+
 
   const chartData = useMemo(() => {
     const now = new Date();
@@ -827,22 +844,17 @@ export default function Home() {
               <CardTitle className="text-2xl text-center">
                   Live-Steuerung
               </CardTitle>
-              {isAdmin && selectedUserId && selectedUserId !== user?.uid && (
-                <div className='text-sm text-muted-foreground p-2 rounded-md bg-background'>
-                  Nur Anzeige-Modus für Admin
-                </div>
-              )}
             </div>
             <CardDescription className="text-center">
               Verbinden Sie Ihren Arduino oder starten Sie den Demo-Modus.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center justify-center gap-4">
-            <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={isAdmin && selectedUserId !== user?.uid}>
+            <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
               {getButtonText()}
             </Button>
             {connectionState === 'DISCONNECTED' && (
-                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={isAdmin && selectedUserId !== user?.uid}>
+                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1">
                     Demo starten
                 </Button>
             )}
@@ -851,7 +863,6 @@ export default function Home() {
                 variant={isMeasuring ? 'destructive' : 'secondary'}
                 onClick={handleToggleMeasurement}
                 className="btn-shine shadow-md transition-transform transform hover:-translate-y-1"
-                disabled={isAdmin && selectedUserId !== user?.uid}
               >
                 {isMeasuring ? 'Messung stoppen' : 'Messung starten'}
               </Button>
@@ -1067,6 +1078,34 @@ export default function Home() {
             </ScrollArea>
           </div>
 
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const renderAdminTools = () => {
+    if (!isAdmin) return null;
+    return (
+      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+        <CardHeader>
+          <CardTitle>Admin Tools</CardTitle>
+          <CardDescription>Promote a user to an admin role.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label htmlFor="promoteEmail">User Email to Promote</Label>
+            <Input
+              id="promoteEmail"
+              type="email"
+              placeholder="user@example.com"
+              value={emailToPromote}
+              onChange={(e) => setEmailToPromote(e.target.value)}
+            />
+          </div>
+          <Button onClick={handlePromoteToAdmin}>Promote to Admin</Button>
+           <p className="text-xs text-muted-foreground pt-2">
+            Note: This requires a deployed Cloud Function named 'addAdminRole' to work.
+          </p>
         </CardContent>
       </Card>
     );
@@ -1337,6 +1376,7 @@ export default function Home() {
                 </CardContent>
             </Card>
             {isAdmin && renderTestSessionManager()}
+            {isAdmin && renderAdminTools()}
           </div>
         </div>
       </main>
