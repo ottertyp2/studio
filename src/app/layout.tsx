@@ -15,22 +15,17 @@ const inter = Inter({ subsets: ['latin'] });
 //   description: 'AI-powered leak detection',
 // };
 
-function AuthWrapper({ children }: { children: React.ReactNode }) {
-  const auth = useAuth();
-  useEffect(() => {
-    initiateAnonymousSignIn(auth);
-  }, [auth]);
-
-  return <>{children}</>;
-}
-
-
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   const { firebaseApp, firestore, auth } = initializeFirebase();
+  
+  useEffect(() => {
+    initiateAnonymousSignIn(auth);
+  }, [auth]);
+
   return (
     <html lang="en">
       <body className={inter.className}>
@@ -39,9 +34,7 @@ export default function RootLayout({
           auth={auth}
           firestore={firestore}
         >
-          <AuthWrapper>
-            {children}
-          </AuthWrapper>
+          {children}
         </FirebaseProvider>
         <Toaster />
       </body>

@@ -1,156 +1,76 @@
 /**
- * @fileOverview Firestore Security Rules for the BioThrust Dashboard application.
+ * @fileoverview Firestore Security Rules for Prototyping.
  *
  * Core Philosophy:
- * This ruleset enforces a strict user-ownership model where each user has exclusive
- * access to their sensor configurations, sensor data, analysis results, and test sessions.
+ * This ruleset adopts a public-access model, suitable for prototyping, local testing, or public dashboards.
+ * It assumes that all data is accessible to all users, including unauthenticated users.
+ * While it disables authentication checks, it still enforces basic structural segregation and prepares the ground for future, more restrictive rules.
  *
  * Data Structure:
- * All data is nested under /users/{userId}, ensuring data isolation and simplifying
- * authorization checks.  Each user owns their configurations, sensor data, analysis, and tests.
- * /users/{userId}/sensor_configurations/{sensorConfigurationId}
- * /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
- * /users/{userId}/analysis_results/{analysisResultId}
- * /users/{userId}/test_sessions/{testSessionId}
+ * - /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}: Stores individual sensor data points linked to a configuration.
+ * - /sensor_configurations/{sensorConfigurationId}: Stores global sensor configurations.
+ * - /analysis_results/{analysisResultId}: Stores leak analysis results.
+ * - /test_sessions/{testSessionId}: Stores test session data.
  *
  * Key Security Decisions:
- * - Users can only access data associated with their own user ID.
- * - Data is not publicly listable; only the owning user can list their collections.
- * - The data schema is not strictly enforced in this prototyping phase to allow for rapid iteration, but ownership is strictly enforced.
- *
- * Denormalization for Authorization:
- * The rules rely on path-based ownership, eliminating the need for additional `get()` calls
- * to determine authorization. The `userId` is implicitly available from the path.
- * This is achieved by nesting all user-specific data under the `/users/{userId}` collection.
+ * - No authentication required: All reads and writes are allowed for all users, including unauthenticated users.
+ * - No user listing: There are no user-specific collections, so user listing is not applicable.
+ * - Public Read, Public Write: All collections are configured for public read and public write.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Checks if the request is made by a signed-in user.
-     * @returns {boolean} True if the user is signed in, false otherwise.
+     * @description Allows anyone to read or write sensor data points.
+     * @path /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
+     * @allow (get, list) Any user can read a sensor data point.
+     * @allow (create, update, delete) Any user can create, update, or delete a sensor data point.
+     * @deny None: This rule allows all access.
+     * @principle Public read, public write.
      */
-    function isSignedIn() {
-      return request.auth != null;
+    match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
+      allow get, list: if true;
+      allow create, update, delete: if true;
     }
 
     /**
-     * @description Checks if the authenticated user ID matches the provided user ID.
-     * @param {string} userId - The user ID to compare against the authenticated user ID.
-     * @returns {boolean} True if the user IDs match, false otherwise.
+     * @description Allows anyone to read or write sensor configurations.
+     * @path /sensor_configurations/{sensorConfigurationId}
+     * @allow (get, list) Any user can read a sensor configuration.
+     * @allow (create, update, delete) Any user can create, update, or delete a sensor configuration.
+     * @deny None: This rule allows all access.
+     * @principle Public read, public write.
      */
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    match /sensor_configurations/{sensorConfigurationId} {
+      allow get, list: if true;
+      allow create, update, delete: if true;
     }
 
     /**
-     * @description Checks if the authenticated user is the owner of the existing document.
-     * @param {string} userId - The user ID to compare against the authenticated user ID.
-     * @returns {boolean} True if the user IDs match and the resource exists, false otherwise.
+     * @description Allows anyone to read or write analysis results.
+     * @path /analysis_results/{analysisResultId}
+     * @allow (get, list) Any user can read an analysis result.
+     * @allow (create, update, delete) Any user can create, update, or delete an analysis result.
+     * @deny None: This rule allows all access.
+     * @principle Public read, public write.
      */
-    function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
+    match /analysis_results/{analysisResultId} {
+      allow get, list: if true;
+      allow create, update, delete: if true;
     }
 
     /**
-     * @description Security rules for sensor data nested under user and sensor configuration.
-     * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
-     * @allow (create) - User 'user123' can create sensor data under their sensor configuration.
-     *   Request: { auth: { uid: 'user123' }, resource: { data: { ...sensorData... } } }
-     * @allow (get) - User 'user123' can get their sensor data.
-     *   Request: { auth: { uid: 'user123' } }
-     * @allow (list) - User 'user123' can list sensor data under their sensor configuration.
-     *   Request: { auth: { uid: 'user123' } }
-     * @deny (create) - User 'user456' cannot create sensor data under 'user123's sensor configuration.
-     *   Request: { auth: { uid: 'user456' }, resource: { data: { ...sensorData... } } }
-     * @deny (update) - User 'user456' cannot update sensor data owned by 'user123'.
-     *   Request: { auth: { uid: 'user456' }, resource: { data: { ...updatedSensorData... } } }
-     * @deny (delete) - User 'user456' cannot delete sensor data owned by 'user123'.
-     *   Request: { auth: { uid: 'user456' } }
-     * @principle Enforces document ownership for writes; restricts access to a user's own data tree.
+     * @description Allows anyone to read or write test session data.
+     * @path /test_sessions/{testSessionId}
+     * @allow (get, list) Any user can read a test session.
+     * @allow (create, update, delete) Any user can create, update, or delete a test session.
+     * @deny None: This rule allows all access.
+     * @principle Public read, public write.
      */
-    match /users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
-      allow delete: if isExistingOwner(userId);
-    }
-
-    /**
-     * @description Security rules for sensor configurations owned by a specific user.
-     * @path /users/{userId}/sensor_configurations/{sensorConfigurationId}
-     * @allow (create) - User 'user123' can create a sensor configuration.
-     *   Request: { auth: { uid: 'user123' }, resource: { data: { ...sensorConfiguration... } } }
-     * @allow (get) - User 'user123' can get their sensor configuration.
-     *   Request: { auth: { uid: 'user123' } }
-     * @allow (list) - User 'user123' can list their sensor configurations.
-     *   Request: { auth: { uid: 'user123' } }
-     * @deny (create) - User 'user456' cannot create a sensor configuration for 'user123'.
-     *   Request: { auth: { uid: 'user456' }, resource: { data: { ...sensorConfiguration... } } }
-     * @deny (update) - User 'user456' cannot update a sensor configuration owned by 'user123'.
-     *   Request: { auth: { uid: 'user456' }, resource: { data: { ...updatedSensorConfiguration... } } }
-     * @deny (delete) - User 'user456' cannot delete a sensor configuration owned by 'user123'.
-     *   Request: { auth: { uid: 'user456' } }
-     * @principle Enforces document ownership for writes; restricts access to a user's own data tree.
-     */
-    match /users/{userId}/sensor_configurations/{sensorConfigurationId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
-      allow delete: if isExistingOwner(userId);
-    }
-
-    /**
-     * @description Security rules for analysis results generated from a user's sensor data.
-     * @path /users/{userId}/analysis_results/{analysisResultId}
-     * @allow (create) - User 'user123' can create an analysis result.
-     *   Request: { auth: { uid: 'user123' }, resource: { data: { ...analysisResult... } } }
-     * @allow (get) - User 'user123' can get their analysis result.
-     *   Request: { auth: { uid: 'user123' } }
-     * @allow (list) - User 'user123' can list their analysis results.
-     *   Request: { auth: { uid: 'user123' } }
-     * @deny (create) - User 'user456' cannot create an analysis result for 'user123'.
-     *   Request: { auth: { uid: 'user456' }, resource: { data: { ...analysisResult... } } }
-     * @deny (update) - User 'user456' cannot update an analysis result owned by 'user123'.
-     *   Request: { auth: { uid: 'user456' }, resource: { data: { ...updatedAnalysisResult... } } }
-     * @deny (delete) - User 'user456' cannot delete an analysis result owned by 'user123'.
-     *   Request: { auth: { uid: 'user456' } }
-     * @principle Enforces document ownership for writes; restricts access to a user's own data tree.
-     */
-    match /users/{userId}/analysis_results/{analysisResultId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
-      allow delete: if isExistingOwner(userId);
-    }
-
-    /**
-     * @description Security rules for test sessions owned by a specific user.
-     * @path /users/{userId}/test_sessions/{testSessionId}
-     * @allow (create) - User 'user123' can create a test session.
-     *   Request: { auth: { uid: 'user123' }, resource: { data: { ...testSession... } } }
-     * @allow (get) - User 'user123' can get their test session.
-     *   Request: { auth: { uid: 'user123' } }
-     * @allow (list) - User 'user123' can list their test sessions.
-     *   Request: { auth: { uid: 'user123' } }
-     * @deny (create) - User 'user456' cannot create a test session for 'user123'.
-     *   Request: { auth: { uid: 'user456' }, resource: { data: { ...testSession... } } }
-     * @deny (update) - User 'user456' cannot update a test session owned by 'user123'.
-     *   Request: { auth: { uid: 'user456' }, resource: { data: { ...updatedTestSession... } } }
-     * @deny (delete) - User 'user456' cannot delete a test session owned by 'user123'.
-     *   Request: { auth: { uid: 'user456' } }
-     * @principle Enforces document ownership for writes; restricts access to a user's own data tree.
-     */
-    match /users/{userId}/test_sessions/{testSessionId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
-      allow delete: if isExistingOwner(userId);
+    match /test_sessions/{testSessionId} {
+          allow get, list: if true;
+          allow create, update, delete: if true;
     }
   }
 }
