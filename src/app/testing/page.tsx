@@ -141,16 +141,18 @@ function TestingComponent() {
       testSessions: testSessions || [] as TestSession[]
   });
 
-  useEffect(() => {
-    stateRef.current = { firestore, selectedSessionIds, activeSensorConfigId, testSessions: testSessions || [] };
-  }, [firestore, selectedSessionIds, activeSensorConfigId, testSessions]);
-
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
     return collection(firestore, `sensor_configurations`);
   }, [firestore]);
-
+  
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
+
+  useEffect(() => {
+    stateRef.current = { firestore, selectedSessionIds, activeSensorConfigId, testSessions: testSessions || [] };
+  }, [firestore, selectedSessionIds, activeSensorConfigId, testSessions]);
+
+
 
   const runningTestSession = useMemo(() => {
     return testSessions?.find(s => s.status === 'RUNNING');
@@ -270,28 +272,30 @@ function TestingComponent() {
       }
     }
   }, []);
-  
-  const handleStopTestSession = useCallback(async (sessionId: string) => {
-      if (!testSessionsCollectionRef || !firestore) return;
-      
-      const sessionRef = doc(firestore, `test_sessions`, sessionId);
-      await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
-      
-      const session = testSessions?.find(s => s.id === sessionId);
-      if(session?.measurementType === 'DEMO') {
-          stopDemoMode();
-      }
-      if(session?.measurementType === 'ARDUINO') {
-          await sendSerialCommand('p');
-      }
 
-      if (selectedSessionIds.includes(sessionId)) {
-          if (selectedSessionIds.length === 1) {
-            setSelectedSessionIds([]);
-          }
+  const handleStopTestSession = useCallback(async (sessionId: string) => {
+    if (!testSessionsCollectionRef || !firestore) return;
+
+    const sessionRef = doc(firestore, `test_sessions`, sessionId);
+    await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
+
+    const session = testSessions?.find(s => s.id === sessionId);
+    if (session?.measurementType === 'DEMO') {
+      stopDemoMode();
+    }
+    // Only send pause command if this client is the one connected
+    if (session?.measurementType === 'ARDUINO' && isConnected) {
+      await sendSerialCommand('p');
+    }
+
+    if (selectedSessionIds.includes(sessionId)) {
+      if (selectedSessionIds.length === 1) {
+        setSelectedSessionIds([]);
       }
-      toast({title: 'Test Session Ended'});
-  }, [testSessionsCollectionRef, firestore, selectedSessionIds, toast, stopDemoMode, testSessions, sendSerialCommand]);
+    }
+    toast({ title: 'Test Session Ended' });
+  }, [testSessionsCollectionRef, firestore, selectedSessionIds, toast, stopDemoMode, testSessions, sendSerialCommand, isConnected]);
+
 
   const readFromSerial = useCallback(async () => {
     if (!portRef.current?.readable || readingRef.current) return;
@@ -330,11 +334,26 @@ function TestingComponent() {
               const { testSessions: currentTestSessions } = stateRef.current;
               const runningArduinoSession = currentTestSessions.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
               if (runningArduinoSession) {
+                // We call a different disconnect function to avoid circular dependencies
+                // This will stop the session globally
                 handleStopTestSession(runningArduinoSession.id);
+                // And handle local cleanup
+                if (portRef.current) {
+                  readingRef.current = false;
+                   if (readerRef.current) {
+                      readerRef.current.cancel().catch(() => {});
+                      readerRef.current.releaseLock();
+                      readerRef.current = null;
+                   }
+                   if (writerRef.current) {
+                      writerRef.current.releaseLock();
+                      writerRef.current = null;
+                   }
+                   portRef.current.close().catch(() => {});
+                   portRef.current = null;
+                   setIsConnected(false);
+                }
               }
-              // This function reference needs to be stable and defined before readFromSerial
-              // To break the circular dependency, we'll call a disconnect function instead of handleConnect
-              // For now, we assume disconnect logic is handled within handleStopTestSession and by the user re-clicking connect
             }
             break; 
         }
@@ -352,12 +371,6 @@ function TestingComponent() {
 
    const handleConnect = useCallback(async () => {
     if (portRef.current) {
-        const { testSessions: currentTestSessions } = stateRef.current;
-        const arduinoSession = currentTestSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
-
-        if(arduinoSession) {
-          await handleStopTestSession(arduinoSession.id);
-        }
         readingRef.current = false;
         if(readerRef.current) {
           try { await readerRef.current.cancel(); } catch {}
@@ -390,7 +403,6 @@ function TestingComponent() {
             
             readFromSerial();
 
-            await sendSerialCommand('p'); 
         } catch (error) {
             console.error('Error connecting:', error);
             if ((error as Error).name !== 'NotFoundError') {
@@ -517,6 +529,12 @@ function TestingComponent() {
       
     let startIndex = chronologicalData.findIndex(d => (d.convertedValue as number) <= startThreshold);
     let endIndex = chronologicalData.findIndex((d, i) => i > startIndex && (d.convertedValue as number) <= endThreshold);
+
+    if (startIndex === -1) {
+        // Fallback for pressure increase scenarios
+        startIndex = chronologicalData.findIndex(d => (d.convertedValue as number) >= startThreshold);
+        endIndex = chronologicalData.findIndex((d, i) => i > startIndex && (d.convertedValue as number) >= endThreshold);
+    }
 
     if (startIndex === -1 || endIndex === -1) {
         toast({
@@ -763,7 +781,7 @@ function TestingComponent() {
             <Button 
                 onClick={handleConnect} 
                 className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" 
-                disabled={!!runningTestSession && runningTestSession.measurementType !== 'ARDUINO'}
+                disabled={!!runningTestSession && !isConnected}
             >
                 {isConnected ? 'Disconnect from Arduino' : 'Connect to Arduino'}
             </Button>

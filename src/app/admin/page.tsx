@@ -113,7 +113,10 @@ export default function AdminPage() {
     for (const session of testSessions) {
       // Find the config for the session to know where to look for data
       const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
-      if (!config) continue;
+      if (!config) {
+        counts[session.id] = 0; // If no config, assume no data
+        continue;
+      };
 
       try {
         const sensorDataRef = collection(firestore, `sensor_configurations/${config.id}/sensor_data`);
@@ -122,6 +125,7 @@ export default function AdminPage() {
         counts[session.id] = snapshot.size;
       } catch (e) {
           console.error("Error fetching session data counts.", e);
+          counts[session.id] = 0; // Set to 0 on error
           // Don't break the whole loop, just skip this one
       }
     }
@@ -489,18 +493,18 @@ export default function AdminPage() {
                                 <Button size="sm" variant="outline" onClick={() => viewSessionData(session.id)}>View Data</Button>
                                  <AlertDialog>
                                     <AlertDialogTrigger asChild>
-                                        <Button size="sm" variant="destructive" className="bg-red-700/80">Delete</Button>
+                                        <Button size="sm" variant="destructive">Delete</Button>
                                     </AlertDialogTrigger>
                                     <AlertDialogContent>
                                         <AlertDialogHeader>
-                                            <AlertDialogTitle>Delete Test Session?</AlertDialogTitle>
+                                            <AlertDialogTitle>Permanently Delete Session?</AlertDialogTitle>
                                             <AlertDialogDescription>
                                                 This will permanently delete the session for "{session.productIdentifier}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
                                             </AlertDialogDescription>
                                         </AlertDialogHeader>
                                         <AlertDialogFooter>
                                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                            <AlertDialogAction onClick={() => handleDeleteTestSession(session)}>Confirm Delete</AlertDialogAction>
+                                            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => handleDeleteTestSession(session)}>Confirm Delete</AlertDialogAction>
                                         </AlertDialogFooter>
                                     </AlertDialogContent>
                                 </AlertDialog>
@@ -573,14 +577,14 @@ export default function AdminPage() {
                                                       </AlertDialogTrigger>
                                                       <AlertDialogContent>
                                                       <AlertDialogHeader>
-                                                          <AlertDialogTitle>Delete Configuration?</AlertDialogTitle>
+                                                          <AlertDialogTitle>Permanently Delete Configuration?</AlertDialogTitle>
                                                           <AlertDialogDescription>
                                                           Are you sure you want to delete the configuration "{c.name}"? This will also delete all associated sensor data. This action cannot be undone.
                                                           </AlertDialogDescription>
                                                       </AlertDialogHeader>
                                                       <AlertDialogFooter>
                                                           <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                          <AlertDialogAction onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
+                                                          <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
                                                       </AlertDialogFooter>
                                                       </AlertDialogContent>
                                                   </AlertDialog>
