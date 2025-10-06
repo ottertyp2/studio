@@ -22,6 +22,14 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -34,8 +42,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Home } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc } from '@/firebase';
-import { collection, doc } from 'firebase/firestore';
-import { UserSelectionMenu } from '@/components/UserSelectionMenu';
+import { collection, doc, query, getDocs } from 'firebase/firestore';
 
 
 type SensorConfig = {
@@ -62,12 +69,14 @@ type TestSession = {
 };
 
 type UserProfile = {
+  uid: string;
   email: string;
   createdAt: string;
   isAdmin?: boolean;
 }
 
 export default function AdminPage() {
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
@@ -101,6 +110,29 @@ export default function AdminPage() {
       router.push('/');
     }
   }, [user, isUserLoading, router, userProfile, isUserProfileLoading, toast]);
+
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      if (!firestore) return;
+      try {
+        const usersCollectionRef = collection(firestore, 'users');
+        const userSnapshot = await getDocs(query(usersCollectionRef));
+        const userList = userSnapshot.docs.map(doc => ({
+          uid: doc.id,
+          email: doc.data().email || doc.id,
+          createdAt: doc.data().createdAt,
+          isAdmin: doc.data().isAdmin || false,
+        }));
+        setAllUsers(userList);
+      } catch (error) {
+        console.error("Failed to fetch users:", error);
+      }
+    };
+    if(isAdmin) {
+        fetchUsers();
+    }
+  }, [firestore, isAdmin]);
 
 
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
@@ -264,14 +296,10 @@ export default function AdminPage() {
       toast({title: 'Test Session Ended'});
   };
   
-  const viewLiveTest = (sessionId: string) => {
-    if (!viewingUserId) return;
-    const queryParams = new URLSearchParams({
-        userId: viewingUserId,
-        sessionId: sessionId,
-    }).toString();
+  const viewUserTests = (userId: string) => {
+    const queryParams = new URLSearchParams({ userId }).toString();
     router.push(`/testing?${queryParams}`);
-  }
+  };
 
   if (isUserLoading || isUserProfileLoading || !isAdmin) {
     return (
@@ -353,7 +381,7 @@ export default function AdminPage() {
         <CardHeader>
           <CardTitle>Test Sessions</CardTitle>
           <CardDescription>
-            Manage test sessions for the selected user.
+            Manage test sessions for the selected user: {allUsers.find(u => u.uid === selectedUserId)?.email || 'N/A'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -405,7 +433,6 @@ export default function AdminPage() {
                          <div className="flex gap-2">
                              {session.status === 'RUNNING' && (
                                 <>
-                                    <Button size="sm" variant="outline" onClick={() => viewLiveTest(session.id)}>View Live</Button>
                                     <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session.id)}>Stop</Button>
                                 </>
                             )}
@@ -479,69 +506,93 @@ export default function AdminPage() {
                 </CardDescription>
             </CardHeader>
             <CardContent>
-                <UserSelectionMenu onUserSelected={setSelectedUserId} />
+                <ScrollArea className="h-72">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Email</TableHead>
+                                <TableHead>Role</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {allUsers.map(u => (
+                                <TableRow key={u.uid} className={u.uid === selectedUserId ? "bg-accent/50" : ""}>
+                                    <TableCell>{u.email}</TableCell>
+                                    <TableCell>{u.isAdmin ? 'Admin' : 'User'}</TableCell>
+                                    <TableCell className="text-right">
+                                        <Button variant="outline" size="sm" onClick={() => setSelectedUserId(u.uid)}>Manage Data</Button>
+                                        <Button variant="ghost" size="sm" className="ml-2" onClick={() => viewUserTests(u.uid)}>View Tests</Button>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </ScrollArea>
             </CardContent>
         </Card>
+        
+        {selectedUserId && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="space-y-6">
+                  <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+                      <CardHeader>
+                          <CardTitle>Sensor Management</CardTitle>
+                          <CardDescription>
+                              Manage sensor configurations for {allUsers.find(u => u.uid === selectedUserId)?.email || 'the selected user'}.
+                          </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                          <div className="flex justify-center mb-4">
+                              <Button onClick={handleNewSensorConfig} disabled={!viewingUserId}>New Configuration</Button>
+                          </div>
+                          {isSensorConfigsLoading ? <p>Loading sensors...</p> :
+                          <ScrollArea className="h-96">
+                              <div className="space-y-4">
+                                  {sensorConfigs?.map(c => (
+                                      <Card key={c.id} className='p-4'>
+                                          <div className='flex justify-between items-center'>
+                                              <div>
+                                                  <p className='font-semibold'>{c.name}</p>
+                                                  <p className="text-sm text-muted-foreground">{c.mode} ({c.unit})</p>
+                                              </div>
+                                              <div className='flex gap-2'>
+                                                  <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
+                                                  <AlertDialog>
+                                                      <AlertDialogTrigger asChild>
+                                                      <Button size="sm" variant="destructive">Delete</Button>
+                                                      </AlertDialogTrigger>
+                                                      <AlertDialogContent>
+                                                      <AlertDialogHeader>
+                                                          <AlertDialogTitle>Delete Configuration?</AlertDialogTitle>
+                                                          <AlertDialogDescription>
+                                                          Are you sure you want to delete the configuration "{c.name}"? All associated data will be lost.
+                                                          </AlertDialogDescription>
+                                                      </AlertDialogHeader>
+                                                      <AlertDialogFooter>
+                                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                          <AlertDialogAction onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
+                                                      </AlertDialogFooter>
+                                                      </AlertDialogContent>
+                                                  </AlertDialog>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="space-y-6">
-                <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-                    <CardHeader>
-                        <CardTitle>Sensor Management</CardTitle>
-                        <CardDescription>
-                            Manage sensor configurations for the selected user.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="flex justify-center mb-4">
-                            <Button onClick={handleNewSensorConfig} disabled={!viewingUserId}>New Configuration</Button>
-                        </div>
-                         {isSensorConfigsLoading ? <p>Loading sensors...</p> :
-                        <ScrollArea className="h-96">
-                            <div className="space-y-4">
-                                {sensorConfigs?.map(c => (
-                                    <Card key={c.id} className='p-4'>
-                                        <div className='flex justify-between items-center'>
-                                            <div>
-                                                <p className='font-semibold'>{c.name}</p>
-                                                <p className="text-sm text-muted-foreground">{c.mode} ({c.unit})</p>
-                                            </div>
-                                            <div className='flex gap-2'>
-                                                <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
-                                                <AlertDialog>
-                                                    <AlertDialogTrigger asChild>
-                                                    <Button size="sm" variant="destructive">Delete</Button>
-                                                    </AlertDialogTrigger>
-                                                    <AlertDialogContent>
-                                                    <AlertDialogHeader>
-                                                        <AlertDialogTitle>Delete Configuration?</AlertDialogTitle>
-                                                        <AlertDialogDescription>
-                                                        Are you sure you want to delete the configuration "{c.name}"? All associated data will be lost.
-                                                        </AlertDialogDescription>
-                                                    </AlertDialogHeader>
-                                                    <AlertDialogFooter>
-                                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                        <AlertDialogAction onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
-                                                    </AlertDialogFooter>
-                                                    </AlertDialogContent>
-                                                </AlertDialog>
-
-                                            </div>
-                                        </div>
-                                    </Card>
-                                ))}
-                            </div>
-                        </ScrollArea>
-                        }
-                        {renderSensorConfigurator()}
-                    </CardContent>
-                </Card>
-            </div>
-            <div className="space-y-6">
-                {renderTestSessionManager()}
-                {renderAdminTools()}
-            </div>
-        </div>
+                                              </div>
+                                          </div>
+                                      </Card>
+                                  ))}
+                              </div>
+                          </ScrollArea>
+                          }
+                          {renderSensorConfigurator()}
+                      </CardContent>
+                  </Card>
+              </div>
+              <div className="space-y-6">
+                  {renderTestSessionManager()}
+                  {renderAdminTools()}
+              </div>
+          </div>
+        )}
       </main>
     </div>
   );

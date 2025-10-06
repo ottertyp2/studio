@@ -97,12 +97,13 @@ function TestingComponent() {
   const searchParams = useSearchParams();
 
   const adminUserId = searchParams.get('userId');
-  const adminSessionId = searchParams.get('sessionId');
 
   const { user, isUserLoading } = useUser();
   
   // Determine which user's data to view
   const viewingUserId = adminUserId || user?.uid;
+
+  const adminSessionId = adminUserId ? null : searchParams.get('sessionId');
 
 
   const [activeTab, setActiveTab] = useState('live');
