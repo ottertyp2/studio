@@ -337,7 +337,9 @@ export default function Home() {
     }
     setConnectionState('DEMO');
     setIsMeasuring(true);
-    setLocalDataLog([]);
+    if (!user) {
+      setLocalDataLog([]);
+    }
     setCurrentValue(null);
 
     let trend = 1000;
@@ -630,11 +632,11 @@ export default function Home() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center justify-center gap-4">
-            <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!!user}>
+            <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
               {getButtonText()}
             </Button>
             {connectionState === 'DISCONNECTED' && (
-                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={!!user}>
+                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1">
                     Demo starten
                 </Button>
             )}
@@ -643,7 +645,6 @@ export default function Home() {
                 variant={isMeasuring ? 'destructive' : 'secondary'}
                 onClick={handleToggleMeasurement}
                 className="btn-shine shadow-md transition-transform transform hover:-translate-y-1"
-                disabled={!!user}
               >
                 {isMeasuring ? 'Messung stoppen' : 'Messung starten'}
               </Button>
@@ -667,12 +668,6 @@ export default function Home() {
               </AlertDialogContent>
             </AlertDialog>
           </CardContent>
-          {user && (
-            <CardFooter className='flex-col'>
-                <p className='text-sm text-muted-foreground'>Live-Steuerung ist im Cloud-Modus deaktiviert.</p>
-                <p className='text-sm text-muted-foreground'>Bitte melden Sie sich ab, um ein Gerät zu verbinden.</p>
-            </CardFooter>
-          )}
         </Card>
     </>
   );
