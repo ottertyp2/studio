@@ -123,7 +123,7 @@ export default function Home() {
                   <YAxis />
                   <Tooltip />
                   <Legend />
-                  <Line type="monotone" dataKey="uv" stroke="#8884d8" />
+                  <Line type="monotone" dataKey="uv" stroke="hsl(var(--chart-1))" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
