@@ -30,6 +30,10 @@
         "sensorConfigId": {
           "type": "string",
           "description": "Reference to SensorConfiguration. (Relationship: SensorConfiguration 1:N SensorData)"
+        },
+        "testSessionId": {
+            "type": "string",
+            "description": "Reference to the test session this data point belongs to."
         }
       },
       "required": [
@@ -122,6 +126,24 @@
         "analyzedRangeEnd",
         "isLeak"
       ]
+    },
+    "TestSession": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "TestSession",
+        "type": "object",
+        "description": "Represents a single test session for a specific product.",
+        "properties": {
+            "id": { "type": "string", "description": "Unique identifier for the test session." },
+            "productIdentifier": { "type": "string", "description": "Full product identifier, e.g., [c.su300.8b.b]-187." },
+            "serialNumber": { "type": "string", "description": "The serial number of the product." },
+            "model": { "type": "string", "description": "The model of the product." },
+            "description": { "type": "string", "description": "A description of the test session." },
+            "startTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test started." },
+            "endTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test ended." },
+            "status": { "type": "string", "enum": ["RUNNING", "COMPLETED", "SCRAPPED"], "description": "The status of the test session." },
+            "sensorConfigurationId": { "type": "string", "description": "The sensor configuration used for this test." }
+        },
+        "required": ["id", "productIdentifier", "startTime", "status", "sensorConfigurationId"]
     }
   },
   "auth": {
@@ -195,8 +217,26 @@
             }
           ]
         }
+      },
+       {
+        "path": "/users/{userId}/test_sessions/{testSessionId}",
+        "definition": {
+          "entityName": "TestSession",
+          "schema": { "$ref": "#/backend/entities/TestSession" },
+          "description": "Stores test sessions for a user, linking a product to a set of sensor data.",
+           "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user."
+            },
+            {
+              "name": "testSessionId",
+              "description": "The unique identifier of the test session."
+            }
+          ]
+        }
       }
     ],
-    "reasoning": "This Firestore data structure is designed to support the BioThrust Dashboard application, focusing on real-time sensor data collection, storage, and analysis. The design prioritizes Authorization Independence, clarity, and scalability.\n\n**Authorization Independence and QAPs:**\n\n*   The structure utilizes Path-Based Ownership. All sensor data is stored under a top-level `users/{userId}` collection, ensuring that only the authenticated user can read and write their own data. This avoids the need for complex security rules that rely on `get()` calls, thus satisfying Authorization Independence.\n*   The `sensor_configurations` are also stored under a user id collection, which allows only the current authenticated user to access and read the data and associated data points.\n*   This structure supports secure `list` operations (QAPs) because listing the sensor data under `/users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data` only returns data accessible to the authenticated user.\n\n**Details:**\n\n*   **/users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}**: Stores the time-series sensor data for a given sensor configuration owned by a specific user. The structure is designed to allow only the authenticated user to read and write their own sensor data.\n*   **/users/{userId}/sensor_configurations/{sensorConfigurationId}**: Stores sensor configurations that are owned by a specific user. A single SensorConfiguration can have many SensorData entries. This structure enforces single ownership and isolation of data via path-based rules.\n*   **/users/{userId}/analysis_results/{analysisResultId}**: Stores the results of the leak analysis performed on sensor data owned by a specific user. Like the other collections, access is restricted to the user's own data."
+    "reasoning": "This Firestore data structure is designed to support the BioThrust Dashboard application, focusing on real-time sensor data collection, storage, and analysis. The design prioritizes Authorization Independence, clarity, and scalability.\n\n**Authorization Independence and QAPs:**\n\n*   The structure utilizes Path-Based Ownership. All sensor data is stored under a top-level `users/{userId}` collection, ensuring that only the authenticated user can read and write their own data. This avoids the need for complex security rules that rely on `get()` calls, thus satisfying Authorization Independence.\n*   The `sensor_configurations` are also stored under a user id collection, which allows only the current authenticated user to access and read the data and associated data points.\n*   This structure supports secure `list` operations (QAPs) because listing the sensor data under `/users/{userId}/sensor_configurations/{sensorConfigurationId}/sensor_data` only returns data accessible to the authenticated user.\n*   The `test_sessions` collection is also stored under a user ID, linking specific product tests to the user who ran them."
   }
 }

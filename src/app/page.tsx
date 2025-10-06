@@ -54,7 +54,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
-import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase';
+import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
 import { collection, writeBatch, getDocs, query, doc } from 'firebase/firestore';
 import { UserSelectionMenu } from '@/components/UserSelectionMenu';
 
@@ -62,6 +62,7 @@ import { UserSelectionMenu } from '@/components/UserSelectionMenu';
 type SensorData = {
   timestamp: string;
   value: number; // Always RAW value
+  testSessionId?: string;
 };
 
 type SensorConfig = {
@@ -73,6 +74,18 @@ type SensorConfig = {
     max: number;
     arduinoVoltage: number;
     decimalPlaces: number;
+};
+
+type TestSession = {
+    id: string;
+    productIdentifier: string;
+    serialNumber: string;
+    model: string;
+    description: string;
+    startTime: string;
+    endTime?: string;
+    status: 'RUNNING' | 'COMPLETED' | 'SCRAPPED';
+    sensorConfigurationId: string;
 };
 
 type ConnectionState = 'DISCONNECTED' | 'CONNECTED' | 'DEMO';
@@ -91,6 +104,9 @@ export default function Home() {
   
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
   const [tempSensorConfig, setTempSensorConfig] = useState<Partial<SensorConfig> | null>(null);
+  const [activeTestSessionId, setActiveTestSessionId] = useState<string | null>(null);
+  const [tempTestSession, setTempTestSession] = useState<Partial<TestSession> | null>(null);
+
 
   const [chartInterval, setChartInterval] = useState<string>("60");
   const [chartKey, setChartKey] = useState<number>(Date.now());
@@ -132,6 +148,14 @@ export default function Home() {
 
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
 
+  const testSessionsCollectionRef = useMemoFirebase(() => {
+      if (!firestore || !viewingUserId) return null;
+      return collection(firestore, `users/${viewingUserId}/test_sessions`);
+  }, [firestore, viewingUserId]);
+
+  const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
+
+
   const sensorConfig = useMemo(() => {
     if (!sensorConfigs || !activeSensorConfigId) {
         return { id: 'default', name: 'Default', mode: 'RAW', unit: 'RAW', min: 0, max: 1023, arduinoVoltage: 5, decimalPlaces: 0 };
@@ -155,20 +179,32 @@ export default function Home() {
   const dataLog = useMemo(() => {
     const log = user ? cloudDataLog : localDataLog;
     if (!log) return [];
-    return [...log].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [user, cloudDataLog, localDataLog]);
+    
+    let filteredLog = [...log];
+    if (activeTestSessionId) {
+        filteredLog = filteredLog.filter(d => d.testSessionId === activeTestSessionId);
+    }
+    
+    return filteredLog.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [user, cloudDataLog, localDataLog, activeTestSessionId]);
   
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
     setCurrentValue(newDataPoint.value);
+    
+    const dataToSave = {...newDataPoint};
+    if (activeTestSessionId) {
+        dataToSave.testSessionId = activeTestSessionId;
+    }
+
     if (user && !isUserLoading && sensorDataCollectionRef) {
       if (isAdmin && selectedUserId && selectedUserId !== user.uid) {
           return;
       }
-      addDocumentNonBlocking(sensorDataCollectionRef, newDataPoint);
+      addDocumentNonBlocking(sensorDataCollectionRef, dataToSave);
     } else if (!user) {
-      setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
+      setLocalDataLog(prevLog => [dataToSave, ...prevLog].slice(0, 1000));
     }
-  }, [user, isUserLoading, sensorDataCollectionRef, isAdmin, selectedUserId]);
+  }, [user, isUserLoading, sensorDataCollectionRef, isAdmin, selectedUserId, activeTestSessionId]);
 
   useEffect(() => {
     if (dataLog && dataLog.length > 0) {
@@ -573,6 +609,50 @@ export default function Home() {
     }
     setTempSensorConfig(null);
   };
+  
+  const handleTestSessionFieldChange = (field: keyof TestSession, value: any) => {
+    if (!tempTestSession) return;
+    setTempTestSession(prev => ({...prev, [field]: value}));
+  };
+
+  const handleStartNewTestSession = () => {
+    if (!tempTestSession || !tempTestSession.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
+        toast({variant: 'destructive', title: 'Fehler', description: 'Bitte geben Sie eine Produktkennung an und wählen Sie einen Sensor aus.'});
+        return;
+    }
+
+    if (activeTestSessionId && testSessions?.find(s => s.id === activeTestSessionId)?.status === 'RUNNING') {
+        toast({variant: 'destructive', title: 'Fehler', description: 'Eine Testsitzung läuft bereits.'});
+        return;
+    }
+
+    const newSessionId = doc(collection(firestore, '_')).id;
+    const newSession: TestSession = {
+      id: newSessionId,
+      productIdentifier: tempTestSession.productIdentifier,
+      serialNumber: tempTestSession.serialNumber || '',
+      model: tempTestSession.model || '',
+      description: tempTestSession.description || '',
+      startTime: new Date().toISOString(),
+      status: 'RUNNING',
+      sensorConfigurationId: activeSensorConfigId,
+    };
+    
+    addDocumentNonBlocking(testSessionsCollectionRef, newSession);
+    setActiveTestSessionId(newSessionId);
+    setTempTestSession(null);
+    toast({ title: 'Neue Testsitzung gestartet', description: `Produkt: ${newSession.productIdentifier}`});
+  };
+
+  const handleStopTestSession = (sessionId: string) => {
+      if (!testSessionsCollectionRef) return;
+      const sessionRef = doc(testSessionsCollectionRef, sessionId);
+      updateDocumentNonBlocking(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
+      if (activeTestSessionId === sessionId) {
+          setActiveTestSessionId(null);
+      }
+      toast({title: 'Testsitzung beendet'});
+  };
 
 
   const handleResetZoom = () => {
@@ -582,7 +662,11 @@ export default function Home() {
   const handleClearData = async () => {
     if (user && sensorDataCollectionRef) {
       try {
-        const querySnapshot = await getDocs(query(sensorDataCollectionRef));
+        const q = activeTestSessionId 
+          ? query(sensorDataCollectionRef, where("testSessionId", "==", activeTestSessionId))
+          : query(sensorDataCollectionRef);
+
+        const querySnapshot = await getDocs(q);
         const batch = writeBatch(firestore);
         querySnapshot.forEach(doc => {
           batch.delete(doc.ref);
@@ -590,7 +674,7 @@ export default function Home() {
         await batch.commit();
         toast({
           title: 'Cloud-Daten gelöscht',
-          description: `Alle Sensordaten für die aktuelle Konfiguration wurden aus der Cloud entfernt.`
+          description: `Alle relevanten Sensordaten für die aktuelle Konfiguration wurden aus der Cloud entfernt.`
         });
       } catch (error) {
         console.error("Error deleting cloud data:", error);
@@ -626,7 +710,7 @@ export default function Home() {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `datalog_${activeSensorConfigId}.csv`);
+    link.setAttribute('download', `datalog_${activeSensorConfigId}_${activeTestSessionId || 'all'}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -659,15 +743,20 @@ export default function Home() {
 
         const importedData: SensorData[] = results.data.map((row: any) => ({
           timestamp: row.timestamp,
-          value: parseFloat(row.value)
+          value: parseFloat(row.value),
+          testSessionId: activeTestSessionId || undefined,
         })).filter(d => d.timestamp && !isNaN(d.value));
         
         importedData.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
         if (user && !isUserLoading && sensorDataCollectionRef) {
           setIsSyncing(true);
-          const uploadPromises = importedData.map(dataPoint => addDocumentNonBlocking(sensorDataCollectionRef, dataPoint));
-          Promise.all(uploadPromises)
+          const batch = writeBatch(firestore);
+          importedData.forEach(dataPoint => {
+              const docRef = doc(sensorDataCollectionRef);
+              batch.set(docRef, dataPoint);
+          });
+          batch.commit()
             .then(() => {
               toast({ title: 'Daten erfolgreich in die Cloud importiert', description: `${importedData.length} Datenpunkte hochgeladen.` });
             })
@@ -895,6 +984,94 @@ export default function Home() {
     );
   }
 
+  const renderTestSessionManager = () => {
+    if (!isAdmin) return null;
+    
+    const runningSession = testSessions?.find(s => s.status === 'RUNNING');
+
+    return (
+      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+        <CardHeader>
+          <CardTitle>Test Sessions</CardTitle>
+          <CardDescription>
+            Manage test sessions for the selected user.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!tempTestSession && !runningSession && (
+            <div className="flex justify-center">
+              <Button onClick={() => setTempTestSession({})} disabled={!activeSensorConfigId}>
+                Start New Test Session
+              </Button>
+            </div>
+          )}
+
+          {tempTestSession && !runningSession && (
+            <div className="space-y-4">
+              <CardTitle className="text-lg">New Test Session</CardTitle>
+              <div>
+                <Label htmlFor="productIdentifier">Product Identifier</Label>
+                <Input id="productIdentifier" placeholder="[c.su300.8b.b]-187" value={tempTestSession.productIdentifier || ''} onChange={e => handleTestSessionFieldChange('productIdentifier', e.target.value)} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                 <div>
+                    <Label htmlFor="serialNumber">Serial Number</Label>
+                    <Input id="serialNumber" placeholder="187" value={tempTestSession.serialNumber || ''} onChange={e => handleTestSessionFieldChange('serialNumber', e.target.value)} />
+                </div>
+                <div>
+                    <Label htmlFor="model">Model</Label>
+                    <Input id="model" placeholder="c.su300.8b.b" value={tempTestSession.model || ''} onChange={e => handleTestSessionFieldChange('model', e.target.value)} />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="description">Description</Label>
+                <Input id="description" placeholder="Internal R&D..." value={tempTestSession.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
+              </div>
+              <div className="flex justify-center gap-4">
+                <Button onClick={handleStartNewTestSession}>Start Session</Button>
+                <Button variant="ghost" onClick={() => setTempTestSession(null)}>Cancel</Button>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-4 mt-6">
+            <div className="flex justify-between items-center">
+                <CardTitle className="text-lg">Session History</CardTitle>
+                <div className='flex items-center gap-2'>
+                    <Label htmlFor="sessionFilter" className="whitespace-nowrap">View:</Label>
+                    <Select value={activeTestSessionId || 'all'} onValueChange={(val) => setActiveTestSessionId(val === 'all' ? null : val)}>
+                        <SelectTrigger id="sessionFilter" className="w-[250px] bg-white/80">
+                            <SelectValue placeholder="Select a session" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Data (No Session)</SelectItem>
+                            {testSessions?.map(s => <SelectItem key={s.id} value={s.id}>{s.productIdentifier} ({s.status})</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+            </div>
+             <ScrollArea className="h-64">
+              {testSessions?.map(session => (
+                <Card key={session.id} className="p-3 mb-2">
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <p className="font-semibold">{session.productIdentifier}</p>
+                            <p className="text-sm text-muted-foreground">{new Date(session.startTime).toLocaleString('de-DE')} - {session.status}</p>
+                        </div>
+                        {session.status === 'RUNNING' && (
+                            <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session.id)}>Stop</Button>
+                        )}
+                    </div>
+                </Card>
+              ))}
+            </ScrollArea>
+          </div>
+
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
       <header className="w-full max-w-7xl mx-auto mb-6">
@@ -1000,8 +1177,8 @@ export default function Home() {
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="space-y-6 lg:col-span-2">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <Card className="md:col-span-1 flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
                 <CardHeader>
@@ -1106,7 +1283,8 @@ export default function Home() {
             </Card>
           </div>
 
-            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+          <div className="space-y-6 lg:col-span-1">
+             <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
                 <CardHeader>
                     <CardTitle>Sensor-Verwaltung</CardTitle>
                     <CardDescription>
@@ -1158,7 +1336,8 @@ export default function Home() {
                   {isAdmin && renderSensorConfigurator()}
                 </CardContent>
             </Card>
-
+            {isAdmin && renderTestSessionManager()}
+          </div>
         </div>
       </main>
     </div>
