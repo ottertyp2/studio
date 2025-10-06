@@ -102,6 +102,53 @@ export default function Home() {
     }
   }, [sensorConfig]);
 
+  const sendSerialCommand = useCallback(async (command: 's' | 'p') => {
+    if (!portRef.current?.writable) return;
+    const writer = portRef.current.writable.getWriter();
+    try {
+      const encoder = new TextEncoder();
+      await writer.write(encoder.encode(command));
+    } catch (error) {
+      console.error("Senden fehlgeschlagen:", error);
+      toast({
+        variant: 'destructive',
+        title: 'Fehler',
+        description: 'Befehl konnte nicht gesendet werden.',
+      });
+    } finally {
+      writer.releaseLock();
+    }
+  }, [toast]);
+
+  const handleDisconnect = useCallback(async () => {
+    if (!portRef.current) return;
+    readLoopActiveRef.current = false; 
+    
+    try {
+      if (isMeasuring) {
+        await sendSerialCommand('p');
+        setIsMeasuring(false);
+      }
+      if (readerRef.current) {
+        await readerRef.current.cancel();
+      }
+      
+      await portRef.current.close();
+      portRef.current = null;
+      setIsConnected(false);
+      toast({
+        title: 'Getrennt',
+        description: 'Die Verbindung zum Arduino wurde getrennt.',
+      });
+    } catch (error) {
+      console.error('Fehler beim Trennen:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Trennen fehlgeschlagen',
+        description: (error as Error).message,
+      });
+    }
+  }, [isMeasuring, toast, sendSerialCommand]);
 
   const readFromSerial = useCallback(async () => {
     if (!portRef.current?.readable || readLoopActiveRef.current) return;
@@ -166,54 +213,6 @@ export default function Home() {
         }
     }
   }, [toast, handleDisconnect]);
-
-  const sendSerialCommand = async (command: 's' | 'p') => {
-    if (!portRef.current?.writable) return;
-    const writer = portRef.current.writable.getWriter();
-    try {
-      const encoder = new TextEncoder();
-      await writer.write(encoder.encode(command));
-    } catch (error) {
-      console.error("Senden fehlgeschlagen:", error);
-      toast({
-        variant: 'destructive',
-        title: 'Fehler',
-        description: 'Befehl konnte nicht gesendet werden.',
-      });
-    } finally {
-      writer.releaseLock();
-    }
-  };
-
-  const handleDisconnect = useCallback(async () => {
-    if (!portRef.current) return;
-    readLoopActiveRef.current = false; 
-    
-    try {
-      if (isMeasuring) {
-        await sendSerialCommand('p');
-        setIsMeasuring(false);
-      }
-      if (readerRef.current) {
-        await readerRef.current.cancel();
-      }
-      
-      await portRef.current.close();
-      portRef.current = null;
-      setIsConnected(false);
-      toast({
-        title: 'Getrennt',
-        description: 'Die Verbindung zum Arduino wurde getrennt.',
-      });
-    } catch (error) {
-      console.error('Fehler beim Trennen:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Trennen fehlgeschlagen',
-        description: (error as Error).message,
-      });
-    }
-  }, [isMeasuring, toast]);
 
 
   const handleConnect = async () => {
