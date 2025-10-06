@@ -126,6 +126,9 @@ function TestingComponent() {
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   
+  const startThresholdRef = useRef<HTMLInputElement>(null);
+  const endThresholdRef = useRef<HTMLInputElement>(null);
+
 
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -466,18 +469,31 @@ function TestingComponent() {
     setIsAnalyzing(true);
     setAnalysisResult(null);
 
-    const startThreshold = 800;
-    const endThreshold = 200;
+    const startThreshold = parseFloat(startThresholdRef.current?.value || '800');
+    const endThreshold = parseFloat(endThresholdRef.current?.value || '200');
 
-    const chronologicalData = [...dataLog].reverse();
-    let startIndex = chronologicalData.findIndex(d => d.value >= startThreshold);
-    let endIndex = chronologicalData.findIndex((d, i) => i > startIndex && d.value <= endThreshold);
+    if (isNaN(startThreshold) || isNaN(endThreshold)) {
+      toast({
+        variant: 'destructive',
+        title: 'Invalid Thresholds',
+        description: 'Please enter valid numbers for start and end thresholds.',
+      });
+      setIsAnalyzing(false);
+      return;
+    }
+
+    const chronologicalData = [...dataLog]
+      .reverse()
+      .map(d => ({ ...d, convertedValue: convertRawValue(d.value) }));
+      
+    let startIndex = chronologicalData.findIndex(d => d.convertedValue >= startThreshold);
+    let endIndex = chronologicalData.findIndex((d, i) => i > startIndex && d.convertedValue <= endThreshold);
 
     if (startIndex === -1 || endIndex === -1) {
         toast({
             variant: "destructive",
             title: "Analysis not possible",
-            description: "Start or end threshold not found in the current data set."
+            description: `Could not find data points between ${startThreshold} and ${endThreshold} ${sensorConfig.unit}.`
         });
         setIsAnalyzing(false);
         return;
@@ -496,7 +512,7 @@ function TestingComponent() {
     }
 
     const input: AnalyzePressureTrendForLeaksInput = {
-      dataSegment: dataSegment.map(p => ({ timestamp: p.timestamp, value: p.value })),
+      dataSegment: dataSegment.map(p => ({ timestamp: p.timestamp, value: p.convertedValue })),
       analysisModel: 'linear_leak',
       sensitivity: sensitivity,
       sensorUnit: sensorConfig.unit,
@@ -566,7 +582,9 @@ function TestingComponent() {
 
     const csvData = dataLog.map(entry => ({
       timestamp: entry.timestamp,
-      value: entry.value
+      value: entry.value,
+      convertedValue: convertRawValue(entry.value).toFixed(sensorConfig.decimalPlaces),
+      unit: sensorConfig.unit
     }));
 
     const csv = Papa.unparse(csvData);
@@ -737,7 +755,7 @@ function TestingComponent() {
               {getButtonText()}
             </Button>
             {connectionState === 'DISCONNECTED' && (
-                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translatey-1" disabled={!!runningTestSession}>
+                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession}>
                     Start Demo
                 </Button>
             )}
@@ -745,7 +763,7 @@ function TestingComponent() {
               <Button
                 variant={isMeasuring ? 'destructive' : 'secondary'}
                 onClick={handleToggleMeasurement}
-                className="btn-shine shadow-md transition-transform transform hover:-translatey-1"
+                className="btn-shine shadow-md transition-transform transform hover:-translate-y-1"
                 disabled={!!runningTestSession}
               >
                 {isMeasuring ? 'Stop Measurement' : 'Start Measurement'}
@@ -1010,12 +1028,12 @@ function TestingComponent() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="startThresholdInput">Start (RAW)</Label>
-                    <Input id="startThresholdInput" type="number" defaultValue="800" />
+                    <Label htmlFor="startThresholdInput">Start ({sensorConfig.unit})</Label>
+                    <Input id="startThresholdInput" ref={startThresholdRef} type="number" defaultValue={sensorConfig.mode === 'RAW' ? "800" : ""} />
                   </div>
                   <div>
-                    <Label htmlFor="endThresholdInput">End (RAW)</Label>
-                    <Input id="endThresholdInput" type="number" defaultValue="200" />
+                    <Label htmlFor="endThresholdInput">End ({sensorConfig.unit})</Label>
+                    <Input id="endThresholdInput" ref={endThresholdRef} type="number" defaultValue={sensorConfig.mode === 'RAW' ? "200" : ""} />
                   </div>
                 </div>
                 <div>
