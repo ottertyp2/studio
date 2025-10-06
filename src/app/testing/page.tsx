@@ -56,7 +56,7 @@ import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc } from '@/firebase';
-import { collection, writeBatch, getDocs, query, doc, where, CollectionReference } from 'firebase/firestore';
+import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc } from 'firebase/firestore';
 
 
 type SensorData = {
@@ -127,9 +127,13 @@ function TestingComponent() {
   
   const stateRef = useRef({
       firestore,
-      sensorDataCollectionRef: null as CollectionReference | null,
       activeTestSessionId,
+      activeSensorConfigId,
   });
+
+  useEffect(() => {
+    stateRef.current = { firestore, activeTestSessionId, activeSensorConfigId };
+  }, [firestore, activeTestSessionId, activeSensorConfigId]);
 
 
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
@@ -149,22 +153,29 @@ function TestingComponent() {
   const runningTestSession = useMemo(() => {
     return testSessions?.find(s => s.status === 'RUNNING');
   }, [testSessions]);
-
+  
+  const activeTestSession = useMemo(() => {
+    if (!activeTestSessionId) return null;
+    return testSessions?.find(s => s.id === activeTestSessionId) ?? null;
+  }, [testSessions, activeTestSessionId]);
+  
   useEffect(() => {
-    if (runningTestSession && !preselectedSessionId) {
-      setActiveTestSessionId(runningTestSession.id);
-      setActiveSensorConfigId(runningTestSession.sensorConfigurationId);
+    // If a session becomes active and it's not the globally selected one, sync it
+    if (runningTestSession && activeTestSessionId !== runningTestSession.id) {
+        setActiveTestSessionId(runningTestSession.id);
+        setActiveSensorConfigId(runningTestSession.sensorConfigurationId);
     }
-  }, [runningTestSession, preselectedSessionId]);
+  }, [runningTestSession, activeTestSessionId]);
 
 
   const sensorConfig: SensorConfig = useMemo(() => {
-    const selectedConfig = sensorConfigs?.find(c => c.id === activeSensorConfigId);
+    const currentConfigId = activeTestSession?.sensorConfigurationId || activeSensorConfigId;
+    const selectedConfig = sensorConfigs?.find(c => c.id === currentConfigId);
     if (!selectedConfig) {
         return { id: 'default', name: 'Default', mode: 'RAW', unit: 'RAW', min: 0, max: 1023, arduinoVoltage: 5, decimalPlaces: 0 };
     }
     return selectedConfig;
-  }, [sensorConfigs, activeSensorConfigId]);
+  }, [sensorConfigs, activeSensorConfigId, activeTestSession]);
 
   useEffect(() => {
     if (runningTestSession) {
@@ -175,43 +186,43 @@ function TestingComponent() {
   }, [sensorConfigs, activeSensorConfigId, runningTestSession]);
 
   const sensorDataCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !activeSensorConfigId) return null;
-    let q = query(collection(firestore, `sensor_configurations/${activeSensorConfigId}/sensor_data`));
+    if (!firestore || !sensorConfig.id) return null;
+    
+    let q = query(collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`));
 
     if (activeTestSessionId) {
         q = query(q, where('testSessionId', '==', activeTestSessionId));
+    } else {
+        // If no session is selected, don't show any data
+        return null;
     }
     
     return q;
-  }, [firestore, activeSensorConfigId, activeTestSessionId]);
+  }, [firestore, sensorConfig.id, activeTestSessionId]);
 
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
-  
-  useEffect(() => {
-      stateRef.current.firestore = firestore;
-      stateRef.current.activeTestSessionId = activeTestSessionId;
-  }, [firestore, activeTestSessionId]);
   
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
       setCurrentValue(newDataPoint.value);
       
-      const { firestore: currentFirestore, activeTestSessionId: currentSessionId } = stateRef.current;
+      const { firestore: currentFirestore, activeTestSessionId: currentSessionId, activeSensorConfigId: currentSensorConfigId } = stateRef.current;
 
-      if (currentFirestore && currentSessionId && activeSensorConfigId) {
-          const sensorDataRef = collection(currentFirestore, `sensor_configurations/${activeSensorConfigId}/sensor_data`);
+      if (currentFirestore && currentSessionId && currentSensorConfigId) {
+          const sensorDataRef = collection(currentFirestore, `sensor_configurations/${currentSensorConfigId}/sensor_data`);
           const dataToSave = {...newDataPoint, testSessionId: currentSessionId};
           addDocumentNonBlocking(sensorDataRef, dataToSave);
       } else {
+        // Fallback to local state if not using cloud features
         setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
       }
-  }, [activeSensorConfigId]);
+  }, []);
 
   const dataLog = useMemo(() => {
-    const log = firestore ? cloudDataLog : localDataLog;
+    const log = (firestore && activeTestSessionId) ? cloudDataLog : localDataLog;
     if (!log) return [];
     
     return [...log].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [firestore, cloudDataLog, localDataLog]);
+  }, [firestore, cloudDataLog, localDataLog, activeTestSessionId]);
   
 
   useEffect(() => {
@@ -256,44 +267,50 @@ function TestingComponent() {
         demoIntervalRef.current = null;
     }
   }, []);
-
-  const handleDisconnect = useCallback(async () => {
-    stopDemoMode();
-    if (!portRef.current) return;
-    
-    readLoopActiveRef.current = false;
-    await sendSerialCommand('p');
-
-    try {
-      if (readerRef.current) {
-        await readerRef.current.cancel();
-        readerRef.current = null;
-      }
+  
+  const handleStopTestSession = useCallback(async (sessionId: string) => {
+      if (!testSessionsCollectionRef || !firestore) return;
       
-      await portRef.current.close();
-      portRef.current = null;
-    } catch (error) {
-      console.error('Error disconnecting:', error);
-      if ((error as Error).message.includes("The device has been lost")) {
-          portRef.current = null;
+      const sessionRef = doc(firestore, `test_sessions`, sessionId);
+      await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
+      
+      const session = testSessions?.find(s => s.id === sessionId);
+      if(session?.measurementType === 'DEMO') {
+          stopDemoMode();
       }
-    }
-  }, [sendSerialCommand, stopDemoMode]);
+      if(session?.measurementType === 'ARDUINO') {
+          if (!portRef.current) return;
+    
+            readLoopActiveRef.current = false;
+            await sendSerialCommand('p');
 
-    const handleStopTestSession = useCallback((sessionId: string) => {
-      if (!testSessionsCollectionRef) return;
-      const sessionRef = doc(testSessionsCollectionRef, sessionId);
-      updateDocumentNonBlocking(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
+            try {
+              if (readerRef.current) {
+                await readerRef.current.cancel();
+              }
+              await portRef.current.close();
+            } catch (error) {
+               console.error('Error during graceful disconnect:', error);
+            } finally {
+                portRef.current = null;
+                readerRef.current = null;
+            }
+      }
+
       if (activeTestSessionId === sessionId) {
           setActiveTestSessionId(null);
       }
       toast({title: 'Test Session Ended'});
-  }, [testSessionsCollectionRef, activeTestSessionId, toast]);
+  }, [testSessionsCollectionRef, firestore, activeTestSessionId, toast, sendSerialCommand, stopDemoMode, testSessions]);
 
   const readFromSerial = useCallback(async () => {
     if (!portRef.current?.readable || readLoopActiveRef.current) return;
 
     readLoopActiveRef.current = true;
+    
+    // Start sending data request command
+    await sendSerialCommand('s');
+
     const textDecoder = new TextDecoderStream();
     const readableStreamClosed = portRef.current.readable.pipeTo(textDecoder.writable);
     readerRef.current = textDecoder.readable.getReader();
@@ -304,7 +321,10 @@ function TestingComponent() {
         try {
             const { value, done } = await readerRef.current.read();
             
-            if (done) break;
+            if (done) {
+                // Reader has been released, handled in disconnect.
+                break;
+            }
            
             partialLine += value;
             let lines = partialLine.split('\n');
@@ -333,56 +353,65 @@ function TestingComponent() {
         }
     }
     
-    if(readerRef.current){
-        try { readerRef.current.releaseLock(); } catch {}
-    }
+    try { readerRef.current?.releaseLock(); } catch {}
     readLoopActiveRef.current = false;
-  }, [toast, handleNewDataPoint, runningTestSession, handleStopTestSession]);
+    // readableStreamClosed is a promise that resolves when the stream is closed. 
+    // We don't want to block here, but you can await it if needed elsewhere.
+    
+  }, [toast, handleNewDataPoint, runningTestSession, handleStopTestSession, sendSerialCommand]);
+  
 
+  // Effect for handling measurement modes (DEMO/ARDUINO)
   useEffect(() => {
-      if (runningTestSession?.measurementType === 'DEMO' && !demoIntervalRef.current) {
-        let trend = 1000;
-        let direction = -1;
-
-        demoIntervalRef.current = setInterval(() => {
-            const change = Math.random() * 5 + 1;
-            trend += change * direction;
-            if (trend <= 150) direction = 1;
-            if (trend >= 1020) direction = -1;
-
-            const noise = (Math.random() - 0.5) * 10;
-            const value = Math.round(Math.max(0, Math.min(1023, trend + noise)));
-
-            const newDataPoint = {
-                timestamp: new Date().toISOString(),
-                value: value,
-            };
-            handleNewDataPoint(newDataPoint);
-        }, 500);
-
-      } else if (runningTestSession?.measurementType === 'ARDUINO' && !readLoopActiveRef.current) {
-        readFromSerial();
-      } else if (!runningTestSession) {
-         stopDemoMode();
-         if(portRef.current) handleDisconnect();
+      // Cleanup function to stop measurements when component unmounts or session stops
+      const cleanup = () => {
+          stopDemoMode();
+          if (portRef.current && readLoopActiveRef.current) {
+              handleStopTestSession(runningTestSession!.id);
+          }
       }
 
-      return () => {
-          stopDemoMode();
-      };
-  }, [runningTestSession, handleNewDataPoint, stopDemoMode, handleDisconnect, readFromSerial]);
+      if (runningTestSession) {
+          if (runningTestSession.measurementType === 'DEMO' && !demoIntervalRef.current) {
+              let trend = 1000;
+              let direction = -1;
 
-  const handleStartNewTestSession = async (options: { measurementType: 'DEMO' | 'ARDUINO' }) => {
-    const sessionDetails = tempTestSession || { productIdentifier: `${options.measurementType} Session`};
+              demoIntervalRef.current = setInterval(() => {
+                  const change = Math.random() * 5 + 1;
+                  trend += change * direction;
+                  if (trend <= 150) direction = 1;
+                  if (trend >= 1020) direction = -1;
+
+                  const noise = (Math.random() - 0.5) * 10;
+                  const value = Math.round(Math.max(0, Math.min(1023, trend + noise)));
+
+                  const newDataPoint = {
+                      timestamp: new Date().toISOString(),
+                      value: value,
+                  };
+                  handleNewDataPoint(newDataPoint);
+              }, 500);
+          }
+      } else {
+          // No running session, ensure everything is stopped.
+          cleanup();
+      }
+
+      return cleanup;
+  }, [runningTestSession, handleNewDataPoint, stopDemoMode, handleStopTestSession]);
+
+
+  const handleStartNewTestSession = async (options: { measurementType: 'DEMO' | 'ARDUINO', productIdentifier: string }) => {
+    const sessionDetails = tempTestSession || { productIdentifier: options.productIdentifier };
 
     if (!sessionDetails.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
         toast({variant: 'destructive', title: 'Error', description: 'Please provide a product identifier and select a sensor.'});
-        return;
+        return null;
     }
 
     if (runningTestSession) {
         toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
-        return;
+        return null;
     }
 
     const newSessionId = doc(collection(firestore, '_')).id;
@@ -402,28 +431,42 @@ function TestingComponent() {
     setActiveTestSessionId(newSessionId);
     setTempTestSession(null);
     toast({ title: 'New Test Session Started', description: `Product: ${newSession.productIdentifier}`});
+    return newSession;
   };
 
   const handleConnect = async () => {
     if (isConnecting || runningTestSession) return;
     
+    if (!('serial' in navigator)) {
+        toast({ variant: 'destructive', title: 'Error', description: 'Web Serial API is not supported by this browser.' });
+        return;
+    }
+
     try {
-      if ('serial' in navigator) {
         setIsConnecting(true);
         const port = await (navigator.serial as any).requestPort();
         portRef.current = port;
         await port.open({ baudRate: 9600 });
         
-        await handleStartNewTestSession({ measurementType: 'ARDUINO' });
+        const newSession = await handleStartNewTestSession({ measurementType: 'ARDUINO', productIdentifier: 'Arduino Session'});
         
-        toast({ title: 'Connected', description: 'Successfully connected to Arduino. Session started.' });
-      } else {
-        toast({ variant: 'destructive', title: 'Error', description: 'Web Serial API is not supported by this browser.' });
-      }
+        if (newSession) {
+            toast({ title: 'Connected', description: 'Successfully connected to Arduino. Session started.' });
+            readFromSerial();
+        } else {
+            // If session creation failed, close the port.
+            await port.close();
+            portRef.current = null;
+        }
+
     } catch (error) {
       console.error('Error connecting:', error);
       if ((error as Error).name !== 'NotFoundError') {
         toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish a connection.' });
+      }
+      if (portRef.current) {
+          try { await portRef.current.close(); } catch {}
+          portRef.current = null;
       }
     } finally {
         setIsConnecting(false);
@@ -431,25 +474,27 @@ function TestingComponent() {
   };
 
   const handleStartDemo = () => {
-    handleStartNewTestSession({ measurementType: 'DEMO' });
+    handleStartNewTestSession({ measurementType: 'DEMO', productIdentifier: 'Demo Session' });
   };
   
   const handleAnalysis = async () => {
     setIsAnalyzing(true);
     setAnalysisResult(null);
 
-    const startThreshold = parseFloat(startThresholdRef.current?.value || '0');
-    const endThreshold = parseFloat(endThresholdRef.current?.value || '0');
+    const startThresholdValue = startThresholdRef.current?.value;
+    const endThresholdValue = endThresholdRef.current?.value;
 
+    const startThreshold = startThresholdValue !== undefined && startThresholdValue !== '' ? parseFloat(startThresholdValue) : null;
+    const endThreshold = endThresholdValue !== undefined && endThresholdValue !== '' ? parseFloat(endThresholdValue) : null;
 
-    if (isNaN(startThreshold) || isNaN(endThreshold)) {
-      toast({
-        variant: 'destructive',
-        title: 'Invalid Thresholds',
-        description: 'Please enter valid numbers for start and end thresholds.',
-      });
-      setIsAnalyzing(false);
-      return;
+    if (startThreshold === null || endThreshold === null || isNaN(startThreshold) || isNaN(endThreshold)) {
+        toast({
+            variant: 'destructive',
+            title: 'Invalid Thresholds',
+            description: 'Please enter valid numbers for start and end thresholds.',
+        });
+        setIsAnalyzing(false);
+        return;
     }
 
     const chronologicalData = [...dataLog]
@@ -482,7 +527,7 @@ function TestingComponent() {
     }
 
     const input: AnalyzePressureTrendForLeaksInput = {
-      dataSegment: dataSegment.map(p => ({ timestamp: p.timestamp, value: p.convertedValue })),
+      dataSegment: dataSegment.map(p => ({ timestamp: p.timestamp, value: p.convertedValue as number })),
       analysisModel: 'linear_leak',
       sensitivity: sensitivity,
       sensorUnit: sensorConfig.unit,
@@ -508,9 +553,9 @@ function TestingComponent() {
   }
   
   const handleClearData = async () => {
-    if (firestore && activeSensorConfigId) {
+    if (firestore && sensorConfig.id) {
       try {
-        const baseCollectionRef = collection(firestore, `sensor_configurations/${activeSensorConfigId}/sensor_data`);
+        const baseCollectionRef = collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`);
 
         const q = activeTestSessionId 
           ? query(baseCollectionRef, where("testSessionId", "==", activeTestSessionId))
@@ -549,12 +594,21 @@ function TestingComponent() {
       toast({ title: 'No data to export' });
       return;
     }
+    
+    const convertedDataLog = dataLog.map(entry => {
+        const converted = convertRawValue(entry.value);
+        return {
+            ...entry,
+            convertedValue: typeof converted === 'number' ? converted.toFixed(sensorConfig.decimalPlaces) : converted
+        };
+    });
 
-    const csvData = dataLog.map(entry => ({
+    const csvData = convertedDataLog.map(entry => ({
       timestamp: entry.timestamp,
-      value: entry.value,
-      convertedValue: convertRawValue(entry.value).toFixed(sensorConfig.decimalPlaces),
-      unit: sensorConfig.unit
+      raw_value: entry.value,
+      converted_value: entry.convertedValue,
+      unit: sensorConfig.unit,
+      test_session_id: entry.testSessionId || ''
     }));
 
     const csv = Papa.unparse(csvData);
@@ -562,7 +616,7 @@ function TestingComponent() {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `datalog_${activeSensorConfigId}_${activeTestSessionId || 'all'}.csv`);
+    link.setAttribute('download', `datalog_${sensorConfig.id}_${activeTestSessionId || 'local'}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -573,7 +627,18 @@ function TestingComponent() {
 
   const handleImportCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (!file || !firestore) return;
+
+    if (!activeTestSessionId) {
+        toast({ variant: 'destructive', title: 'Import Error', description: 'Please start or select a test session before importing data.' });
+        return;
+    }
+    
+    if (!sensorConfig.id) {
+        toast({ variant: 'destructive', title: 'Import Error', description: 'Please select a sensor configuration before importing data.' });
+        return;
+    }
+
 
     Papa.parse(file, {
       header: true,
@@ -586,24 +651,24 @@ function TestingComponent() {
         }
 
         const hasTimestamp = results.meta.fields?.includes('timestamp');
-        const hasValue = results.meta.fields?.includes('value');
+        const hasRawValue = results.meta.fields?.includes('raw_value');
 
-        if (!results.data.length || !hasTimestamp || !hasValue) {
-            toast({ variant: 'destructive', title: 'Import Error', description: 'CSV file must contain "timestamp" and "value" columns.' });
+        if (!results.data.length || !hasTimestamp || !hasRawValue) {
+            toast({ variant: 'destructive', title: 'Import Error', description: 'CSV file must contain "timestamp" and "raw_value" columns.' });
             return;
         }
 
         const importedData: SensorData[] = results.data.map((row: any) => ({
           timestamp: row.timestamp,
-          value: parseFloat(row.value),
+          value: parseFloat(row.raw_value),
           testSessionId: activeTestSessionId || undefined,
         })).filter(d => d.timestamp && !isNaN(d.value));
         
         importedData.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-        if (firestore && activeSensorConfigId) {
+        if (firestore && sensorConfig.id && activeTestSessionId) {
           setIsSyncing(true);
-          const baseCollectionRef = collection(firestore, `sensor_configurations/${activeSensorConfigId}/sensor_data`);
+          const baseCollectionRef = collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`);
           const batch = writeBatch(firestore);
           importedData.forEach(dataPoint => {
               const docRef = doc(baseCollectionRef);
@@ -618,14 +683,6 @@ function TestingComponent() {
             })
             .finally(() => setIsSyncing(false));
 
-        } else {
-            setLocalDataLog(importedData);
-            if (importedData.length > 0) {
-                setCurrentValue(importedData[0].value);
-            } else {
-                setCurrentValue(null);
-            }
-            toast({ title: 'Data imported successfully', description: `${importedData.length} data points loaded.` });
         }
       }
     });
@@ -687,7 +744,7 @@ function TestingComponent() {
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-center gap-4">
             <Button onClick={handleExportCSV} variant="outline" disabled={isSyncing}>Export CSV</Button>
-            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing || !activeSensorConfigId}>
+            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing || !activeSensorConfigId || !activeTestSessionId}>
               {isSyncing ? 'Importing...' : 'Import CSV'}
             </Button>
             <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
@@ -753,7 +810,7 @@ function TestingComponent() {
                 <Input id="description" placeholder="Internal R&D..." value={tempTestSession.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
               </div>
               <div className="flex justify-center gap-4">
-                <Button onClick={() => handleStartNewTestSession({ measurementType: 'DEMO' })} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Start Session</Button>
+                <Button onClick={() => handleStartNewTestSession({ measurementType: 'DEMO', productIdentifier: tempTestSession.productIdentifier || 'New Session' })} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Start Session</Button>
                 <Button variant="ghost" onClick={() => setTempTestSession(null)}>Cancel</Button>
               </div>
             </div>
@@ -827,7 +884,7 @@ function TestingComponent() {
                 <CardTitle>Data Visualization</CardTitle>
                 <div className='flex items-center gap-2'>
                     <Label htmlFor="sensorConfigSelect" className="whitespace-nowrap">Sensor:</Label>
-                    <Select value={activeSensorConfigId || ''} onValueChange={setActiveSensorConfigId} disabled={!!runningTestSession}>
+                    <Select value={sensorConfig.id || ''} onValueChange={setActiveSensorConfigId} disabled={!!runningTestSession}>
                         <SelectTrigger id="sensorConfigSelect" className="w-[200px] bg-white/80">
                         <SelectValue placeholder="Select a sensor" />
                         </SelectTrigger>
