@@ -1,3 +1,4 @@
+
 'use client';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
@@ -53,7 +54,8 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
-import { useFirebase, useUser, useMemoFirebase, useCollection, initiateAnonymousSignIn, addDocumentNonBlocking } from '@/firebase';
+import { useFirebase, useUser, useMemoFirebase, initiateAnonymousSignIn, addDocumentNonBlocking } from '@/firebase';
+import { useCollection } from '@/firebase/firestore/use-collection';
 import { collection } from 'firebase/firestore';
 
 
@@ -498,14 +500,20 @@ export default function Home() {
   }
   
   const handleClearData = () => {
-    // This will be more complex with Firestore. For now, it only clears local.
-    // A proper implementation would delete documents from Firestore.
-    setLocalDataLog([]);
-    setCurrentValue(null);
-    toast({
-        title: 'Lokale Daten gelöscht',
-        description: 'Alle aufgezeichneten Daten wurden aus dem lokalen Log entfernt.'
-    })
+    if (user && sensorDataCollectionRef) {
+        toast({
+            title: 'Cloud-Daten werden gelöscht...',
+            description: 'Diese Aktion ist noch nicht implementiert.'
+        });
+        // TODO: Implement cloud data deletion
+    } else {
+        setLocalDataLog([]);
+        setCurrentValue(null);
+        toast({
+            title: 'Lokale Daten gelöscht',
+            description: 'Alle aufgezeichneten Daten wurden aus dem lokalen Log entfernt.'
+        })
+    }
   }
 
   const handleExportCSV = () => {
@@ -703,7 +711,7 @@ export default function Home() {
                 <p>Authentifizierung wird geladen...</p>
             ) : user ? (
                 <div className='space-y-2'>
-                    <p>Angemeldet als: <span className='font-mono'>{user.uid}</span></p>
+                    <p>Angemeldet als: <span className='font-mono text-sm break-all'>{user.uid}</span></p>
                     <p className='text-sm text-muted-foreground'>(Anonymer Benutzer)</p>
                     <Button onClick={() => auth.signOut()} variant="secondary">Abmelden</Button>
                 </div>
@@ -969,3 +977,4 @@ export default function Home() {
     </div>
   );
 }
+
