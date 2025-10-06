@@ -16,6 +16,7 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -52,7 +53,8 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
-import { useFirebase } from '@/firebase';
+import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection } from '@/firebase';
+import { collection } from 'firebase/firestore';
 import { initiateAnonymousSignIn } from '@/firebase/non-blocking-login';
 
 
@@ -60,6 +62,8 @@ type SensorData = {
   timestamp: string;
   value: number; // Always RAW value
 };
+
+type SensorDataWithId = SensorData & { id: string };
 
 type SensorConfig = {
     mode: 'RAW' | 'VOLTAGE' | 'CUSTOM';
@@ -77,7 +81,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState('live');
   const [connectionState, setConnectionState] = useState<ConnectionState>('DISCONNECTED');
   const [isMeasuring, setIsMeasuring] = useState(false);
-  const [dataLog, setDataLog] = useState<SensorData[]>([]);
+  const [localDataLog, setLocalDataLog] = useState<SensorData[]>([]);
   const [currentValue, setCurrentValue] = useState<number | null>(null);
   const [sensitivity, setSensitivity] = useState(0.98);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
@@ -97,12 +101,48 @@ export default function Home() {
   const [chartKey, setChartKey] = useState<number>(Date.now());
 
   const { toast } = useToast();
-  const { auth, user, isUserLoading } = useFirebase();
+  const { firestore, auth } = useFirebase();
+  const { user, isUserLoading } = useUser();
+
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
   const readLoopActiveRef = useRef<boolean>(false);
   const importFileRef = useRef<HTMLInputElement>(null);
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const sensorDataCollectionRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    // Hardcoding sensorConfigurationId to 'default' as we don't manage multiple yet
+    return collection(firestore, `users/${user.uid}/sensor_configurations/default/sensor_data`);
+  }, [firestore, user]);
+  
+  const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
+
+  const dataLog = useMemo(() => {
+    const log = user ? cloudDataLog : localDataLog;
+    if (!log) return [];
+    // Ensure data is sorted by timestamp descending
+    return [...log].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [user, cloudDataLog, localDataLog]);
+  
+  const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
+    setCurrentValue(newDataPoint.value);
+    if (user && sensorDataCollectionRef) {
+      addDocumentNonBlocking(sensorDataCollectionRef, newDataPoint);
+    } else {
+      setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
+    }
+  }, [user, sensorDataCollectionRef]);
+
+  useEffect(() => {
+    if (dataLog && dataLog.length > 0) {
+      setCurrentValue(dataLog[0].value);
+    } else {
+      setCurrentValue(null);
+    }
+  }, [dataLog]);
+
 
   const convertRawValue = useCallback((rawValue: number) => {
     if (rawValue === null || rawValue === undefined) return rawValue;
@@ -166,6 +206,8 @@ export default function Home() {
     try {
       if (readerRef.current) {
         await readerRef.current.cancel();
+        readerRef.current.releaseLock();
+        readerRef.current = null;
       }
       
       await portRef.current.close();
@@ -178,6 +220,8 @@ export default function Home() {
       });
     } catch (error) {
       console.error('Fehler beim Trennen:', error);
+      // Ignore errors that happen when the device is unplugged.
+      if ((error as Error).message.includes("The device has been lost")) return;
       toast({
         variant: 'destructive',
         title: 'Trennen fehlgeschlagen',
@@ -191,9 +235,16 @@ export default function Home() {
 
     readLoopActiveRef.current = true;
     const textDecoder = new TextDecoderStream();
+    let readableStreamClosed = false;
+    
     try {
-        portRef.current.readable.pipeTo(textDecoder.writable);
+        const readable = portRef.current.readable.pipeTo(textDecoder.writable);
         readerRef.current = textDecoder.readable.getReader();
+        
+        readable.catch(() => {
+            readableStreamClosed = true;
+        });
+
     } catch(e) {
         console.error("Error setting up reader", e);
         readLoopActiveRef.current = false;
@@ -222,13 +273,12 @@ export default function Home() {
                         timestamp: new Date().toISOString(),
                         value: sensorValue
                     };
-                    setCurrentValue(sensorValue);
-                    setDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
+                    handleNewDataPoint(newDataPoint);
                 }
             });
         } catch (error) {
             console.error('Fehler beim Lesen der Daten:', error);
-            if (readLoopActiveRef.current && !portRef.current?.readable) {
+            if (readLoopActiveRef.current && (readableStreamClosed || !portRef.current?.readable)) {
                  toast({
                     variant: 'destructive',
                     title: 'Verbindung verloren',
@@ -240,7 +290,7 @@ export default function Home() {
         }
     }
     readLoopActiveRef.current = false;
-  }, [toast, handleDisconnect]);
+  }, [toast, handleDisconnect, handleNewDataPoint]);
 
 
   const handleConnect = async () => {
@@ -255,8 +305,6 @@ export default function Home() {
         portRef.current = port;
         await port.open({ baudRate: 9600 });
         setConnectionState('CONNECTED');
-        
-        await sendSerialCommand('s');
         setIsMeasuring(true);
         readFromSerial();
 
@@ -290,7 +338,7 @@ export default function Home() {
     }
     setConnectionState('DEMO');
     setIsMeasuring(true);
-    setDataLog([]);
+    setLocalDataLog([]);
     setCurrentValue(null);
 
     let trend = 1000;
@@ -309,8 +357,7 @@ export default function Home() {
             timestamp: new Date().toISOString(),
             value: value,
         };
-        setCurrentValue(value);
-        setDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
+        handleNewDataPoint(newDataPoint);
     }, 500);
 
     toast({
@@ -326,9 +373,9 @@ export default function Home() {
             setIsMeasuring(false);
             toast({ title: 'Demo pausiert'});
         } else {
+            // Restarting demo mode needs a fresh start
+            setConnectionState('DISCONNECTED');
             handleStartDemo();
-            setConnectionState('DEMO');
-            setIsMeasuring(true);
         }
         return;
     }
@@ -450,11 +497,13 @@ export default function Home() {
   }
   
   const handleClearData = () => {
-    setDataLog([]);
+    // This will be more complex with Firestore. For now, it only clears local.
+    // A proper implementation would delete documents from Firestore.
+    setLocalDataLog([]);
     setCurrentValue(null);
     toast({
-        title: 'Daten gelöscht',
-        description: 'Alle aufgezeichneten Daten wurden aus dem Log entfernt.'
+        title: 'Lokale Daten gelöscht',
+        description: 'Alle aufgezeichneten Daten wurden aus dem lokalen Log entfernt.'
     })
   }
 
@@ -512,13 +561,27 @@ export default function Home() {
         
         importedData.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-        setDataLog(importedData);
-        if (importedData.length > 0) {
-            setCurrentValue(importedData[0].value);
+        if (user && sensorDataCollectionRef) {
+          setIsSyncing(true);
+          const uploadPromises = importedData.map(dataPoint => addDocumentNonBlocking(sensorDataCollectionRef, dataPoint));
+          Promise.all(uploadPromises)
+            .then(() => {
+              toast({ title: 'Daten erfolgreich in die Cloud importiert', description: `${importedData.length} Datenpunkte hochgeladen.` });
+            })
+            .catch(() => {
+              toast({ variant: 'destructive', title: 'Fehler beim Cloud-Import', description: 'Einige Daten konnten nicht hochgeladen werden.' });
+            })
+            .finally(() => setIsSyncing(false));
+
         } else {
-            setCurrentValue(null);
+            setLocalDataLog(importedData);
+            if (importedData.length > 0) {
+                setCurrentValue(importedData[0].value);
+            } else {
+                setCurrentValue(null);
+            }
+            toast({ title: 'Daten erfolgreich importiert', description: `${importedData.length} Datenpunkte geladen.` });
         }
-        toast({ title: 'Daten erfolgreich importiert', description: `${importedData.length} Datenpunkte geladen.` });
       }
     });
     if(importFileRef.current) {
@@ -568,11 +631,11 @@ export default function Home() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center justify-center gap-4">
-            <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
+            <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!!user}>
               {getButtonText()}
             </Button>
             {connectionState === 'DISCONNECTED' && (
-                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1">
+                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={!!user}>
                     Demo starten
                 </Button>
             )}
@@ -581,6 +644,7 @@ export default function Home() {
                 variant={isMeasuring ? 'destructive' : 'secondary'}
                 onClick={handleToggleMeasurement}
                 className="btn-shine shadow-md transition-transform transform hover:-translate-y-1"
+                disabled={!!user}
               >
                 {isMeasuring ? 'Messung stoppen' : 'Messung starten'}
               </Button>
@@ -594,7 +658,7 @@ export default function Home() {
                   <AlertDialogTitle>Sind Sie sicher?</AlertDialogTitle>
                   <AlertDialogDescription>
                     Diese Aktion kann nicht rückgängig gemacht werden. Dadurch werden die aufgezeichneten
-                    Sensordaten dauerhaft vom lokalen Log gelöscht.
+                    Sensordaten dauerhaft gelöscht.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -604,6 +668,12 @@ export default function Home() {
               </AlertDialogContent>
             </AlertDialog>
           </CardContent>
+          {user && (
+            <CardFooter className='flex-col'>
+                <p className='text-sm text-muted-foreground'>Live-Steuerung ist im Cloud-Modus deaktiviert.</p>
+                <p className='text-sm text-muted-foreground'>Bitte melden Sie sich ab, um ein Gerät zu verbinden.</p>
+            </CardFooter>
+          )}
         </Card>
     </>
   );
@@ -617,8 +687,10 @@ export default function Home() {
             </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-center gap-4">
-            <Button onClick={handleExportCSV} variant="outline">Export CSV</Button>
-            <Button onClick={() => importFileRef.current?.click()} variant="outline">Import CSV</Button>
+            <Button onClick={handleExportCSV} variant="outline" disabled={isSyncing}>Export CSV</Button>
+            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing}>
+              {isSyncing ? 'Importiere...' : 'Import CSV'}
+            </Button>
             <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
         </CardContent>
       </Card>
@@ -633,7 +705,7 @@ export default function Home() {
             </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 text-center">
-            {isUserLoading ? (
+            {isUserLoading || isCloudDataLoading ? (
                 <p>Authentifizierung wird geladen...</p>
             ) : user ? (
                 <div className='space-y-2'>
@@ -766,8 +838,8 @@ export default function Home() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {dataLog.map((entry, index) => (
-                          <TableRow key={index}>
+                        {dataLog.map((entry: any, index: number) => (
+                          <TableRow key={entry.id || index}>
                             <TableCell>{new Date(entry.timestamp).toLocaleTimeString('de-DE')}</TableCell>
                             <TableCell className="text-right">{convertRawValue(entry.value).toFixed(displayDecimals)}</TableCell>
                           </TableRow>
