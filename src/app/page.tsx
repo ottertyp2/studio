@@ -5,7 +5,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -19,195 +18,240 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  analyzePressureTrendForLeaks,
-  AnalyzePressureTrendForLeaksInput,
-  AnalyzePressureTrendForLeaksOutput,
-} from '@/ai/flows/analyze-pressure-trend-for-leaks';
-import { Textarea } from '@/components/ui/textarea';
-import { useToast } from '@/hooks/use-toast';
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Slider } from '@/components/ui/slider';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 import { Loader2 } from 'lucide-react';
 
-const sampleData = [
-  { timestamp: '2023-04-01T10:00:00Z', value: 101.3 },
-  { timestamp: '2023-04-01T10:01:00Z', value: 101.2 },
-  { timestamp: '2023-04-01T10:02:00Z', value: 101.1 },
-  { timestamp: '2023-04-01T10:03:00Z', value: 101.0 },
-  { timestamp: '2023-04-01T10:04:00Z', value: 100.9 },
-];
-
 export default function Home() {
-  const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<AnalyzePressureTrendForLeaksOutput | null>(null);
+  const [isMeasuring, setIsMeasuring] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [sensitivity, setSensitivity] = useState(0.98);
 
-  const [formData, setFormData] = useState<AnalyzePressureTrendForLeaksInput>({
-    dataSegment: sampleData,
-    analysisModel: 'linear_leak',
-    sensitivity: 0.95,
-    sensorUnit: 'kPa',
-  });
-
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { id, value } = e.target;
-    if (id === 'dataSegment') {
-      try {
-        const parsedData = JSON.parse(value);
-        setFormData((prev) => ({ ...prev, [id]: parsedData }));
-      } catch (error) {
-        toast({
-          variant: 'destructive',
-          title: 'Invalid JSON format for sensor data.',
-        });
-      }
-    } else {
-      setFormData((prev) => ({ ...prev, [id]: value }));
-    }
+  const handleConnect = () => {
+    // Placeholder for future Web Serial API logic
+    setIsConnected(!isConnected);
   };
 
-  const handleSelectChange = (value: string) => {
-    setFormData((prev) => ({ ...prev, analysisModel: value as any }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setResult(null);
-    try {
-      const res = await analyzePressureTrendForLeaks(formData);
-      setResult(res);
-    } catch (error) {
-      console.error(error);
-      toast({
-        variant: 'destructive',
-        title: 'An error occurred.',
-        description: 'Failed to analyze data. Please try again.',
-      });
-    }
-    setLoading(false);
+  const handleToggleMeasurement = () => {
+    setIsMeasuring(!isMeasuring);
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-background text-foreground">
-      <header className="px-4 lg:px-6 h-14 flex items-center border-b">
-        <h1 className="text-xl font-bold">Leak Detector</h1>
+    <div className="flex flex-col min-h-screen bg-background text-foreground p-4">
+      <header className="w-full max-w-7xl mx-auto mb-6">
+        <Card>
+          <CardHeader className="pb-4">
+            <CardTitle className="text-3xl text-center">
+              Live Sensor-Dashboard (Hybrid)
+            </CardTitle>
+            <CardDescription className="text-center">
+              Verbinden Sie Ihren Arduino oder sehen Sie sich die Cloud-Daten an.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center justify-center gap-4">
+            <Button onClick={handleConnect}>
+              {isConnected ? 'Trennen' : 'Mit Arduino verbinden'}
+            </Button>
+            {isConnected && (
+              <Button
+                variant={isMeasuring ? 'destructive' : 'default'}
+                onClick={handleToggleMeasurement}
+              >
+                {isMeasuring ? 'Messung stoppen' : 'Messung starten'}
+              </Button>
+            )}
+            <div className="flex items-center gap-2">
+              <Label htmlFor="chartInterval">Diagramm-Zeitraum:</Label>
+              <Select defaultValue="60">
+                <SelectTrigger id="chartInterval" className="w-[150px]">
+                  <SelectValue placeholder="Select interval" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="60">1 Minute</SelectItem>
+                  <SelectItem value="300">5 Minuten</SelectItem>
+                  <SelectItem value="900">15 Minuten</SelectItem>
+                  <SelectItem value="all">Alle Daten</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
       </header>
-      <main className="flex-1 flex flex-col items-center justify-center p-4 md:p-10">
-        <div className="w-full max-w-4xl grid gap-8 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Analyze Sensor Data</CardTitle>
-              <CardDescription>
-                Input your pressure sensor data and parameters to check for
-                leaks.
-              </CardDescription>
-            </CardHeader>
-            <form onSubmit={handleSubmit}>
+
+      <main className="w-full max-w-7xl mx-auto space-y-6">
+        <Card>
+          <CardHeader>
+            <div className="flex justify-between items-center">
+              <CardTitle>Live-Diagramm (RAW)</CardTitle>
+              <Button variant="outline" size="sm">
+                Zoom zurücksetzen
+              </Button>
+            </div>
+            <CardDescription>
+              Tipp: Mit dem Mausrad zoomen und mit gedrückter Maustaste ziehen, um zu scrollen.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={[
+                    { name: '10:00', uv: 400 },
+                    { name: '10:01', uv: 300 },
+                    { name: '10:02', uv: 200 },
+                  ]}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Line type="monotone" dataKey="uv" stroke="#8884d8" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="md:col-span-1 flex flex-col justify-center items-center">
+                <CardHeader>
+                  <CardTitle className="text-lg">Aktueller Wert</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col items-center">
+                  <p className="text-5xl font-bold">-</p>
+                  <p className="text-lg text-muted-foreground">RAW</p>
+                </CardContent>
+              </Card>
+              <Card className="md:col-span-2">
+                <CardHeader>
+                  <CardTitle>Daten-Log</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-64">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Zeitstempel</TableHead>
+                          <TableHead className="text-right">Wert (RAW)</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {/* Data rows will be populated here */}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Sensor-Konfiguration</CardTitle>
+              </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="dataSegment">Sensor Data (JSON)</Label>
-                  <Textarea
-                    id="dataSegment"
-                    value={JSON.stringify(formData.dataSegment, null, 2)}
-                    onChange={handleInputChange}
-                    className="h-32"
-                  />
+                <div>
+                  <Label htmlFor="conversionMode">Anzeige-Modus</Label>
+                  <Select defaultValue="RAW">
+                    <SelectTrigger id="conversionMode">
+                      <SelectValue placeholder="Select mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="RAW">RAW (0-1023)</SelectItem>
+                      <SelectItem value="VOLTAGE">Spannung (V)</SelectItem>
+                      <SelectItem value="CUSTOM">Benutzerdefiniert</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="analysisModel">Analysis Model</Label>
-                    <Select
-                      value={formData.analysisModel}
-                      onValueChange={handleSelectChange}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a model" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="linear_leak">Linear</SelectItem>
-                        <SelectItem value="nonlinear_leak">
-                          Non-Linear
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="sensitivity">Sensitivity</Label>
-                    <Input
-                      id="sensitivity"
-                      type="number"
-                      step="0.01"
-                      value={formData.sensitivity}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="sensorUnit">Sensor Unit</Label>
-                  <Input
-                    id="sensorUnit"
-                    value={formData.sensorUnit}
-                    onChange={handleInputChange}
-                  />
+                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                        <Label htmlFor="sensorUnitInput">Einheit</Label>
+                        <Input id="sensorUnitInput" defaultValue="bar" />
+                    </div>
+                    <div>
+                        <Label htmlFor="minValueInput">Minimalwert</Label>
+                        <Input id="minValueInput" type="number" defaultValue="0" />
+                    </div>
+                    <div>
+                        <Label htmlFor="maxValueInput">Maximalwert</Label>
+                        <Input id="maxValueInput" type="number" defaultValue="10" />
+                    </div>
                 </div>
               </CardContent>
-              <CardFooter>
-                <Button type="submit" disabled={loading} className="w-full">
-                  {loading ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Analyze
-                </Button>
-              </CardFooter>
-            </form>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Analysis Result</CardTitle>
-              <CardDescription>
-                The AI's analysis of your data will appear here.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex items-center justify-center h-full">
-              {loading && (
-                <div className="flex flex-col items-center gap-2">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  <p className="text-muted-foreground">Analyzing...</p>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Intelligente Leck-Analyse</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="analysisModel">Analyse-Modell</Label>
+                  <Select defaultValue="linear_leak">
+                    <SelectTrigger id="analysisModel">
+                      <SelectValue placeholder="Select model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="linear_leak">Linearer Abfall = Leck</SelectItem>
+                      <SelectItem value="nonlinear_leak">
+                        Nicht-linearer Abfall = Leck
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
-              {result && (
-                <div className="space-y-4 text-center">
-                   <h3
-                    className={`text-2xl font-bold ${
-                      result.isLeak ? 'text-destructive' : 'text-green-500'
-                    }`}
-                  >
-                    {result.analysisResult}
-                  </h3>
-                  <div className="grid grid-cols-2 gap-4 text-left">
-                    <div>
-                      <p className="font-bold">Leak Detected:</p>
-                      <p>{result.isLeak ? 'Yes' : 'No'}</p>
-                    </div>
-                     <div>
-                      <p className="font-bold">R-Squared:</p>
-                      <p>{result.rSquared.toFixed(4)}</p>
-                    </div>
-                     <div>
-                      <p className="font-bold">Data Points Analyzed:</p>
-                      <p>{result.analyzedDataPoints}</p>
-                    </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="startThresholdInput">Start (RAW)</Label>
+                    <Input id="startThresholdInput" type="number" defaultValue="800" />
+                  </div>
+                  <div>
+                    <Label htmlFor="endThresholdInput">Ende (RAW)</Label>
+                    <Input id="endThresholdInput" type="number" defaultValue="200" />
                   </div>
                 </div>
-              )}
-               {!result && !loading && (
-                <div className="text-center text-muted-foreground">
-                  <p>Submit data to see the analysis.</p>
+                <div>
+                  <Label htmlFor="sensitivitySlider">Empfindlichkeit (R²): {sensitivity}</Label>
+                  <Slider
+                    id="sensitivitySlider"
+                    min={0.8}
+                    max={0.999}
+                    step={0.001}
+                    value={[sensitivity]}
+                    onValueChange={(value) => setSensitivity(value[0])}
+                  />
                 </div>
-              )}
-            </CardContent>
-          </Card>
+                <div className="flex gap-4 justify-center">
+                    <Button>Druckverlauf analysieren</Button>
+                    <Button variant="destructive">Datenbank löschen</Button>
+                </div>
+                <div className="text-center text-muted-foreground pt-4">
+                    <p className="font-semibold">-</p>
+                    <p className="text-sm">R²-Wert: - | Analysierter Bereich: -</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </main>
     </div>
