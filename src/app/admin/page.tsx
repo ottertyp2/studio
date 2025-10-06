@@ -423,7 +423,7 @@ export default function AdminPage() {
 
           <div className="space-y-4 mt-6">
              <ScrollArea className="h-64">
-              {testSessions?.map(session => (
+              {testSessions && testSessions.length > 0 ? testSessions?.map(session => (
                 <Card key={session.id} className={`p-3 mb-2 ${session.status === 'RUNNING' ? 'border-primary' : ''}`}>
                     <div className="flex justify-between items-center">
                         <div>
@@ -439,7 +439,9 @@ export default function AdminPage() {
                          </div>
                     </div>
                 </Card>
-              ))}
+              )) : (
+                 <p className="text-sm text-muted-foreground text-center">No test sessions found for this user.</p>
+              )}
             </ScrollArea>
           </div>
 
@@ -597,5 +599,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-    
