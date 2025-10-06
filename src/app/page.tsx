@@ -55,7 +55,8 @@ import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
 import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection } from '@/firebase';
-import { collection } from 'firebase/firestore';
+import { collection, writeBatch, getDocs, query } from 'firebase/firestore';
+import { UserSelectionMenu } from '@/components/UserSelectionMenu';
 
 
 type SensorData = {
@@ -86,6 +87,7 @@ export default function Home() {
   const [sensitivity, setSensitivity] = useState(0.98);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   
   const [sensorConfig, setSensorConfig] = useState<SensorConfig>({
       mode: 'RAW',
@@ -111,6 +113,9 @@ export default function Home() {
   const importFileRef = useRef<HTMLInputElement>(null);
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  
+  const viewingUserId = isAdmin ? selectedUserId : user?.uid;
 
   useEffect(() => {
     if (!isUserLoading && !user) {
@@ -118,29 +123,40 @@ export default function Home() {
     }
   }, [user, isUserLoading, router]);
 
+  useEffect(() => {
+    user?.getIdTokenResult().then((idTokenResult) => {
+      const claims = idTokenResult.claims;
+      if (claims.admin) {
+        setIsAdmin(true);
+      }
+    });
+  }, [user]);
+
   const sensorDataCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    // Hardcoding sensorConfigurationId to 'default' as we don't manage multiple yet
-    return collection(firestore, `users/${user.uid}/sensor_configurations/default/sensor_data`);
-  }, [firestore, user]);
+    if (!firestore || !viewingUserId) return null;
+    return collection(firestore, `users/${viewingUserId}/sensor_configurations/default/sensor_data`);
+  }, [firestore, viewingUserId]);
   
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
 
   const dataLog = useMemo(() => {
     const log = user ? cloudDataLog : localDataLog;
     if (!log) return [];
-    // Ensure data is sorted by timestamp descending
     return [...log].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [user, cloudDataLog, localDataLog]);
   
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
     setCurrentValue(newDataPoint.value);
     if (user && !isUserLoading && sensorDataCollectionRef) {
+      // Admin should not be able to write data to another user's log
+      if (isAdmin && selectedUserId && selectedUserId !== user.uid) {
+          return;
+      }
       addDocumentNonBlocking(sensorDataCollectionRef, newDataPoint);
-    } else if (!user) { // Only update local log if not logged in
+    } else if (!user) {
       setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
     }
-  }, [user, isUserLoading, sensorDataCollectionRef]);
+  }, [user, isUserLoading, sensorDataCollectionRef, isAdmin, selectedUserId]);
 
   useEffect(() => {
     if (dataLog && dataLog.length > 0) {
@@ -227,7 +243,6 @@ export default function Home() {
       });
     } catch (error) {
       console.error('Fehler beim Trennen:', error);
-      // Ignore errors that happen when the device is unplugged.
       if ((error as Error).message.includes("The device has been lost")) return;
       toast({
         variant: 'destructive',
@@ -382,7 +397,6 @@ export default function Home() {
             setIsMeasuring(false);
             toast({ title: 'Demo pausiert'});
         } else {
-            // Restarting demo mode needs a fresh start
             setConnectionState('DISCONNECTED');
             handleStartDemo();
         }
@@ -406,8 +420,8 @@ export default function Home() {
     setIsAnalyzing(true);
     setAnalysisResult(null);
 
-    const startThreshold = 800; // Example value
-    const endThreshold = 200; // Example value
+    const startThreshold = 800;
+    const endThreshold = 200;
 
     const chronologicalData = [...dataLog].reverse();
     let startIndex = chronologicalData.findIndex(d => d.value >= startThreshold);
@@ -505,13 +519,27 @@ export default function Home() {
     setChartKey(Date.now());
   }
   
-  const handleClearData = () => {
+  const handleClearData = async () => {
     if (user && sensorDataCollectionRef) {
-        toast({
-            title: 'Cloud-Daten werden gelöscht...',
-            description: 'Diese Aktion ist noch nicht implementiert.'
+      try {
+        const querySnapshot = await getDocs(query(sensorDataCollectionRef));
+        const batch = writeBatch(firestore);
+        querySnapshot.forEach(doc => {
+          batch.delete(doc.ref);
         });
-        // TODO: Implement cloud data deletion
+        await batch.commit();
+        toast({
+          title: 'Cloud-Daten gelöscht',
+          description: `Alle Sensordaten für den Benutzer wurden aus der Cloud entfernt.`
+        });
+      } catch (error) {
+        console.error("Error deleting cloud data:", error);
+        toast({
+          variant: 'destructive',
+          title: 'Fehler beim Löschen der Cloud-Daten',
+          description: (error as Error).message
+        });
+      }
     } else {
         setLocalDataLog([]);
         setCurrentValue(null);
@@ -646,19 +674,26 @@ export default function Home() {
     <>
       <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
           <CardHeader className="pb-4">
-            <CardTitle className="text-2xl text-center">
-                Live-Steuerung
-            </CardTitle>
+            <div className="flex justify-between items-center">
+              <CardTitle className="text-2xl text-center">
+                  Live-Steuerung
+              </CardTitle>
+              {isAdmin && selectedUserId && selectedUserId !== user?.uid && (
+                <div className='text-sm text-muted-foreground p-2 rounded-md bg-background'>
+                  Nur Anzeige-Modus für Admin
+                </div>
+              )}
+            </div>
             <CardDescription className="text-center">
               Verbinden Sie Ihren Arduino oder starten Sie den Demo-Modus.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center justify-center gap-4">
-            <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
+            <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={isAdmin && selectedUserId !== user?.uid}>
               {getButtonText()}
             </Button>
             {connectionState === 'DISCONNECTED' && (
-                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1">
+                <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={isAdmin && selectedUserId !== user?.uid}>
                     Demo starten
                 </Button>
             )}
@@ -667,28 +702,12 @@ export default function Home() {
                 variant={isMeasuring ? 'destructive' : 'secondary'}
                 onClick={handleToggleMeasurement}
                 className="btn-shine shadow-md transition-transform transform hover:-translate-y-1"
+                disabled={isAdmin && selectedUserId !== user?.uid}
               >
                 {isMeasuring ? 'Messung stoppen' : 'Messung starten'}
               </Button>
             )}
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1">Daten löschen</Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Sind Sie sicher?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Diese Aktion kann nicht rückgängig gemacht werden. Dadurch werden die aufgezeichneten
-                    Sensordaten dauerhaft gelöscht.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleClearData}>Löschen</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            
           </CardContent>
         </Card>
     </>
@@ -704,7 +723,7 @@ export default function Home() {
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-center gap-4">
             <Button onClick={handleExportCSV} variant="outline" disabled={isSyncing}>Export CSV</Button>
-            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing}>
+            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing || (isAdmin && selectedUserId !== user?.uid)}>
               {isSyncing ? 'Importiere...' : 'Import CSV'}
             </Button>
             <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
@@ -717,16 +736,35 @@ export default function Home() {
         <CardHeader>
             <CardTitle>Cloud-Synchronisation</CardTitle>
             <CardDescription>
-                Sie sind angemeldet. Ihre Daten werden in der Cloud gespeichert.
+                {isAdmin ? "Admin-Ansicht: Wählen Sie einen Benutzer zur Ansicht seiner Daten." : "Sie sind angemeldet. Ihre Daten werden in der Cloud gespeichert."}
             </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 text-center">
             {isUserLoading || isCloudDataLoading ? (
                 <p>Authentifizierung wird geladen...</p>
             ) : user ? (
-                <div className='space-y-2'>
-                    <p>Angemeldet als: <span className='font-mono text-sm break-all'>{user.email}</span></p>
+                <div className='space-y-4'>
+                    <p>Angemeldet als: <span className='font-mono text-sm break-all'>{user.email || user.uid}</span></p>
+                    {isAdmin && <UserSelectionMenu onUserSelected={setSelectedUserId} />}
                     <Button onClick={handleSignOut} variant="secondary">Abmelden</Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1 ml-4">Daten löschen</Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Sind Sie sicher?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Diese Aktion kann nicht rückgängig gemacht werden. Dadurch werden die aufgezeichneten
+                            Sensordaten dauerhaft aus der Cloud gelöscht.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleClearData}>Löschen</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                 </div>
             ) : null}
         </CardContent>
