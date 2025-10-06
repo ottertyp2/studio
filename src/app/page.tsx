@@ -39,6 +39,8 @@ import {
 } from 'recharts';
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
+import Papa from 'papaparse';
+
 
 type SensorData = {
   timestamp: string;
@@ -84,6 +86,7 @@ export default function Home() {
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
   const readLoopActiveRef = useRef<boolean>(false);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   const convertRawValue = useCallback((rawValue: number) => {
     if (rawValue === null || rawValue === undefined) return rawValue;
@@ -120,6 +123,9 @@ export default function Home() {
         try {
             const { value, done } = await readerRef.current.read();
             if (done) {
+                break;
+            }
+            if (!readLoopActiveRef.current) {
                 break;
             }
             partialLine += value;
@@ -159,7 +165,7 @@ export default function Home() {
             // Ignore error, reader is already released
         }
     }
-  }, [toast]); // handleDisconnect will be called via its own state logic
+  }, [toast, handleDisconnect]);
 
   const sendSerialCommand = async (command: 's' | 'p') => {
     if (!portRef.current?.writable) return;
@@ -181,7 +187,7 @@ export default function Home() {
 
   const handleDisconnect = useCallback(async () => {
     if (!portRef.current) return;
-    readLoopActiveRef.current = false; // Stop the reading loop
+    readLoopActiveRef.current = false; 
     
     try {
       if (isMeasuring) {
@@ -189,13 +195,7 @@ export default function Home() {
         setIsMeasuring(false);
       }
       if (readerRef.current) {
-        try {
-          await readerRef.current.cancel();
-          readerRef.current.releaseLock();
-        } catch(e) {
-          // Ignore error on cancel
-        }
-        readerRef.current = null;
+        await readerRef.current.cancel();
       }
       
       await portRef.current.close();
@@ -231,8 +231,8 @@ export default function Home() {
             description: 'Erfolgreich mit dem Arduino verbunden.',
           });
           
-          setIsMeasuring(true);
           await sendSerialCommand('s');
+          setIsMeasuring(true);
           readFromSerial();
 
         } else {
@@ -324,6 +324,12 @@ export default function Home() {
   };
   
   const handleApplySettings = () => {
+    if (tempSensorConfig.mode === 'CUSTOM') {
+      if (tempSensorConfig.unit.trim() === '') {
+        toast({ variant: 'destructive', title: 'Ungültige Eingabe', description: 'Die Einheit darf nicht leer sein.'});
+        return;
+      }
+    }
     setSensorConfig(tempSensorConfig);
     toast({
         title: 'Einstellungen übernommen',
@@ -332,12 +338,95 @@ export default function Home() {
   }
 
   const handleConfigChange = (field: keyof SensorConfig, value: any) => {
-    setTempSensorConfig(prev => ({...prev, [field]: value}));
+    let newConfig = {...tempSensorConfig, [field]: value};
+    
+    if (field === 'mode') {
+      switch(value) {
+        case 'RAW':
+          newConfig.unit = 'RAW';
+          break;
+        case 'VOLTAGE':
+          newConfig.unit = 'V';
+          break;
+        case 'CUSTOM':
+          // Keep the last custom unit or default to something
+          newConfig.unit = tempSensorConfig.unit !== 'RAW' && tempSensorConfig.unit !== 'V' ? tempSensorConfig.unit : 'bar';
+          break;
+      }
+    }
+    setTempSensorConfig(newConfig);
   }
 
   const handleResetZoom = () => {
     setChartKey(Date.now());
   }
+
+  const handleExportCSV = () => {
+    if (dataLog.length === 0) {
+      toast({ title: 'Keine Daten zum Exportieren' });
+      return;
+    }
+
+    const csvData = dataLog.map(entry => ({
+      timestamp: entry.timestamp,
+      value: entry.value
+    }));
+
+    const csv = Papa.unparse(csvData);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'datalog.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({ title: 'Daten erfolgreich exportiert' });
+  };
+
+  const handleImportCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        if (results.errors.length > 0) {
+          toast({ variant: 'destructive', title: 'Importfehler', description: 'Die CSV-Datei konnte nicht gelesen werden.' });
+          console.error(results.errors);
+          return;
+        }
+
+        if (!results.data.length || !('timestamp' in results.data[0]) || !('value' in results.data[0])) {
+            toast({ variant: 'destructive', title: 'Importfehler', description: 'Die CSV-Datei muss die Spalten "timestamp" und "value" enthalten.' });
+            return;
+        }
+
+        const importedData: SensorData[] = results.data.map((row: any) => ({
+          timestamp: row.timestamp,
+          value: parseFloat(row.value)
+        })).filter(d => d.timestamp && !isNaN(d.value));
+        
+        importedData.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+        setDataLog(importedData);
+        if (importedData.length > 0) {
+            setCurrentValue(importedData[0].value);
+        } else {
+            setCurrentValue(null);
+        }
+        toast({ title: 'Daten erfolgreich importiert', description: `${importedData.length} Datenpunkte geladen.` });
+      }
+    });
+    // Reset file input
+    if(importFileRef.current) {
+        importFileRef.current.value = '';
+    }
+  };
+
 
   const chartData = useMemo(() => {
     const now = new Date();
@@ -393,6 +482,11 @@ export default function Home() {
                   <SelectItem value="all">Alle Daten</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="flex items-center gap-2">
+                <Button onClick={handleExportCSV} variant="outline">Export CSV</Button>
+                <Button onClick={() => importFileRef.current?.click()} variant="outline">Import CSV</Button>
+                <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
             </div>
           </CardContent>
         </Card>
