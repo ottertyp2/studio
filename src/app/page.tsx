@@ -598,7 +598,7 @@ export default function Home() {
                       borderColor: 'hsl(var(--border))',
                       backdropFilter: 'blur(4px)',
                     }}
-                    valueFormatter={(value) => `${Number(value).toFixed(displayDecimals)} ${sensorConfig.unit}`}
+                    formatter={(value: number, name: string) => [`${Number(value).toFixed(displayDecimals)} ${sensorConfig.unit}`, name]}
                   />
                   <Legend />
                   <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" fill="url(#colorValue)" name="Sensorwert" dot={false} strokeWidth={2} />
