@@ -29,11 +29,11 @@ import { FirebaseError } from 'firebase/app';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 
 const formSchema = z.object({
-  email: z.string().email({
-    message: 'Please enter a valid email address.',
+  email: z.string().min(1, {
+    message: 'Please enter your username.',
   }),
-  password: z.string().min(6, {
-    message: 'Password must be at least 6 characters.',
+  password: z.string().min(1, {
+    message: 'Please enter your password.',
   }),
 });
 
@@ -64,15 +64,14 @@ export default function LoginPage() {
     } catch (error) {
       let errorMessage = 'An unexpected error occurred.';
       if (error instanceof FirebaseError) {
-        switch (error.code) {
-          case 'auth/user-not-found':
-          case 'auth/wrong-password':
-          case 'auth/invalid-credential':
-            errorMessage = 'Invalid email or password.';
-            break;
-          default:
+        // Firebase treats invalid username and invalid password the same for security.
+        if (['auth/user-not-found', 'auth/wrong-password', 'auth/invalid-credential'].includes(error.code)) {
+            errorMessage = 'Invalid username or password.';
+        } else if (error.code === 'auth/invalid-email') {
+            errorMessage = 'Please enter a valid username (it may look like an email).';
+        }
+         else {
             errorMessage = error.message;
-            break;
         }
       }
       toast({
@@ -102,9 +101,9 @@ export default function LoginPage() {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    <FormLabel>Username</FormLabel>
                     <FormControl>
-                      <Input placeholder="name@example.com" {...field} />
+                      <Input placeholder="your_username" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

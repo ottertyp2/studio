@@ -30,11 +30,11 @@ import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from "firebase/firestore";
 
 const formSchema = z.object({
-  email: z.string().email({
-    message: 'Please enter a valid email address.',
+  email: z.string().min(1, {
+    message: 'Please enter a username.',
   }),
-  password: z.string().min(6, {
-    message: 'Password must be at least 6 characters.',
+  password: z.string().min(1, {
+    message: 'Please enter a password.',
   }),
 });
 
@@ -75,10 +75,13 @@ export default function SignupPage() {
         if (error instanceof FirebaseError) {
             switch (error.code) {
                 case 'auth/email-already-in-use':
-                    errorMessage = 'This email address is already in use.';
+                    errorMessage = 'This username is already taken.';
                     break;
                 case 'auth/weak-password':
                     errorMessage = 'The password is too weak.';
+                    break;
+                case 'auth/invalid-email':
+                    errorMessage = 'The username is not valid (it may need to look like an email).';
                     break;
                 default:
                     errorMessage = error.message;
@@ -101,7 +104,7 @@ export default function SignupPage() {
         <CardHeader>
           <CardTitle className="text-2xl text-center">Create an Account</CardTitle>
           <CardDescription className="text-center">
-            Enter your email and password to get started.
+            Enter your username and password to get started.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -112,9 +115,9 @@ export default function SignupPage() {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    <FormLabel>Username</FormLabel>
                     <FormControl>
-                      <Input placeholder="name@example.com" {...field} />
+                      <Input placeholder="Choose a username" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
