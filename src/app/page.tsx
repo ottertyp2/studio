@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -42,7 +42,20 @@ import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from 
 
 type SensorData = {
   timestamp: string;
-  value: number;
+  value: number; // Always RAW value
+};
+
+type SensorConfig = {
+    mode: 'RAW' | 'VOLTAGE' | 'CUSTOM';
+    unit: string;
+    min: number;
+    max: number;
+    arduinoVoltage: number;
+};
+
+type ChartDataPoint = {
+    name: string;
+    value: number;
 };
 
 export default function Home() {
@@ -53,10 +66,155 @@ export default function Home() {
   const [sensitivity, setSensitivity] = useState(0.98);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  
+  const [sensorConfig, setSensorConfig] = useState<SensorConfig>({
+      mode: 'RAW',
+      unit: 'RAW',
+      min: 0,
+      max: 1023,
+      arduinoVoltage: 5.0,
+  });
+  
+  const [tempSensorConfig, setTempSensorConfig] = useState<SensorConfig>(sensorConfig);
+  const [chartInterval, setChartInterval] = useState<string>("60");
+  const [chartKey, setChartKey] = useState<number>(Date.now());
+
 
   const { toast } = useToast();
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
+  const readLoopActiveRef = useRef<boolean>(false);
+
+  const convertRawValue = useCallback((rawValue: number) => {
+    if (rawValue === null || rawValue === undefined) return rawValue;
+    switch (sensorConfig.mode) {
+      case 'VOLTAGE':
+        return (rawValue / 1023.0) * sensorConfig.arduinoVoltage;
+      case 'CUSTOM':
+        if (sensorConfig.max === sensorConfig.min) return sensorConfig.min;
+        return sensorConfig.min + (rawValue / 1023.0) * (sensorConfig.max - sensorConfig.min);
+      case 'RAW':
+      default:
+        return rawValue;
+    }
+  }, [sensorConfig]);
+
+
+  const readFromSerial = useCallback(async () => {
+    if (!portRef.current?.readable || readLoopActiveRef.current) return;
+
+    readLoopActiveRef.current = true;
+    const textDecoder = new TextDecoderStream();
+    try {
+        const readableStreamClosed = portRef.current.readable.pipeTo(textDecoder.writable);
+        readerRef.current = textDecoder.readable.getReader();
+    } catch(e) {
+        console.error("Error setting up reader", e);
+        readLoopActiveRef.current = false;
+        return;
+    }
+
+    let partialLine = '';
+    
+    while (true) {
+        try {
+            const { value, done } = await readerRef.current.read();
+            if (done) {
+                break;
+            }
+            partialLine += value;
+            let lines = partialLine.split('\n');
+            partialLine = lines.pop() || '';
+
+            lines.forEach(line => {
+                if (line.trim() === '') return;
+                const sensorValue = parseInt(line.trim());
+                if (!isNaN(sensorValue)) {
+                    const newDataPoint = {
+                        timestamp: new Date().toISOString(),
+                        value: sensorValue
+                    };
+                    setCurrentValue(sensorValue);
+                    setDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
+                }
+            });
+        } catch (error) {
+            console.error('Fehler beim Lesen der Daten:', error);
+            if (!portRef.current?.readable) {
+                toast({
+                    variant: 'destructive',
+                    title: 'Verbindung verloren',
+                    description: 'Die Verbindung zum Gerät wurde unterbrochen.',
+                });
+                await handleDisconnect();
+            }
+            break;
+        }
+    }
+    readLoopActiveRef.current = false;
+    if (readerRef.current) {
+        try {
+            readerRef.current.releaseLock();
+        } catch (e) {
+            // Ignore error, reader is already released
+        }
+    }
+  }, [toast]); // handleDisconnect will be called via its own state logic
+
+  const sendSerialCommand = async (command: 's' | 'p') => {
+    if (!portRef.current?.writable) return;
+    const writer = portRef.current.writable.getWriter();
+    try {
+      const encoder = new TextEncoder();
+      await writer.write(encoder.encode(command));
+    } catch (error) {
+      console.error("Senden fehlgeschlagen:", error);
+      toast({
+        variant: 'destructive',
+        title: 'Fehler',
+        description: 'Befehl konnte nicht gesendet werden.',
+      });
+    } finally {
+      writer.releaseLock();
+    }
+  };
+
+  const handleDisconnect = useCallback(async () => {
+    if (!portRef.current) return;
+    readLoopActiveRef.current = false; // Stop the reading loop
+    
+    try {
+      if (isMeasuring) {
+        await sendSerialCommand('p');
+        setIsMeasuring(false);
+      }
+      if (readerRef.current) {
+        try {
+          await readerRef.current.cancel();
+          readerRef.current.releaseLock();
+        } catch(e) {
+          // Ignore error on cancel
+        }
+        readerRef.current = null;
+      }
+      
+      await portRef.current.close();
+      portRef.current = null;
+      setIsConnected(false);
+      toast({
+        title: 'Getrennt',
+        description: 'Die Verbindung zum Arduino wurde getrennt.',
+      });
+    } catch (error) {
+      console.error('Fehler beim Trennen:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Trennen fehlgeschlagen',
+        description: (error as Error).message,
+      });
+    }
+  }, [isMeasuring, toast]);
+
 
   const handleConnect = async () => {
     if (isConnected) {
@@ -73,8 +231,8 @@ export default function Home() {
             description: 'Erfolgreich mit dem Arduino verbunden.',
           });
           
-          await sendSerialCommand('s');
           setIsMeasuring(true);
+          await sendSerialCommand('s');
           readFromSerial();
 
         } else {
@@ -97,102 +255,14 @@ export default function Home() {
       }
     }
   };
-  
-  const handleDisconnect = async () => {
-      if (!portRef.current) return;
-      try {
-          if (isMeasuring) {
-            await sendSerialCommand('p');
-            setIsMeasuring(false);
-          }
-          if (readerRef.current) {
-              await readerRef.current.cancel();
-          }
-          await portRef.current.close();
-          portRef.current = null;
-          setIsConnected(false);
-          toast({
-              title: 'Getrennt',
-              description: 'Die Verbindung zum Arduino wurde getrennt.',
-          });
-      } catch (error) {
-          console.error('Fehler beim Trennen:', error);
-          toast({
-              variant: 'destructive',
-              title: 'Trennen fehlgeschlagen',
-              description: (error as Error).message,
-          });
-      }
-  };
-
-  const sendSerialCommand = async (command: 's' | 'p') => {
-    if (!portRef.current?.writable) return;
-    const writer = portRef.current.writable.getWriter();
-    try {
-      const encoder = new TextEncoder();
-      await writer.write(encoder.encode(command));
-    } catch (error) {
-      console.error("Senden fehlgeschlagen:", error);
-      toast({
-        variant: 'destructive',
-        title: 'Fehler',
-        description: 'Befehl konnte nicht gesendet werden.',
-      });
-    } finally {
-      writer.releaseLock();
-    }
-  };
-  
-  const readFromSerial = async () => {
-    if (!portRef.current?.readable) return;
-
-    const textDecoder = new TextDecoderStream();
-    const readableStreamClosed = portRef.current.readable.pipeTo(textDecoder.writable);
-    readerRef.current = textDecoder.readable.getReader();
-
-    let partialLine = '';
-    
-    while (true) {
-        try {
-            const { value, done } = await readerRef.current.read();
-            if (done) {
-                readerRef.current.releaseLock();
-                break;
-            }
-            partialLine += value;
-            let lines = partialLine.split('\n');
-            partialLine = lines.pop() || '';
-            lines.forEach(line => {
-                const sensorValue = parseInt(line.trim());
-                if (!isNaN(sensorValue)) {
-                    const newDataPoint = {
-                        timestamp: new Date().toISOString(),
-                        value: sensorValue
-                    };
-                    setCurrentValue(sensorValue);
-                    setDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000)); // Keep last 1000 points
-                }
-            });
-        } catch (error) {
-            console.error('Fehler beim Lesen der Daten:', error);
-            if (!portRef.current?.readable) {
-                toast({
-                    variant: 'destructive',
-                    title: 'Verbindung verloren',
-                    description: 'Die Verbindung zum Gerät wurde unterbrochen.',
-                });
-                await handleDisconnect();
-            }
-            break;
-        }
-    }
-  };
-
 
   const handleToggleMeasurement = async () => {
     const newIsMeasuring = !isMeasuring;
     await sendSerialCommand(newIsMeasuring ? 's' : 'p');
     setIsMeasuring(newIsMeasuring);
+    if(newIsMeasuring && !readLoopActiveRef.current){
+        readFromSerial();
+    }
     toast({
         title: newIsMeasuring ? 'Messung gestartet' : 'Messung gestoppt',
     });
@@ -252,12 +322,38 @@ export default function Home() {
       setIsAnalyzing(false);
     }
   };
+  
+  const handleApplySettings = () => {
+    setSensorConfig(tempSensorConfig);
+    toast({
+        title: 'Einstellungen übernommen',
+        description: `Der Anzeigemodus ist jetzt ${tempSensorConfig.mode}.`
+    })
+  }
 
-  const chartData = dataLog.slice(0, 300).reverse().map(d => ({
-    name: new Date(d.timestamp).toLocaleTimeString(),
-    value: d.value
-  }));
+  const handleConfigChange = (field: keyof SensorConfig, value: any) => {
+    setTempSensorConfig(prev => ({...prev, [field]: value}));
+  }
 
+  const handleResetZoom = () => {
+    setChartKey(Date.now());
+  }
+
+  const chartData = useMemo(() => {
+    const now = new Date();
+    let visibleData = [...dataLog].reverse();
+    if (chartInterval !== 'all') {
+      const intervalSeconds = parseInt(chartInterval, 10);
+      visibleData = visibleData.filter(dp => (now.getTime() - new Date(dp.timestamp).getTime()) / 1000 <= intervalSeconds);
+    }
+    return visibleData.map(d => ({
+        name: new Date(d.timestamp).toLocaleTimeString('de-DE'),
+        value: convertRawValue(d.value)
+    }));
+  }, [dataLog, chartInterval, convertRawValue]);
+  
+  const displayValue = currentValue !== null ? convertRawValue(currentValue) : null;
+  const displayDecimals = sensorConfig.mode === 'RAW' ? 0 : 2;
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
@@ -286,7 +382,7 @@ export default function Home() {
             )}
             <div className="flex items-center gap-2">
               <Label htmlFor="chartInterval">Diagramm-Zeitraum:</Label>
-              <Select defaultValue="60">
+              <Select value={chartInterval} onValueChange={setChartInterval}>
                 <SelectTrigger id="chartInterval" className="w-[150px] bg-white/80">
                   <SelectValue placeholder="Select interval" />
                 </SelectTrigger>
@@ -306,8 +402,8 @@ export default function Home() {
         <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
           <CardHeader>
             <div className="flex justify-between items-center">
-              <CardTitle>Live-Diagramm (RAW)</CardTitle>
-              <Button variant="outline" size="sm" className="transition-transform transform hover:-translate-y-0.5">
+              <CardTitle>Live-Diagramm ({sensorConfig.unit})</CardTitle>
+              <Button onClick={handleResetZoom} variant="outline" size="sm" className="transition-transform transform hover:-translate-y-0.5">
                 Zoom zurücksetzen
               </Button>
             </div>
@@ -317,8 +413,8 @@ export default function Home() {
           </CardHeader>
           <CardContent>
             <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
+              <ResponsiveContainer key={chartKey} width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.8}/>
@@ -327,13 +423,14 @@ export default function Home() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                   <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" />
-                  <YAxis stroke="hsl(var(--muted-foreground))" />
+                  <YAxis stroke="hsl(var(--muted-foreground))" domain={['dataMin', 'dataMax']}/>
                   <Tooltip
                     contentStyle={{
                       backgroundColor: 'hsl(var(--background) / 0.8)',
                       borderColor: 'hsl(var(--border))',
                       backdropFilter: 'blur(4px)',
                     }}
+                    valueFormatter={(value) => `${Number(value).toFixed(displayDecimals)} ${sensorConfig.unit}`}
                   />
                   <Legend />
                   <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" fill="url(#colorValue)" name="Sensorwert" dot={false} strokeWidth={2} />
@@ -351,8 +448,10 @@ export default function Home() {
                   <CardTitle className="text-lg">Aktueller Wert</CardTitle>
                 </CardHeader>
                 <CardContent className="flex flex-col items-center">
-                  <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">{currentValue ?? '-'}</p>
-                  <p className="text-lg text-muted-foreground">RAW</p>
+                  <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
+                    {displayValue !== null ? displayValue.toFixed(displayDecimals) : '-'}
+                  </p>
+                  <p className="text-lg text-muted-foreground">{sensorConfig.unit}</p>
                 </CardContent>
               </Card>
               <Card className="md:col-span-2 bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
@@ -365,14 +464,14 @@ export default function Home() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Zeitstempel</TableHead>
-                          <TableHead className="text-right">Wert (RAW)</TableHead>
+                          <TableHead className="text-right">Wert ({sensorConfig.unit})</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {dataLog.map((entry, index) => (
                           <TableRow key={index}>
                             <TableCell>{new Date(entry.timestamp).toLocaleTimeString('de-DE')}</TableCell>
-                            <TableCell className="text-right">{entry.value}</TableCell>
+                            <TableCell className="text-right">{convertRawValue(entry.value).toFixed(displayDecimals)}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -391,7 +490,7 @@ export default function Home() {
               <CardContent className="space-y-4">
                 <div>
                   <Label htmlFor="conversionMode">Anzeige-Modus</Label>
-                  <Select defaultValue="RAW">
+                  <Select value={tempSensorConfig.mode} onValueChange={(value) => handleConfigChange('mode', value)}>
                     <SelectTrigger id="conversionMode">
                       <SelectValue placeholder="Select mode" />
                     </SelectTrigger>
@@ -402,20 +501,31 @@ export default function Home() {
                     </SelectContent>
                   </Select>
                 </div>
-                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                        <Label htmlFor="sensorUnitInput">Einheit</Label>
-                        <Input id="sensorUnitInput" defaultValue="bar" />
+                 {tempSensorConfig.mode === 'CUSTOM' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <Label htmlFor="sensorUnitInput">Einheit</Label>
+                            <Input id="sensorUnitInput" value={tempSensorConfig.unit} onChange={(e) => handleConfigChange('unit', e.target.value)} />
+                        </div>
+                        <div>
+                            <Label htmlFor="minValueInput">Minimalwert</Label>
+                            <Input id="minValueInput" type="number" value={tempSensorConfig.min} onChange={(e) => handleConfigChange('min', parseFloat(e.target.value))} />
+                        </div>
+                        <div>
+                            <Label htmlFor="maxValueInput">Maximalwert</Label>
+                            <Input id="maxValueInput" type="number" value={tempSensorConfig.max} onChange={(e) => handleConfigChange('max', parseFloat(e.target.value))} />
+                        </div>
                     </div>
+                 )}
+                 {tempSensorConfig.mode === 'VOLTAGE' && (
                     <div>
-                        <Label htmlFor="minValueInput">Minimalwert</Label>
-                        <Input id="minValueInput" type="number" defaultValue="0" />
+                        <Label htmlFor="arduinoVoltageInput">Referenzspannung (V)</Label>
+                        <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage} onChange={(e) => handleConfigChange('arduinoVoltage', parseFloat(e.target.value))} />
                     </div>
-                    <div>
-                        <Label htmlFor="maxValueInput">Maximalwert</Label>
-                        <Input id="maxValueInput" type="number" defaultValue="10" />
-                    </div>
-                </div>
+                 )}
+                 <div className="flex justify-center">
+                    <Button onClick={handleApplySettings} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Anwenden</Button>
+                 </div>
               </CardContent>
             </Card>
 
