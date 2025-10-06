@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -37,35 +37,47 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
+
+type SensorData = {
+  timestamp: string;
+  value: number;
+};
 
 export default function Home() {
-  const [isMeasuring, setIsMeasuring] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [isMeasuring, setIsMeasuring] = useState(false);
+  const [dataLog, setDataLog] = useState<SensorData[]>([]);
+  const [currentValue, setCurrentValue] = useState<number | null>(null);
   const [sensitivity, setSensitivity] = useState(0.98);
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
   const { toast } = useToast();
+  const portRef = useRef<any>(null);
+  const readerRef = useRef<any>(null);
 
   const handleConnect = async () => {
     if (isConnected) {
-      // Logic to disconnect will be added later
-      setIsConnected(false);
-      toast({
-        title: 'Getrennt',
-        description: 'Die Verbindung zum Arduino wurde getrennt.',
-      });
+      await handleDisconnect();
     } else {
       try {
         if ('serial' in navigator) {
           const port = await (navigator.serial as any).requestPort();
-          // The port is now available. We can open it.
+          portRef.current = port;
           await port.open({ baudRate: 9600 });
           setIsConnected(true);
           toast({
             title: 'Verbunden',
             description: 'Erfolgreich mit dem Arduino verbunden.',
           });
-          // We can start reading from the port here in the future
+          
+          // Automatically start measurement on connect
+          setIsMeasuring(true);
+          await sendSerialCommand('s');
+          readFromSerial();
+
         } else {
           toast({
             variant: 'destructive',
@@ -86,31 +98,189 @@ export default function Home() {
       }
     }
   };
-
-  const handleToggleMeasurement = () => {
-    setIsMeasuring(!isMeasuring);
+  
+  const handleDisconnect = async () => {
+      if (!portRef.current) return;
+      try {
+          if (isMeasuring) {
+            await sendSerialCommand('p');
+            setIsMeasuring(false);
+          }
+          if (readerRef.current) {
+              await readerRef.current.cancel();
+          }
+          await portRef.current.close();
+          portRef.current = null;
+          setIsConnected(false);
+          toast({
+              title: 'Getrennt',
+              description: 'Die Verbindung zum Arduino wurde getrennt.',
+          });
+      } catch (error) {
+          console.error('Fehler beim Trennen:', error);
+          toast({
+              variant: 'destructive',
+              title: 'Trennen fehlgeschlagen',
+              description: (error as Error).message,
+          });
+      }
   };
 
+  const sendSerialCommand = async (command: 's' | 'p') => {
+    if (!portRef.current?.writable) return;
+    const writer = portRef.current.writable.getWriter();
+    try {
+      const encoder = new TextEncoder();
+      await writer.write(encoder.encode(command));
+    } catch (error) {
+      console.error("Senden fehlgeschlagen:", error);
+      toast({
+        variant: 'destructive',
+        title: 'Fehler',
+        description: 'Befehl konnte nicht gesendet werden.',
+      });
+    } finally {
+      writer.releaseLock();
+    }
+  };
+  
+  const readFromSerial = async () => {
+    if (!portRef.current?.readable) return;
+
+    const textDecoder = new TextDecoderStream();
+    const readableStreamClosed = portRef.current.readable.pipeTo(textDecoder.writable);
+    readerRef.current = textDecoder.readable.getReader();
+
+    let partialLine = '';
+    
+    while (true) {
+        try {
+            const { value, done } = await readerRef.current.read();
+            if (done) {
+                readerRef.current.releaseLock();
+                break;
+            }
+            partialLine += value;
+            let lines = partialLine.split('\n');
+            partialLine = lines.pop() || '';
+            lines.forEach(line => {
+                const sensorValue = parseInt(line.trim());
+                if (!isNaN(sensorValue)) {
+                    const newDataPoint = {
+                        timestamp: new Date().toISOString(),
+                        value: sensorValue
+                    };
+                    setCurrentValue(sensorValue);
+                    setDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000)); // Keep last 1000 points
+                }
+            });
+        } catch (error) {
+            console.error('Fehler beim Lesen der Daten:', error);
+            if (!portRef.current?.readable) {
+                toast({
+                    variant: 'destructive',
+                    title: 'Verbindung verloren',
+                    description: 'Die Verbindung zum Gerät wurde unterbrochen.',
+                });
+                await handleDisconnect();
+            }
+            break;
+        }
+    }
+  };
+
+
+  const handleToggleMeasurement = async () => {
+    const newIsMeasuring = !isMeasuring;
+    await sendSerialCommand(newIsMeasuring ? 's' : 'p');
+    setIsMeasuring(newIsMeasuring);
+    toast({
+        title: newIsMeasuring ? 'Messung gestartet' : 'Messung gestoppt',
+    });
+  };
+
+  const handleAnalysis = async () => {
+    setIsAnalyzing(true);
+    setAnalysisResult(null);
+
+    const startThreshold = 800; // Example value
+    const endThreshold = 200; // Example value
+
+    const chronologicalData = [...dataLog].reverse();
+    let startIndex = chronologicalData.findIndex(d => d.value >= startThreshold);
+    let endIndex = chronologicalData.findIndex((d, i) => i > startIndex && d.value <= endThreshold);
+
+    if (startIndex === -1 || endIndex === -1) {
+        toast({
+            variant: "destructive",
+            title: "Analyse nicht möglich",
+            description: "Start- oder End-Schwellenwert im aktuellen Datensatz nicht gefunden."
+        });
+        setIsAnalyzing(false);
+        return;
+    }
+
+    const dataSegment = chronologicalData.slice(startIndex, endIndex + 1);
+
+    if (dataSegment.length < 2) {
+        toast({
+            variant: "destructive",
+            title: "Analyse nicht möglich",
+            description: "Nicht genügend Datenpunkte zwischen den Schwellenwerten."
+        });
+        setIsAnalyzing(false);
+        return;
+    }
+
+    const input: AnalyzePressureTrendForLeaksInput = {
+      dataSegment: dataSegment.map(p => ({ timestamp: p.timestamp, value: p.value })),
+      analysisModel: 'linear_leak',
+      sensitivity: sensitivity,
+      sensorUnit: 'RAW',
+    };
+
+    try {
+      const result = await analyzePressureTrendForLeaks(input);
+      setAnalysisResult(result);
+    } catch (error) {
+      console.error('Fehler bei der Leck-Analyse:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Analyse fehlgeschlagen',
+        description: 'Bei der Kommunikation mit dem AI-Service ist ein Fehler aufgetreten.',
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const chartData = dataLog.slice(0, 300).reverse().map(d => ({
+    name: new Date(d.timestamp).toLocaleTimeString(),
+    value: d.value
+  }));
+
+
   return (
-    <div className="flex flex-col min-h-screen bg-background text-foreground p-4">
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
       <header className="w-full max-w-7xl mx-auto mb-6">
-        <Card>
+        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
           <CardHeader className="pb-4">
-            <CardTitle className="text-3xl text-center">
-              Live Sensor-Dashboard (Hybrid)
+            <CardTitle className="text-3xl text-center bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
+              BioThrust Live Dashboard
             </CardTitle>
             <CardDescription className="text-center">
               Verbinden Sie Ihren Arduino oder sehen Sie sich die Cloud-Daten an.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center justify-center gap-4">
-            <Button onClick={handleConnect}>
+            <Button onClick={handleConnect} className="bg-gradient-to-r from-sky-500 to-sky-600 text-white shadow-md transition-transform transform hover:scale-105">
               {isConnected ? 'Trennen' : 'Mit Arduino verbinden'}
             </Button>
             {isConnected && (
               <Button
                 variant={isMeasuring ? 'destructive' : 'default'}
                 onClick={handleToggleMeasurement}
+                className="shadow-md transition-transform transform hover:scale-105"
               >
                 {isMeasuring ? 'Messung stoppen' : 'Messung starten'}
               </Button>
@@ -118,7 +288,7 @@ export default function Home() {
             <div className="flex items-center gap-2">
               <Label htmlFor="chartInterval">Diagramm-Zeitraum:</Label>
               <Select defaultValue="60">
-                <SelectTrigger id="chartInterval" className="w-[150px]">
+                <SelectTrigger id="chartInterval" className="w-[150px] bg-white/80">
                   <SelectValue placeholder="Select interval" />
                 </SelectTrigger>
                 <SelectContent>
@@ -134,11 +304,11 @@ export default function Home() {
       </header>
 
       <main className="w-full max-w-7xl mx-auto space-y-6">
-        <Card>
+        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
           <CardHeader>
             <div className="flex justify-between items-center">
               <CardTitle>Live-Diagramm (RAW)</CardTitle>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" className="transition-transform transform hover:scale-105">
                 Zoom zurücksetzen
               </Button>
             </div>
@@ -149,19 +319,19 @@ export default function Home() {
           <CardContent>
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={[
-                    { name: '10:00', value: 400 },
-                    { name: '10:01', value: 300 },
-                    { name: '10:02', value: 200 },
-                  ]}
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
+                  <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" />
+                  <YAxis stroke="hsl(var(--muted-foreground))" />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--background) / 0.8)',
+                      borderColor: 'hsl(var(--border))',
+                      backdropFilter: 'blur(4px)',
+                    }}
+                  />
                   <Legend />
-                  <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name="Sensorwert" />
+                  <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name="Sensorwert" dot={false} strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -171,16 +341,16 @@ export default function Home() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <Card className="md:col-span-1 flex flex-col justify-center items-center">
+              <Card className="md:col-span-1 flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
                 <CardHeader>
                   <CardTitle className="text-lg">Aktueller Wert</CardTitle>
                 </CardHeader>
                 <CardContent className="flex flex-col items-center">
-                  <p className="text-5xl font-bold">-</p>
+                  <p className="text-5xl font-bold text-primary">{currentValue ?? '-'}</p>
                   <p className="text-lg text-muted-foreground">RAW</p>
                 </CardContent>
               </Card>
-              <Card className="md:col-span-2">
+              <Card className="md:col-span-2 bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
                 <CardHeader>
                   <CardTitle>Daten-Log</CardTitle>
                 </CardHeader>
@@ -194,7 +364,12 @@ export default function Home() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {/* Data rows will be populated here */}
+                        {dataLog.map((entry, index) => (
+                          <TableRow key={index}>
+                            <TableCell>{new Date(entry.timestamp).toLocaleTimeString('de-DE')}</TableCell>
+                            <TableCell className="text-right">{entry.value}</TableCell>
+                          </TableRow>
+                        ))}
                       </TableBody>
                     </Table>
                   </ScrollArea>
@@ -204,7 +379,7 @@ export default function Home() {
           </div>
 
           <div className="space-y-6">
-            <Card>
+            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
               <CardHeader>
                 <CardTitle>Sensor-Konfiguration</CardTitle>
               </CardHeader>
@@ -239,7 +414,7 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
               <CardHeader>
                 <CardTitle>Intelligente Leck-Analyse</CardTitle>
               </CardHeader>
@@ -280,12 +455,27 @@ export default function Home() {
                   />
                 </div>
                 <div className="flex gap-4 justify-center">
-                    <Button>Druckverlauf analysieren</Button>
-                    <Button variant="destructive">Datenbank löschen</Button>
+                  <Button onClick={handleAnalysis} disabled={isAnalyzing} className="bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-md transition-transform transform hover:scale-105">
+                      {isAnalyzing ? 'Analysiere...' : 'Druckverlauf analysieren'}
+                    </Button>
+                    <Button variant="destructive" className="shadow-md transition-transform transform hover:scale-105">Datenbank löschen</Button>
                 </div>
                 <div className="text-center text-muted-foreground pt-4">
-                    <p className="font-semibold">-</p>
-                    <p className="text-sm">R²-Wert: - | Analysierter Bereich: -</p>
+                    {analysisResult ? (
+                    <>
+                        <p className={`font-semibold ${analysisResult.isLeak ? 'text-destructive' : 'text-primary'}`}>
+                        {analysisResult.analysisResult}
+                        </p>
+                        <p className="text-sm">
+                        R²-Wert: {analysisResult.rSquared.toFixed(4)} | Analysierte Punkte: {analysisResult.analyzedDataPoints}
+                        </p>
+                    </>
+                    ) : (
+                    <>
+                        <p className="font-semibold">-</p>
+                        <p className="text-sm">R²-Wert: - | Analysierter Bereich: -</p>
+                    </>
+                    )}
                 </div>
               </CardContent>
             </Card>
