@@ -191,6 +191,7 @@ function TestingComponent() {
   
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
     setCurrentValue(newDataPoint.value);
+    setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
     
     const dataToSave = {...newDataPoint};
     if (activeTestSessionId) {
@@ -201,8 +202,6 @@ function TestingComponent() {
       // sensorDataCollectionRef can be a query, we need a collection ref for adding docs
       const baseCollectionRef = collection(firestore!, `sensor_configurations/${activeSensorConfigId}/sensor_data`);
       addDocumentNonBlocking(baseCollectionRef, dataToSave);
-    } else {
-      setLocalDataLog(prevLog => [dataToSave, ...prevLog].slice(0, 1000));
     }
   }, [firestore, sensorDataCollectionRef, activeTestSessionId, activeSensorConfigId]);
 
@@ -836,7 +835,7 @@ function TestingComponent() {
                 <Input id="description" placeholder="Internal R&D..." value={tempTestSession.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
               </div>
               <div className="flex justify-center gap-4">
-                <Button onClick={handleStartNewTestSession}>Start Session</Button>
+                <Button onClick={handleStartNewTestSession} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Start Session</Button>
                 <Button variant="ghost" onClick={() => setTempTestSession(null)}>Cancel</Button>
               </div>
             </div>

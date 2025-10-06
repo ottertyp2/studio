@@ -423,7 +423,7 @@ export default function AdminPage() {
                 <Input id="description" placeholder="Internal R&D..." value={tempTestSession.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
               </div>
               <div className="flex justify-center gap-4">
-                <Button onClick={handleStartNewTestSession}>Start Session</Button>
+                <Button onClick={handleStartNewTestSession} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Start Session</Button>
                 <Button variant="ghost" onClick={() => setTempTestSession(null)}>Cancel</Button>
               </div>
             </div>
