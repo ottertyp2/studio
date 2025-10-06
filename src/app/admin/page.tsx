@@ -110,14 +110,18 @@ export default function AdminPage() {
     const counts: Record<string, number> = {};
 
     for (const session of testSessions) {
+      // Find the config for the session to know where to look for data
+      const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
+      if (!config) continue;
+
       try {
-        const sensorDataRef = collection(firestore, `sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
+        const sensorDataRef = collection(firestore, `sensor_configurations/${config.id}/sensor_data`);
         const q = query(sensorDataRef, where('testSessionId', '==', session.id));
         const snapshot = await getDocs(q);
         counts[session.id] = snapshot.size;
       } catch (e) {
           console.error("Error fetching session data counts.", e);
-          break;
+          // Don't break the whole loop, just skip this one
       }
     }
     setSessionDataCounts(counts);
@@ -132,7 +136,7 @@ export default function AdminPage() {
 
 
   useEffect(() => {
-    // Reset selections
+    // Reset selections on initial load
     setActiveSensorConfigId(null);
     setActiveTestSessionId(null);
     setTempSensorConfig(null);
@@ -224,15 +228,36 @@ export default function AdminPage() {
     });
   };
 
-  const handleDeleteSensorConfig = (configId: string) => {
+  const handleDeleteSensorConfig = async (configId: string) => {
     if (!firestore || !configId) return;
+
+    // First delete all sensor_data in the subcollection
+    const sensorDataRef = collection(firestore, `sensor_configurations/${configId}/sensor_data`);
+    const dataSnapshot = await getDocs(sensorDataRef);
+    const batch = writeBatch(firestore);
+    dataSnapshot.forEach(doc => {
+        batch.delete(doc.ref);
+    });
+
+    // Then delete the main config document
     const configRef = doc(firestore, `sensor_configurations`, configId);
-    deleteDocumentNonBlocking(configRef);
-    toast({ title: "Configuration Deleted" });
-    if (activeSensorConfigId === configId) {
-        setActiveSensorConfigId(sensorConfigs?.[0]?.id || null);
+    batch.delete(configRef);
+    
+    try {
+        await batch.commit();
+        toast({ title: "Configuration Deleted", description: `Configuration and its ${dataSnapshot.size} data points were deleted.` });
+        if (activeSensorConfigId === configId) {
+            setActiveSensorConfigId(sensorConfigs?.[0]?.id || null);
+        }
+        setTempSensorConfig(null);
+    } catch (e) {
+        console.error("Error deleting configuration:", e);
+        toast({
+            variant: 'destructive',
+            title: 'Error Deleting Configuration',
+            description: (e as Error).message
+        });
     }
-    setTempSensorConfig(null);
   };
   
   const handleTestSessionFieldChange = (field: keyof TestSession, value: any) => {
@@ -282,7 +307,14 @@ export default function AdminPage() {
   const handleDeleteTestSession = async (session: TestSession) => {
     if (!firestore) return;
 
-    const sensorDataRef = collection(firestore, `sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
+    // Find the config for the session to know where to look for data
+    const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+    if (!config) {
+        toast({variant: 'destructive', title: 'Error', description: 'Could not find sensor config for this session.'});
+        return;
+    }
+
+    const sensorDataRef = collection(firestore, `sensor_configurations/${config.id}/sensor_data`);
     const q = query(sensorDataRef, where("testSessionId", "==", session.id));
 
     getDocs(q).then(querySnapshot => {
@@ -395,7 +427,7 @@ export default function AdminPage() {
         <CardContent>
           {!tempTestSession && !runningSession && (
             <div className="flex justify-center">
-              <Button onClick={() => setTempTestSession({})} disabled={!activeSensorConfigId}>
+              <Button onClick={() => setTempTestSession({})} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!activeSensorConfigId}>
                 Start New Test Session
               </Button>
             </div>
@@ -457,7 +489,7 @@ export default function AdminPage() {
                                         <AlertDialogHeader>
                                             <AlertDialogTitle>Delete Test Session?</AlertDialogTitle>
                                             <AlertDialogDescription>
-                                                This will permanently delete the session for "{session.productIdentifier}" and all of its associated sensor data. This action cannot be undone.
+                                                This will permanently delete the session for "{session.productIdentifier}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
                                             </AlertDialogDescription>
                                         </AlertDialogHeader>
                                         <AlertDialogFooter>
@@ -537,7 +569,7 @@ export default function AdminPage() {
                                                       <AlertDialogHeader>
                                                           <AlertDialogTitle>Delete Configuration?</AlertDialogTitle>
                                                           <AlertDialogDescription>
-                                                          Are you sure you want to delete the configuration "{c.name}"? This action cannot be undone.
+                                                          Are you sure you want to delete the configuration "{c.name}"? This will also delete all associated sensor data. This action cannot be undone.
                                                           </AlertDialogDescription>
                                                       </AlertDialogHeader>
                                                       <AlertDialogFooter>
