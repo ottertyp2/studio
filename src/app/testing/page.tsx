@@ -291,6 +291,91 @@ function TestingComponent() {
       toast({title: 'Test Session Ended'});
   }, [testSessionsCollectionRef, firestore, activeTestSessionId, toast, stopDemoMode, testSessions, sendSerialCommand]);
 
+  const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', productIdentifier: string }) => {
+    const sessionDetails = tempTestSession || { productIdentifier: options.productIdentifier };
+
+    if (!sessionDetails.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
+        toast({variant: 'destructive', title: 'Error', description: 'Please provide a product identifier and select a sensor.'});
+        return null;
+    }
+
+    const {testSessions: currentTestSessions} = stateRef.current;
+
+    if (currentTestSessions?.find(s => s.status === 'RUNNING')) {
+        toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
+        return null;
+    }
+
+    const newSessionId = doc(collection(firestore, '_')).id;
+    const newSession: TestSession = {
+      id: newSessionId,
+      productIdentifier: sessionDetails.productIdentifier,
+      serialNumber: sessionDetails.serialNumber || '',
+      model: sessionDetails.model || '',
+      description: sessionDetails.description || '',
+      startTime: new Date().toISOString(),
+      status: 'RUNNING',
+      sensorConfigurationId: activeSensorConfigId,
+      measurementType: options.measurementType,
+    };
+    
+    await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
+    setActiveTestSessionId(newSessionId);
+    setTempTestSession(null);
+    toast({ title: 'New Test Session Started', description: `Product: ${newSession.productIdentifier}`});
+    return newSession;
+  }, [activeSensorConfigId, firestore, testSessionsCollectionRef, tempTestSession, toast]);
+
+  const handleConnect = useCallback(async () => {
+    if (portRef.current) {
+        const { testSessions: currentTestSessions } = stateRef.current;
+        const arduinoSession = currentTestSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
+
+        if(arduinoSession) {
+          await handleStopTestSession(arduinoSession.id);
+        }
+        readingRef.current = false;
+        if(readerRef.current) {
+          try { await readerRef.current.cancel(); } catch {}
+        }
+        if(writerRef.current) {
+          try { writerRef.current.releaseLock(); } catch {}
+        }
+        try {
+            await portRef.current.close();
+        } catch(e) {
+            console.error("Error closing port", e);
+        } finally {
+            portRef.current = null;
+            setIsConnected(false);
+            toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
+        }
+    } else { 
+        if (!('serial' in navigator)) {
+            toast({ variant: 'destructive', title: 'Unsupported Browser', description: 'Web Serial API is not supported here.' });
+            return;
+        }
+        try {
+            const port = await (navigator.serial as any).requestPort();
+            portRef.current = port;
+            await port.open({ baudRate: 9600 });
+            await new Promise(resolve => setTimeout(resolve, 100)); 
+            
+            setIsConnected(true);
+            toast({ title: 'Connected', description: 'Device connected. Ready to start measurement.' });
+            
+            readFromSerial();
+
+            await sendSerialCommand('p'); 
+        } catch (error) {
+            console.error('Error connecting:', error);
+            if ((error as Error).name !== 'NotFoundError') {
+                toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish connection.' });
+            }
+        }
+    }
+  }, [toast, readFromSerial, sendSerialCommand, handleStopTestSession]);
+
   const readFromSerial = useCallback(async () => {
     if (!portRef.current?.readable || readingRef.current) return;
     
@@ -345,42 +430,6 @@ function TestingComponent() {
   }, [handleNewDataPoint, toast, handleConnect, handleStopTestSession]);
 
 
-  const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', productIdentifier: string }) => {
-    const sessionDetails = tempTestSession || { productIdentifier: options.productIdentifier };
-
-    if (!sessionDetails.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
-        toast({variant: 'destructive', title: 'Error', description: 'Please provide a product identifier and select a sensor.'});
-        return null;
-    }
-
-    const {testSessions: currentTestSessions} = stateRef.current;
-
-    if (currentTestSessions?.find(s => s.status === 'RUNNING')) {
-        toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
-        return null;
-    }
-
-    const newSessionId = doc(collection(firestore, '_')).id;
-    const newSession: TestSession = {
-      id: newSessionId,
-      productIdentifier: sessionDetails.productIdentifier,
-      serialNumber: sessionDetails.serialNumber || '',
-      model: sessionDetails.model || '',
-      description: sessionDetails.description || '',
-      startTime: new Date().toISOString(),
-      status: 'RUNNING',
-      sensorConfigurationId: activeSensorConfigId,
-      measurementType: options.measurementType,
-    };
-    
-    await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
-    setActiveTestSessionId(newSessionId);
-    setTempTestSession(null);
-    toast({ title: 'New Test Session Started', description: `Product: ${newSession.productIdentifier}`});
-    return newSession;
-  }, [activeSensorConfigId, firestore, testSessionsCollectionRef, tempTestSession, toast]);
-
-
   const toggleMeasurement = useCallback(async () => {
     const { testSessions: currentTestSessions } = stateRef.current;
     const arduinoSession = currentTestSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
@@ -395,57 +444,6 @@ function TestingComponent() {
       }
     }
   }, [sendSerialCommand, handleStartNewTestSession, handleStopTestSession]);
-
-
-  const handleConnect = useCallback(async () => {
-    if (portRef.current) {
-        const { testSessions: currentTestSessions } = stateRef.current;
-        const arduinoSession = currentTestSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
-
-        if(arduinoSession) {
-          await handleStopTestSession(arduinoSession.id);
-        }
-        readingRef.current = false;
-        if(readerRef.current) {
-          try { await readerRef.current.cancel(); } catch {}
-        }
-        if(writerRef.current) {
-          try { writerRef.current.releaseLock(); } catch {}
-        }
-        try {
-            await portRef.current.close();
-        } catch(e) {
-            console.error("Error closing port", e);
-        } finally {
-            portRef.current = null;
-            setIsConnected(false);
-            toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
-        }
-    } else { 
-        if (!('serial' in navigator)) {
-            toast({ variant: 'destructive', title: 'Unsupported Browser', description: 'Web Serial API is not supported here.' });
-            return;
-        }
-        try {
-            const port = await (navigator.serial as any).requestPort();
-            portRef.current = port;
-            await port.open({ baudRate: 9600 });
-            await new Promise(resolve => setTimeout(resolve, 100)); 
-            
-            setIsConnected(true);
-            toast({ title: 'Connected', description: 'Device connected. Ready to start measurement.' });
-            
-            readFromSerial();
-
-            await sendSerialCommand('p'); 
-        } catch (error) {
-            console.error('Error connecting:', error);
-            if ((error as Error).name !== 'NotFoundError') {
-                toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish connection.' });
-            }
-        }
-    }
-  }, [toast, readFromSerial, sendSerialCommand, handleStopTestSession]);
 
   useEffect(() => {
       if (runningTestSession) {
