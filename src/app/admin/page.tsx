@@ -42,7 +42,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Home } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc } from '@/firebase';
-import { collection, doc, query, getDocs } from 'firebase/firestore';
+import { collection, doc, query, getDocs, writeBatch, where } from 'firebase/firestore';
 
 
 type SensorConfig = {
@@ -56,6 +56,12 @@ type SensorConfig = {
     decimalPlaces: number;
 };
 
+type SensorData = {
+  timestamp: string;
+  value: number;
+  testSessionId?: string;
+}
+
 type TestSession = {
     id: string;
     productIdentifier: string;
@@ -66,6 +72,7 @@ type TestSession = {
     endTime?: string;
     status: 'RUNNING' | 'COMPLETED' | 'SCRAPPED';
     sensorConfigurationId: string;
+    dataPointCount?: number;
 };
 
 type UserProfile = {
@@ -84,6 +91,8 @@ export default function AdminPage() {
   const [activeTestSessionId, setActiveTestSessionId] = useState<string | null>(null);
   const [tempTestSession, setTempTestSession] = useState<Partial<TestSession> | null>(null);
   const [emailToPromote, setEmailToPromote] = useState('');
+  const [sessionDataCounts, setSessionDataCounts] = useState<Record<string, number>>({});
+
 
   const { toast } = useToast();
   const { firestore } = useFirebase();
@@ -148,6 +157,28 @@ export default function AdminPage() {
   }, [firestore, viewingUserId]);
 
   const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
+  
+  const fetchSessionDataCounts = useCallback(async () => {
+    if (!firestore || !viewingUserId || !testSessions || !sensorConfigs) return;
+    
+    const counts: Record<string, number> = {};
+
+    for (const session of testSessions) {
+      const sensorDataRef = collection(firestore, `users/${viewingUserId}/sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
+      const q = query(sensorDataRef, where('testSessionId', '==', session.id));
+      const snapshot = await getDocs(q);
+      counts[session.id] = snapshot.size;
+    }
+    setSessionDataCounts(counts);
+
+  }, [firestore, viewingUserId, testSessions, sensorConfigs]);
+
+  useEffect(() => {
+    if (testSessions && sensorConfigs) {
+      fetchSessionDataCounts();
+    }
+  }, [testSessions, sensorConfigs, fetchSessionDataCounts]);
+
 
   useEffect(() => {
     // Reset selections when viewing user changes
@@ -155,6 +186,7 @@ export default function AdminPage() {
     setActiveTestSessionId(null);
     setTempSensorConfig(null);
     setTempTestSession(null);
+    setSessionDataCounts({});
   }, [viewingUserId]);
 
   useEffect(() => {
@@ -296,8 +328,48 @@ export default function AdminPage() {
       toast({title: 'Test Session Ended'});
   };
   
+    const handleDeleteTestSession = async (session: TestSession) => {
+    if (!firestore || !viewingUserId) return;
+
+    const batch = writeBatch(firestore);
+
+    // 1. Delete the session document
+    const sessionRef = doc(firestore, `users/${viewingUserId}/test_sessions`, session.id);
+    batch.delete(sessionRef);
+
+    // 2. Query and delete all associated sensor data
+    const sensorDataRef = collection(firestore, `users/${viewingUserId}/sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
+    const q = query(sensorDataRef, where("testSessionId", "==", session.id));
+    
+    try {
+        const querySnapshot = await getDocs(q);
+        querySnapshot.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+
+        await batch.commit();
+        toast({
+            title: 'Session Deleted',
+            description: `Session for "${session.productIdentifier}" and its ${querySnapshot.size} data points have been deleted.`
+        });
+        
+    } catch (error) {
+        console.error("Error deleting session and its data:", error);
+        toast({
+            variant: 'destructive',
+            title: 'Deletion Failed',
+            description: 'Could not delete the session and its associated data.'
+        });
+    }
+  };
+
   const viewUserTests = (userId: string) => {
     const queryParams = new URLSearchParams({ userId }).toString();
+    router.push(`/testing?${queryParams}`);
+  };
+  
+  const viewSessionData = (userId: string, sessionId: string) => {
+    const queryParams = new URLSearchParams({ userId, sessionId }).toString();
     router.push(`/testing?${queryParams}`);
   };
 
@@ -423,23 +495,46 @@ export default function AdminPage() {
 
           <div className="space-y-4 mt-6">
              <ScrollArea className="h-64">
-              {testSessions && testSessions.length > 0 ? testSessions?.map(session => (
-                <Card key={session.id} className={`p-3 mb-2 ${session.status === 'RUNNING' ? 'border-primary' : ''}`}>
-                    <div className="flex justify-between items-center">
-                        <div>
-                            <p className="font-semibold">{session.productIdentifier}</p>
-                            <p className="text-sm text-muted-foreground">{new Date(session.startTime).toLocaleString('en-US')} - {session.status}</p>
-                        </div>
-                         <div className="flex gap-2">
-                             {session.status === 'RUNNING' && (
-                                <>
+              {testSessions && testSessions.length > 0 ? (
+                isTestSessionsLoading ? <p>Loading sessions...</p> : testSessions?.map(session => (
+                    <Card key={session.id} className={`p-3 mb-2 ${session.status === 'RUNNING' ? 'border-primary' : ''}`}>
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <p className="font-semibold">{session.productIdentifier}</p>
+                                <p className="text-sm text-muted-foreground">
+                                    {new Date(session.startTime).toLocaleString('en-US')} - {session.status}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    Data Points: {sessionDataCounts[session.id] ?? '...'}
+                                </p>
+                            </div>
+                            <div className="flex flex-col gap-2 items-end">
+                                {session.status === 'RUNNING' && (
                                     <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session.id)}>Stop</Button>
-                                </>
-                            )}
-                         </div>
-                    </div>
-                </Card>
-              )) : (
+                                )}
+                                <Button size="sm" variant="outline" onClick={() => viewSessionData(viewingUserId!, session.id)}>View Data</Button>
+                                 <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <Button size="sm" variant="destructive" className="bg-red-700/80">Delete</Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Delete Test Session?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                This will permanently delete the session for "{session.productIdentifier}" and all of its associated sensor data. This action cannot be undone.
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                            <AlertDialogAction onClick={() => handleDeleteTestSession(session)}>Confirm Delete</AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                            </div>
+                        </div>
+                    </Card>
+                ))
+              ) : (
                  <p className="text-sm text-muted-foreground text-center">No test sessions found for this user.</p>
               )}
             </ScrollArea>
@@ -599,3 +694,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    

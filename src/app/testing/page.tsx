@@ -60,6 +60,7 @@ import { collection, writeBatch, getDocs, query, doc, where } from 'firebase/fir
 
 
 type SensorData = {
+  id?: string;
   timestamp: string;
   value: number; // Always RAW value
   testSessionId?: string;
@@ -97,14 +98,12 @@ function TestingComponent() {
   const searchParams = useSearchParams();
 
   const adminUserId = searchParams.get('userId');
+  const adminSessionId = searchParams.get('sessionId');
 
   const { user, isUserLoading } = useUser();
   
   // Determine which user's data to view
   const viewingUserId = adminUserId || user?.uid;
-
-  const adminSessionId = adminUserId ? null : searchParams.get('sessionId');
-
 
   const [activeTab, setActiveTab] = useState('live');
   const [connectionState, setConnectionState] = useState<ConnectionState>('DISCONNECTED');
@@ -156,11 +155,8 @@ function TestingComponent() {
   const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
   
   const runningTestSession = useMemo(() => {
-    if (isViewingAsAdmin && adminSessionId) {
-        return testSessions?.find(s => s.id === adminSessionId && s.status === 'RUNNING');
-    }
     return testSessions?.find(s => s.status === 'RUNNING');
-  }, [testSessions, isViewingAsAdmin, adminSessionId]);
+  }, [testSessions]);
 
   useEffect(() => {
     if (runningTestSession && !adminSessionId) {
@@ -188,22 +184,23 @@ function TestingComponent() {
 
   const sensorDataCollectionRef = useMemoFirebase(() => {
     if (!firestore || !viewingUserId || !activeSensorConfigId) return null;
-    return collection(firestore, `users/${viewingUserId}/sensor_configurations/${activeSensorConfigId}/sensor_data`);
-  }, [firestore, viewingUserId, activeSensorConfigId]);
-  
+    let q = query(collection(firestore, `users/${viewingUserId}/sensor_configurations/${activeSensorConfigId}/sensor_data`));
+
+    if (activeTestSessionId) {
+        q = query(q, where('testSessionId', '==', activeTestSessionId));
+    }
+    
+    return q;
+  }, [firestore, viewingUserId, activeSensorConfigId, activeTestSessionId]);
+
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
 
   const dataLog = useMemo(() => {
     const log = viewingUserId ? cloudDataLog : localDataLog;
     if (!log) return [];
     
-    let filteredLog = [...log];
-    if (activeTestSessionId) {
-        filteredLog = filteredLog.filter(d => d.testSessionId === activeTestSessionId);
-    }
-    
-    return filteredLog.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [viewingUserId, cloudDataLog, localDataLog, activeTestSessionId]);
+    return [...log].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [viewingUserId, cloudDataLog, localDataLog]);
   
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
     setCurrentValue(newDataPoint.value);
@@ -214,11 +211,13 @@ function TestingComponent() {
     }
 
     if (viewingUserId && sensorDataCollectionRef) {
-      addDocumentNonBlocking(sensorDataCollectionRef, dataToSave);
+      // sensorDataCollectionRef can be a query, we need a collection ref for adding docs
+      const baseCollectionRef = collection(firestore!, `users/${viewingUserId}/sensor_configurations/${activeSensorConfigId}/sensor_data`);
+      addDocumentNonBlocking(baseCollectionRef, dataToSave);
     } else {
       setLocalDataLog(prevLog => [dataToSave, ...prevLog].slice(0, 1000));
     }
-  }, [viewingUserId, sensorDataCollectionRef, activeTestSessionId]);
+  }, [viewingUserId, sensorDataCollectionRef, activeTestSessionId, firestore, activeSensorConfigId]);
 
   useEffect(() => {
     if (dataLog && dataLog.length > 0) {
@@ -538,11 +537,13 @@ function TestingComponent() {
   }
   
   const handleClearData = async () => {
-    if (viewingUserId && sensorDataCollectionRef) {
+    if (viewingUserId && firestore && activeSensorConfigId) {
       try {
+        const baseCollectionRef = collection(firestore, `users/${viewingUserId}/sensor_configurations/${activeSensorConfigId}/sensor_data`);
+
         const q = activeTestSessionId 
-          ? query(sensorDataCollectionRef, where("testSessionId", "==", activeTestSessionId))
-          : query(sensorDataCollectionRef);
+          ? query(baseCollectionRef, where("testSessionId", "==", activeTestSessionId))
+          : query(baseCollectionRef);
 
         const querySnapshot = await getDocs(q);
         const batch = writeBatch(firestore);
@@ -552,7 +553,7 @@ function TestingComponent() {
         await batch.commit();
         toast({
           title: 'Cloud Data Deleted',
-          description: `All relevant sensor data for the current configuration has been removed from the cloud.`
+          description: `All relevant sensor data for the current view has been removed from the cloud.`
         });
       } catch (error) {
         console.error("Error deleting cloud data:", error);
@@ -627,11 +628,12 @@ function TestingComponent() {
         
         importedData.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-        if (viewingUserId && sensorDataCollectionRef) {
+        if (viewingUserId && firestore && activeSensorConfigId) {
           setIsSyncing(true);
+          const baseCollectionRef = collection(firestore, `users/${viewingUserId}/sensor_configurations/${activeSensorConfigId}/sensor_data`);
           const batch = writeBatch(firestore);
           importedData.forEach(dataPoint => {
-              const docRef = doc(sensorDataCollectionRef);
+              const docRef = doc(baseCollectionRef);
               batch.set(docRef, dataPoint);
           });
           batch.commit()
@@ -803,7 +805,7 @@ function TestingComponent() {
                     <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                     <AlertDialogDescription>
                     This action cannot be undone. This will permanently delete the recorded
-                    sensor data for the selected configuration.
+                    sensor data for the current view (sensor and session).
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -1132,3 +1134,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
