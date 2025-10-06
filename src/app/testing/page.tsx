@@ -56,7 +56,7 @@ import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc } from '@/firebase';
-import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc } from 'firebase/firestore';
+import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc } from 'firebase/firestore';
 
 
 type SensorData = {
@@ -86,6 +86,7 @@ type TestSession = {
     startTime: string;
     endTime?: string;
     status: 'RUNNING' | 'COMPLETED' | 'SCRAPPED';
+    sensorConfigurationId: string;
     measurementType: 'DEMO' | 'ARDUINO';
 };
 
@@ -111,8 +112,7 @@ function TestingComponent() {
   const [chartKey, setChartKey] = useState<number>(Date.now());
   
   const [isConnected, setIsConnected] = useState(false);
-  const [isMeasuring, setIsMeasuring] = useState(false);
-
+  
   const { toast } = useToast();
   const { firestore } = useFirebase();
 
@@ -166,7 +166,9 @@ function TestingComponent() {
   useEffect(() => {
     if (runningTestSession && activeTestSessionId !== runningTestSession.id) {
         setActiveTestSessionId(runningTestSession.id);
-        setActiveSensorConfigId(runningTestSession.sensorConfigurationId);
+        if (runningTestSession.sensorConfigurationId) {
+            setActiveSensorConfigId(runningTestSession.sensorConfigurationId);
+        }
     }
   }, [runningTestSession, activeTestSessionId]);
 
@@ -296,7 +298,7 @@ function TestingComponent() {
             console.error('Error reading data:', error);
             if (!portRef.current.readable) {
               toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
-              handleConnect(); // This will trigger disconnect logic
+              handleConnect();
             }
             break; 
         }
@@ -309,26 +311,25 @@ function TestingComponent() {
     }
     try { await readableStreamClosed.catch(() => {}); } catch {}
     
-  }, [handleNewDataPoint, toast]);
+  }, [handleNewDataPoint, toast, handleConnect]);
 
   const toggleMeasurement = useCallback(async () => {
-    if (runningTestSession?.measurementType !== 'ARDUINO') {
-      const sessionAction = isMeasuring ? 'Stop' : 'Start';
-      toast({variant: 'destructive', title: 'Action blocked', description: `Cannot ${sessionAction} a non-Arduino session.`});
-      return;
+    if (runningTestSession && runningTestSession.measurementType === 'ARDUINO') {
+      await sendSerialCommand('p');
+      handleStopTestSession(runningTestSession.id);
+    } else {
+      const newSession = await handleStartNewTestSession({ measurementType: 'ARDUINO', productIdentifier: `Arduino Session ${new Date().toLocaleTimeString()}`});
+      if (newSession) {
+        await sendSerialCommand('s');
+      }
     }
-    
-    const newMeasuringState = !isMeasuring;
-    const command = newMeasuringState ? 's' : 'p';
-    await sendSerialCommand(command);
-    setIsMeasuring(newMeasuringState);
-  }, [isMeasuring, sendSerialCommand, runningTestSession, toast]);
+  }, [runningTestSession, sendSerialCommand, handleStartNewTestSession, handleStopTestSession]);
 
 
   const handleConnect = useCallback(async () => {
-    if (portRef.current) { // Disconnect logic
-        if (isMeasuring) {
-            await toggleMeasurement();
+    if (portRef.current) {
+        if(runningTestSession && runningTestSession.measurementType === 'ARDUINO') {
+          await handleStopTestSession(runningTestSession.id);
         }
         readingRef.current = false;
         if(readerRef.current) {
@@ -344,10 +345,9 @@ function TestingComponent() {
         } finally {
             portRef.current = null;
             setIsConnected(false);
-            setIsMeasuring(false);
             toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
         }
-    } else { // Connect logic
+    } else { 
         if (!('serial' in navigator)) {
             toast({ variant: 'destructive', title: 'Unsupported Browser', description: 'Web Serial API is not supported here.' });
             return;
@@ -356,21 +356,15 @@ function TestingComponent() {
             const port = await (navigator.serial as any).requestPort();
             portRef.current = port;
             await port.open({ baudRate: 9600 });
-            await new Promise(resolve => setTimeout(resolve, 100)); // Wait for arduino to reboot
+            await new Promise(resolve => setTimeout(resolve, 100)); 
             
             setIsConnected(true);
             toast({ title: 'Connected', description: 'Device connected. Ready to start measurement.' });
             
-            const newSession = await handleStartNewTestSession({ measurementType: 'ARDUINO', productIdentifier: 'Arduino Session'});
-            if(newSession) {
-              await sendSerialCommand('p'); // Ensure it's paused initially
-              readFromSerial();
-            } else {
-              // Could not create a session, so disconnect
-              await port.close();
-              portRef.current = null;
-              setIsConnected(false);
-            }
+            readingRef.current = true;
+            readFromSerial();
+
+            await sendSerialCommand('p'); 
         } catch (error) {
             console.error('Error connecting:', error);
             if ((error as Error).name !== 'NotFoundError') {
@@ -378,7 +372,7 @@ function TestingComponent() {
             }
         }
     }
-  }, [isMeasuring, toggleMeasurement, toast, readFromSerial, sendSerialCommand, handleStartNewTestSession]);
+  }, [runningTestSession, toast, readFromSerial, sendSerialCommand, handleStopTestSession]);
 
 
   const stopDemoMode = useCallback(() => {
@@ -399,26 +393,16 @@ function TestingComponent() {
           stopDemoMode();
       }
       if(session?.measurementType === 'ARDUINO') {
-          if(isConnected) {
-            await handleConnect(); // This will trigger disconnect logic
-          }
+          await sendSerialCommand('p');
       }
 
       if (activeTestSessionId === sessionId) {
           setActiveTestSessionId(null);
       }
-      setIsMeasuring(false);
       toast({title: 'Test Session Ended'});
-  }, [testSessionsCollectionRef, firestore, activeTestSessionId, toast, stopDemoMode, testSessions, isConnected, handleConnect]);
+  }, [testSessionsCollectionRef, firestore, activeTestSessionId, toast, stopDemoMode, testSessions, sendSerialCommand]);
 
   useEffect(() => {
-      const cleanup = () => {
-          stopDemoMode();
-          if(isConnected && runningTestSession) {
-             handleStopTestSession(runningTestSession.id);
-          }
-      }
-
       if (runningTestSession) {
           if (runningTestSession.measurementType === 'DEMO' && !demoIntervalRef.current) {
               let trend = 1000;
@@ -439,20 +423,15 @@ function TestingComponent() {
                   };
                   handleNewDataPoint(newDataPoint);
               }, 500);
-          } else if(runningTestSession.measurementType === 'ARDUINO' && !isMeasuring) {
-            // A remote client may have started this session. Let's start measuring.
-            if(isConnected) toggleMeasurement();
           }
       } else {
-          // No running session, cleanup everything
           stopDemoMode();
-          if (isMeasuring) {
-            toggleMeasurement(); // This will send 'p'
-          }
       }
 
-      return cleanup;
-  }, [runningTestSession, handleNewDataPoint, stopDemoMode, handleStopTestSession, isConnected, isMeasuring, toggleMeasurement]);
+      return () => {
+          stopDemoMode();
+      };
+  }, [runningTestSession, handleNewDataPoint, stopDemoMode]);
 
 
   const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', productIdentifier: string }) => {
@@ -481,7 +460,7 @@ function TestingComponent() {
       measurementType: options.measurementType,
     };
     
-    await setDocumentNonBlocking(doc(testSessionsCollectionRef, newSessionId), newSession, { merge: false });
+    await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
     setActiveTestSessionId(newSessionId);
     setTempTestSession(null);
     toast({ title: 'New Test Session Started', description: `Product: ${newSession.productIdentifier}`});
@@ -726,6 +705,8 @@ function TestingComponent() {
   
   const displayValue = currentValue !== null ? convertRawValue(currentValue) : null;
   const displayDecimals = sensorConfig.decimalPlaces;
+  
+  const isArduinoMeasurementRunning = runningTestSession?.measurementType === 'ARDUINO';
 
 
   const renderLiveTab = () => (
@@ -739,12 +720,21 @@ function TestingComponent() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-center gap-4">
-            <Button onClick={handleConnect} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession && runningTestSession.measurementType !== 'ARDUINO'}>
+            <Button 
+                onClick={handleConnect} 
+                className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" 
+                disabled={!!runningTestSession && runningTestSession.measurementType !== 'ARDUINO'}
+            >
                 {isConnected ? 'Disconnect from Arduino' : 'Connect to Arduino'}
             </Button>
             {isConnected && (
-                <Button onClick={toggleMeasurement} disabled={!runningTestSession} variant={isMeasuring ? 'destructive' : 'secondary'} className="btn-shine shadow-md transition-transform transform hover:-translate-y-1">
-                    {isMeasuring ? 'Stop Measurement' : 'Start Measurement'}
+                <Button 
+                    onClick={toggleMeasurement} 
+                    disabled={!!runningTestSession && !isArduinoMeasurementRunning}
+                    variant={isArduinoMeasurementRunning ? 'destructive' : 'secondary'} 
+                    className="btn-shine shadow-md transition-transform transform hover:-translate-y-1"
+                >
+                    {isArduinoMeasurementRunning ? 'Stop Measurement' : 'Start Measurement'}
                 </Button>
             )}
             <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession}>
@@ -1104,3 +1094,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
