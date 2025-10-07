@@ -20,27 +20,9 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
   if (emailOrUsername.includes('@')) {
     email = emailOrUsername;
     username = email.split('@')[0];
-    try {
-        const usernameQuery = query(collection(firestore, 'users'), where('username', '==', username));
-        const usernameSnapshot = await getDocs(usernameQuery);
-        if (!usernameSnapshot.empty) {
-          throw new Error(`[E3] The username '${username}' derived from your email is already taken. Please try signing up with a unique username instead.`);
-        }
-    } catch (e: any) {
-        throw new Error(`[E1] Failed to check username availability: ${e.message}`);
-    }
   } else {
     username = emailOrUsername;
     email = `${username}@${DUMMY_DOMAIN}`;
-    try {
-        const usernameQuery = query(collection(firestore, 'users'), where('username', '==', username));
-        const usernameSnapshot = await getDocs(usernameQuery);
-        if (!usernameSnapshot.empty) {
-          throw new Error('[E2] Username already exists.');
-        }
-    } catch (e: any) {
-        throw new Error(`[E1] Failed to check username availability: ${e.message}`);
-    }
   }
 
   let user: User;
