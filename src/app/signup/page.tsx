@@ -17,8 +17,8 @@ import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 
 const formSchema = z.object({
-  username: z.string().min(3, { message: 'Username must be at least 3 characters.' }).regex(/^[a-zA-Z0-9_]+$/, { message: 'Username can only contain letters, numbers, and underscores.'}).optional().or(z.literal('')),
   email: z.string().email({ message: 'Invalid email address.' }),
+  username: z.string().min(3, { message: 'Username must be at least 3 characters.' }).regex(/^[a-zA-Z0-9_]+$/, { message: 'Username can only contain letters, numbers, and underscores.'}).optional().or(z.literal('')),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
 });
 
@@ -31,8 +31,8 @@ export default function SignupPage() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      username: '',
       email: '',
+      username: '',
       password: '',
     },
   });

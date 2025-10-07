@@ -13,15 +13,14 @@ import { FirestorePermissionError } from './errors';
 
 /** Initiate email/password sign-up (non-blocking). */
 export async function initiateEmailSignUp(authInstance: Auth, firestore: Firestore, email: string, password: string, username?: string): Promise<void> {
-  // Check if username already exists, if provided
-  if (username) {
+  // Check if username already exists, if provided and is not an empty string
+  if (username && username.trim() !== '') {
     const usernameQuery = query(collection(firestore, 'users'), where('username', '==', username));
     const usernameSnapshot = await getDocs(usernameQuery);
     if (!usernameSnapshot.empty) {
       throw new Error('Username already exists.');
     }
   }
-
 
   try {
     const userCredential = await createUserWithEmailAndPassword(authInstance, email, password);
@@ -41,6 +40,8 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
         requestResourceData: userData,
       });
       errorEmitter.emit('permission-error', permissionError);
+      // We still want to inform the user about this, even if it's non-blocking for the UI
+      console.error("Firestore error during user creation:", permissionError.message);
     });
 
   } catch (error: any) {
