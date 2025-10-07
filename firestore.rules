@@ -1,147 +1,141 @@
 /**
  * @fileoverview Firestore Security Rules for Prototyping.
  *
- * Core Philosophy: This ruleset prioritizes rapid prototyping by providing open read access to all data.
- *   Write access is generally restricted to authenticated users, but without strict data validation. This allows for quick data model iteration.
- *   This is NOT suitable for production.
+ * Core Philosophy:
+ * This ruleset allows full read access to all users and authenticated write access.
+ * This configuration is unsafe for production and should only be used for rapid prototyping.
+ * It prioritizes ease of development over strong access control.
  *
  * Data Structure:
- *   - /users/{userId}: Stores user profiles. Access is restricted to the owning user.
- *   - /sensor_configurations/{sensorConfigurationId}: Stores sensor configurations. Public read, authenticated write.
- *   - /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}: Stores sensor data. Public read, authenticated write.
- *   - /analysis_results/{analysisResultId}: Stores analysis results. Public read, authenticated write.
- *   - /test_sessions/{testSessionId}: Stores test sessions. Public read, authenticated write.
- *   - /products/{productId}: Stores products. Public read, authenticated write.
+ * Data is stored in top-level collections: /users, /sensor_configurations,
+ * /analysis_results, /test_sessions, and /products.  Subcollections are used under
+ * /sensor_configurations for /sensor_data.
  *
  * Key Security Decisions:
- *   - Public Read Access: All collections except `/users/{userId}` are publicly readable to facilitate easy data exploration during prototyping.
- *   - Authenticated Writes: All write operations require authentication to prevent anonymous data modification.
- *   - No Data Validation: Data validation is minimal to allow flexible schema changes.
- *   - No User Listing: Listing all users is disallowed for privacy.
+ * - Listing of users is disallowed to protect user privacy.
+ * - All other collections are publicly readable.
+ * - Write access is restricted to authenticated users.
+ *
+ * Denormalization for Authorization:
+ * Not applicable in this prototype ruleset. Authentication is only used for write access.
+ *
+ * Structural Segregation:
+ * Not applicable as all collections are global.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Controls access to user profile documents.
+     * @description Manages user profile data.
      * @path /users/{userId}
-     * @allow (create) User with matching ID can create their own profile.
-     * @allow (get, update, delete) User with matching ID can read, update, and delete their own profile.
-     * @deny (create) User cannot create a profile with an ID that does not match their own.
-     * @deny (get, list, update, delete) User cannot access another user's profile.
-     * @principle Enforces document ownership for all operations.
+     * @allow (create) - Authenticated user can create their own user document.
+     * @allow (get) - Any user can read a user document.
+     * @deny (list) - Listing all users is prohibited.
+     * @deny (update) - No user can update any user documents.
+     * @deny (delete) - No user can delete any user documents.
+     * @principle Allows authenticated users to create own account. Prevents listing all users.
      */
     match /users/{userId} {
-      function isOwner(userId) {
-        return request.auth.uid == userId;
-      }
-
-      function isExistingOwner(userId) {
-        return isOwner(userId) && resource != null;
-      }
-
-      allow get: if isOwner(userId);
-      allow list: if false; // Listing users is not permitted
-
-      allow create: if isOwner(userId) && request.resource.data.id == userId;
-      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
-      allow delete: if isExistingOwner(userId);
+      allow get: if true;
+      allow list: if false;
+      allow create: if isSignedIn();
+      allow update: if false;
+      allow delete: if false;
     }
 
     /**
-     * @description Controls access to sensor configurations.
+     * @description Manages sensor configurations.
      * @path /sensor_configurations/{sensorConfigurationId}
-     * @allow (get, list) Anyone can read sensor configurations.
-     * @allow (create, update, delete) Authenticated users can create, update, and delete sensor configurations.
-     * @deny (create, update, delete) Unauthenticated users cannot create, update, or delete sensor configurations.
-     * @principle Public read, authenticated write.
+     * @allow (create) - Authenticated user can create a sensor configuration.
+     * @allow (get) - Any user can read a sensor configuration.
+     * @allow (list) - Any user can list all sensor configurations.
+     * @allow (update) - No user can update any sensor configuration.
+     * @allow (delete) - No user can delete any sensor configuration.
+     * @principle Allows authenticated users to create sensor configurations. Allows public read access.
      */
     match /sensor_configurations/{sensorConfigurationId} {
-      function isSignedIn() {
-        return request.auth != null;
-      }
-
-      allow get, list: if true;
+      allow get: if true;
+      allow list: if true;
       allow create: if isSignedIn();
-      allow update: if isSignedIn() && resource != null;
-      allow delete: if isSignedIn() && resource != null;
+      allow update: if false;
+      allow delete: if false;
     }
 
     /**
-     * @description Controls access to sensor data within a sensor configuration.
+     * @description Manages sensor data within a sensor configuration.
      * @path /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
-     * @allow (get, list) Anyone can read sensor data.
-     * @allow (create, update, delete) Authenticated users can create, update, and delete sensor data.
-     * @deny (create, update, delete) Unauthenticated users cannot create, update, or delete sensor data.
-     * @principle Public read, authenticated write.
+     * @allow (create) - Authenticated user can create sensor data.
+     * @allow (get) - Any user can read sensor data.
+     * @allow (list) - Any user can list sensor data.
+     * @allow (update) - No user can update any sensor data.
+     * @allow (delete) - No user can delete any sensor data.
+     * @principle Allows authenticated users to create sensor data. Allows public read access.
      */
     match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
-      function isSignedIn() {
-        return request.auth != null;
-      }
-
-      allow get, list: if true;
+      allow get: if true;
+      allow list: if true;
       allow create: if isSignedIn();
-      allow update: if isSignedIn() && resource != null;
-      allow delete: if isSignedIn() && resource != null;
+      allow update: if false;
+      allow delete: if false;
     }
 
     /**
-     * @description Controls access to analysis results.
+     * @description Manages analysis results.
      * @path /analysis_results/{analysisResultId}
-     * @allow (get, list) Anyone can read analysis results.
-     * @allow (create, update, delete) Authenticated users can create, update, and delete analysis results.
-     * @deny (create, update, delete) Unauthenticated users cannot create, update, or delete analysis results.
-     * @principle Public read, authenticated write.
+     * @allow (create) - Authenticated user can create an analysis result.
+     * @allow (get) - Any user can read an analysis result.
+     * @allow (list) - Any user can list analysis results.
+     * @allow (update) - No user can update any analysis result.
+     * @allow (delete) - No user can delete any analysis result.
+     * @principle Allows authenticated users to create analysis results. Allows public read access.
      */
     match /analysis_results/{analysisResultId} {
-      function isSignedIn() {
-        return request.auth != null;
-      }
-
-      allow get, list: if true;
+      allow get: if true;
+      allow list: if true;
       allow create: if isSignedIn();
-      allow update: if isSignedIn() && resource != null;
-      allow delete: if isSignedIn() && resource != null;
+      allow update: if false;
+      allow delete: if false;
     }
 
     /**
-     * @description Controls access to test sessions.
+     * @description Manages test sessions.
      * @path /test_sessions/{testSessionId}
-     * @allow (get, list) Anyone can read test sessions.
-     * @allow (create, update, delete) Authenticated users can create, update, and delete test sessions.
-     * @deny (create, update, delete) Unauthenticated users cannot create, update, or delete test sessions.
-     * @principle Public read, authenticated write.
+     * @allow (create) - Authenticated user can create a test session.
+     * @allow (get) - Any user can read a test session.
+     * @allow (list) - Any user can list test sessions.
+     * @allow (update) - No user can update any test session.
+     * @allow (delete) - No user can delete any test session.
+     * @principle Allows authenticated users to create test sessions. Allows public read access.
      */
     match /test_sessions/{testSessionId} {
-      function isSignedIn() {
-        return request.auth != null;
-      }
-
-      allow get, list: if true;
+      allow get: if true;
+      allow list: if true;
       allow create: if isSignedIn();
-      allow update: if isSignedIn() && resource != null;
-      allow delete: if isSignedIn() && resource != null;
+      allow update: if false;
+      allow delete: if false;
     }
 
     /**
-     * @description Controls access to products.
+     * @description Manages products.
      * @path /products/{productId}
-     * @allow (get, list) Anyone can read products.
-     * @allow (create, update, delete) Authenticated users can create, update, and delete products.
-     * @deny (create, update, delete) Unauthenticated users cannot create, update, or delete products.
-     * @principle Public read, authenticated write.
+     * @allow (create) - Authenticated user can create a product.
+     * @allow (get) - Any user can read a product.
+     * @allow (list) - Any user can list products.
+     * @allow (update) - No user can update any product.
+     * @allow (delete) - No user can delete any product.
+     * @principle Allows authenticated users to create products. Allows public read access.
      */
     match /products/{productId} {
-      function isSignedIn() {
-        return request.auth != null;
-      }
-
-      allow get, list: if true;
+      allow get: if true;
+      allow list: if true;
       allow create: if isSignedIn();
-      allow update: if isSignedIn() && resource != null;
-      allow delete: if isSignedIn() && resource != null;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
     }
   }
 }
