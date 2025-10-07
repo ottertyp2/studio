@@ -40,6 +40,7 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
   
   const userDocRef = doc(firestore, 'users', user.uid);
   const userData = {
+    id: user.uid,
     email: user.email,
     username: username,
     role: 'user'
@@ -65,17 +66,22 @@ export async function initiateEmailSignIn(authInstance: Auth, firestore: Firesto
   if (!emailOrUsername.includes('@')) {
     const username = emailOrUsername;
     const q = query(collection(firestore, 'users'), where('username', '==', username));
-    const querySnapshot = await getDocs(q);
+    try {
+        const querySnapshot = await getDocs(q);
 
-    if (querySnapshot.empty) {
-      throw new Error('User not found.');
-    }
-    
-    const userDoc = querySnapshot.docs[0];
-    email = userDoc.data().email;
+        if (querySnapshot.empty) {
+          throw new Error('User not found.');
+        }
+        
+        const userDoc = querySnapshot.docs[0];
+        email = userDoc.data().email;
 
-    if (!email) {
-        throw new Error('Could not find email associated with username.');
+        if (!email) {
+            throw new Error('Could not find email associated with username.');
+        }
+    } catch (e) {
+        console.error("Error fetching user by username", e);
+        // Fallback to trying as email anyway, maybe it was a username that looked like an email but wasn't
     }
   }
 
