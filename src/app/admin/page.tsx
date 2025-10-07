@@ -78,18 +78,17 @@ type TestSession = {
 };
 
 export default function AdminPage() {
-  
+  const router = useRouter();
+  const { toast } = useToast();
+
+  const { user, userRole, isUserLoading } = useUser();
+  const { firestore } = useFirebase();
+
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
   const [tempSensorConfig, setTempSensorConfig] = useState<Partial<SensorConfig> | null>(null);
   const [activeTestSessionId, setActiveTestSessionId] = useState<string | null>(null);
   const [tempTestSession, setTempTestSession] = useState<Partial<TestSession> | null>(null);
   const [sessionDataCounts, setSessionDataCounts] = useState<Record<string, number>>({});
-
-
-  const { toast } = useToast();
-  const { firestore } = useFirebase();
-  const router = useRouter();
-  const { user, userRole, isUserLoading } = useUser();
 
   useEffect(() => {
     if (!isUserLoading) {
@@ -101,7 +100,6 @@ export default function AdminPage() {
     }
   }, [user, userRole, isUserLoading, router]);
   
-  // --- Data Fetching Hooks ---
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
     return collection(firestore, `sensor_configurations`);
@@ -116,17 +114,15 @@ export default function AdminPage() {
 
   const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
   
-  // --- Effects ---
   const fetchSessionDataCounts = useCallback(async () => {
     if (!firestore || !testSessions || !sensorConfigs) return;
     
     const counts: Record<string, number> = {};
 
     for (const session of testSessions) {
-      // Find the config for the session to know where to look for data
       const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
       if (!config) {
-        counts[session.id] = 0; // If no config, assume no data
+        counts[session.id] = 0; 
         continue;
       };
 
@@ -137,8 +133,7 @@ export default function AdminPage() {
         counts[session.id] = snapshot.size;
       } catch (e) {
           console.error("Error fetching session data counts.", e);
-          counts[session.id] = 0; // Set to 0 on error
-          // Don't break the whole loop, just skip this one
+          counts[session.id] = 0;
       }
     }
     setSessionDataCounts(counts);
@@ -153,7 +148,6 @@ export default function AdminPage() {
 
 
   useEffect(() => {
-    // Reset selections on initial load
     setActiveSensorConfigId(null);
     setActiveTestSessionId(null);
     setTempSensorConfig(null);
@@ -248,7 +242,6 @@ export default function AdminPage() {
   const handleDeleteSensorConfig = async (configId: string) => {
     if (!firestore || !configId) return;
 
-    // First delete all sensor_data in the subcollection
     const sensorDataRef = collection(firestore, `sensor_configurations/${configId}/sensor_data`);
     const dataSnapshot = await getDocs(sensorDataRef);
     const batch = writeBatch(firestore);
@@ -256,7 +249,6 @@ export default function AdminPage() {
         batch.delete(doc.ref);
     });
 
-    // Then delete the main config document
     const configRef = doc(firestore, `sensor_configurations`, configId);
     batch.delete(configRef);
     
@@ -326,11 +318,9 @@ export default function AdminPage() {
     if (!firestore) return;
     const batch = writeBatch(firestore);
 
-    // Find the config for the session to know where to look for data
     const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
     let dataDeletedCount = 0;
 
-    // Only attempt to delete sensor data if a config exists
     if (config) {
         try {
             const sensorDataRef = collection(firestore, `sensor_configurations/${config.id}/sensor_data`);
@@ -346,7 +336,6 @@ export default function AdminPage() {
         }
     }
 
-    // Always delete the main session document
     const sessionRef = doc(firestore, `test_sessions`, session.id);
     batch.delete(sessionRef);
 
@@ -535,8 +524,12 @@ export default function AdminPage() {
     );
   }
 
-  if (isUserLoading || !user || userRole !== 'superadmin') {
+  if (isUserLoading) {
     return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+  }
+  
+  if (!user) {
+    return null;
   }
 
 
@@ -625,3 +618,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    

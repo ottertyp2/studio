@@ -94,6 +94,10 @@ type TestSession = {
 function TestingComponent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { toast } = useToast();
+  
+  const { user, userRole, isUserLoading } = useUser();
+  const { firestore, auth } = useFirebase();
 
   const preselectedSessionId = searchParams.get('sessionId');
 
@@ -112,10 +116,6 @@ function TestingComponent() {
   const [chartKey, setChartKey] = useState<number>(Date.now());
   
   const [isConnected, setIsConnected] = useState(false);
-  
-  const { toast } = useToast();
-  const { firestore, auth } = useFirebase();
-  const { user, userRole, isUserLoading } = useUser();
   
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
@@ -142,7 +142,7 @@ function TestingComponent() {
       activeSensorConfigId,
       testSessions: testSessions || [] as TestSession[]
   });
-
+  
   useEffect(() => {
     if (!isUserLoading && !user) {
       router.replace('/login');
@@ -201,15 +201,11 @@ function TestingComponent() {
   const sensorDataCollectionRef = useMemoFirebase(() => {
     if (!firestore || !sensorConfig.id) return null;
     
-    // Create a query on the subcollection
     let q = query(collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`));
 
-    // If there are selected sessions, filter by them
     if (selectedSessionIds.length > 0) {
-        // Firestore 'in' query is limited to 30 items, we'll cap it at 10 for safety
         q = query(q, where('testSessionId', 'in', selectedSessionIds.slice(0, 10)));
     } else {
-        // If no session is selected, don't fetch any data
         return null;
     }
     
@@ -229,11 +225,9 @@ function TestingComponent() {
     
     const { firestore: currentFirestore, activeSensorConfigId: currentSensorConfigId } = stateRef.current;
     
-    // Use a fresh check for the running session inside the callback
     const currentRunningSession = stateRef.current.testSessions.find(s => s.status === 'RUNNING');
     if (currentFirestore && currentRunningSession && currentSensorConfigId) {
         if (currentRunningSession.sensorConfigurationId === currentSensorConfigId) {
-            // Only save the data point if a measurement is active for the current sensor.
             const dataToSave = {...newDataPoint, testSessionId: currentRunningSession.id};
             if(sensorDataRef){
                  addDocumentNonBlocking(sensorDataRef, dataToSave);
@@ -302,10 +296,6 @@ function TestingComponent() {
         stopDemoMode();
       }
       
-      if (session?.measurementType === 'ARDUINO' && isConnected) {
-        await sendSerialCommand('p');
-      }
-  
       const sessionRef = doc(firestore, `test_sessions`, sessionId);
       await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
   
@@ -315,7 +305,7 @@ function TestingComponent() {
         }
       }
       toast({ title: 'Test Session Ended' });
-  }, [firestore, isConnected, selectedSessionIds, stopDemoMode, testSessionsCollectionRef, toast, sendSerialCommand]);
+  }, [firestore, selectedSessionIds, stopDemoMode, testSessionsCollectionRef, toast]);
 
   const disconnectSerial = useCallback(async () => {
     const { testSessions: currentTestSessions } = stateRef.current;
@@ -542,7 +532,6 @@ function TestingComponent() {
     let endIndex = chronologicalData.findIndex((d, i) => i > startIndex && (d.convertedValue as number) <= endThreshold);
 
     if (startIndex === -1) {
-        // Fallback for pressure increase scenarios
         startIndex = chronologicalData.findIndex(d => (d.convertedValue as number) >= startThreshold);
         endIndex = chronologicalData.findIndex((d, i) => i > startIndex && (d.convertedValue as number) >= endThreshold);
     }
@@ -926,12 +915,19 @@ function TestingComponent() {
     );
   }
   
-  if (isUserLoading || !user) {
+  if (isUserLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
         <p className="text-lg">Loading...</p>
       </div>
     );
+  }
+
+  if (!user) {
+    // This case should ideally be handled by the useEffect redirect,
+    // but as a fallback, we can render null or a loading state
+    // while the redirect is in flight.
+    return null;
   }
 
   return (
@@ -1211,3 +1207,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
