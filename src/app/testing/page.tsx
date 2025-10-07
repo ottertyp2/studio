@@ -491,45 +491,51 @@ function TestingComponent() {
     }
   }
 
+  const gaussianNoise = (mean = 0, std = 3) => {
+    const u1 = 1 - Math.random();
+    const u2 = Math.random();
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * std + mean;
+  };
 
   useEffect(() => {
     if (runningTestSession && runningTestSession.measurementType === 'DEMO' && !demoIntervalRef.current) {
-        let trend = 950;
         let step = 0;
-        const totalSteps = 120; // 60 seconds
+        const totalSteps = 240; // ~2 minutes of data
+        const startValue = 950;
+        const endValueLeak = 150;
+        const endValueDiffusion = 800;
+        
+        const noiseLevel = 3;
 
-        if (runningTestSession.demoType === 'LEAK') {
-            const leakRate = (800 - Math.random() * 200) / totalSteps; // Steadier drop
-            demoIntervalRef.current = setInterval(() => {
-                trend -= leakRate;
-                const noise = (Math.random() - 0.5) * 5; // Reduced noise
-                const value = Math.round(Math.max(0, Math.min(1023, trend + noise)));
+        demoIntervalRef.current = setInterval(() => {
+            let rawValue;
+            if (runningTestSession.demoType === 'LEAK') {
+                const dropPerStep = (startValue - endValueLeak) / totalSteps;
+                rawValue = startValue - (step * dropPerStep);
+            } else { // DIFFUSION
+                const tau = totalSteps / 5; // Time constant for decay
+                rawValue = endValueDiffusion + (startValue - endValueDiffusion) * Math.exp(-step / tau);
+            }
 
-                handleNewDataPoint({ timestamp: new Date().toISOString(), value: value });
-                step++;
-                if (step >= totalSteps) stopDemoMode();
-            }, 500);
+            const noisyValue = Math.min(1023, Math.max(0, Math.round(rawValue + gaussianNoise(0, noiseLevel))));
+            
+            handleNewDataPoint({ timestamp: new Date().toISOString(), value: noisyValue });
 
-        } else if (runningTestSession.demoType === 'DIFFUSION') {
-            const finalValue = 400 + Math.random() * 200;
-            demoIntervalRef.current = setInterval(() => {
-                // Smoother exponential decay towards the final value
-                const drop = (trend - finalValue) * 0.05;
-                trend -= drop;
-                const noise = (Math.random() - 0.5) * 10;
-                const value = Math.round(Math.max(0, Math.min(1023, trend + noise)));
-                
-                handleNewDataPoint({ timestamp: new Date().toISOString(), value: value });
-                step++;
-                if (step >= totalSteps) stopDemoMode();
-            }, 500);
-        }
+            step++;
+            if (step >= totalSteps) {
+                stopDemoMode();
+                if (runningTestSession) {
+                    handleStopTestSession(runningTestSession.id);
+                }
+            }
+        }, 500);
+
     } else if (!runningTestSession) {
         stopDemoMode();
     }
 
     return () => stopDemoMode();
-  }, [runningTestSession, handleNewDataPoint, stopDemoMode]);
+  }, [runningTestSession, handleNewDataPoint, stopDemoMode, handleStopTestSession]);
 
 
   const handleStartDemo = (demoType: 'LEAK' | 'DIFFUSION') => {
