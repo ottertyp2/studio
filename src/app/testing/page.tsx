@@ -159,6 +159,7 @@ function TestingComponent() {
   
   const [selectedAnalysisModelId, setSelectedAnalysisModelId] = useState<string | null>(null);
   const [aiAnalysisResult, setAiAnalysisResult] = useState<AiAnalysisResult | null>(null);
+  const [analysisRange, setAnalysisRange] = useState([0, 100]);
   
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
@@ -522,7 +523,7 @@ function TestingComponent() {
     }
   }
 
-  const gaussianNoise = (mean=0, std=1) => {
+  const gaussianNoise = (mean = 0, std = 1) => {
     let u = 0, v = 0;
     while(u === 0) u = Math.random();
     while(v === 0) v = Math.random();
@@ -600,8 +601,8 @@ function TestingComponent() {
           toast({ variant: 'destructive', title: 'No Model Selected', description: 'Please choose a model to run the analysis.' });
           return;
       }
-      if (dataLog.length < 20) {
-          toast({ variant: 'destructive', title: 'Not Enough Data', description: 'Need at least 20 data points for analysis.' });
+      if (dataLog.length < 2) {
+          toast({ variant: 'destructive', title: 'Not Enough Data', description: 'Need at least 2 data points for analysis.' });
           return;
       }
       setIsAnalyzing(true);
@@ -610,15 +611,19 @@ function TestingComponent() {
       try {
           const model = await tf.loadLayersModel(`indexeddb://${selectedAnalysisModelId}`);
 
-          // Take last 200 points, or all if less than 200
-          const dataForAnalysis = dataLog.slice(0, 200).map(d => d.value).reverse();
+          const analysisSegment = dataLog.slice(analysisRange[0], analysisRange[1]).map(d => d.value).reverse();
 
-          // Pad if less than 200
-          while (dataForAnalysis.length < 200) {
-              dataForAnalysis.unshift(dataForAnalysis[0]);
+          const requiredLength = 200; // The length the model was trained on
+          let dataForAnalysis = analysisSegment;
+          
+          if (dataForAnalysis.length > requiredLength) {
+            dataForAnalysis = dataForAnalysis.slice(dataForAnalysis.length - requiredLength);
+          } else if (dataForAnalysis.length < requiredLength) {
+            const padding = Array(requiredLength - dataForAnalysis.length).fill(dataForAnalysis[0] || 0);
+            dataForAnalysis = [...padding, ...dataForAnalysis];
           }
 
-          const inputTensor = tf.tensor2d(dataForAnalysis, [1, 200]);
+          const inputTensor = tf.tensor2d(dataForAnalysis, [1, requiredLength]);
 
           // Normalize the data (using a hardcoded mean/variance for now, ideally this comes from training)
           const { mean, variance } = tf.moments(inputTensor);
@@ -1210,20 +1215,39 @@ function TestingComponent() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div>
-                        <Label htmlFor="analysis-model-select">Select Model</Label>
-                        <Select onValueChange={setSelectedAnalysisModelId} value={selectedAnalysisModelId || ''}>
-                            <SelectTrigger id="analysis-model-select">
-                                <SelectValue placeholder="Select a trained model" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {isMlModelsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                                mlModels?.map(m => <SelectItem key={m.id} value={m.id}>{m.name} v{m.version}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <Label htmlFor="analysis-model-select">Select Model</Label>
+                            <Select onValueChange={setSelectedAnalysisModelId} value={selectedAnalysisModelId || ''}>
+                                <SelectTrigger id="analysis-model-select">
+                                    <SelectValue placeholder="Select a trained model" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {isMlModelsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                                    mlModels?.map(m => <SelectItem key={m.id} value={m.id}>{m.name} v{m.version}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className='space-y-2'>
+                           <Label>Select Data Range for Analysis</Label>
+                           <div className="p-2 border rounded-md">
+                                <Slider
+                                    value={analysisRange}
+                                    onValueChange={setAnalysisRange}
+                                    max={dataLog.length > 0 ? dataLog.length -1 : 1}
+                                    min={0}
+                                    step={1}
+                                    disabled={dataLog.length === 0}
+                                />
+                                <div className="flex justify-between text-xs text-muted-foreground mt-2">
+                                  <span>Start: {analysisRange[0]}</span>
+                                  <span>End: {analysisRange[1]}</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div className="flex gap-4 justify-center">
-                        <Button onClick={handleAiAnalysis} disabled={isAnalyzing || !selectedAnalysisModelId} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
+                        <Button onClick={handleAiAnalysis} disabled={isAnalyzing || !selectedAnalysisModelId || dataLog.length === 0} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
                             {isAnalyzing ? 'Analyzing...' : 'Analyze with AI'}
                         </Button>
                     </div>
@@ -1299,5 +1323,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
