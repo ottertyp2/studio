@@ -1,99 +1,165 @@
 /**
  * @fileoverview Firestore Security Rules for Prototyping.
  *
- * Core Philosophy:
- * This ruleset defaults to a public-access model, suitable for rapid prototyping and local testing, as per the `firestore.reasoning`.
- * All data is stored in global collections, removing any user-specific paths or ownership.
+ * Core Philosophy: This ruleset prioritizes ease of prototyping by focusing on basic authentication.
+ * It assumes a public-read, owner-write model for most collections, but will deny write permissions for TrainDataSet objects due to the risk associated with exposing training data.
  *
- * Data Structure:
- * The database consists of several top-level collections: `/users`, `/sensor_configurations`, `/analysis_results`, `/test_sessions`, and `/products`.
- * Sensor data is nested under sensor configurations: `/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}`
+ * Data Structure: Data is stored in top-level collections (e.g., /products/{productId}). There is no user-scoping.
  *
  * Key Security Decisions:
- * - User authentication and authorization are not enforced in this prototype.
- * - All collections are publicly readable.
- * - Write operations are NOT restricted by default, as the user requested less secure access for testing purposes.
+ * - Public Read: All collections are readable by anyone (signed in or not).
+ * - Owner-Only Writes: All collections (except trainDataSets) are writable only by authenticated users.
+ * - TrainDataSet Restricted Writes: Write operations are completely denied on the `trainDataSets` collection due to the risk of unauthorized data modification or access.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Rules for the /users collection. Allows anyone to read and write user data.
+     * @description Checks if the user is signed in.
+     * @example isSignedIn() == true if request.auth != null
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * @description Checks if the user is the owner of the document based on request.auth.uid
+     * @param {string} userId - The user ID to compare against the request's auth UID.
+     * @example isOwner("someUserId") == (request.auth.uid == "someUserId")
+     */
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    /**
+     * @description Checks if the user is the owner of the existing document.
+     * @param {string} userId - The user ID to compare against the resource's data.
+     * @example isExistingOwner("someUserId") == (isOwner("someUserId") && resource != null)
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+
+    /**
+     * @description Rules for user documents.
      * @path /users/{userId}
-     * @allow (get, list) Public read access to all users.
-     * @allow (create, update, delete) Unrestricted access for any authenticated user to modify any user data.
-     * @deny None. All authenticated users can perform all operations.
-     * @principle Open access for prototyping.
+     * @allow (create) Authenticated user can create their own user document.
+     * @allow (get, list)  Any user can read any user document.
+     * @deny (update) No one can update a user document via rules.
+     * @deny (delete) No one can delete a user document via rules.
+     * @principle Enforces user-ownership for document creation, no updates allowed.
      */
     match /users/{userId} {
       allow get, list: if true;
-      allow create, update, delete: if true;
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
+      allow delete: if false;
     }
 
     /**
-     * @description Rules for the /sensor_configurations/{sensorConfigurationId}/sensor_data subcollection. Allows anyone to read and write sensor data.
+     * @description Rules for sensor data subcollection.
      * @path /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
-     * @allow (get, list) Public read access to sensor data.
-     * @allow (create, update, delete) Unrestricted access for any authenticated user to modify sensor data.
-     * @deny None. All authenticated users can perform all operations.
-     * @principle Open access for prototyping.
+     * @allow (get, list) Any user can read sensor data.
+     * @allow (create) Authenticated user can create sensor data.
+     * @allow (update) Authenticated user can update sensor data.
+     * @allow (delete) Authenticated user can delete sensor data.
      */
     match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
       allow get, list: if true;
-      allow create, update, delete: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && resource != null;
+      allow delete: if isSignedIn() && resource != null;
     }
 
     /**
-     * @description Rules for the /sensor_configurations collection. Allows anyone to read and write sensor configurations.
+     * @description Rules for sensor configurations.
      * @path /sensor_configurations/{sensorConfigurationId}
-     * @allow (get, list) Public read access to sensor configurations.
-     * @allow (create, update, delete) Unrestricted access for any authenticated user to modify sensor configurations.
-     * @deny None. All authenticated users can perform all operations.
-     * @principle Open access for prototyping.
+     * @allow (get, list) Any user can read sensor configurations.
+     * @allow (create) Authenticated user can create sensor configurations.
+     * @allow (update) Authenticated user can update sensor configurations.
+     * @allow (delete) Authenticated user can delete sensor configurations.
      */
     match /sensor_configurations/{sensorConfigurationId} {
       allow get, list: if true;
-      allow create, update, delete: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && resource != null;
+      allow delete: if isSignedIn() && resource != null;
     }
 
     /**
-     * @description Rules for the /analysis_results collection. Allows anyone to read and write analysis results.
+     * @description Rules for analysis results.
      * @path /analysis_results/{analysisResultId}
-     * @allow (get, list) Public read access to analysis results.
-     * @allow (create, update, delete) Unrestricted access for any authenticated user to modify analysis results.
-     * @deny None. All authenticated users can perform all operations.
-     * @principle Open access for prototyping.
+     * @allow (get, list) Any user can read analysis results.
+     * @allow (create) Authenticated user can create analysis results.
+     * @allow (update) Authenticated user can update analysis results.
+     * @allow (delete) Authenticated user can delete analysis results.
      */
     match /analysis_results/{analysisResultId} {
       allow get, list: if true;
-      allow create, update, delete: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && resource != null;
+      allow delete: if isSignedIn() && resource != null;
     }
 
     /**
-     * @description Rules for the /test_sessions collection. Allows anyone to read and write test sessions.
+     * @description Rules for test sessions.
      * @path /test_sessions/{testSessionId}
-     * @allow (get, list) Public read access to test sessions.
-     * @allow (create, update, delete) Unrestricted access for any authenticated user to modify test sessions.
-     * @deny None. All authenticated users can perform all operations.
-     * @principle Open access for prototyping.
+     * @allow (get, list) Any user can read test sessions.
+     * @allow (create) Authenticated user can create test sessions.
+     * @allow (update) Authenticated user can update test sessions.
+     * @allow (delete) Authenticated user can delete test sessions.
      */
     match /test_sessions/{testSessionId} {
       allow get, list: if true;
-      allow create, update, delete: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && resource != null;
+      allow delete: if isSignedIn() && resource != null;
     }
 
     /**
-     * @description Rules for the /products collection. Allows anyone to read and write product data.
+     * @description Rules for products.
      * @path /products/{productId}
-     * @allow (get, list) Public read access to products.
-     * @allow (create, update, delete) Unrestricted access for any authenticated user to modify product data.
-     * @deny None. All authenticated users can perform all operations.
-     * @principle Open access for prototyping.
+     * @allow (get, list) Any user can read products.
+     * @allow (create) Authenticated user can create products.
+     * @allow (update) Authenticated user can update products.
+     * @allow (delete) Authenticated user can delete products.
      */
     match /products/{productId} {
       allow get, list: if true;
-      allow create, update, delete: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && resource != null;
+      allow delete: if isSignedIn() && resource != null;
+    }
+
+    /**
+     * @description Rules for ML models.
+     * @path /mlModels/{mlModelId}
+     * @allow (get, list) Any user can read ML models.
+     * @allow (create) Authenticated user can create ML models.
+     * @allow (update) Authenticated user can update ML models.
+     * @allow (delete) Authenticated user can delete ML models.
+     */
+    match /mlModels/{mlModelId} {
+      allow get, list: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && resource != null;
+      allow delete: if isSignedIn() && resource != null;
+    }
+
+    /**
+     * @description Rules for training datasets.
+     * @path /trainDataSets/{trainDataSetId}
+     * @allow (get, list) Any user can read training datasets.
+     * @deny (create) No one can create training datasets.
+     * @deny (update) No one can update training datasets.
+     * @deny (delete) No one can delete training datasets.
+     */
+    match /trainDataSets/{trainDataSetId} {
+      allow get, list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
     }
   }
 }
