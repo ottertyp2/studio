@@ -502,7 +502,7 @@ export default function AdminPage() {
   };
 
   const handleAddMlModel = () => {
-    if (!firestore || !newMlModel.name?.trim() || !newMlModel.version?.trim()) {
+    if (!firestore || !newMlModel.name?.trim() || !newMlModel.version?.trim() || !mlModelsCollectionRef) {
         toast({variant: 'destructive', title: 'Error', description: 'Model name and version are required.'});
         return;
     }
@@ -512,9 +512,9 @@ export default function AdminPage() {
         name: newMlModel.name,
         version: newMlModel.version,
         description: newMlModel.description || '',
-        fileSize: 0 // Will be updated on save
+        fileSize: 0
     };
-    addDocumentNonBlocking(mlModelsCollectionRef!, docToSave);
+    addDocumentNonBlocking(mlModelsCollectionRef, docToSave);
     toast({title: 'Model Added', description: `Added "${docToSave.name} v${docToSave.version}" to the catalog.`});
     setNewMlModel({name: '', version: '1.0', description: '', fileSize: 0});
   };
@@ -526,7 +526,7 @@ export default function AdminPage() {
   };
 
   const handleAddTrainDataSet = () => {
-    if (!firestore || !newTrainDataSet.name?.trim()) {
+    if (!firestore || !newTrainDataSet.name?.trim() || !trainDataSetsCollectionRef) {
       toast({variant: 'destructive', title: 'Error', description: 'Dataset name is required.'});
       return;
     }
@@ -537,7 +537,7 @@ export default function AdminPage() {
       description: newTrainDataSet.description || '',
       storagePath: newTrainDataSet.storagePath || ''
     };
-    addDocumentNonBlocking(trainDataSetsCollectionRef!, docToSave);
+    addDocumentNonBlocking(trainDataSetsCollectionRef, docToSave);
     toast({title: 'Training Set Added', description: `Added "${docToSave.name}" to the catalog.`});
     setNewTrainDataSet({name: '', description: '', storagePath: ''});
   };
@@ -618,8 +618,11 @@ export default function AdminPage() {
         toast({ title: 'Training Complete!', description: 'Model has been trained in the browser.' });
 
         // 5. Save model (IndexedDB)
-        await model.save(`indexeddb://${selectedModelId || 'my-leak-model'}`);
-        toast({ title: 'Model Saved', description: `Model saved locally as "${selectedModelId || 'my-leak-model'}"` });
+        if (selectedModelId) {
+          await model.save(`indexeddb://${selectedModelId}`);
+          toast({ title: 'Model Saved', description: `Model saved locally as "${selectedModelId}"` });
+        }
+
 
     } catch (e: any) {
         console.error("Training failed:", e);
@@ -1011,7 +1014,10 @@ export default function AdminPage() {
                      testSessions?.filter(s => s.demoType).map(d => <SelectItem key={d.id} value={d.id}>{d.productName} ({d.demoType})</SelectItem>)}
                   </SelectContent>
                 </Select>
-                 <Button variant="link" size="sm" className="pl-0" onClick={() => trainingDataUploaderRef.current?.click()}>
+                 <p className="text-xs text-muted-foreground mt-1">
+                  Generate training data sets on the <a href="/testing" className="underline text-primary">Testing</a> page via the "Start Demo" button.
+                </p>
+                <Button variant="link" size="sm" className="pl-0" onClick={() => trainingDataUploaderRef.current?.click()}>
                   Or upload new CSV...
                 </Button>
                 <input type="file" ref={trainingDataUploaderRef} accept=".csv" className="hidden" onChange={e => setTrainingDataFile(e.target.files?.[0] || null)} />
@@ -1150,7 +1156,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-    
-
-    
