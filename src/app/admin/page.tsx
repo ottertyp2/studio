@@ -953,8 +953,8 @@ export default function AdminPage() {
             <div>
                 <CardTitle className="text-lg mb-2">Model Catalog</CardTitle>
                 <div className="flex gap-2 mb-4">
-                    <Input placeholder="New model name..." value={newMlModel.name} onChange={(e) => setNewMlModel(p => ({...p, name: e.target.value}))} />
-                    <Input placeholder="Version (e.g., 1.0)" value={newMlModel.version} onChange={(e) => setNewMlModel(p => ({...p, version: e.target.value}))} />
+                    <Input placeholder="New model name..." value={newMlModel.name || ''} onChange={(e) => setNewMlModel(p => ({...p, name: e.target.value}))} />
+                    <Input placeholder="Version (e.g., 1.0)" value={newMlModel.version || ''} onChange={(e) => setNewMlModel(p => ({...p, version: e.target.value}))} />
                     <Button onClick={handleAddMlModel}><PackagePlus className="h-4 w-4" /></Button>
                 </div>
                 <ScrollArea className="h-48 border rounded-md p-2">
@@ -972,7 +972,7 @@ export default function AdminPage() {
             <div>
                 <CardTitle className="text-lg mb-2">Training Datasets</CardTitle>
                 <div className="flex gap-2 mb-4">
-                    <Input placeholder="New dataset name..." value={newTrainDataSet.name} onChange={(e) => setNewTrainDataSet(p => ({...p, name: e.target.value}))} />
+                    <Input placeholder="New dataset name..." value={newTrainDataSet.name || ''} onChange={(e) => setNewTrainDataSet(p => ({...p, name: e.target.value}))} />
                     <Button onClick={handleAddTrainDataSet}><PackagePlus className="h-4 w-4" /></Button>
                 </div>
                  <ScrollArea className="h-48 border rounded-md p-2">
@@ -995,7 +995,7 @@ export default function AdminPage() {
                 <Label htmlFor="model-select">Select Model</Label>
                 <Select onValueChange={setSelectedModelId} value={selectedModelId || ''}>
                   <SelectTrigger id="model-select">
-                    <SelectValue placeholder="Select a model" />
+                    <SelectValue placeholder="Select a model to train/update" />
                   </SelectTrigger>
                   <SelectContent>
                     {isMlModelsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
@@ -1156,3 +1156,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    
