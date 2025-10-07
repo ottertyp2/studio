@@ -649,6 +649,7 @@ function TestingComponent() {
 
 
   const handleResetZoom = () => {
+    setSelectedSessionIds([]);
     setChartKey(Date.now());
   }
   
@@ -840,11 +841,11 @@ function TestingComponent() {
 
     if (chartInterval !== 'all') {
         const intervalSeconds = parseInt(chartInterval, 10);
-        const now = Date.now();
         if (runningTestSession) { // Live data filtering
+             const now = Date.now();
              mappedData = mappedData.filter(dp => dp.name >= 0 && ((now - (startTime + dp.name * 1000)) / 1000 <= intervalSeconds));
         } else { // Historical data filtering
-            mappedData = mappedData.filter(dp => dp.name <= intervalSeconds);
+            mappedData = mappedData.filter(dp => dp.name >= 0 && dp.name <= intervalSeconds);
         }
     }
     
