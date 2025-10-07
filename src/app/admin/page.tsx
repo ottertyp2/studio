@@ -645,7 +645,6 @@ export default function AdminPage() {
 
   const gaussianNoise = (mean = 0, std = 1) => {
     let u1 = 0, u2 = 0;
-    //Convert [0,1) to (0,1)
     while (u1 === 0) u1 = Math.random();
     while (u2 === 0) u2 = Math.random();
     const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
@@ -688,15 +687,18 @@ export default function AdminPage() {
       const features = [...leakData, ...diffusionData];
       const labels = [...Array(leakData.length).fill(1), ...Array(diffusionData.length).fill(0)];
       
-      const shuffledIndices = tf.util.createShuffledIndices(features.length);
-      const shuffledFeatures = tf.gather(features, shuffledIndices);
-      const shuffledLabels = tf.gather(labels, shuffledIndices);
+      const indices = tf.util.createShuffledIndices(features.length);
+      const shuffledIndices = tf.tensor1d(indices, 'int32');
 
-      const inputTensor = tf.tensor2d(shuffledFeatures.arraySync(), [features.length, 1]);
-      const labelTensor = tf.tensor2d(shuffledLabels.arraySync(), [labels.length, 1]);
+      const inputTensor = tf.tensor2d(features, [features.length, 1]);
+      const labelTensor = tf.tensor2d(labels, [labels.length, 1]);
+      
+      const shuffledFeatures = tf.gather(inputTensor, shuffledIndices);
+      const shuffledLabels = tf.gather(labelTensor, shuffledIndices);
 
-      const { mean, variance } = tf.moments(inputTensor);
-      const normalizedInput = inputTensor.sub(mean).div(variance.sqrt());
+
+      const { mean, variance } = tf.moments(shuffledFeatures);
+      const normalizedInput = shuffledFeatures.sub(mean).div(variance.sqrt());
 
       setAutoTrainingStatus({ step: 'Model Training', progress: 50, details: 'Compiling model...' });
       
@@ -712,7 +714,7 @@ export default function AdminPage() {
       });
       
       let finalAccuracy = 0;
-      await model.fit(normalizedInput, labelTensor, {
+      await model.fit(normalizedInput, shuffledLabels, {
           epochs: 25,
           batchSize: 64,
           callbacks: {
@@ -1314,3 +1316,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    
