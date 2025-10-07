@@ -1,29 +1,38 @@
 'use client';
 import {
-  Auth, // Import Auth type for type hinting
+  Auth, 
   signInAnonymously,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  // Assume getAuth and app are initialized elsewhere
+  signOut as firebaseSignOut,
+  User,
 } from 'firebase/auth';
-
-/** Initiate anonymous sign-in (non-blocking). */
-export function initiateAnonymousSignIn(authInstance: Auth): void {
-  // CRITICAL: Call signInAnonymously directly. Do NOT use 'await signInAnonymously(...)'.
-  signInAnonymously(authInstance);
-  // Code continues immediately. Auth state change is handled by onAuthStateChanged listener.
-}
+import { doc, setDoc, Firestore } from 'firebase/firestore';
 
 /** Initiate email/password sign-up (non-blocking). */
-export function initiateEmailSignUp(authInstance: Auth, email: string, password: string): void {
-  // CRITICAL: Call createUserWithEmailAndPassword directly. Do NOT use 'await createUserWithEmailAndPassword(...)'.
-  createUserWithEmailAndPassword(authInstance, email, password);
-  // Code continues immediately. Auth state change is handled by onAuthStateChanged listener.
+export function initiateEmailSignUp(authInstance: Auth, firestore: Firestore, email: string, password: string): void {
+  createUserWithEmailAndPassword(authInstance, email, password)
+    .then(userCredential => {
+      // Create user document in Firestore
+      const user = userCredential.user;
+      const userDocRef = doc(firestore, 'users', user.uid);
+      setDoc(userDocRef, {
+        email: user.email,
+        role: 'user' // Default role
+      });
+    })
+    .catch(error => {
+      // Let onAuthStateChanged handle the error state if needed
+      console.error("Sign up error:", error);
+    });
 }
 
 /** Initiate email/password sign-in (non-blocking). */
 export function initiateEmailSignIn(authInstance: Auth, email: string, password: string): void {
-  // CRITICAL: Call signInWithEmailAndPassword directly. Do NOT use 'await signInWithEmailAndPassword(...)'.
   signInWithEmailAndPassword(authInstance, email, password);
-  // Code continues immediately. Auth state change is handled by onAuthStateChanged listener.
+}
+
+/** Initiate sign out (non-blocking). */
+export function signOut(authInstance: Auth): void {
+  firebaseSignOut(authInstance);
 }

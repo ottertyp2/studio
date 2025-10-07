@@ -41,7 +41,7 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { FlaskConical } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
+import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc } from 'firebase/firestore';
 
 
@@ -88,6 +88,17 @@ export default function AdminPage() {
   const { toast } = useToast();
   const { firestore } = useFirebase();
   const router = useRouter();
+  const { user, userRole, isUserLoading } = useUser();
+
+  useEffect(() => {
+    if (!isUserLoading) {
+      if (!user) {
+        router.replace('/login');
+      } else if (userRole !== 'superadmin') {
+        router.replace('/testing');
+      }
+    }
+  }, [user, userRole, isUserLoading, router]);
   
   // --- Data Fetching Hooks ---
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
@@ -497,14 +508,14 @@ export default function AdminPage() {
                                     </AlertDialogTrigger>
                                     <AlertDialogContent>
                                         <AlertDialogHeader>
-                                            <AlertDialogTitle>Permanently Delete Session?</AlertDialogTitle>
+                                            <AlertDialogTitle className="text-destructive">Permanently Delete Session?</AlertDialogTitle>
                                             <AlertDialogDescription>
                                                 This will permanently delete the session for "{session.productIdentifier}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
                                             </AlertDialogDescription>
                                         </AlertDialogHeader>
                                         <AlertDialogFooter>
                                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => handleDeleteTestSession(session)}>Confirm Delete</AlertDialogAction>
+                                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteTestSession(session)}>Confirm Delete</AlertDialogAction>
                                         </AlertDialogFooter>
                                     </AlertDialogContent>
                                 </AlertDialog>
@@ -522,6 +533,11 @@ export default function AdminPage() {
       </Card>
     );
   }
+
+  if (isUserLoading || !user || userRole !== 'superadmin') {
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+  }
+
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
@@ -577,14 +593,14 @@ export default function AdminPage() {
                                                       </AlertDialogTrigger>
                                                       <AlertDialogContent>
                                                       <AlertDialogHeader>
-                                                          <AlertDialogTitle>Permanently Delete Configuration?</AlertDialogTitle>
+                                                          <AlertDialogTitle className="text-destructive">Permanently Delete Configuration?</AlertDialogTitle>
                                                           <AlertDialogDescription>
                                                           Are you sure you want to delete the configuration "{c.name}"? This will also delete all associated sensor data. This action cannot be undone.
                                                           </AlertDialogDescription>
                                                       </AlertDialogHeader>
                                                       <AlertDialogFooter>
                                                           <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                          <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
+                                                          <AlertDialogAction variant="destructive" onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
                                                       </AlertDialogFooter>
                                                       </AlertDialogContent>
                                                   </AlertDialog>

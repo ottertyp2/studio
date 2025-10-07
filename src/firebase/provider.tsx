@@ -2,7 +2,7 @@
 
 import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect } from 'react';
 import { FirebaseApp } from 'firebase/app';
-import { Firestore } from 'firebase/firestore';
+import { Firestore, doc, getDoc } from 'firebase/firestore';
 import { Auth, User, onAuthStateChanged } from 'firebase/auth';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener'
 
@@ -110,34 +110,48 @@ export function useMemoFirebase<T>(factory: () => T, deps: DependencyList): T | 
   return memoized;
 }
 
-// Stub useUser hook for compatibility, it will not be used in this version.
 export interface UserHookResult {
   user: User | null;
+  userRole: string | null;
   isUserLoading: boolean;
   userError: Error | null;
 }
 
 export const useUser = (): UserHookResult => {
-  const auth = useAuth();
-  const [user, setUser] = useState<User | null>(auth.currentUser);
+  const { auth, firestore } = useFirebase();
+  const [user, setUser] = useState<User | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [isUserLoading, setIsUserLoading] = useState(true);
   const [userError, setUserError] = useState<Error | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth,
-      (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
         setUser(user);
-        setIsUserLoading(false);
-      },
-      (error) => {
-        setUserError(error);
-        setIsUserLoading(false);
+        try {
+          const userDocRef = doc(firestore, 'users', user.uid);
+          const userDoc = await getDoc(userDocRef);
+          if (userDoc.exists()) {
+            setUserRole(userDoc.data()?.role || 'user');
+          } else {
+            setUserRole('user'); // Default role if doc doesn't exist
+          }
+        } catch (e) {
+          setUserError(e as Error);
+          setUserRole('user'); // Default role on error
+        }
+      } else {
+        setUser(null);
+        setUserRole(null);
       }
-    );
+      setIsUserLoading(false);
+    }, (error) => {
+      setUserError(error);
+      setIsUserLoading(false);
+    });
 
     return () => unsubscribe();
-  }, [auth]);
+  }, [auth, firestore]);
 
-
-  return { user, isUserLoading, userError };
+  return { user, userRole, isUserLoading, userError };
 };
