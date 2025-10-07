@@ -1,120 +1,104 @@
 /**
- * @fileoverview Firestore Security Rules for the "studio" application.
+ * @fileoverview Firestore Security Rules for the application.
  *
  * Core Philosophy:
- * This ruleset enforces a public-read, owner-write security model with NO user authentication or authorization.
- * This is suitable for local testing or a fully public dashboard.
+ * This ruleset prioritizes strong authorization while relaxing data shape constraints for rapid prototyping.
+ * It enforces strict access control based on user identity for user-specific data and allows public read access for other collections.
+ * Write access to non-user collections is generally denied, promoting a read-only data model for prototyping.
  *
  * Data Structure:
- * - /users/{userId}: Stores user profile information (username, email, role). Accessible to any signed-in user with matching id.
- * - /sensor_configurations/{sensorConfigurationId}: Stores sensor configurations. Public read, no write restrictions.
- * - /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}: Stores sensor data points. Public read, no write restrictions.
- * - /analysis_results/{analysisResultId}: Stores leak analysis results. Public read, no write restrictions.
- * - /test_sessions/{testSessionId}: Stores all test sessions. Public read, no write restrictions.
+ * - /users/{userId}: Stores user profile information; only accessible by the owning user.
+ * - /sensor_configurations/{sensorConfigurationId}: Stores sensor configurations; publicly readable, write access restricted.
+ * - /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}: Stores sensor data; publicly readable, write access restricted.
+ * - /analysis_results/{analysisResultId}: Stores analysis results; publicly readable, write access restricted.
+ * - /test_sessions/{testSessionId}: Stores test sessions; publicly readable, write access restricted.
  *
  * Key Security Decisions:
- * - No user listing is allowed.
- * - All writes (create, update, delete) are completely disallowed.
- * - All reads (get, list) are public.
+ * - Users can only create and modify their own user documents.
+ * - Listing of users is disallowed.
+ * - Other collections are publicly readable to facilitate prototyping, but write access is restricted to prevent unauthorized modifications.
+ *
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Controls access to user profile documents.
+     * @description Allows a user to read and write their own user document.
      * @path /users/{userId}
-     * @allow (create) Signed-in user can create their own profile document if the UID matches the document ID.
-     * @allow (get) Public read.
-     * @allow (list) Not allowed.
-     * @allow (update) Not allowed.
-     * @allow (delete) Not allowed.
-     * @deny (create) If the user is not signed in.
-     * @deny (create) If the user ID does not match the document ID.
-     * @deny (update) If the user is not the owner.
-     * @deny (delete) If the user is not the owner.
-     * @principle Enforces document ownership for writes; public read access.
+     * @allow (create) User with matching userId can create their profile.
+     * @deny (create) User attempts to create another user's profile.
+     * @allow (get, list) User can read their own profile.
+     * @deny (get, list) User attempts to read another user's profile.
+     * @allow (update, delete) User can update/delete their own profile.
+     * @deny (update, delete) User attempts to update/delete another user's profile or a non-existing profile.
+     * @principle Enforces document ownership for all operations.
      */
     match /users/{userId} {
-      allow get: if true;
+      //Verfiy that the user is signed in
+      function isSignedIn() {
+        return request.auth != null;
+      }
+      //Verify that the userId from the document path, matches the user id from firebase Auth
+      function isOwner(userId) {
+        return request.auth.uid == userId;
+      }
+
+      function isExistingOwner(userId) {
+          return isOwner(userId) && resource != null;
+      }
+      allow get: if isOwner(userId);
       allow list: if false;
-
-      allow create: if request.auth != null && request.auth.uid == userId;
-
-      allow update: if request.auth != null && request.auth.uid == userId;
-      allow delete: if request.auth != null && request.auth.uid == userId;
+      allow create: if isSignedIn() && isOwner(userId) && request.resource.data.id == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
+      allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Controls access to sensor data documents within a sensor configuration.
+     * @description Allows anyone to read sensor data, but restricts write access.
      * @path /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
-     * @allow (get) Public read.
-     * @allow (list) Public read.
-     * @allow (create) Not allowed.
-     * @allow (update) Not allowed.
-     * @allow (delete) Not allowed.
-     * @principle Public read, no write permissions.
+     * @allow (get, list) Any user can read sensor data.
+     * @deny (create, update, delete) No user can create, update, or delete sensor data.
+     * @principle Allows public read access for prototyping.
      */
     match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
-      allow get: if true;
-      allow list: if true;
-      allow create: if false;
-      allow update: if false;
-      allow delete: if false;
+      allow get, list: if true;
+      allow create, update, delete: if false;
     }
 
     /**
-     * @description Controls access to sensor configuration documents.
+     * @description Allows anyone to read sensor configurations, but restricts write access.
      * @path /sensor_configurations/{sensorConfigurationId}
-     * @allow (get) Public read.
-     * @allow (list) Public read.
-     * @allow (create) Not allowed.
-     * @allow (update) Not allowed.
-     * @allow (delete) Not allowed.
-     * @principle Public read, no write permissions.
+     * @allow (get, list) Any user can read sensor configurations.
+     * @deny (create, update, delete) No user can create, update, or delete sensor configurations.
+     * @principle Allows public read access for prototyping.
      */
     match /sensor_configurations/{sensorConfigurationId} {
-      allow get: if true;
-      allow list: if true;
-      allow create: if false;
-      allow update: if false;
-      allow delete: if false;
+      allow get, list: if true;
+      allow create, update, delete: if false;
     }
 
     /**
-     * @description Controls access to analysis result documents.
+     * @description Allows anyone to read analysis results, but restricts write access.
      * @path /analysis_results/{analysisResultId}
-     * @allow (get) Public read.
-     * @allow (list) Public read.
-     * @allow (create) Not allowed.
-     * @allow (update) Not allowed.
-     * @allow (delete) Not allowed.
-     * @principle Public read, no write permissions.
+     * @allow (get, list) Any user can read analysis results.
+     * @deny (create, update, delete) No user can create, update, or delete analysis results.
+     * @principle Allows public read access for prototyping.
      */
     match /analysis_results/{analysisResultId} {
-      allow get: if true;
-      allow list: if true;
-      allow create: if false;
-      allow update: if false;
-      allow delete: if false;
+      allow get, list: if true;
+      allow create, update, delete: if false;
     }
-
     /**
-     * @description Controls access to test session documents.
+     * @description Allows anyone to read test sessions, but restricts write access.
      * @path /test_sessions/{testSessionId}
-     * @allow (get) Public read.
-     * @allow (list) Public read.
-     * @allow (create) Not allowed.
-     * @allow (update) Not allowed.
-     * @allow (delete) Not allowed.
-     * @principle Public read, no write permissions.
+     * @allow (get, list) Any user can read test sessions.
+     * @deny (create, update, delete) No user can create, update, or delete test sessions.
+     * @principle Allows public read access for prototyping.
      */
     match /test_sessions/{testSessionId} {
-      allow get: if true;
-      allow list: if true;
-      allow create: if false;
-      allow update: if false;
-      allow delete: if false;
+        allow get, list: if true;
+        allow create, update, delete: if false;
     }
   }
 }
