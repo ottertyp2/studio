@@ -52,7 +52,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Cog, LogOut, X as XIcon } from 'lucide-react';
+import { Cog, LogOut, X as XIcon, UserPlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
@@ -943,10 +943,15 @@ function TestingComponent() {
                 BioThrust Live Dashboard
                 </CardTitle>
                  <div className="flex items-center gap-2">
-                    {userRole === 'superadmin' && (
+                    {userRole === 'superadmin' ? (
                         <Button onClick={() => router.push('/admin')} variant="outline">
                             <Cog className="h-4 w-4 mr-2" />
                             Manage
+                        </Button>
+                    ) : (
+                       <Button onClick={() => router.push('/promote')} variant="outline">
+                            <UserPlus className="h-4 w-4 mr-2" />
+                            Promote to Admin
                         </Button>
                     )}
                     <Button onClick={handleSignOut} variant="ghost">
@@ -1216,3 +1221,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
