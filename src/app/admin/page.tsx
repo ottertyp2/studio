@@ -414,13 +414,13 @@ export default function AdminPage() {
     }
   };
 
-  const handleDeleteUser = async (userIdToDelete: string) => {
+  const handleDeleteUserProfile = async (userIdToDelete: string) => {
     if (!firestore || !user) return;
     if (userIdToDelete === user.uid) {
       toast({
         variant: 'destructive',
         title: 'Action Prohibited',
-        description: "You cannot delete your own account.",
+        description: "You cannot delete your own account profile.",
       });
       return;
     }
@@ -428,13 +428,13 @@ export default function AdminPage() {
     try {
       await deleteDoc(userDocRef);
       toast({
-        title: 'User Deleted',
+        title: 'User Profile Deleted',
         description: `The user's profile data has been deleted. Their auth account still exists.`,
       });
     } catch (error: any) {
       toast({
         variant: 'destructive',
-        title: 'Error Deleting User',
+        title: 'Error Deleting User Profile',
         description: error.message,
       });
     }
@@ -681,18 +681,18 @@ export default function AdminPage() {
                                         <TableCell className="text-right">
                                             <AlertDialog>
                                                 <AlertDialogTrigger asChild>
-                                                    <Button variant="ghost" size="sm" disabled={u.id === user?.uid}>Delete</Button>
+                                                    <Button variant="ghost" size="sm" disabled={u.id === user?.uid}>Delete Profile</Button>
                                                 </AlertDialogTrigger>
                                                 <AlertDialogContent>
                                                     <AlertDialogHeader>
                                                         <AlertDialogTitle className="text-destructive">Delete User Profile?</AlertDialogTitle>
                                                         <AlertDialogDescription>
-                                                            This will delete the Firestore profile for "{u.username}". The user's auth account will remain. This action cannot be undone.
+                                                            This will delete the Firestore profile data for "{u.username}". The user's authentication account will remain, and they will still be able to log in. This action cannot be undone.
                                                         </AlertDialogDescription>
                                                     </AlertDialogHeader>
                                                     <AlertDialogFooter>
                                                         <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                        <AlertDialogAction variant="destructive" onClick={() => handleDeleteUser(u.id)}>Confirm Delete</AlertDialogAction>
+                                                        <AlertDialogAction variant="destructive" onClick={() => handleDeleteUserProfile(u.id)}>Confirm Delete</AlertDialogAction>
                                                     </AlertDialogFooter>
                                                 </AlertDialogContent>
                                             </AlertDialog>
@@ -860,3 +860,5 @@ export default function AdminPage() {
   );
 }
 
+
+    
