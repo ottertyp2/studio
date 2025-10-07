@@ -3,7 +3,7 @@
 
 import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect } from 'react';
 import { FirebaseApp } from 'firebase/app';
-import { Firestore, doc, getDoc } from 'firebase/firestore';
+import { Firestore, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { Auth, User, onAuthStateChanged } from 'firebase/auth';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener'
 import { FirestorePermissionError } from './errors';
@@ -122,37 +122,19 @@ export interface UserHookResult {
 
 export const useUser = (): UserHookResult => {
   const { auth, firestore } = useFirebase();
-  const [user, setUser] = useState<User | null | undefined>(undefined); // Start as undefined
+  const [user, setUser] = useState<User | null | undefined>(undefined);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isUserLoading, setIsUserLoading] = useState(true);
   const [userError, setUserError] = useState<Error | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
-      if (authUser) {
-        setUser(authUser);
-        try {
-          const userDocRef = doc(firestore, 'users', authUser.uid);
-          const userDoc = await getDoc(userDocRef);
-          if (userDoc.exists()) {
-            setUserRole(userDoc.data()?.role || 'user');
-          } else {
-            setUserRole('user');
-          }
-        } catch (e) {
-          const permissionError = new FirestorePermissionError({
-            path: `users/${authUser.uid}`,
-            operation: 'get',
-          });
-          errorEmitter.emit('permission-error', permissionError);
-          setUserError(permissionError);
-          setUserRole('user'); // Default role on error
-        }
-      } else {
-        setUser(null);
+    const authUnsubscribe = onAuthStateChanged(auth, (authUser) => {
+      setUser(authUser);
+      if (!authUser) {
+        // If user logs out, clear role and stop loading.
         setUserRole(null);
+        setIsUserLoading(false);
       }
-      setIsUserLoading(false);
     }, (error) => {
       console.error("Auth state change error:", error);
       setUserError(error);
@@ -161,8 +143,41 @@ export const useUser = (): UserHookResult => {
       setIsUserLoading(false);
     });
 
-    return () => unsubscribe();
-  }, [auth, firestore]);
+    return () => authUnsubscribe();
+  }, [auth]);
+
+  useEffect(() => {
+    if (user === undefined) return; // Still waiting on auth state
+
+    if (user === null) {
+      // User is logged out, already handled by auth listener
+      return;
+    }
+
+    // User is logged in, listen to their document.
+    const userDocRef = doc(firestore, 'users', user.uid);
+    const docUnsubscribe = onSnapshot(userDocRef, (doc) => {
+      if (doc.exists()) {
+        setUserRole(doc.data()?.role || 'user');
+      } else {
+        // This case can happen briefly during signup before the user doc is created.
+        // We can default to 'user' or wait. Defaulting is often fine.
+        setUserRole('user');
+      }
+      setIsUserLoading(false); // Stop loading once we have role info (or lack thereof)
+    }, (error) => {
+        const permissionError = new FirestorePermissionError({
+            path: `users/${user.uid}`,
+            operation: 'get',
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        setUserError(permissionError);
+        setUserRole('user'); // Default role on error
+        setIsUserLoading(false);
+    });
+
+    return () => docUnsubscribe();
+  }, [user, firestore]);
 
   return { user, userRole, isUserLoading, userError };
 };
