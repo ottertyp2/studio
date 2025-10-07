@@ -43,6 +43,7 @@ export default function LoginPage() {
         title: 'Sign In Successful',
         description: "You are now being redirected.",
       });
+      // The onAuthStateChanged listener in useUser will handle the redirect
       router.push('/');
     } catch (error: any) {
       console.error(error);

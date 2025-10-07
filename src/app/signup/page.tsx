@@ -38,13 +38,16 @@ export default function SignupPage() {
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setIsLoading(true);
     try {
+      // The function is fire-and-forget for Firestore, but we await the auth part
       await initiateEmailSignUp(auth, firestore, values.email, values.password);
       toast({
         title: 'Account Created',
         description: "You've been signed in and are being redirected.",
       });
+      // The onAuthStateChanged listener in useUser will handle the redirect
       router.push('/');
     } catch (error: any) {
+      // This will catch auth errors from createUserWithEmailAndPassword
       console.error(error);
       toast({
         variant: 'destructive',
