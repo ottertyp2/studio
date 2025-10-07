@@ -37,13 +37,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
-import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { signOut } from '@/firebase/non-blocking-login';
 
 
@@ -56,6 +62,13 @@ type SensorConfig = {
     max: number;
     arduinoVoltage: number;
     decimalPlaces: number;
+};
+
+type AppUser = {
+    id: string;
+    username: string;
+    email: string;
+    role: 'user' | 'superadmin';
 };
 
 type SensorData = {
@@ -115,6 +128,14 @@ export default function AdminPage() {
 
   const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
   
+  const usersCollectionRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'users');
+  }, [firestore]);
+
+  const { data: users, isLoading: isUsersLoading } = useCollection<AppUser>(usersCollectionRef);
+
+
   const fetchSessionDataCounts = useCallback(async () => {
     if (!firestore || !testSessions || !sensorConfigs) return;
     
@@ -356,12 +377,58 @@ export default function AdminPage() {
     }
   };
   
+  const handleSetUserRole = async (userId: string, newRole: 'user' | 'superadmin') => {
+    if (!firestore) return;
+    const userDocRef = doc(firestore, 'users', userId);
+    try {
+      await updateDoc(userDocRef, { role: newRole });
+      toast({
+        title: 'Role Updated',
+        description: `User role has been set to ${newRole}.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error Updating Role',
+        description: error.message,
+      });
+    }
+  };
+
+  const handleDeleteUser = async (userIdToDelete: string) => {
+    if (!firestore || !user) return;
+    if (userIdToDelete === user.uid) {
+      toast({
+        variant: 'destructive',
+        title: 'Action Prohibited',
+        description: "You cannot delete your own account.",
+      });
+      return;
+    }
+    const userDocRef = doc(firestore, 'users', userIdToDelete);
+    try {
+      await deleteDoc(userDocRef);
+      toast({
+        title: 'User Deleted',
+        description: `The user's profile data has been deleted. Their auth account still exists.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error Deleting User',
+        description: error.message,
+      });
+    }
+  };
+
+
   const viewSessionData = (sessionId: string) => {
     const queryParams = new URLSearchParams({ sessionId }).toString();
     router.push(`/testing?${queryParams}`);
   };
 
   const handleSignOut = () => {
+    if (!auth) return;
     signOut(auth);
     router.push('/login');
   };
@@ -530,6 +597,77 @@ export default function AdminPage() {
     );
   }
 
+  const renderUserManagement = () => {
+    return (
+        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
+            <CardHeader>
+                <CardTitle>User Management</CardTitle>
+                <CardDescription>Manage user roles and access.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <ScrollArea className="h-96">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Username</TableHead>
+                                <TableHead>Email</TableHead>
+                                <TableHead>Role</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {isUsersLoading ? (
+                                <TableRow><TableCell colSpan={4}>Loading users...</TableCell></TableRow>
+                            ) : (
+                                users?.map((u) => (
+                                    <TableRow key={u.id}>
+                                        <TableCell>{u.username}</TableCell>
+                                        <TableCell>{u.email}</TableCell>
+                                        <TableCell>
+                                            <Select
+                                                value={u.role}
+                                                onValueChange={(newRole) => handleSetUserRole(u.id, newRole as 'user' | 'superadmin')}
+                                                disabled={u.id === user?.uid}
+                                            >
+                                                <SelectTrigger className="w-[120px]">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="user">User</SelectItem>
+                                                    <SelectItem value="superadmin">Superadmin</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <AlertDialog>
+                                                <AlertDialogTrigger asChild>
+                                                    <Button variant="ghost" size="sm" disabled={u.id === user?.uid}>Delete</Button>
+                                                </AlertDialogTrigger>
+                                                <AlertDialogContent>
+                                                    <AlertDialogHeader>
+                                                        <AlertDialogTitle className="text-destructive">Delete User Profile?</AlertDialogTitle>
+                                                        <AlertDialogDescription>
+                                                            This will delete the Firestore profile for "{u.username}". The user's auth account will remain. This action cannot be undone.
+                                                        </AlertDialogDescription>
+                                                    </AlertDialogHeader>
+                                                    <AlertDialogFooter>
+                                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                        <AlertDialogAction variant="destructive" onClick={() => handleDeleteUser(u.id)}>Confirm Delete</AlertDialogAction>
+                                                    </AlertDialogFooter>
+                                                </AlertDialogContent>
+                                            </AlertDialog>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            )}
+                        </TableBody>
+                    </Table>
+                </ScrollArea>
+            </CardContent>
+        </Card>
+    );
+  };
+
   if (isUserLoading || !user || userRole !== 'superadmin') {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
@@ -626,9 +764,12 @@ export default function AdminPage() {
                   {renderTestSessionManager()}
               </div>
           </div>
+          {renderUserManagement()}
       </main>
     </div>
   );
 }
+
+    
 
     
