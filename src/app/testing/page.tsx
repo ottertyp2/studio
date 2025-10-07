@@ -95,6 +95,7 @@ type TestSession = {
     status: 'RUNNING' | 'COMPLETED' | 'SCRAPPED';
     sensorConfigurationId: string;
     measurementType: 'DEMO' | 'ARDUINO';
+    demoType?: 'LEAK' | 'DIFFUSION';
 };
 
 function TestingComponent() {
@@ -430,7 +431,7 @@ function TestingComponent() {
     }
   }, [toast, readFromSerial, disconnectSerial]);
 
-  const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO' }) => {
+  const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
     if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products) {
         toast({variant: 'destructive', title: 'Error', description: 'Please select a product and a sensor.'});
         return null;
@@ -460,6 +461,7 @@ function TestingComponent() {
       status: 'RUNNING',
       sensorConfigurationId: activeSensorConfigId,
       measurementType: options.measurementType,
+      demoType: options.demoType,
     };
     
     await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
@@ -491,38 +493,47 @@ function TestingComponent() {
 
 
   useEffect(() => {
-      if (runningTestSession) {
-          if (runningTestSession.measurementType === 'DEMO' && !demoIntervalRef.current) {
-              let trend = 1000;
-              let direction = -1;
+    if (runningTestSession && runningTestSession.measurementType === 'DEMO' && !demoIntervalRef.current) {
+        let trend = 950;
+        let step = 0;
+        const totalSteps = 120; // 60 seconds
 
-              demoIntervalRef.current = setInterval(() => {
-                  const change = Math.random() * 5 + 1;
-                  trend += change * direction;
-                  if (trend <= 150) direction = 1;
-                  if (trend >= 1020) direction = -1;
+        if (runningTestSession.demoType === 'LEAK') {
+            const leakRate = (800 - Math.random() * 200) / totalSteps; // Steadier drop
+            demoIntervalRef.current = setInterval(() => {
+                trend -= leakRate;
+                const noise = (Math.random() - 0.5) * 15;
+                const value = Math.round(Math.max(0, Math.min(1023, trend + noise)));
 
-                  const noise = (Math.random() - 0.5) * 10;
-                  const value = Math.round(Math.max(0, Math.min(1023, trend + noise)));
+                handleNewDataPoint({ timestamp: new Date().toISOString(), value: value });
+                step++;
+                if (step >= totalSteps) stopDemoMode();
+            }, 500);
 
-                  const newDataPoint = {
-                      timestamp: new Date().toISOString(),
-                      value: value,
-                  };
-                  handleNewDataPoint(newDataPoint);
-              }, 500);
-          }
-      } else {
-          stopDemoMode();
-      }
+        } else if (runningTestSession.demoType === 'DIFFUSION') {
+            const initialDrop = 20;
+            const finalValue = 400 + Math.random() * 200;
+            demoIntervalRef.current = setInterval(() => {
+                // Exponential decay towards the final value
+                const drop = (trend - finalValue) * 0.05 * (Math.random() * 0.5 + 0.75);
+                trend -= drop;
+                const noise = (Math.random() - 0.5) * 10;
+                const value = Math.round(Math.max(0, Math.min(1023, trend + noise)));
+                
+                handleNewDataPoint({ timestamp: new Date().toISOString(), value: value });
+                step++;
+                if (step >= totalSteps) stopDemoMode();
+            }, 500);
+        }
+    } else if (!runningTestSession) {
+        stopDemoMode();
+    }
 
-      return () => {
-          stopDemoMode();
-      };
+    return () => stopDemoMode();
   }, [runningTestSession, handleNewDataPoint, stopDemoMode]);
 
 
-  const handleStartDemo = () => {
+  const handleStartDemo = (demoType: 'LEAK' | 'DIFFUSION') => {
     if (runningTestSession) {
         toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
         return;
@@ -531,8 +542,20 @@ function TestingComponent() {
         toast({variant: 'destructive', title: 'Error', description: 'No products available. Please create one in the admin panel.'});
         return;
     }
-    setTempTestSession({ productId: products?.[0]?.id, productName: products?.[0]?.name });
-    // This will open the modal to start a DEMO session.
+    
+    // Immediately start the session
+    const firstProduct = products[0];
+    const tempSessionData = { 
+        productId: firstProduct.id, 
+        productName: firstProduct.name,
+        description: `Demo - ${demoType}`
+    };
+
+    setTempTestSession(tempSessionData);
+    // Use a timeout to ensure state is set before calling the session start function
+    setTimeout(() => {
+        handleStartNewTestSession({ measurementType: 'DEMO', demoType });
+    }, 0);
   };
   
   const handleAnalysis = async () => {
@@ -842,9 +865,27 @@ function TestingComponent() {
                     {isArduinoMeasurementRunning ? 'Stop Measurement' : 'Start Measurement'}
                 </Button>
             )}
-            <Button onClick={handleStartDemo} variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession}>
-              Start Demo
-          </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession}>
+                  Start Demo
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Start Demo Simulation</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Choose a scenario to simulate for data generation. This will start a new test session.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => handleStartDemo('DIFFUSION')}>Simulate Diffusion</AlertDialogAction>
+                  <AlertDialogAction onClick={() => handleStartDemo('LEAK')}>Simulate Leak</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
         </CardContent>
       </Card>
   );
@@ -932,7 +973,7 @@ function TestingComponent() {
                     <div>
                         <p className="font-semibold">{runningTestSession.productName}</p>
                         <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US')} - {runningTestSession.status}</p>
-                         <p className="text-xs font-mono text-primary">{runningTestSession.measurementType}</p>
+                         <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.demoType ? `(${runningTestSession.demoType})` : ''}</p>
                     </div>
                     <div className="flex gap-2">
                         <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
@@ -1242,3 +1283,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
