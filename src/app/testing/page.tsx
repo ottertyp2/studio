@@ -62,10 +62,11 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Cog, LogOut, X as XIcon, UserPlus } from 'lucide-react';
+import { Cog, LogOut, X as XIcon, UserPlus, BrainCircuit } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
+import * as tf from '@tensorflow/tfjs';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc, useUser } from '@/firebase';
 import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc } from 'firebase/firestore';
 import { signOut } from '@/firebase/non-blocking-login';
@@ -108,6 +109,19 @@ type TestSession = {
     demoType?: 'LEAK' | 'DIFFUSION';
 };
 
+type MLModel = {
+    id: string;
+    name: string;
+    version: string;
+    description: string;
+    fileSize: number;
+};
+
+type AiAnalysisResult = {
+  prediction: 'Leak' | 'Diffusion';
+  confidence: number;
+}
+
 function TestingComponent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -121,8 +135,7 @@ function TestingComponent() {
   const [activeTab, setActiveTab] = useState('live');
   const [localDataLog, setLocalDataLog] = useState<SensorData[]>([]);
   const [currentValue, setCurrentValue] = useState<number | null>(null);
-  const [sensitivity, setSensitivity] = useState(0.98);
-  const [analysisResult, setAnalysisResult] = useState<any>(null);
+  
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
@@ -144,8 +157,9 @@ function TestingComponent() {
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   
-  const startThresholdRef = useRef<HTMLInputElement>(null);
-  const endThresholdRef = useRef<HTMLInputElement>(null);
+  const [selectedAnalysisModelId, setSelectedAnalysisModelId] = useState<string | null>(null);
+  const [aiAnalysisResult, setAiAnalysisResult] = useState<AiAnalysisResult | null>(null);
+  
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -185,6 +199,13 @@ function TestingComponent() {
   }, [firestore]);
 
   const { data: products, isLoading: isProductsLoading } = useCollection<Product>(productsCollectionRef);
+
+  const mlModelsCollectionRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'mlModels');
+  }, [firestore]);
+
+  const { data: mlModels, isLoading: isMlModelsLoading } = useCollection<MLModel>(mlModelsCollectionRef);
 
   const runningTestSession = useMemo(() => {
     return testSessions?.find(s => s.status === 'RUNNING');
@@ -501,14 +522,13 @@ function TestingComponent() {
     }
   }
 
-  const gaussianNoise = (mean = 0, std = 1) => {
-    let u1 = 0, u2 = 0;
-    //Convert [0,1) to (0,1)
-    while (u1 === 0) u1 = Math.random();
-    while (u2 === 0) u2 = Math.random();
-    const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
-    return z0 * std + mean;
-  };
+  const gaussianNoise = (mean=0, std=1) => {
+    let u = 0, v = 0;
+    while(u === 0) u = Math.random();
+    while(v === 0) v = Math.random();
+    let num = Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
+    return num * std + mean;
+  }
 
   useEffect(() => {
     if (runningTestSession && runningTestSession.measurementType === 'DEMO' && !demoIntervalRef.current) {
@@ -575,80 +595,53 @@ function TestingComponent() {
     }, 0);
   };
   
-  const handleAnalysis = async () => {
-    setIsAnalyzing(true);
-    setAnalysisResult(null);
+  const handleAiAnalysis = async () => {
+      if (!selectedAnalysisModelId) {
+          toast({ variant: 'destructive', title: 'No Model Selected', description: 'Please choose a model to run the analysis.' });
+          return;
+      }
+      if (dataLog.length < 20) {
+          toast({ variant: 'destructive', title: 'Not Enough Data', description: 'Need at least 20 data points for analysis.' });
+          return;
+      }
+      setIsAnalyzing(true);
+      setAiAnalysisResult(null);
 
-    const startThresholdValue = startThresholdRef.current?.value;
-    const endThresholdValue = endThresholdRef.current?.value;
+      try {
+          const model = await tf.loadLayersModel(`indexeddb://${selectedAnalysisModelId}`);
 
-    const startThreshold = startThresholdValue !== undefined && startThresholdValue !== '' ? parseFloat(startThresholdValue) : null;
-    const endThreshold = endThresholdValue !== undefined && endThresholdValue !== '' ? parseFloat(endThresholdValue) : null;
+          // Take last 200 points, or all if less than 200
+          const dataForAnalysis = dataLog.slice(0, 200).map(d => d.value).reverse();
 
-    if (startThreshold === null || endThreshold === null || isNaN(startThreshold) || isNaN(endThreshold)) {
-        toast({
-            variant: 'destructive',
-            title: 'Invalid Thresholds',
-            description: 'Please enter valid numbers for start and end thresholds.',
-        });
-        setIsAnalyzing(false);
-        return;
-    }
+          // Pad if less than 200
+          while (dataForAnalysis.length < 200) {
+              dataForAnalysis.unshift(dataForAnalysis[0]);
+          }
 
-    const chronologicalData = [...dataLog]
-      .reverse()
-      .map(d => ({ ...d, convertedValue: convertRawValue(d.value) }));
-      
-    let startIndex = chronologicalData.findIndex(d => (d.convertedValue as number) <= startThreshold);
-    let endIndex = chronologicalData.findIndex((d, i) => i > startIndex && (d.convertedValue as number) <= endThreshold);
+          const inputTensor = tf.tensor2d(dataForAnalysis, [1, 200]);
 
-    if (startIndex === -1) {
-        startIndex = chronologicalData.findIndex(d => (d.convertedValue as number) >= startThreshold);
-        endIndex = chronologicalData.findIndex((d, i) => i > startIndex && (d.convertedValue as number) >= endThreshold);
-    }
+          // Normalize the data (using a hardcoded mean/variance for now, ideally this comes from training)
+          const { mean, variance } = tf.moments(inputTensor);
+          const normalizedInput = inputTensor.sub(mean).div(tf.sqrt(variance));
 
-    if (startIndex === -1 || endIndex === -1) {
-        toast({
-            variant: "destructive",
-            title: "Analysis not possible",
-            description: `Could not find data points between ${startThreshold} and ${endThreshold} ${sensorConfig.unit}.`
-        });
-        setIsAnalyzing(false);
-        return;
-    }
+          const prediction = model.predict(normalizedInput) as tf.Tensor;
+          const predictionValue = (await prediction.data())[0];
 
-    const dataSegment = chronologicalData.slice(startIndex, endIndex + 1);
+          tf.dispose([inputTensor, normalizedInput, prediction]);
 
-    if (dataSegment.length < 2) {
-        toast({
-            variant: "destructive",
-            title: "Analysis not possible",
-            description: "Not enough data points between thresholds."
-        });
-        setIsAnalyzing(false);
-        return;
-    }
+          const isLeak = predictionValue > 0.5;
+          setAiAnalysisResult({
+              prediction: isLeak ? 'Leak' : 'Diffusion',
+              confidence: isLeak ? predictionValue * 100 : (1 - predictionValue) * 100,
+          });
 
-    const input: AnalyzePressureTrendForLeaksInput = {
-      dataSegment: dataSegment.map(p => ({ timestamp: p.timestamp, value: p.convertedValue as number })),
-      analysisModel: 'linear_leak',
-      sensitivity: sensitivity,
-      sensorUnit: sensorConfig.unit,
-    };
-
-    try {
-      const result = await analyzePressureTrendForLeaks(input);
-      setAnalysisResult(result);
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Analysis Failed',
-        description: 'An error occurred while communicating with the AI service.',
-      });
-    } finally {
-      setIsAnalyzing(false);
-    }
+      } catch (e: any) {
+          toast({ variant: 'destructive', title: 'Analysis Failed', description: e.message });
+      } finally {
+          setIsAnalyzing(false);
+      }
   };
+
 
   const handleResetZoom = () => {
     setChartKey(Date.now());
@@ -844,7 +837,7 @@ function TestingComponent() {
         const intervalSeconds = parseInt(chartInterval, 10);
         const now = Date.now();
         if (runningTestSession) { // Live data filtering
-            mappedData = mappedData.filter(dp => (now - (startTime + dp.name * 1000)) / 1000 <= intervalSeconds);
+             mappedData = mappedData.filter(dp => dp.name >= 0 && ((now - (startTime + dp.name * 1000)) / 1000 <= intervalSeconds));
         } else { // Historical data filtering
             mappedData = mappedData.filter(dp => dp.name <= intervalSeconds);
         }
@@ -1206,70 +1199,52 @@ function TestingComponent() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
-             <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-              <CardHeader>
-                <CardTitle>Intelligent Leak Analysis</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="analysisModel">Analysis Model</Label>
-                  <Select defaultValue="linear_leak">
-                    <SelectTrigger id="analysisModel">
-                      <SelectValue placeholder="Select model" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="linear_leak">Linear Drop = Leak</SelectItem>
-                      <SelectItem value="nonlinear_leak">
-                        Non-linear Drop = Leak
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="startThresholdInput">Start ({sensorConfig.unit})</Label>
-                    <Input id="startThresholdInput" ref={startThresholdRef} type="number" defaultValue={sensorConfig.mode === 'RAW' ? "800" : ""} />
-                  </div>
-                  <div>
-                    <Label htmlFor="endThresholdInput">End ({sensorConfig.unit})</Label>
-                    <Input id="endThresholdInput" ref={endThresholdRef} type="number" defaultValue={sensorConfig.mode === 'RAW' ? "200" : ""} />
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="sensitivitySlider">Sensitivity (R²): {sensitivity}</Label>
-                  <Slider
-                    id="sensitivitySlider"
-                    min={0.8}
-                    max={0.999}
-                    step={0.001}
-                    value={[sensitivity]}
-                    onValueChange={(value) => setSensitivity(value[0])}
-                    className="[&>span:first-child]:h-2 [&>span:first-child>span]:h-2 [&>span:last-child]:h-5 [&>span:last-child]:w-5"
-                  />
-                </div>
-                <div className="flex gap-4 justify-center">
-                  <Button onClick={handleAnalysis} disabled={isAnalyzing} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
-                      {isAnalyzing ? 'Analyzing...' : 'Analyze Pressure Curve'}
-                    </Button>
-                </div>
-                <div className="text-center text-muted-foreground pt-4">
-                    {analysisResult ? (
-                    <>
-                        <p className={`font-semibold ${analysisResult.isLeak ? 'text-destructive' : 'text-primary'}`}>
-                        {analysisResult.analysisResult}
-                        </p>
-                        <p className="text-sm">
-                        R-squared: {analysisResult.rSquared.toFixed(4)} | Analyzed Points: {analysisResult.analyzedDataPoints}
-                        </p>
-                    </>
-                    ) : (
-                    <>
-                        <p className="font-semibold">-</p>
-                        <p className="text-sm">R-squared: - | Analyzed Range: -</p>
-                    </>
-                    )}
-                </div>
-              </CardContent>
+            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <BrainCircuit className="h-6 w-6 text-primary" />
+                        AI-Powered Analysis
+                    </CardTitle>
+                    <CardDescription>
+                        Use a locally trained model to classify the current data trend.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div>
+                        <Label htmlFor="analysis-model-select">Select Model</Label>
+                        <Select onValueChange={setSelectedAnalysisModelId} value={selectedAnalysisModelId || ''}>
+                            <SelectTrigger id="analysis-model-select">
+                                <SelectValue placeholder="Select a trained model" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {isMlModelsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                                mlModels?.map(m => <SelectItem key={m.id} value={m.id}>{m.name} v{m.version}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="flex gap-4 justify-center">
+                        <Button onClick={handleAiAnalysis} disabled={isAnalyzing || !selectedAnalysisModelId} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
+                            {isAnalyzing ? 'Analyzing...' : 'Analyze with AI'}
+                        </Button>
+                    </div>
+                    <div className="text-center text-muted-foreground pt-4">
+                        {aiAnalysisResult ? (
+                        <>
+                            <p className={`font-semibold text-2xl ${aiAnalysisResult.prediction === 'Leak' ? 'text-destructive' : 'text-primary'}`}>
+                                Result: {aiAnalysisResult.prediction}
+                            </p>
+                            <p className="text-sm">
+                                Confidence: {aiAnalysisResult.confidence.toFixed(2)}%
+                            </p>
+                        </>
+                        ) : (
+                        <>
+                            <p className="font-semibold text-2xl">-</p>
+                            <p className="text-sm">Confidence: -</p>
+                        </>
+                        )}
+                    </div>
+                </CardContent>
             </Card>
           </div>
 
@@ -1324,3 +1299,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
