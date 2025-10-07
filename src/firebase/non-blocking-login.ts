@@ -48,6 +48,8 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
   try {
     const userCredential = await createUserWithEmailAndPassword(authInstance, email, password);
     user = userCredential.user;
+    // Force a token refresh to ensure the client is fully authenticated before the Firestore write.
+    await user.getIdToken(true);
   } catch (authError: any) {
     if (authError.code === 'auth/email-already-in-use') {
         throw new Error('[E4] This username is already taken as it maps to an existing email. Please choose another one.');

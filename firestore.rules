@@ -1,98 +1,120 @@
 /**
- * @fileoverview Firestore Security Rules for the sensor data application.
+ * @fileoverview Firestore Security Rules for the "studio" application.
  *
  * Core Philosophy:
- * This ruleset allows any authenticated user to read and write all data.
- * There are no user-specific restrictions or ownership checks. This is
- * suitable for an initial prototyping environment or a public dashboard, but is
- * not secure for production use with private user data.
+ * This ruleset enforces a public-read, owner-write security model with NO user authentication or authorization.
+ * This is suitable for local testing or a fully public dashboard.
  *
  * Data Structure:
- * All data resides in top-level collections: /users, /sensor_configurations,
- * /analysis_results, and /test_sessions. The /sensor_data collection is nested under /sensor_configurations.
+ * - /users/{userId}: Stores user profile information (username, email, role). Accessible to any signed-in user with matching id.
+ * - /sensor_configurations/{sensorConfigurationId}: Stores sensor configurations. Public read, no write restrictions.
+ * - /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}: Stores sensor data points. Public read, no write restrictions.
+ * - /analysis_results/{analysisResultId}: Stores leak analysis results. Public read, no write restrictions.
+ * - /test_sessions/{testSessionId}: Stores all test sessions. Public read, no write restrictions.
  *
  * Key Security Decisions:
- * - Authenticated users can read and write all data.
- * - There is no data ownership or access control based on user roles.
+ * - No user listing is allowed.
+ * - All writes (create, update, delete) are completely disallowed.
+ * - All reads (get, list) are public.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Allows any authenticated user to read and write user data.
+     * @description Controls access to user profile documents.
      * @path /users/{userId}
-     * @allow (create) - Authenticated user can create a user document.
-     * @allow (get, list) - Authenticated user can read all user documents.
-     * @allow (update, delete) - Authenticated user can modify or delete any user document.
-     * @deny (create) - Unauthenticated user cannot create a user document.
-     * @deny (get, list, update, delete) - Unauthenticated user cannot read, modify, or delete user documents.
-     * @principle Allows authenticated users to read and write all user data.
+     * @allow (create) Signed-in user can create their own profile document if the UID matches the document ID.
+     * @allow (get) Public read.
+     * @allow (list) Not allowed.
+     * @allow (update) Not allowed.
+     * @allow (delete) Not allowed.
+     * @deny (create) If the user is not signed in.
+     * @deny (create) If the user ID does not match the document ID.
+     * @deny (update) If the user is not the owner.
+     * @deny (delete) If the user is not the owner.
+     * @principle Enforces document ownership for writes; public read access.
      */
     match /users/{userId} {
-      allow read, write: if isSignedIn();
+      allow get: if true;
+      allow list: if false;
+
+      allow create: if request.auth != null && request.auth.uid == userId;
+
+      allow update: if request.auth != null && request.auth.uid == userId;
+      allow delete: if request.auth != null && request.auth.uid == userId;
     }
 
     /**
-     * @description Allows any authenticated user to read and write sensor data.
+     * @description Controls access to sensor data documents within a sensor configuration.
      * @path /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
-     * @allow (create) - Authenticated user can create sensor data.
-     * @allow (get, list) - Authenticated user can read all sensor data.
-     * @allow (update, delete) - Authenticated user can modify or delete any sensor data.
-     * @deny (create) - Unauthenticated user cannot create sensor data.
-     * @deny (get, list, update, delete) - Unauthenticated user cannot read, modify, or delete sensor data.
-     * @principle Allows authenticated users to read and write all sensor data.
+     * @allow (get) Public read.
+     * @allow (list) Public read.
+     * @allow (create) Not allowed.
+     * @allow (update) Not allowed.
+     * @allow (delete) Not allowed.
+     * @principle Public read, no write permissions.
      */
     match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
-      allow read, write: if isSignedIn();
+      allow get: if true;
+      allow list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
     }
 
     /**
-     * @description Allows any authenticated user to read and write sensor configurations.
+     * @description Controls access to sensor configuration documents.
      * @path /sensor_configurations/{sensorConfigurationId}
-     * @allow (create) - Authenticated user can create a sensor configuration.
-     * @allow (get, list) - Authenticated user can read all sensor configurations.
-     * @allow (update, delete) - Authenticated user can modify or delete any sensor configuration.
-     * @deny (create) - Unauthenticated user cannot create sensor configurations.
-     * @deny (get, list, update, delete) - Unauthenticated user cannot read, modify, or delete sensor configurations.
-     * @principle Allows authenticated users to read and write all sensor configurations.
+     * @allow (get) Public read.
+     * @allow (list) Public read.
+     * @allow (create) Not allowed.
+     * @allow (update) Not allowed.
+     * @allow (delete) Not allowed.
+     * @principle Public read, no write permissions.
      */
     match /sensor_configurations/{sensorConfigurationId} {
-      allow read, write: if isSignedIn();
+      allow get: if true;
+      allow list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
     }
 
     /**
-     * @description Allows any authenticated user to read and write analysis results.
+     * @description Controls access to analysis result documents.
      * @path /analysis_results/{analysisResultId}
-     * @allow (create) - Authenticated user can create an analysis result.
-     * @allow (get, list) - Authenticated user can read all analysis results.
-     * @allow (update, delete) - Authenticated user can modify or delete any analysis result.
-     * @deny (create) - Unauthenticated user cannot create analysis results.
-     * @deny (get, list, update, delete) - Unauthenticated user cannot read, modify, or delete analysis results.
-     * @principle Allows authenticated users to read and write all analysis results.
+     * @allow (get) Public read.
+     * @allow (list) Public read.
+     * @allow (create) Not allowed.
+     * @allow (update) Not allowed.
+     * @allow (delete) Not allowed.
+     * @principle Public read, no write permissions.
      */
     match /analysis_results/{analysisResultId} {
-      allow read, write: if isSignedIn();
+      allow get: if true;
+      allow list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
     }
 
-     /**
-      * @description Allows any authenticated user to read and write test sessions.
-      * @path /test_sessions/{testSessionId}
-      * @allow (create) - Authenticated user can create a test session.
-      * @allow (get, list) - Authenticated user can read all test sessions.
-      * @allow (update, delete) - Authenticated user can modify or delete any test session.
-      * @deny (create) - Unauthenticated user cannot create test sessions.
-      * @deny (get, list, update, delete) - Unauthenticated user cannot read, modify, or delete test sessions.
-      * @principle Allows authenticated users to read and write all test sessions.
-      */
+    /**
+     * @description Controls access to test session documents.
+     * @path /test_sessions/{testSessionId}
+     * @allow (get) Public read.
+     * @allow (list) Public read.
+     * @allow (create) Not allowed.
+     * @allow (update) Not allowed.
+     * @allow (delete) Not allowed.
+     * @principle Public read, no write permissions.
+     */
     match /test_sessions/{testSessionId} {
-      allow read, write: if isSignedIn();
+      allow get: if true;
+      allow list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
     }
-
-  }
-
-  // Helper function to determine if the user is signed in.
-  function isSignedIn() {
-    return request.auth != null;
   }
 }
