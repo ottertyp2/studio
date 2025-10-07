@@ -502,7 +502,7 @@ function TestingComponent() {
             const leakRate = (800 - Math.random() * 200) / totalSteps; // Steadier drop
             demoIntervalRef.current = setInterval(() => {
                 trend -= leakRate;
-                const noise = (Math.random() - 0.5) * 15;
+                const noise = (Math.random() - 0.5) * 5; // Reduced noise
                 const value = Math.round(Math.max(0, Math.min(1023, trend + noise)));
 
                 handleNewDataPoint({ timestamp: new Date().toISOString(), value: value });
@@ -511,11 +511,10 @@ function TestingComponent() {
             }, 500);
 
         } else if (runningTestSession.demoType === 'DIFFUSION') {
-            const initialDrop = 20;
             const finalValue = 400 + Math.random() * 200;
             demoIntervalRef.current = setInterval(() => {
-                // Exponential decay towards the final value
-                const drop = (trend - finalValue) * 0.05 * (Math.random() * 0.5 + 0.75);
+                // Smoother exponential decay towards the final value
+                const drop = (trend - finalValue) * 0.05;
                 trend -= drop;
                 const noise = (Math.random() - 0.5) * 10;
                 const value = Math.round(Math.max(0, Math.min(1023, trend + noise)));
