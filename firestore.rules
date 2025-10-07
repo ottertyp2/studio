@@ -1,87 +1,124 @@
 /**
- * @fileoverview Firestore Security Rules for the Biothrust application.
+ * @fileoverview Firestore Security Rules for Prototyping.
  *
  * Core Philosophy:
- * This ruleset enforces a simplified security model suitable for prototyping, prioritizing authorization over strict schema validation.  It assumes a single-user or public-access model as defined in the documentation.
+ * This ruleset adopts a public-read, owner-write model where applicable. It prioritizes ease of development and iteration speed.
  *
  * Data Structure:
- * - /users/{userId}: Stores user profiles. Write access is restricted to the user themselves during account creation only. Updates and Deletes are denied.
- * - /sensor_configurations/{sensorConfigurationId}: Stores global sensor configurations. Read and write access is completely public.
- * - /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}: Stores sensor data. Read and write access is completely public.
- * - /analysis_results/{analysisResultId}: Stores analysis results. Read and write access is completely public.
- * - /test_sessions/{testSessionId}: Stores test sessions. Read and write access is completely public.
+ * - /users/{userId}: Stores user profiles. Access is restricted to the owner of the user document.
+ * - /sensor_configurations/{sensorConfigurationId}: Stores sensor configurations. Publicly readable.
+ * - /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}: Stores sensor data associated with a sensor config. Publicly readable.
+ * - /analysis_results/{analysisResultId}: Stores analysis results. Publicly readable.
+ * - /test_sessions/{testSessionId}: Stores test sessions. Publicly readable.
  *
  * Key Security Decisions:
- * - User listing is disallowed.
- * - Schema validation is relaxed to allow for rapid prototyping. Only authorization-critical fields are validated.
- * - Read-only collections are handled with `allow get, list: if true;`.
- * - The default security posture for ambiguous relationships is strict denial.
- *
- * Denormalization for Authorization:
- * - User documents are named after the user's UID for easy authorization via `isOwner()`.
+ * - Public Read Access: The rules grant public read access (`get`, `list`) to the sensor_configurations, sensor_data, analysis_results, and test_sessions collections. This enables the application to display this data without requiring authentication.
+ * - Owner-Only Write Access for Users: User profile data is secured with strict ownership checks, ensuring that only the authenticated user can create, update, or delete their own profile. User listing is disallowed.
+ * - No Data Validation: Data validation is relaxed to facilitate rapid prototyping. The rules do not enforce specific data types or required fields beyond those essential for authorization.
+ * - No User Listing: Listing all users is explicitly denied.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Controls access to user profile data.
+     * @description Controls access to user profile documents.
      * @path /users/{userId}
-     * @allow (create) User with matching ID can create their own profile.
-     * @deny (get, list, update, delete) No one can read, list, update, or delete user profiles after creation.
-     * @principle Enforces user-ownership for account creation.  No one can update/delete after creation.
+     * @allow (create) User with UID 'user123' can create their own profile.
+     * @allow (update) User with UID 'user123' can update their own profile.
+     * @allow (delete) User with UID 'user123' can delete their own profile.
+     * @deny (create) User with UID 'user456' cannot create a profile with ID 'user123'.
+     * @deny (update) User with UID 'user456' cannot update the profile with ID 'user123'.
+     * @deny (delete) User with UID 'user456' cannot delete the profile with ID 'user123'.
+     * @principle Enforces document ownership for writes, restricting access to a user's own data tree.
      */
     match /users/{userId} {
-      function isOwner(userId) {
-        return request.auth.uid == userId;
-      }
-      allow get, list: if false;
-      allow create: if isOwner(userId);
-      allow update, delete: if false;
+      allow get: if false;
+      allow list: if false;
+      allow create: if isSignedIn() && isOwner(userId) && request.resource.data.username is string && request.resource.data.email is string && request.resource.data.role is string;
+      allow update: if isSignedIn() && isExistingOwner(userId);
+      allow delete: if isSignedIn() && isExistingOwner(userId);
     }
 
     /**
-     * @description Controls access to sensor configurations.
-     * @path /sensor_configurations/{sensorConfigurationId}
-     * @allow (get, list, create, update, delete) Anyone can read, list, create, update, and delete sensor configurations.
-     * @principle Allows public access for all operations.
-     */
-    match /sensor_configurations/{sensorConfigurationId} {
-      allow get, list: if true;
-      allow create, update, delete: if true;
-    }
-
-    /**
-     * @description Controls access to sensor data nested under sensor configurations.
+     * @description Controls access to sensor data documents.
      * @path /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
-     * @allow (get, list, create, update, delete) Anyone can read, list, create, update, and delete sensor data.
-     * @principle Allows public access for all operations.
+     * @allow (get) Any user can read sensor data.
+     * @allow (list) Any user can list sensor data.
+     * @deny (create) No one can create sensor data.
+     * @deny (update) No one can update sensor data.
+     * @deny (delete) No one can delete sensor data.
+     * @principle Allows public read access to sensor data.
      */
     match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
       allow get, list: if true;
-      allow create, update, delete: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
     }
 
     /**
-     * @description Controls access to analysis results.
+     * @description Controls access to sensor configuration documents.
+     * @path /sensor_configurations/{sensorConfigurationId}
+     * @allow (get) Any user can read sensor configurations.
+     * @allow (list) Any user can list sensor configurations.
+     * @deny (create) No one can create sensor configurations.
+     * @deny (update) No one can update sensor configurations.
+     * @deny (delete) No one can delete sensor configurations.
+     * @principle Allows public read access to sensor configurations.
+     */
+    match /sensor_configurations/{sensorConfigurationId} {
+      allow get, list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    /**
+     * @description Controls access to analysis result documents.
      * @path /analysis_results/{analysisResultId}
-     * @allow (get, list, create, update, delete) Anyone can read, list, create, update, and delete analysis results.
-     * @principle Allows public access for all operations.
+     * @allow (get) Any user can read analysis results.
+     * @allow (list) Any user can list analysis results.
+     * @deny (create) No one can create analysis results.
+     * @deny (update) No one can update analysis results.
+     * @deny (delete) No one can delete analysis results.
+     * @principle Allows public read access to analysis results.
      */
     match /analysis_results/{analysisResultId} {
       allow get, list: if true;
-      allow create, update, delete: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
     }
 
     /**
-     * @description Controls access to test sessions.
+     * @description Controls access to test session documents.
      * @path /test_sessions/{testSessionId}
-     * @allow (get, list, create, update, delete) Anyone can read, list, create, update, and delete test sessions.
-     * @principle Allows public access for all operations.
+     * @allow (get) Any user can read test sessions.
+     * @allow (list) Any user can list test sessions.
+     * @deny (create) No one can create test sessions.
+     * @deny (update) No one can update test sessions.
+     * @deny (delete) No one can delete test sessions.
+     * @principle Allows public read access to test sessions.
      */
     match /test_sessions/{testSessionId} {
       allow get, list: if true;
-      allow create, update, delete: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
     }
+  }
+
+  // Helper functions
+  function isSignedIn() {
+    return request.auth != null;
+  }
+
+  function isOwner(userId) {
+    return request.auth.uid == userId;
+  }
+
+  function isExistingOwner(userId) {
+    return isSignedIn() && isOwner(userId) && resource != null;
   }
 }
