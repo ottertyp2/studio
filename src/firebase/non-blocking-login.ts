@@ -2,7 +2,6 @@
 'use client';
 import {
   Auth, 
-  signInAnonymously,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
