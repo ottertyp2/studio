@@ -117,13 +117,6 @@ function TestingComponent() {
   const { firestore, auth } = useFirebase();
   const { user, userRole, isUserLoading } = useUser();
   
-  const testSessionsCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
-    return collection(firestore, `test_sessions`);
-  }, [firestore]);
-  
-  const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
-
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
   const writerRef = useRef<any>(null);
@@ -135,6 +128,13 @@ function TestingComponent() {
   
   const startThresholdRef = useRef<HTMLInputElement>(null);
   const endThresholdRef = useRef<HTMLInputElement>(null);
+
+  const testSessionsCollectionRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, `test_sessions`);
+  }, [firestore]);
+  
+  const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
   
   const stateRef = useRef({
       firestore,
@@ -218,6 +218,11 @@ function TestingComponent() {
 
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
   
+  const sensorDataRef = useMemoFirebase(() => {
+      if (!firestore || !activeSensorConfigId) return null;
+      return collection(firestore, `sensor_configurations/${activeSensorConfigId}/sensor_data`);
+  }, [firestore, activeSensorConfigId]);
+
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
     setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
     setCurrentValue(newDataPoint.value);
@@ -230,10 +235,12 @@ function TestingComponent() {
         if (currentRunningSession.sensorConfigurationId === currentSensorConfigId) {
             // Only save the data point if a measurement is active for the current sensor.
             const dataToSave = {...newDataPoint, testSessionId: currentRunningSession.id};
-            addDocumentNonBlocking(sensorDataRef, dataToSave);
+            if(sensorDataRef){
+                 addDocumentNonBlocking(sensorDataRef, dataToSave);
+            }
         }
     }
-  }, []);
+  }, [sensorDataRef]);
 
   const dataLog = useMemo(() => {
     const log = (firestore && selectedSessionIds.length > 0) ? cloudDataLog : localDataLog;
@@ -296,8 +303,7 @@ function TestingComponent() {
       }
       
       if (session?.measurementType === 'ARDUINO' && isConnected) {
-        // We no longer send a 'p' command, just stop associating data.
-        // await sendSerialCommand('p');
+        await sendSerialCommand('p');
       }
   
       const sessionRef = doc(firestore, `test_sessions`, sessionId);
@@ -309,8 +315,7 @@ function TestingComponent() {
         }
       }
       toast({ title: 'Test Session Ended' });
-  }, [firestore, isConnected, selectedSessionIds, stopDemoMode, testSessionsCollectionRef, toast]);
-
+  }, [firestore, isConnected, selectedSessionIds, stopDemoMode, testSessionsCollectionRef, toast, sendSerialCommand]);
 
   const disconnectSerial = useCallback(async () => {
     const { testSessions: currentTestSessions } = stateRef.current;
@@ -773,14 +778,14 @@ function TestingComponent() {
   const chartColors = [
     "hsl(var(--chart-1))",
     "hsl(var(--chart-2))",
+    "hsl(var(--chart-3))",
+    "hsl(var(--chart-4))",
+    "hsl(var(--chart-5))",
     "hsl(20, 80%, 50%)",
     "hsl(140, 80%, 50%)",
     "hsl(300, 80%, 50%)",
     "hsl(60, 80%, 50%)",
     "hsl(240, 80%, 70%)",
-    "hsl(0, 0%, 50%)",
-    "hsl(180, 80%, 50%)",
-    "hsl(270, 80%, 60%)"
   ];
 
 
@@ -922,9 +927,11 @@ function TestingComponent() {
   }
   
   if (isUserLoading || !user) {
-    return <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
-      <p className="text-lg">Loading...</p>
-    </div>;
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
+        <p className="text-lg">Loading...</p>
+      </div>
+    );
   }
 
   return (

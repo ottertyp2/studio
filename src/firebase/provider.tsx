@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect } from 'react';
@@ -125,18 +126,21 @@ export const useUser = (): UserHookResult => {
   const [userError, setUserError] = useState<Error | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setUser(user);
+    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
+      setIsUserLoading(true);
+      if (authUser) {
+        setUser(authUser);
         try {
-          const userDocRef = doc(firestore, 'users', user.uid);
+          const userDocRef = doc(firestore, 'users', authUser.uid);
           const userDoc = await getDoc(userDocRef);
           if (userDoc.exists()) {
             setUserRole(userDoc.data()?.role || 'user');
           } else {
-            setUserRole('user'); // Default role if doc doesn't exist
+            // This might happen for a brief moment after sign up
+            setUserRole('user');
           }
         } catch (e) {
+          console.error("Error fetching user role:", e);
           setUserError(e as Error);
           setUserRole('user'); // Default role on error
         }
@@ -146,7 +150,10 @@ export const useUser = (): UserHookResult => {
       }
       setIsUserLoading(false);
     }, (error) => {
+      console.error("Auth state change error:", error);
       setUserError(error);
+      setUser(null);
+      setUserRole(null);
       setIsUserLoading(false);
     });
 
