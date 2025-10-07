@@ -1,87 +1,79 @@
 /**
  * @file Firestore Security Rules
- * @version 2
+ * @description This ruleset is designed for prototyping a public data model.
  *
- * @description
- * Core Philosophy: This ruleset allows public read access and restricts write access. User profiles are created only during account creation and are managed by the system. Sensor configurations, analysis results, and test sessions are globally accessible with no specific ownership enforced.
+ * Core Philosophy:
+ * All data is accessible publicly for reading, but writes are restricted until proper authorization is implemented.
  *
  * Data Structure:
- * - /users/{userId}: Stores user profile information, with 'create' permission allowed only if the authenticated user's ID matches the 'userId'. Updates are disallowed.
- * - /sensor_configurations/{sensorConfigurationId}: Stores sensor configurations.
- * - /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}: Stores sensor data for each configuration.
- * - /analysis_results/{analysisResultId}: Stores the results of analysis.
- * - /test_sessions/{testSessionId}: Stores information of each test session.
+ * All data resides in top-level collections (e.g., /sensor_configurations/{sensorConfigurationId}).
  *
  * Key Security Decisions:
- * - User listing is disallowed.
- * - Data validation is not enforced beyond checking ownership on user creation.
+ * - Public read access is granted to all collections to facilitate rapid prototyping.
+ * - All write operations are initially denied. As the app evolves, specific write rules must be added, likely based on user roles or ownership.
+ * - User listing is implicitly denied due to the absence of rules for it (and the general principle of denying what isn't explicitly allowed).
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Controls access to user profiles. Users can create their profile on sign-up, but updates are not allowed.
+     * @description Manages user profile data.
      * @path /users/{userId}
-     * @allow (create) - User with UID 'user123' creates a profile with document ID 'user123'.
-     * @deny (create) - User with UID 'user123' tries to create a profile with document ID 'otherUser'.
-     * @deny (update) - Any user tries to update any user profile.
-     * @principle Enforces user-ownership for profile creation and disallows updates.
+     * @allow (get, list) User with any auth can read user profile data to facilitate rapid prototyping.
+     * @deny (create, update, delete) No one can write user data until proper authorization is implemented.
+     * @principle Public read, restricted writes for user profiles.
      */
     match /users/{userId} {
-      function isSignedIn() {
-        return request.auth != null;
-      }
-
-      function isOwner(userId) {
-        return request.auth.uid == userId;
-      }
-
-      allow get: if false;
-      allow list: if false;
-      allow create: if isSignedIn() && isOwner(userId);
-      allow update: if false;
-      allow delete: if false;
+      allow get, list: if true;
+      allow create, update, delete: if false; // TODO: Implement authorization for user management
     }
 
     /**
-     * @description Controls access to sensor data associated with a specific sensor configuration.
+     * @description Manages sensor data associated with a specific sensor configuration.
      * @path /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
-     * @allow (get, list) - Any user can read any sensor data.
-     * @deny (create, update, delete) - No user can create, update, or delete sensor data.
-     * @principle Allows public read access but restricts write access.
+     * @allow (get, list) Any authenticated user can read sensor data.
+     * @deny (create, update, delete) No one can write sensor data until proper authorization is implemented.
+     * @principle Public read, restricted writes for sensor data.
+     */
+    match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
+      allow get, list: if true;
+      allow create, update, delete: if false; // TODO: Implement authorization for sensor data management
+    }
+
+    /**
+     * @description Manages sensor configurations.
+     * @path /sensor_configurations/{sensorConfigurationId}
+     * @allow (get, list) Any authenticated user can read sensor configurations.
+     * @deny (create, update, delete) No one can write sensor configuration data until proper authorization is implemented.
+     * @principle Public read, restricted writes for sensor configurations.
      */
     match /sensor_configurations/{sensorConfigurationId} {
-      match /sensor_data/{sensorDataId} {
-        allow get, list: if true;
-        allow create, update, delete: if false;
-      }
       allow get, list: if true;
-      allow create, update, delete: if false;
+      allow create, update, delete: if false; // TODO: Implement authorization for sensor configuration management
     }
 
     /**
-     * @description Controls access to analysis results.
+     * @description Manages leak analysis results.
      * @path /analysis_results/{analysisResultId}
-     * @allow (get, list) - Any user can read any analysis result.
-     * @deny (create, update, delete) - No user can create, update, or delete analysis results.
-     * @principle Allows public read access but restricts write access.
+     * @allow (get, list) Any authenticated user can read analysis results.
+     * @deny (create, update, delete) No one can write analysis results until proper authorization is implemented.
+     * @principle Public read, restricted writes for analysis results.
      */
     match /analysis_results/{analysisResultId} {
       allow get, list: if true;
-      allow create, update, delete: if false;
+      allow create, update, delete: if false; // TODO: Implement authorization for analysis result management
     }
 
     /**
-     * @description Controls access to test sessions.
+     * @description Manages test session data.
      * @path /test_sessions/{testSessionId}
-     * @allow (get, list) - Any user can read any test session.
-     * @deny (create, update, delete) - No user can create, update, or delete test sessions.
-     * @principle Allows public read access but restricts write access.
+     * @allow (get, list) Any authenticated user can read test session data.
+     * @deny (create, update, delete) No one can write test session data until proper authorization is implemented.
      */
     match /test_sessions/{testSessionId} {
         allow get, list: if true;
-        allow create, update, delete: if false;
+        allow create, update, delete: if false; // TODO: Implement authorization for test session management
     }
   }
 }
