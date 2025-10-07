@@ -62,7 +62,7 @@ export default function SignupPage() {
       
       // Check for the contextual Firestore permission error message
       else if (errorMessage.includes('Missing or insufficient permissions')) {
-          errorMessage = "Couldn't create your user profile. Please contact support.";
+          errorMessage = "Couldn't create your user profile. Please contact Louis Otter.";
       }
       
       toast({
