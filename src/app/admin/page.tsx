@@ -645,12 +645,12 @@ export default function AdminPage() {
   };
 
   const gaussianNoise = (mean = 0, std = 1) => {
-    let u1 = 0, u2 = 0;
-    while (u1 === 0) u1 = Math.random();
-    while (u2 === 0) u2 = Math.random();
-    const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
-    return z0 * std + mean;
-  };
+    let u = 0, v = 0;
+    while(u === 0) u = Math.random();
+    while(v === 0) v = Math.random();
+    let num = Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
+    return num * std + mean;
+  }
 
   const handleAutomatedTraining = async () => {
     if (!mlModelsCollectionRef || !firestore) return;
@@ -689,12 +689,14 @@ export default function AdminPage() {
       const labels = [...Array(leakData.length).fill(1), ...Array(diffusionData.length).fill(0)];
       
       const indices = tf.util.createShuffledIndices(features.length);
-      const shuffledFeatures = indices.map(i => features[i]);
-      const shuffledLabels = indices.map(i => labels[i]);
+      const shuffledFeatures = Array.from(indices).map(i => features[i]);
+      const shuffledLabels = Array.from(indices).map(i => labels[i]);
 
+      const featureMatrix = shuffledFeatures.map(v => [v]);
+      const labelMatrix = shuffledLabels.map(v => [v]);
 
-      const inputTensor = tf.tensor2d(shuffledFeatures, [shuffledFeatures.length, 1]);
-      const labelTensor = tf.tensor2d(shuffledLabels, [shuffledLabels.length, 1]);
+      const inputTensor = tf.tensor2d(featureMatrix, [featureMatrix.length, 1]);
+      const labelTensor = tf.tensor2d(labelMatrix, [labelMatrix.length, 1]);
       
       const { mean, variance } = tf.moments(inputTensor);
       const normalizedInput = inputTensor.sub(mean).div(variance.sqrt());
