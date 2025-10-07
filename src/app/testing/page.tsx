@@ -1,3 +1,4 @@
+
 'use client';
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -55,7 +56,7 @@ import { Cog, X as XIcon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
-import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc } from '@/firebase';
+import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc, useUser } from '@/firebase';
 import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc } from 'firebase/firestore';
 
 
@@ -113,7 +114,8 @@ function TestingComponent() {
   const [isConnected, setIsConnected] = useState(false);
   
   const { toast } = useToast();
-  const { firestore } = useFirebase();
+  const { firestore, auth } = useFirebase();
+  const { user, userRole, isUserLoading } = useUser();
   
   const testSessionsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -140,6 +142,12 @@ function TestingComponent() {
       activeSensorConfigId,
       testSessions: testSessions || [] as TestSession[]
   });
+
+  useEffect(() => {
+    if (!isUserLoading && !user) {
+      router.replace('/login');
+    }
+  }, [user, isUserLoading, router]);
 
   useEffect(() => {
     stateRef.current = { firestore, selectedSessionIds, activeSensorConfigId, testSessions: testSessions || [] };
@@ -193,11 +201,15 @@ function TestingComponent() {
   const sensorDataCollectionRef = useMemoFirebase(() => {
     if (!firestore || !sensorConfig.id) return null;
     
+    // Create a query on the subcollection
     let q = query(collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`));
 
+    // If there are selected sessions, filter by them
     if (selectedSessionIds.length > 0) {
+        // Firestore 'in' query is limited to 30 items, we'll cap it at 10 for safety
         q = query(q, where('testSessionId', 'in', selectedSessionIds.slice(0, 10)));
     } else {
+        // If no session is selected, don't fetch any data
         return null;
     }
     
@@ -284,7 +296,7 @@ function TestingComponent() {
       }
       
       if (session?.measurementType === 'ARDUINO' && isConnected) {
-        // We don't send 'p' anymore, just stop logging the data
+        await sendSerialCommand('p');
       }
   
       const sessionRef = doc(firestore, `test_sessions`, sessionId);
@@ -296,8 +308,114 @@ function TestingComponent() {
         }
       }
       toast({ title: 'Test Session Ended' });
-  }, [firestore, isConnected, selectedSessionIds, stopDemoMode, testSessionsCollectionRef, toast]);
+  }, [firestore, isConnected, selectedSessionIds, stopDemoMode, testSessionsCollectionRef, toast, sendSerialCommand]);
+
+  const disconnectSerial = useCallback(async () => {
+    const { testSessions: currentTestSessions } = stateRef.current;
+    const runningArduinoSession = currentTestSessions.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
+    if (runningArduinoSession) {
+        await handleStopTestSession(runningArduinoSession.id);
+    }
+
+    if (portRef.current) {
+        readingRef.current = false;
+        if (readerRef.current) {
+            try { await readerRef.current.cancel(); } catch { }
+        }
+        if (writerRef.current) {
+            try { writerRef.current.releaseLock(); } catch { }
+        }
+        try {
+            await portRef.current.close();
+        } catch (e) {
+            console.error("Error closing port", e);
+        } finally {
+            portRef.current = null;
+            setIsConnected(false);
+            toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
+        }
+    }
+  }, [handleStopTestSession, toast]);
+
+
+  const readFromSerial = useCallback(async () => {
+    if (!portRef.current?.readable || readingRef.current) return;
+
+    readingRef.current = true;
+    const textDecoder = new TextDecoderStream();
+    const readableStreamClosed = portRef.current.readable.pipeTo(textDecoder.writable);
+    readerRef.current = textDecoder.readable.getReader();
+
+    let partialLine = '';
+
+    while (readingRef.current) {
+        try {
+            const { value, done } = await readerRef.current.read();
+            if (done) break;
+
+            partialLine += value;
+            let lines = partialLine.split('\n');
+            partialLine = lines.pop() || '';
+
+            lines.forEach(line => {
+                if (line.trim() === '') return;
+                const sensorValue = parseInt(line.trim());
+                if (!isNaN(sensorValue)) {
+                    const newDataPoint = {
+                        timestamp: new Date().toISOString(),
+                        value: sensorValue
+                    };
+                    handleNewDataPoint(newDataPoint);
+                }
+            });
+        } catch (error) {
+            console.error('Error reading data:', error);
+            if (!portRef.current?.readable) {
+                toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
+                await disconnectSerial();
+            }
+            break;
+        }
+    }
+
+    if (readerRef.current) {
+        try { await readerRef.current.cancel(); } catch { }
+        readerRef.current.releaseLock();
+        readerRef.current = null;
+    }
+    try { await readableStreamClosed.catch(() => { }); } catch { }
+    readingRef.current = false;
+
+  }, [handleNewDataPoint, toast, disconnectSerial]);
   
+  const handleConnect = useCallback(async () => {
+    if (portRef.current) {
+        await disconnectSerial();
+    } else { 
+        if (!('serial' in navigator)) {
+            toast({ variant: 'destructive', title: 'Unsupported Browser', description: 'Web Serial API is not supported here.' });
+            return;
+        }
+        try {
+            const port = await (navigator.serial as any).requestPort();
+            portRef.current = port;
+            await port.open({ baudRate: 9600 });
+            await new Promise(resolve => setTimeout(resolve, 100)); 
+            
+            setIsConnected(true);
+            toast({ title: 'Connected', description: 'Device connected. Ready to start measurement.' });
+            
+            readFromSerial();
+
+        } catch (error) {
+            console.error('Error connecting:', error);
+            if ((error as Error).name !== 'NotFoundError') {
+                toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish connection.' });
+            }
+        }
+    }
+  }, [toast, readFromSerial, disconnectSerial]);
+
   const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', productIdentifier: string }) => {
     const sessionDetails = tempTestSession || { productIdentifier: options.productIdentifier };
 
@@ -333,118 +451,6 @@ function TestingComponent() {
     return newSession;
   }, [activeSensorConfigId, firestore, testSessionsCollectionRef, tempTestSession, toast]);
 
-    const readFromSerial = useCallback(async () => {
-        if (!portRef.current?.readable || readingRef.current) return;
-
-        readingRef.current = true;
-        const textDecoder = new TextDecoderStream();
-        const readableStreamClosed = portRef.current.readable.pipeTo(textDecoder.writable);
-        readerRef.current = textDecoder.readable.getReader();
-
-        let partialLine = '';
-
-        while (readingRef.current) {
-            try {
-                const { value, done } = await readerRef.current.read();
-                if (done) break;
-
-                partialLine += value;
-                let lines = partialLine.split('\n');
-                partialLine = lines.pop() || '';
-
-                lines.forEach(line => {
-                    if (line.trim() === '') return;
-                    const sensorValue = parseInt(line.trim());
-                    if (!isNaN(sensorValue)) {
-                        const newDataPoint = {
-                            timestamp: new Date().toISOString(),
-                            value: sensorValue
-                        };
-                        handleNewDataPoint(newDataPoint);
-                    }
-                });
-            } catch (error) {
-                console.error('Error reading data:', error);
-                if (!portRef.current?.readable) {
-                    toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
-                    const { testSessions: currentTestSessions } = stateRef.current;
-                    const runningArduinoSession = currentTestSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
-                    if (runningArduinoSession) {
-                        handleStopTestSession(runningArduinoSession.id);
-                    }
-                    disconnectSerial();
-                }
-                break;
-            }
-        }
-
-        if (readerRef.current) {
-            try { await readerRef.current.cancel(); } catch { }
-            readerRef.current.releaseLock();
-            readerRef.current = null;
-        }
-        try { await readableStreamClosed.catch(() => { }); } catch { }
-        readingRef.current = false;
-
-    }, [handleNewDataPoint, toast]);
-  
-    const disconnectSerial = useCallback(async () => {
-        if (portRef.current) {
-            const { testSessions: currentTestSessions } = stateRef.current;
-            const runningArduinoSession = currentTestSessions.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
-            if (runningArduinoSession) {
-                await handleStopTestSession(runningArduinoSession.id);
-            }
-
-            readingRef.current = false;
-            if (readerRef.current) {
-                try { await readerRef.current.cancel(); } catch { }
-            }
-            if (writerRef.current) {
-                try { writerRef.current.releaseLock(); } catch { }
-            }
-
-            try {
-                await portRef.current.close();
-            } catch (e) {
-                console.error("Error closing port", e);
-            } finally {
-                portRef.current = null;
-                setIsConnected(false);
-                toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
-            }
-        }
-    }, [handleStopTestSession, toast]);
-
-
-  const handleConnect = useCallback(async () => {
-    if (portRef.current) {
-        await disconnectSerial();
-    } else { 
-        if (!('serial' in navigator)) {
-            toast({ variant: 'destructive', title: 'Unsupported Browser', description: 'Web Serial API is not supported here.' });
-            return;
-        }
-        try {
-            const port = await (navigator.serial as any).requestPort();
-            portRef.current = port;
-            await port.open({ baudRate: 9600 });
-            await new Promise(resolve => setTimeout(resolve, 100)); 
-            
-            setIsConnected(true);
-            toast({ title: 'Connected', description: 'Device connected. Ready to start measurement.' });
-            
-            readFromSerial();
-
-        } catch (error) {
-            console.error('Error connecting:', error);
-            if ((error as Error).name !== 'NotFoundError') {
-                toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish connection.' });
-            }
-        }
-    }
-  }, [toast, readFromSerial, disconnectSerial]);
-
 
   const toggleMeasurement = useCallback(async () => {
     const { testSessions: currentTestSessions } = stateRef.current;
@@ -452,7 +458,6 @@ function TestingComponent() {
 
     if (arduinoSession) {
       await handleStopTestSession(arduinoSession.id);
-      await sendSerialCommand('p');
     } else {
       const newSession = await handleStartNewTestSession({ measurementType: 'ARDUINO', productIdentifier: `Arduino Session ${new Date().toLocaleTimeString()}`});
       if (newSession) {
@@ -913,6 +918,10 @@ function TestingComponent() {
       </Card>
     );
   }
+  
+  if (isUserLoading || !user) {
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
@@ -923,10 +932,12 @@ function TestingComponent() {
                 <CardTitle className="text-3xl bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
                 BioThrust Live Dashboard
                 </CardTitle>
-                 <Button onClick={() => router.push('/admin')} variant="outline">
-                    <Cog className="h-4 w-4 mr-2" />
-                    Manage
-                </Button>
+                 {userRole === 'superadmin' && (
+                    <Button onClick={() => router.push('/admin')} variant="outline">
+                        <Cog className="h-4 w-4 mr-2" />
+                        Manage
+                    </Button>
+                )}
             </div>
 
             <CardDescription>
