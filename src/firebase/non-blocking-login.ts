@@ -11,10 +11,26 @@ import { doc, setDoc, getDocs, collection, query, where, Firestore } from 'fireb
 import { errorEmitter } from './error-emitter';
 import { FirestorePermissionError } from './errors';
 
-/** Initiate email/password sign-up (non-blocking). */
-export async function initiateEmailSignUp(authInstance: Auth, firestore: Firestore, email: string, password: string, username?: string): Promise<void> {
-  // Check if username already exists, if provided and is not an empty string
-  if (username && username.trim() !== '') {
+const DUMMY_DOMAIN = 'biothrust.app';
+
+/** Initiate sign-up with email or username (non-blocking). */
+export async function initiateEmailSignUp(authInstance: Auth, firestore: Firestore, emailOrUsername: string, password: string): Promise<void> {
+  let email: string;
+  let username: string;
+
+  if (emailOrUsername.includes('@')) {
+    email = emailOrUsername;
+    username = email.split('@')[0];
+    // Check if the auto-generated username already exists
+    const usernameQuery = query(collection(firestore, 'users'), where('username', '==', username));
+    const usernameSnapshot = await getDocs(usernameQuery);
+    if (!usernameSnapshot.empty) {
+      throw new Error(`The username '${username}' derived from your email is already taken. Please try signing up with a unique username instead.`);
+    }
+  } else {
+    username = emailOrUsername;
+    email = `${username}@${DUMMY_DOMAIN}`;
+    // Check if username already exists
     const usernameQuery = query(collection(firestore, 'users'), where('username', '==', username));
     const usernameSnapshot = await getDocs(usernameQuery);
     if (!usernameSnapshot.empty) {
@@ -27,12 +43,11 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
     const user = userCredential.user;
     const userDocRef = doc(firestore, 'users', user.uid);
     const userData = {
-      email: user.email,
-      username: username || '',
+      email: user.email, // This will be the real or dummy email
+      username: username,
       role: 'user' // Default role
     };
 
-    // Use a non-blocking setDoc and catch potential permission errors
     setDoc(userDocRef, userData).catch(error => {
       const permissionError = new FirestorePermissionError({
         path: `users/${user.uid}`,
@@ -40,12 +55,15 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
         requestResourceData: userData,
       });
       errorEmitter.emit('permission-error', permissionError);
-      // We still want to inform the user about this, even if it's non-blocking for the UI
       console.error("Firestore error during user creation:", permissionError.message);
     });
 
   } catch (error: any) {
-    // Re-throw auth errors to be handled by the UI
+    if (error.code === 'auth/email-already-in-use') {
+        // This can happen if a username is chosen that maps to an existing dummy email
+        throw new Error('This username is already taken. Please choose another one.');
+    }
+    // Re-throw other auth errors to be handled by the UI
     throw error;
   }
 }
@@ -54,7 +72,6 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
 export async function initiateEmailSignIn(authInstance: Auth, firestore: Firestore, emailOrUsername: string, password: string): Promise<User> {
   let email = emailOrUsername;
 
-  // If the input doesn't look like an email, assume it's a username and find the email
   if (!emailOrUsername.includes('@')) {
     const username = emailOrUsername;
     const q = query(collection(firestore, 'users'), where('username', '==', username));
@@ -64,7 +81,6 @@ export async function initiateEmailSignIn(authInstance: Auth, firestore: Firesto
       throw new Error('User not found.');
     }
     
-    // Assuming usernames are unique, take the first result
     const userDoc = querySnapshot.docs[0];
     email = userDoc.data().email;
 

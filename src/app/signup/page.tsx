@@ -17,8 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 
 const formSchema = z.object({
-  email: z.string().email({ message: 'Invalid email address.' }),
-  username: z.string().min(3, { message: 'Username must be at least 3 characters.' }).regex(/^[a-zA-Z0-9_]+$/, { message: 'Username can only contain letters, numbers, and underscores.'}).optional().or(z.literal('')),
+  emailOrUsername: z.string().min(3, { message: 'Must be at least 3 characters.' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
 });
 
@@ -31,8 +30,7 @@ export default function SignupPage() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      email: '',
-      username: '',
+      emailOrUsername: '',
       password: '',
     },
   });
@@ -40,16 +38,13 @@ export default function SignupPage() {
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setIsLoading(true);
     try {
-      // The function is fire-and-forget for Firestore, but we await the auth part
-      await initiateEmailSignUp(auth, firestore, values.email, values.password, values.username);
+      await initiateEmailSignUp(auth, firestore, values.emailOrUsername, values.password);
       toast({
         title: 'Account Created',
         description: "You've been signed in and are being redirected.",
       });
-      // The onAuthStateChanged listener in useUser will handle the redirect
       router.push('/');
     } catch (error: any) {
-      // This will catch auth errors from createUserWithEmailAndPassword
       console.error(error);
       let errorMessage = error.message;
       if (error.code === 'auth/email-already-in-use') {
@@ -79,25 +74,12 @@ export default function SignupPage() {
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               <FormField
                 control={form.control}
-                name="email"
+                name="emailOrUsername"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    <FormLabel>Email or Username</FormLabel>
                     <FormControl>
-                      <Input placeholder="name@example.com" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-               <FormField
-                control={form.control}
-                name="username"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Username (Optional)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="your_username" {...field} />
+                      <Input placeholder="your_username or name@example.com" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
