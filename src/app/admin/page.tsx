@@ -221,7 +221,6 @@ export default function AdminPage() {
         const snapshot = await getDocs(q);
         counts[session.id] = snapshot.size;
       } catch (e) {
-          console.error("Error fetching session data counts.", e);
           counts[session.id] = 0;
       }
     }
@@ -349,7 +348,6 @@ export default function AdminPage() {
         }
         setTempSensorConfig(null);
     } catch (e) {
-        console.error("Error deleting configuration:", e);
         toast({
             variant: 'destructive',
             title: 'Error Deleting Configuration',
@@ -433,7 +431,7 @@ export default function AdminPage() {
             });
             dataDeletedCount = querySnapshot.size;
         } catch (e) {
-            console.error("Could not query/delete sensor data, but proceeding to delete session.", e);
+            // Could not query/delete sensor data, but proceeding to delete session.
         }
     }
 
@@ -447,7 +445,6 @@ export default function AdminPage() {
             description: `Session "${session.productName}" and ${dataDeletedCount} data points deleted.`
         });
     } catch (serverError) {
-        console.error("Error deleting session:", serverError);
         toast({
             variant: 'destructive',
             title: 'Error Deleting Session',
@@ -640,11 +637,19 @@ export default function AdminPage() {
 
 
     } catch (e: any) {
-        console.error("Training failed:", e);
         toast({variant: 'destructive', title: 'Training Failed', description: e.message});
     } finally {
         setIsTraining(false);
     }
+  };
+
+  const gaussianNoise = (mean = 0, std = 1) => {
+    let u1 = 0, u2 = 0;
+    //Convert [0,1) to (0,1)
+    while (u1 === 0) u1 = Math.random();
+    while (u2 === 0) u2 = Math.random();
+    const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+    return z0 * std + mean;
   };
 
   const handleAutomatedTraining = async () => {
@@ -746,20 +751,12 @@ export default function AdminPage() {
       setAutoTrainingStatus({ step: 'Complete', progress: 100, details: `Finished with ${finalAccuracy.toFixed(2)}% accuracy.` });
 
     } catch (e: any) {
-        console.error("Automated training failed:", e);
         toast({variant: 'destructive', title: 'Automated Training Failed', description: e.message});
         setAutoTrainingStatus({ step: 'Failed', progress: 100, details: e.message });
     } finally {
         setTimeout(() => setIsAutoTraining(false), 5000);
     }
   };
-
-  const gaussianNoise = (mean = 0, std = 3) => {
-      const u1 = 1 - Math.random();
-      const u2 = Math.random();
-      return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * std + mean;
-  };
-
 
   const viewSessionData = (sessionId: string) => {
     const queryParams = new URLSearchParams({ sessionId }).toString();

@@ -39,6 +39,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogClose
+} from "@/components/ui/dialog";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Slider } from '@/components/ui/slider';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -123,6 +133,7 @@ function TestingComponent() {
   const [chartKey, setChartKey] = useState<number>(Date.now());
   
   const [isConnected, setIsConnected] = useState(false);
+  const [isNewSessionModalOpen, setIsNewSessionModalOpen] = useState(false);
   
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
@@ -293,7 +304,7 @@ function TestingComponent() {
       writerRef.current = portRef.current.writable.getWriter();
       await writerRef.current.write(encoder.encode(command));
     } catch (error) {
-      console.error("Send failed:", error);
+      // Missing: Proper cleanup and reconnection logic
     } finally {
       if(writerRef.current) {
         writerRef.current.releaseLock();
@@ -343,7 +354,7 @@ function TestingComponent() {
         try {
             await portRef.current.close();
         } catch (e) {
-            console.error("Error closing port", e);
+            // Error closing port
         } finally {
             portRef.current = null;
             setIsConnected(false);
@@ -383,7 +394,6 @@ function TestingComponent() {
                 }
             });
         } catch (error) {
-            console.error('Error reading data:', error);
             if (!portRef.current?.readable) {
                 toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
                 await disconnectSerial();
@@ -423,7 +433,6 @@ function TestingComponent() {
             readFromSerial();
 
         } catch (error) {
-            console.error('Error connecting:', error);
             if ((error as Error).name !== 'NotFoundError') {
                 toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish connection.' });
             }
@@ -479,45 +488,48 @@ function TestingComponent() {
     if (arduinoSession) {
       await handleStopTestSession(arduinoSession.id);
     } else {
-        setTempTestSession({ productId: products?.[0]?.id }); // Pre-select first product
-        // This will open the session manager card to confirm details. The actual session start will be from there.
+        setTempTestSession({ productId: products?.[0]?.id }); 
+        setIsNewSessionModalOpen(true);
     }
   }, [handleStopTestSession, products]);
 
   const handleStartArduinoSessionFromModal = async () => {
+    setIsNewSessionModalOpen(false);
     const newSession = await handleStartNewTestSession({ measurementType: 'ARDUINO' });
     if (newSession) {
       await sendSerialCommand('s');
     }
   }
 
-  const gaussianNoise = (mean = 0, std = 3) => {
-    const u1 = 1 - Math.random();
-    const u2 = Math.random();
-    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * std + mean;
+  const gaussianNoise = (mean = 0, std = 1) => {
+    let u1 = 0, u2 = 0;
+    //Convert [0,1) to (0,1)
+    while (u1 === 0) u1 = Math.random();
+    while (u2 === 0) u2 = Math.random();
+    const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+    return z0 * std + mean;
   };
 
   useEffect(() => {
     if (runningTestSession && runningTestSession.measurementType === 'DEMO' && !demoIntervalRef.current) {
         let step = 0;
         const totalSteps = 240; // ~2 minutes of data
-        const startValue = 950;
-        const endValueLeak = 150;
-        const endValueDiffusion = 800;
         
-        const noiseLevel = 3;
-
         demoIntervalRef.current = setInterval(() => {
             let rawValue;
             if (runningTestSession.demoType === 'LEAK') {
-                const dropPerStep = (startValue - endValueLeak) / totalSteps;
+                const startValue = 950;
+                const endValue = 150;
+                const dropPerStep = (startValue - endValue) / totalSteps;
                 rawValue = startValue - (step * dropPerStep);
             } else { // DIFFUSION
-                const tau = totalSteps / 5; // Time constant for decay
-                rawValue = endValueDiffusion + (startValue - endValueDiffusion) * Math.exp(-step / tau);
+                const startValue = 950;
+                const endValue = 800;
+                const tau = totalSteps / 5;
+                rawValue = endValue + (startValue - endValue) * Math.exp(-step / tau);
             }
 
-            const noisyValue = Math.min(1023, Math.max(0, Math.round(rawValue + gaussianNoise(0, noiseLevel))));
+            const noisyValue = Math.min(1023, Math.max(0, Math.round(rawValue + gaussianNoise(0, 3))));
             
             handleNewDataPoint({ timestamp: new Date().toISOString(), value: noisyValue });
 
@@ -628,7 +640,6 @@ function TestingComponent() {
       const result = await analyzePressureTrendForLeaks(input);
       setAnalysisResult(result);
     } catch (error) {
-      console.error('Error during leak analysis:', error);
       toast({
         variant: 'destructive',
         title: 'Analysis Failed',
@@ -661,7 +672,6 @@ function TestingComponent() {
           description: `All sensor data for the selected session(s) has been removed from the cloud.`
         });
       } catch (error) {
-        console.error("Error deleting cloud data:", error);
         toast({
           variant: 'destructive',
           title: 'Error Deleting Cloud Data',
@@ -736,7 +746,6 @@ function TestingComponent() {
       complete: (results) => {
         if (results.errors.length > 0) {
           toast({ variant: 'destructive', title: 'Import Error', description: 'Could not read the CSV file.' });
-          console.error(results.errors);
           return;
         }
 
@@ -953,22 +962,22 @@ function TestingComponent() {
       </Card>
   );
 
-  const renderTestSessionManager = () => {
+  const renderNewSessionModal = () => {
+    if (!isNewSessionModalOpen) return null;
+
     return (
-      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-        <CardHeader>
-          <CardTitle>Test Sessions</CardTitle>
-          <CardDescription>
-            Start a new test session to associate data with a specific product.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {tempTestSession && !runningTestSession && (
-            <div className="space-y-4">
-              <CardTitle className="text-lg">New Test Session</CardTitle>
+      <Dialog open={isNewSessionModalOpen} onOpenChange={setIsNewSessionModalOpen}>
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>New Arduino Test Session</DialogTitle>
+                <DialogDescription>
+                    Enter details for the new test session.
+                </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
               <div>
                 <Label htmlFor="productIdentifier">Product</Label>
-                 <Select value={tempTestSession.productId || ''} onValueChange={value => handleTestSessionFieldChange('productId', value)}>
+                 <Select value={tempTestSession?.productId || ''} onValueChange={value => handleTestSessionFieldChange('productId', value)}>
                     <SelectTrigger id="productIdentifier">
                         <SelectValue placeholder="Select a product to test" />
                     </SelectTrigger>
@@ -981,38 +990,23 @@ function TestingComponent() {
               </div>
               <div>
                 <Label htmlFor="serialNumber">Serial Number</Label>
-                <Input id="serialNumber" placeholder="e.g. 187" value={tempTestSession.serialNumber || ''} onChange={e => handleTestSessionFieldChange('serialNumber', e.target.value)} />
+                <Input id="serialNumber" placeholder="e.g. 187" value={tempTestSession?.serialNumber || ''} onChange={e => handleTestSessionFieldChange('serialNumber', e.target.value)} />
               </div>
               <div>
                 <Label htmlFor="description">Description</Label>
-                <Input id="description" placeholder="Internal R&D..." value={tempTestSession.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
-              </div>
-              <div className="flex justify-center gap-4">
-                <Button onClick={() => handleStartNewTestSession({ measurementType: isConnected ? 'ARDUINO' : 'DEMO' })} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Start Session</Button>
-                <Button variant="ghost" onClick={() => setTempTestSession(null)}>Cancel</Button>
+                <Input id="description" placeholder="Internal R&D..." value={tempTestSession?.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
               </div>
             </div>
-          )}
-          
-           {runningTestSession && (
-             <Card className='p-3 mb-2 border-primary'>
-                <div className="flex justify-between items-center">
-                    <div>
-                        <p className="font-semibold">{runningTestSession.productName}</p>
-                        <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US')} - {runningTestSession.status}</p>
-                         <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.demoType ? `(${runningTestSession.demoType})` : ''}</p>
-                    </div>
-                    <div className="flex gap-2">
-                        <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
-                    </div>
-                </div>
-            </Card>
-           )}
-
-        </CardContent>
-      </Card>
+            <DialogFooter>
+                <DialogClose asChild>
+                    <Button variant="ghost" onClick={() => setTempTestSession(null)}>Cancel</Button>
+                </DialogClose>
+                <Button onClick={handleStartArduinoSessionFromModal} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Start Session</Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
     );
-  }
+  };
   
   if (isUserLoading || !user) {
     return (
@@ -1072,9 +1066,23 @@ function TestingComponent() {
             {activeTab === 'file' && renderFileTab()}
           </div>
           <div className="lg:col-span-1">
-            {renderTestSessionManager()}
+             {runningTestSession && (
+             <Card className='p-3 mb-2 border-primary bg-white/70 backdrop-blur-sm shadow-lg'>
+                <div className="flex justify-between items-center">
+                    <div>
+                        <p className="font-semibold">{runningTestSession.productName}</p>
+                        <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US')} - {runningTestSession.status}</p>
+                         <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.demoType ? `(${runningTestSession.demoType})` : ''}</p>
+                    </div>
+                    <div className="flex gap-2">
+                        <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
+                    </div>
+                </div>
+            </Card>
+           )}
           </div>
         </div>
+        {renderNewSessionModal()}
 
         <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
           <CardHeader>
