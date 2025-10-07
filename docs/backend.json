@@ -156,9 +156,9 @@
         "description": "Represents a single test session for a specific product.",
         "properties": {
             "id": { "type": "string", "description": "Unique identifier for the test session." },
-            "productIdentifier": { "type": "string", "description": "Full product identifier, e.g., [c.su300.8b.b]-187." },
-            "serialNumber": { "type": "string", "description": "The serial number of the product." },
-            "model": { "type": "string", "description": "The model of the product." },
+            "productId": { "type": "string", "description": "Reference to the product being tested." },
+            "productName": { "type": "string", "description": "The name of the product being tested." },
+            "serialNumber": { "type": "string", "description": "The serial number of the product instance." },
             "description": { "type": "string", "description": "A description of the test session." },
             "startTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test started." },
             "endTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test ended." },
@@ -166,7 +166,18 @@
             "sensorConfigurationId": { "type": "string", "description": "The sensor configuration used for this test." },
             "measurementType": { "type": "string", "enum": ["DEMO", "ARDUINO"], "description": "The source of the measurement data." }
         },
-        "required": ["id", "productIdentifier", "startTime", "status", "sensorConfigurationId", "measurementType"]
+        "required": ["id", "productId", "productName", "startTime", "status", "sensorConfigurationId", "measurementType"]
+    },
+    "Product": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "Product",
+        "type": "object",
+        "description": "Represents a product that can be tested.",
+        "properties": {
+            "id": { "type": "string", "description": "Unique identifier for the product." },
+            "name": { "type": "string", "description": "The name of the product." }
+        },
+        "required": ["id", "name"]
     }
   },
   "auth": {
@@ -223,8 +234,17 @@
           "schema": { "$ref": "#/entities/TestSession" },
           "description": "Stores all test sessions globally."
         }
+      },
+      {
+        "path": "/products/{productId}",
+        "definition": {
+            "entityName": "Product",
+            "schema": { "$ref": "#/entities/Product" },
+            "description": "Stores all available products."
+        }
       }
     ],
     "reasoning": "This Firestore data structure is designed for a single-user or public-access model. All data is stored in global collections, removing any user-specific paths or ownership. This simplifies data access as there is no user authentication or authorization layer to manage. It's suitable for local testing or a fully public dashboard."
   }
 }
+

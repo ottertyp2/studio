@@ -46,7 +46,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut, MoreHorizontal } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
@@ -71,6 +71,11 @@ type AppUser = {
     role: 'user' | 'superadmin';
 };
 
+type Product = {
+    id: string;
+    name: string;
+};
+
 type SensorData = {
   timestamp: string;
   value: number;
@@ -79,9 +84,9 @@ type SensorData = {
 
 type TestSession = {
     id: string;
-    productIdentifier: string;
+    productId: string;
+    productName: string;
     serialNumber: string;
-    model: string;
     description: string;
     startTime: string;
     endTime?: string;
@@ -103,6 +108,7 @@ export default function AdminPage() {
   const [activeTestSessionId, setActiveTestSessionId] = useState<string | null>(null);
   const [tempTestSession, setTempTestSession] = useState<Partial<TestSession> | null>(null);
   const [sessionDataCounts, setSessionDataCounts] = useState<Record<string, number>>({});
+  const [newProductName, setNewProductName] = useState('');
 
   useEffect(() => {
     if (!isUserLoading) {
@@ -134,6 +140,13 @@ export default function AdminPage() {
   }, [firestore]);
 
   const { data: users, isLoading: isUsersLoading } = useCollection<AppUser>(usersCollectionRef);
+
+  const productsCollectionRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'products');
+  }, [firestore]);
+
+  const { data: products, isLoading: isProductsLoading } = useCollection<Product>(productsCollectionRef);
 
 
   const fetchSessionDataCounts = useCallback(async () => {
@@ -297,8 +310,8 @@ export default function AdminPage() {
   };
 
   const handleStartNewTestSession = async () => {
-    if (!tempTestSession || !tempTestSession.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
-        toast({variant: 'destructive', title: 'Error', description: 'Please provide a product identifier and select a sensor.'});
+    if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products) {
+        toast({variant: 'destructive', title: 'Error', description: 'Please select a product and a sensor.'});
         return;
     }
 
@@ -307,12 +320,18 @@ export default function AdminPage() {
         return;
     }
 
+    const selectedProduct = products.find(p => p.id === tempTestSession.productId);
+    if (!selectedProduct) {
+        toast({variant: 'destructive', title: 'Error', description: 'Selected product not found.'});
+        return;
+    }
+
     const newSessionId = doc(collection(firestore!, '_')).id;
     const newSession: Omit<TestSession, 'dataPointCount'> = {
       id: newSessionId,
-      productIdentifier: tempTestSession.productIdentifier,
+      productId: selectedProduct.id,
+      productName: selectedProduct.name,
       serialNumber: tempTestSession.serialNumber || '',
-      model: tempTestSession.model || '',
       description: tempTestSession.description || '',
       startTime: new Date().toISOString(),
       status: 'RUNNING',
@@ -323,7 +342,7 @@ export default function AdminPage() {
     await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
     setActiveTestSessionId(newSessionId);
     setTempTestSession(null);
-    toast({ title: 'New Test Session Started', description: `Product: ${newSession.productIdentifier}`});
+    toast({ title: 'New Test Session Started', description: `Product: ${newSession.productName}`});
   };
 
   const handleStopTestSession = (sessionId: string) => {
@@ -365,7 +384,7 @@ export default function AdminPage() {
         await batch.commit();
         toast({
             title: 'Session Deleted',
-            description: `Session "${session.productIdentifier}" and ${dataDeletedCount} data points deleted.`
+            description: `Session "${session.productName}" and ${dataDeletedCount} data points deleted.`
         });
     } catch (serverError) {
         console.error("Error deleting session:", serverError);
@@ -419,6 +438,22 @@ export default function AdminPage() {
         description: error.message,
       });
     }
+  };
+
+  const handleAddProduct = () => {
+    if (!newProductName.trim() || !firestore) return;
+    const newProductId = doc(collection(firestore, '_')).id;
+    const productRef = doc(firestore, 'products', newProductId);
+    setDoc(productRef, { id: newProductId, name: newProductName.trim() });
+    setNewProductName('');
+    toast({ title: 'Product Added', description: `"${newProductName.trim()}" has been added.`});
+  };
+
+  const handleDeleteProduct = (productId: string) => {
+    if (!firestore) return;
+    const productRef = doc(firestore, 'products', productId);
+    deleteDoc(productRef);
+    toast({ title: 'Product Deleted'});
   };
 
 
@@ -511,7 +546,7 @@ export default function AdminPage() {
         <CardContent>
           {!tempTestSession && !runningSession && (
             <div className="flex justify-center">
-              <Button onClick={() => setTempTestSession({})} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!activeSensorConfigId}>
+              <Button onClick={() => setTempTestSession({})} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!activeSensorConfigId || !products || products.length === 0}>
                 Start New Test Session
               </Button>
             </div>
@@ -521,17 +556,22 @@ export default function AdminPage() {
             <div className="space-y-4">
               <CardTitle className="text-lg">New Test Session</CardTitle>
               <div>
-                <Label htmlFor="productIdentifier">Product Identifier</Label>
-                <Input id="productIdentifier" placeholder="[c.su300.8b.b]-187" value={tempTestSession.productIdentifier || ''} onChange={e => handleTestSessionFieldChange('productIdentifier', e.target.value)} />
+                <Label htmlFor="productIdentifier">Product</Label>
+                <Select onValueChange={value => handleTestSessionFieldChange('productId', value)}>
+                    <SelectTrigger id="productIdentifier">
+                        <SelectValue placeholder="Select a product to test" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {isProductsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                        products?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
+                        }
+                    </SelectContent>
+                </Select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                  <div>
                     <Label htmlFor="serialNumber">Serial Number</Label>
-                    <Input id="serialNumber" placeholder="187" value={tempTestSession.serialNumber || ''} onChange={e => handleTestSessionFieldChange('serialNumber', e.target.value)} />
-                </div>
-                <div>
-                    <Label htmlFor="model">Model</Label>
-                    <Input id="model" placeholder="c.su300.8b.b" value={tempTestSession.model || ''} onChange={e => handleTestSessionFieldChange('model', e.target.value)} />
+                    <Input id="serialNumber" placeholder="e.g., 187" value={tempTestSession.serialNumber || ''} onChange={e => handleTestSessionFieldChange('serialNumber', e.target.value)} />
                 </div>
               </div>
               <div>
@@ -552,7 +592,7 @@ export default function AdminPage() {
                     <Card key={session.id} className={`p-3 mb-2 ${session.status === 'RUNNING' ? 'border-primary' : ''}`}>
                         <div className="flex justify-between items-start">
                             <div>
-                                <p className="font-semibold">{session.productIdentifier}</p>
+                                <p className="font-semibold">{session.productName}</p>
                                 <p className="text-sm text-muted-foreground">
                                     {new Date(session.startTime).toLocaleString('en-US')} - {session.status}
                                 </p>
@@ -573,7 +613,7 @@ export default function AdminPage() {
                                         <AlertDialogHeader>
                                             <AlertDialogTitle className="text-destructive">Permanently Delete Session?</AlertDialogTitle>
                                             <AlertDialogDescription>
-                                                This will permanently delete the session for "{session.productIdentifier}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
+                                                This will permanently delete the session for "{session.productName}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
                                             </AlertDialogDescription>
                                         </AlertDialogHeader>
                                         <AlertDialogFooter>
@@ -667,6 +707,57 @@ export default function AdminPage() {
         </Card>
     );
   };
+  
+    const renderProductManagement = () => (
+        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+            <CardHeader>
+                <CardTitle>Product Management</CardTitle>
+                <CardDescription>Add, view, and remove testable products.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="flex gap-2 mb-4">
+                    <Input 
+                        placeholder="New product name..." 
+                        value={newProductName} 
+                        onChange={(e) => setNewProductName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddProduct()}
+                    />
+                    <Button onClick={handleAddProduct} disabled={!newProductName.trim()}>
+                        <PackagePlus className="h-4 w-4 mr-2" />
+                        Add
+                    </Button>
+                </div>
+                <ScrollArea className="h-48">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Product Name</TableHead>
+                                <TableHead className="text-right">Action</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {isProductsLoading ? (
+                                <TableRow><TableCell colSpan={2}>Loading products...</TableCell></TableRow>
+                            ) : products && products.length > 0 ? (
+                                products.map(p => (
+                                    <TableRow key={p.id}>
+                                        <TableCell>{p.name}</TableCell>
+                                        <TableCell className="text-right">
+                                            <Button variant="ghost" size="icon" onClick={() => handleDeleteProduct(p.id)}>
+                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            ) : (
+                                <TableRow><TableCell colSpan={2} className="text-center">No products found.</TableCell></TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                </ScrollArea>
+            </CardContent>
+        </Card>
+    );
 
   if (isUserLoading || !user || userRole !== 'superadmin') {
     return (
@@ -698,78 +789,74 @@ export default function AdminPage() {
                 </div>
             </div>
             <CardDescription>
-              Manage sensor configurations and test sessions.
+              Manage products, sensor configurations, and test sessions.
             </CardDescription>
           </CardHeader>
         </Card>
       </header>
 
-      <main className="w-full max-w-7xl mx-auto space-y-6">
+      <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
        
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="space-y-6">
-                  <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-                      <CardHeader>
-                          <CardTitle>Sensor Management</CardTitle>
-                          <CardDescription>
-                              Manage all sensor configurations.
-                          </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                          <div className="flex justify-center mb-4">
-                              <Button onClick={handleNewSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">New Configuration</Button>
-                          </div>
-                          {isSensorConfigsLoading ? <p>Loading sensors...</p> :
-                          <ScrollArea className="h-96">
-                              <div className="space-y-4">
-                                  {sensorConfigs?.map(c => (
-                                      <Card key={c.id} className='p-4'>
-                                          <div className='flex justify-between items-center'>
-                                              <div>
-                                                  <p className='font-semibold'>{c.name}</p>
-                                                  <p className="text-sm text-muted-foreground">{c.mode} ({c.unit})</p>
-                                              </div>
-                                              <div className='flex gap-2'>
-                                                  <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
-                                                  <AlertDialog>
-                                                      <AlertDialogTrigger asChild>
-                                                      <Button size="sm" variant="destructive">Delete</Button>
-                                                      </AlertDialogTrigger>
-                                                      <AlertDialogContent>
-                                                      <AlertDialogHeader>
-                                                          <AlertDialogTitle className="text-destructive">Permanently Delete Configuration?</AlertDialogTitle>
-                                                          <AlertDialogDescription>
-                                                          Are you sure you want to delete the configuration "{c.name}"? This will also delete all associated sensor data. This action cannot be undone.
-                                                          </AlertDialogDescription>
-                                                      </AlertDialogHeader>
-                                                      <AlertDialogFooter>
-                                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                          <AlertDialogAction variant="destructive" onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
-                                                      </AlertDialogFooter>
-                                                      </AlertDialogContent>
-                                                  </AlertDialog>
-
-                                              </div>
+          <div className="lg:col-span-2 space-y-6">
+             <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+                  <CardHeader>
+                      <CardTitle>Sensor Management</CardTitle>
+                      <CardDescription>
+                          Manage all sensor configurations.
+                      </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                      <div className="flex justify-center mb-4">
+                          <Button onClick={handleNewSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">New Configuration</Button>
+                      </div>
+                      {isSensorConfigsLoading ? <p>Loading sensors...</p> :
+                      <ScrollArea className="h-96">
+                          <div className="space-y-4">
+                              {sensorConfigs?.map(c => (
+                                  <Card key={c.id} className='p-4'>
+                                      <div className='flex justify-between items-center'>
+                                          <div>
+                                              <p className='font-semibold'>{c.name}</p>
+                                              <p className="text-sm text-muted-foreground">{c.mode} ({c.unit})</p>
                                           </div>
-                                      </Card>
-                                  ))}
-                              </div>
-                          </ScrollArea>
-                          }
-                          {renderSensorConfigurator()}
-                      </CardContent>
-                  </Card>
-              </div>
-              <div className="space-y-6">
-                  {renderTestSessionManager()}
-              </div>
+                                          <div className='flex gap-2'>
+                                              <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
+                                              <AlertDialog>
+                                                  <AlertDialogTrigger asChild>
+                                                  <Button size="sm" variant="destructive">Delete</Button>
+                                                  </AlertDialogTrigger>
+                                                  <AlertDialogContent>
+                                                  <AlertDialogHeader>
+                                                      <AlertDialogTitle className="text-destructive">Permanently Delete Configuration?</AlertDialogTitle>
+                                                      <AlertDialogDescription>
+                                                      Are you sure you want to delete the configuration "{c.name}"? This will also delete all associated sensor data. This action cannot be undone.
+                                                      </AlertDialogDescription>
+                                                  </AlertDialogHeader>
+                                                  <AlertDialogFooter>
+                                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                      <AlertDialogAction variant="destructive" onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
+                                                  </AlertDialogFooter>
+                                                  </AlertDialogContent>
+                                              </AlertDialog>
+
+                                          </div>
+                                      </div>
+                                  </Card>
+                              ))}
+                          </div>
+                      </ScrollArea>
+                      }
+                      {renderSensorConfigurator()}
+                  </CardContent>
+              </Card>
+              {renderUserManagement()}
           </div>
-          {renderUserManagement()}
+          <div className="lg:col-span-1 space-y-6">
+              {renderProductManagement()}
+              {renderTestSessionManager()}
+          </div>
       </main>
     </div>
   );
 }
 
-    
-
-    

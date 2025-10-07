@@ -79,11 +79,16 @@ type SensorConfig = {
     decimalPlaces: number;
 };
 
+type Product = {
+    id: string;
+    name: string;
+};
+
 type TestSession = {
     id: string;
-    productIdentifier: string;
+    productId: string;
+    productName: string;
     serialNumber: string;
-    model: string;
     description: string;
     startTime: string;
     endTime?: string;
@@ -161,6 +166,13 @@ function TestingComponent() {
   }, [firestore]);
   
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
+
+  const productsCollectionRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'products');
+  }, [firestore]);
+
+  const { data: products, isLoading: isProductsLoading } = useCollection<Product>(productsCollectionRef);
 
   const runningTestSession = useMemo(() => {
     return testSessions?.find(s => s.status === 'RUNNING');
@@ -418,11 +430,9 @@ function TestingComponent() {
     }
   }, [toast, readFromSerial, disconnectSerial]);
 
-  const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', productIdentifier: string }) => {
-    const sessionDetails = tempTestSession || { productIdentifier: options.productIdentifier };
-
-    if (!sessionDetails.productIdentifier || !activeSensorConfigId || !testSessionsCollectionRef) {
-        toast({variant: 'destructive', title: 'Error', description: 'Please provide a product identifier and select a sensor.'});
+  const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO' }) => {
+    if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products) {
+        toast({variant: 'destructive', title: 'Error', description: 'Please select a product and a sensor.'});
         return null;
     }
 
@@ -432,14 +442,20 @@ function TestingComponent() {
         toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
         return null;
     }
+    
+    const selectedProduct = products.find(p => p.id === tempTestSession.productId);
+    if (!selectedProduct) {
+        toast({variant: 'destructive', title: 'Error', description: 'Selected product not found.'});
+        return null;
+    }
 
     const newSessionId = doc(collection(firestore!, '_')).id;
     const newSession: TestSession = {
       id: newSessionId,
-      productIdentifier: sessionDetails.productIdentifier,
-      serialNumber: sessionDetails.serialNumber || '',
-      model: sessionDetails.model || '',
-      description: sessionDetails.description || '',
+      productId: selectedProduct.id,
+      productName: selectedProduct.name,
+      serialNumber: tempTestSession.serialNumber || '',
+      description: tempTestSession.description || '',
       startTime: new Date().toISOString(),
       status: 'RUNNING',
       sensorConfigurationId: activeSensorConfigId,
@@ -449,9 +465,9 @@ function TestingComponent() {
     await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
     setSelectedSessionIds([newSessionId]);
     setTempTestSession(null);
-    toast({ title: 'New Test Session Started', description: `Product: ${newSession.productIdentifier}`});
+    toast({ title: 'New Test Session Started', description: `Product: ${newSession.productName}`});
     return newSession;
-  }, [activeSensorConfigId, firestore, testSessionsCollectionRef, tempTestSession, toast]);
+  }, [activeSensorConfigId, firestore, testSessionsCollectionRef, tempTestSession, toast, products]);
 
 
   const toggleMeasurement = useCallback(async () => {
@@ -461,12 +477,17 @@ function TestingComponent() {
     if (arduinoSession) {
       await handleStopTestSession(arduinoSession.id);
     } else {
-      const newSession = await handleStartNewTestSession({ measurementType: 'ARDUINO', productIdentifier: `Arduino Session ${new Date().toLocaleTimeString()}`});
-      if (newSession) {
-        await sendSerialCommand('s');
-      }
+        setTempTestSession({ productId: products?.[0]?.id }); // Pre-select first product
+        // This will open the session manager card to confirm details. The actual session start will be from there.
     }
-  }, [sendSerialCommand, handleStartNewTestSession, handleStopTestSession]);
+  }, [handleStopTestSession, products]);
+
+  const handleStartArduinoSessionFromModal = async () => {
+    const newSession = await handleStartNewTestSession({ measurementType: 'ARDUINO' });
+    if (newSession) {
+      await sendSerialCommand('s');
+    }
+  }
 
 
   useEffect(() => {
@@ -506,7 +527,12 @@ function TestingComponent() {
         toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
         return;
     }
-    handleStartNewTestSession({ measurementType: 'DEMO', productIdentifier: 'Demo Session' });
+    if (!products || products.length === 0) {
+        toast({variant: 'destructive', title: 'Error', description: 'No products available. Please create one in the admin panel.'});
+        return;
+    }
+    setTempTestSession({ productId: products?.[0]?.id, productName: products?.[0]?.name });
+    // This will open the modal to start a DEMO session.
   };
   
   const handleAnalysis = async () => {
@@ -869,37 +895,32 @@ function TestingComponent() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {!tempTestSession && !runningTestSession && (
-            <div className="flex justify-center">
-              <Button onClick={() => setTempTestSession({})} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1"  disabled={!!runningTestSession || !activeSensorConfigId}>
-                Start New Test Session
-              </Button>
-            </div>
-          )}
-
           {tempTestSession && !runningTestSession && (
             <div className="space-y-4">
               <CardTitle className="text-lg">New Test Session</CardTitle>
               <div>
-                <Label htmlFor="productIdentifier">Product Identifier</Label>
-                <Input id="productIdentifier" placeholder="[c.su300.8b.b]-187" value={tempTestSession.productIdentifier || ''} onChange={e => handleTestSessionFieldChange('productIdentifier', e.target.value)} />
+                <Label htmlFor="productIdentifier">Product</Label>
+                 <Select value={tempTestSession.productId || ''} onValueChange={value => handleTestSessionFieldChange('productId', value)}>
+                    <SelectTrigger id="productIdentifier">
+                        <SelectValue placeholder="Select a product to test" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {isProductsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                        products?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
+                        }
+                    </SelectContent>
+                </Select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                 <div>
-                    <Label htmlFor="serialNumber">Serial Number</Label>
-                    <Input id="serialNumber" placeholder="187" value={tempTestSession.serialNumber || ''} onChange={e => handleTestSessionFieldChange('serialNumber', e.target.value)} />
-                </div>
-                <div>
-                    <Label htmlFor="model">Model</Label>
-                    <Input id="model" placeholder="c.su300.8b.b" value={tempTestSession.model || ''} onChange={e => handleTestSessionFieldChange('model', e.target.value)} />
-                </div>
+              <div>
+                <Label htmlFor="serialNumber">Serial Number</Label>
+                <Input id="serialNumber" placeholder="e.g. 187" value={tempTestSession.serialNumber || ''} onChange={e => handleTestSessionFieldChange('serialNumber', e.target.value)} />
               </div>
               <div>
                 <Label htmlFor="description">Description</Label>
                 <Input id="description" placeholder="Internal R&D..." value={tempTestSession.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
               </div>
               <div className="flex justify-center gap-4">
-                <Button onClick={() => handleStartNewTestSession({ measurementType: 'DEMO', productIdentifier: tempTestSession.productIdentifier || 'New Session' })} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Start Session</Button>
+                <Button onClick={() => handleStartNewTestSession({ measurementType: isConnected ? 'ARDUINO' : 'DEMO' })} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Start Session</Button>
                 <Button variant="ghost" onClick={() => setTempTestSession(null)}>Cancel</Button>
               </div>
             </div>
@@ -909,7 +930,7 @@ function TestingComponent() {
              <Card className='p-3 mb-2 border-primary'>
                 <div className="flex justify-between items-center">
                     <div>
-                        <p className="font-semibold">{runningTestSession.productIdentifier}</p>
+                        <p className="font-semibold">{runningTestSession.productName}</p>
                         <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US')} - {runningTestSession.status}</p>
                          <p className="text-xs font-mono text-primary">{runningTestSession.measurementType}</p>
                     </div>
@@ -1013,7 +1034,7 @@ function TestingComponent() {
                         </SelectTrigger>
                         <SelectContent>
                             {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productIdentifier} ({s.status})</SelectItem>)}
+                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productName} ({s.status})</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
@@ -1049,7 +1070,7 @@ function TestingComponent() {
                         return (
                              <div key={id} className="flex items-center gap-2 bg-muted text-muted-foreground px-2 py-1 rounded-md text-xs">
                                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }}></div>
-                                <span>{session?.productIdentifier || id}</span>
+                                <span>{session?.productName || id}</span>
                                 <button onClick={() => setSelectedSessionIds(prev => prev.filter(sid => sid !== id))} className="text-muted-foreground hover:text-foreground">
                                     <XIcon className="h-3 w-3" />
                                 </button>
@@ -1091,7 +1112,7 @@ function TestingComponent() {
                     Object.entries(chartData).map(([sessionId, data], index) => {
                        const session = testSessions?.find(s => s.id === sessionId);
                        return (
-                         <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={session?.productIdentifier || sessionId} dot={false} strokeWidth={2} />
+                         <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={session?.productName || sessionId} dot={false} strokeWidth={2} />
                        )
                     })
                   )}
@@ -1221,5 +1242,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
