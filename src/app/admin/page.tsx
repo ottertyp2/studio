@@ -776,7 +776,7 @@ export default function AdminPage() {
           AI Model Management
         </CardTitle>
         <CardDescription>
-          Select, train, and manage machine learning models.
+          Select, train, and manage machine learning models locally in your browser.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
