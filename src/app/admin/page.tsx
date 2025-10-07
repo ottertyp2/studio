@@ -77,6 +77,21 @@ type Product = {
     name: string;
 };
 
+type MLModel = {
+    id: string;
+    name: string;
+    version: string;
+    description: string;
+    fileSize: number;
+};
+
+type TrainDataSet = {
+    id: string;
+    name: string;
+    description: string;
+    storagePath: string;
+};
+
 type SensorData = {
   timestamp: string;
   value: number;
@@ -94,7 +109,6 @@ type TestSession = {
     status: 'RUNNING' | 'COMPLETED' | 'SCRAPPED';
     sensorConfigurationId: string;
     measurementType: 'DEMO' | 'ARDUINO';
-    dataPointCount?: number;
 };
 
 export default function AdminPage() {
@@ -112,11 +126,15 @@ export default function AdminPage() {
   const [newProductName, setNewProductName] = useState('');
   
   // ML State
-  const [selectedModel, setSelectedModel] = useState<string | null>(null);
-  const [selectedDataSet, setSelectedDataSet] = useState<string | null>(null);
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [selectedDataSetId, setSelectedDataSetId] = useState<string | null>(null);
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [trainingStatus, setTrainingStatus] = useState({ epoch: 0, loss: 0, accuracy: 0 });
+  const [trainingDataFile, setTrainingDataFile] = useState<File | null>(null);
   const trainingDataUploaderRef = useRef<HTMLInputElement>(null);
+
+  const [newMlModel, setNewMlModel] = useState<Partial<MLModel>>({name: '', version: '1.0', description: '', fileSize: 0});
+  const [newTrainDataSet, setNewTrainDataSet] = useState<Partial<TrainDataSet>>({name: '', description: '', storagePath: ''});
 
 
   useEffect(() => {
@@ -156,6 +174,20 @@ export default function AdminPage() {
   }, [firestore]);
 
   const { data: products, isLoading: isProductsLoading } = useCollection<Product>(productsCollectionRef);
+
+  const mlModelsCollectionRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'mlModels');
+  }, [firestore]);
+
+  const { data: mlModels, isLoading: isMlModelsLoading } = useCollection<MLModel>(mlModelsCollectionRef);
+
+  const trainDataSetsCollectionRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'trainDataSets');
+  }, [firestore]);
+
+  const { data: trainDataSets, isLoading: isTrainDataSetsLoading } = useCollection<TrainDataSet>(trainDataSetsCollectionRef);
 
 
   const fetchSessionDataCounts = useCallback(async () => {
@@ -463,6 +495,53 @@ export default function AdminPage() {
     const productRef = doc(firestore, 'products', productId);
     deleteDoc(productRef);
     toast({ title: 'Product Deleted'});
+  };
+
+  const handleAddMlModel = () => {
+    if (!firestore || !newMlModel.name?.trim() || !newMlModel.version?.trim()) {
+        toast({variant: 'destructive', title: 'Error', description: 'Model name and version are required.'});
+        return;
+    }
+    const newId = doc(collection(firestore, '_')).id;
+    const docToSave: MLModel = {
+        id: newId,
+        name: newMlModel.name,
+        version: newMlModel.version,
+        description: newMlModel.description || '',
+        fileSize: 0 // Will be updated on save
+    };
+    addDocumentNonBlocking(mlModelsCollectionRef!, docToSave);
+    toast({title: 'Model Added', description: `Added "${docToSave.name} v${docToSave.version}" to the catalog.`});
+    setNewMlModel({name: '', version: '1.0', description: '', fileSize: 0});
+  };
+
+  const handleDeleteMlModel = (modelId: string) => {
+    if (!firestore) return;
+    deleteDocumentNonBlocking(doc(firestore, 'mlModels', modelId));
+    toast({ title: 'Model Deleted'});
+  };
+
+  const handleAddTrainDataSet = () => {
+    if (!firestore || !newTrainDataSet.name?.trim()) {
+      toast({variant: 'destructive', title: 'Error', description: 'Dataset name is required.'});
+      return;
+    }
+    const newId = doc(collection(firestore, '_')).id;
+    const docToSave: TrainDataSet = {
+      id: newId,
+      name: newTrainDataSet.name,
+      description: newTrainDataSet.description || '',
+      storagePath: newTrainDataSet.storagePath || ''
+    };
+    addDocumentNonBlocking(trainDataSetsCollectionRef!, docToSave);
+    toast({title: 'Training Set Added', description: `Added "${docToSave.name}" to the catalog.`});
+    setNewTrainDataSet({name: '', description: '', storagePath: ''});
+  };
+
+  const handleDeleteTrainDataSet = (dataSetId: string) => {
+    if (!firestore) return;
+    deleteDocumentNonBlocking(doc(firestore, 'trainDataSets', dataSetId));
+    toast({ title: 'Training Set Deleted'});
   };
 
 
@@ -780,64 +859,105 @@ export default function AdminPage() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Model and Data Selection */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="model-select">Model Catalog</Label>
-            <Select onValueChange={setSelectedModel}>
-              <SelectTrigger id="model-select">
-                <SelectValue placeholder="Select a model" />
-              </SelectTrigger>
-              <SelectContent>
-                {/* To be populated by useMLModels hook */}
-                <SelectItem value="model1">Leak Detection v1.0</SelectItem>
-                <SelectItem value="model2">Pressure Curve Anomaly v2.3</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="dataset-select">Training Data</Label>
-            <Select onValueChange={setSelectedDataSet}>
-              <SelectTrigger id="dataset-select">
-                <SelectValue placeholder="Select a data set" />
-              </SelectTrigger>
-              <SelectContent>
-                {/* To be populated by useTrainDataSets hook */}
-                <SelectItem value="set1">Historical Leak Data 2023</SelectItem>
-                <SelectItem value="set2">Non-linear Diffusion Profiles</SelectItem>
-              </SelectContent>
-            </Select>
-             <Button variant="link" size="sm" className="pl-0" onClick={() => trainingDataUploaderRef.current?.click()}>
-              Or upload CSV...
-            </Button>
-            <input type="file" ref={trainingDataUploaderRef} accept=".csv" className="hidden" />
-          </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Model Catalog Management */}
+            <div>
+                <CardTitle className="text-lg mb-2">Model Catalog</CardTitle>
+                <div className="flex gap-2 mb-4">
+                    <Input placeholder="New model name..." value={newMlModel.name} onChange={(e) => setNewMlModel(p => ({...p, name: e.target.value}))} />
+                    <Input placeholder="Version (e.g., 1.0)" value={newMlModel.version} onChange={(e) => setNewMlModel(p => ({...p, version: e.target.value}))} />
+                    <Button onClick={handleAddMlModel}><PackagePlus className="h-4 w-4" /></Button>
+                </div>
+                <ScrollArea className="h-48 border rounded-md p-2">
+                    {isMlModelsLoading ? <p>Loading...</p> : mlModels?.map(m => (
+                        <div key={m.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted">
+                            <p>{m.name} <span className="text-xs text-muted-foreground">v{m.version}</span></p>
+                            <Button variant="ghost" size="icon" onClick={() => handleDeleteMlModel(m.id)}>
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                        </div>
+                    ))}
+                </ScrollArea>
+            </div>
+            {/* Training Data Management */}
+            <div>
+                <CardTitle className="text-lg mb-2">Training Datasets</CardTitle>
+                <div className="flex gap-2 mb-4">
+                    <Input placeholder="New dataset name..." value={newTrainDataSet.name} onChange={(e) => setNewTrainDataSet(p => ({...p, name: e.target.value}))} />
+                    <Button onClick={handleAddTrainDataSet}><PackagePlus className="h-4 w-4" /></Button>
+                </div>
+                 <ScrollArea className="h-48 border rounded-md p-2">
+                    {isTrainDataSetsLoading ? <p>Loading...</p> : trainDataSets?.map(d => (
+                        <div key={d.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted">
+                            <p>{d.name}</p>
+                            <Button variant="ghost" size="icon" onClick={() => handleDeleteTrainDataSet(d.id)}>
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                        </div>
+                    ))}
+                </ScrollArea>
+            </div>
         </div>
 
-        {/* Training Controls and Progress */}
-        <div>
-          <Button className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md" disabled={!selectedModel || !selectedDataSet}>
-            Train Model
-          </Button>
+        <div className="border-t pt-6 space-y-4">
+            <CardTitle className="text-lg">Model Training</CardTitle>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="model-select">Select Model</Label>
+                <Select onValueChange={setSelectedModelId} value={selectedModelId || ''}>
+                  <SelectTrigger id="model-select">
+                    <SelectValue placeholder="Select a model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {isMlModelsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                     mlModels?.map(m => <SelectItem key={m.id} value={m.id}>{m.name} v{m.version}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="dataset-select">Select Training Data</Label>
+                <Select onValueChange={setSelectedDataSetId} value={selectedDataSetId || ''}>
+                  <SelectTrigger id="dataset-select">
+                    <SelectValue placeholder="Select a data set" />
+                  </SelectTrigger>
+                  <SelectContent>
+                     {isTrainDataSetsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                     trainDataSets?.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                 <Button variant="link" size="sm" className="pl-0" onClick={() => trainingDataUploaderRef.current?.click()}>
+                  Or upload new CSV...
+                </Button>
+                <input type="file" ref={trainingDataUploaderRef} accept=".csv" className="hidden" onChange={e => setTrainingDataFile(e.target.files?.[0] || null)} />
+                 {trainingDataFile && <p className="text-xs text-muted-foreground">Selected: {trainingDataFile.name}</p>}
+              </div>
+            </div>
+
+            <div>
+              <Button className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md" disabled={!selectedModelId || (!selectedDataSetId && !trainingDataFile)}>
+                Train Model
+              </Button>
+            </div>
+            <div className="space-y-2">
+              <Label>Training Progress</Label>
+              <Progress value={trainingProgress} />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Epoch: {trainingStatus.epoch}</span>
+                <span>Loss: {trainingStatus.loss.toFixed(4)}</span>
+                <span>Accuracy: {trainingStatus.accuracy.toFixed(2)}%</span>
+              </div>
+            </div>
+            
+            <div className="flex justify-center gap-4 pt-4">
+              <Button variant="outline" disabled={trainingProgress < 100}>Save to Browser</Button>
+              <Button variant="outline" disabled={trainingProgress < 100}>Upload to Firebase ML</Button>
+            </div>
+            <p className="text-xs text-center text-muted-foreground">
+              Uploading to Firebase ML is not available in this environment.
+            </p>
         </div>
-        <div className="space-y-2">
-          <Label>Training Progress</Label>
-          <Progress value={trainingProgress} />
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>Epoch: {trainingStatus.epoch}</span>
-            <span>Loss: {trainingStatus.loss.toFixed(4)}</span>
-            <span>Accuracy: {trainingStatus.accuracy.toFixed(2)}%</span>
-          </div>
-        </div>
-        
-        {/* Save/Upload Section */}
-        <div className="flex justify-center gap-4 pt-4">
-          <Button variant="outline" disabled={trainingProgress < 100}>Save to Browser</Button>
-          <Button variant="outline" disabled={trainingProgress < 100}>Upload to Firebase ML</Button>
-        </div>
-        <p className="text-xs text-center text-muted-foreground">
-          Uploading to Firebase ML is not available in this environment.
-        </p>
+
       </CardContent>
     </Card>
   );
@@ -945,3 +1065,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    
