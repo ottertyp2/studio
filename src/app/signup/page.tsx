@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 
 const formSchema = z.object({
+  username: z.string().min(3, { message: 'Username must be at least 3 characters.' }).regex(/^[a-zA-Z0-9_]+$/, { message: 'Username can only contain letters, numbers, and underscores.'}),
   email: z.string().email({ message: 'Invalid email address.' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
 });
@@ -30,6 +31,7 @@ export default function SignupPage() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      username: '',
       email: '',
       password: '',
     },
@@ -39,7 +41,7 @@ export default function SignupPage() {
     setIsLoading(true);
     try {
       // The function is fire-and-forget for Firestore, but we await the auth part
-      await initiateEmailSignUp(auth, firestore, values.email, values.password);
+      await initiateEmailSignUp(auth, firestore, values.email, values.password, values.username);
       toast({
         title: 'Account Created',
         description: "You've been signed in and are being redirected.",
@@ -49,10 +51,16 @@ export default function SignupPage() {
     } catch (error: any) {
       // This will catch auth errors from createUserWithEmailAndPassword
       console.error(error);
+      let errorMessage = error.message;
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = 'This email is already associated with an account.';
+      } else if (error.message.includes('Username already exists')) {
+        errorMessage = 'This username is already taken. Please choose another one.';
+      }
       toast({
         variant: 'destructive',
         title: 'Sign Up Failed',
-        description: error.message || 'An unknown error occurred.',
+        description: errorMessage,
       });
     } finally {
         setIsLoading(false);
@@ -69,6 +77,19 @@ export default function SignupPage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <FormField
+                control={form.control}
+                name="username"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Username</FormLabel>
+                    <FormControl>
+                      <Input placeholder="your_username" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="email"

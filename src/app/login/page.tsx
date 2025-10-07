@@ -11,26 +11,26 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { useAuth } from '@/firebase';
+import { useFirebase } from '@/firebase';
 import { initiateEmailSignIn } from '@/firebase/non-blocking-login';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 
 const formSchema = z.object({
-  email: z.string().email({ message: 'Invalid email address.' }),
+  emailOrUsername: z.string().min(1, { message: 'Please enter your email or username.' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
 });
 
 export default function LoginPage() {
   const router = useRouter();
-  const auth = useAuth();
+  const { auth, firestore } = useFirebase();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      email: '',
+      emailOrUsername: '',
       password: '',
     },
   });
@@ -38,7 +38,7 @@ export default function LoginPage() {
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setIsLoading(true);
     try {
-      await initiateEmailSignIn(auth, values.email, values.password);
+      await initiateEmailSignIn(auth, firestore, values.emailOrUsername, values.password);
       toast({
         title: 'Sign In Successful',
         description: "You are now being redirected.",
@@ -47,10 +47,14 @@ export default function LoginPage() {
       router.push('/');
     } catch (error: any) {
       console.error(error);
+      let errorMessage = error.message;
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.message.includes('User not found')) {
+          errorMessage = 'Invalid credentials. Please check your email/username and password.';
+      }
       toast({
         variant: 'destructive',
         title: 'Sign In Failed',
-        description: error.message || 'An unknown error occurred.',
+        description: errorMessage,
       });
     } finally {
         setIsLoading(false);
@@ -69,12 +73,12 @@ export default function LoginPage() {
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               <FormField
                 control={form.control}
-                name="email"
+                name="emailOrUsername"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    <FormLabel>Email or Username</FormLabel>
                     <FormControl>
-                      <Input placeholder="name@example.com" {...field} />
+                      <Input placeholder="name@example.com or your_username" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
