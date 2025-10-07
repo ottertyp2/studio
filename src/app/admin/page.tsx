@@ -688,17 +688,16 @@ export default function AdminPage() {
       const features = [...leakData, ...diffusionData];
       const labels = [...Array(leakData.length).fill(1), ...Array(diffusionData.length).fill(0)];
       
-      const shuffledIndices = tf.tensor1d(tf.util.createShuffledIndices(features.length), 'int32');
+      const indices = tf.util.createShuffledIndices(features.length);
+      const shuffledFeatures = indices.map(i => features[i]);
+      const shuffledLabels = indices.map(i => labels[i]);
 
-      const inputTensor = tf.tensor2d(features, [features.length, 1]);
-      const labelTensor = tf.tensor2d(labels, [labels.length, 1]);
+
+      const inputTensor = tf.tensor2d(shuffledFeatures, [shuffledFeatures.length, 1]);
+      const labelTensor = tf.tensor2d(shuffledLabels, [shuffledLabels.length, 1]);
       
-      const shuffledFeatures = tf.gather(inputTensor, shuffledIndices);
-      const shuffledLabels = tf.gather(labelTensor, shuffledIndices);
-
-
-      const { mean, variance } = tf.moments(shuffledFeatures);
-      const normalizedInput = shuffledFeatures.sub(mean).div(variance.sqrt());
+      const { mean, variance } = tf.moments(inputTensor);
+      const normalizedInput = inputTensor.sub(mean).div(variance.sqrt());
 
       setAutoTrainingStatus({ step: 'Model Training', progress: 50, details: 'Compiling model...' });
       
@@ -726,7 +725,7 @@ export default function AdminPage() {
       });
       
       let finalAccuracy = 0;
-      await model.fit(normalizedInput, shuffledLabels, {
+      await model.fit(normalizedInput, labelTensor, {
           epochs: 25,
           batchSize: 64,
           callbacks: {
@@ -1341,3 +1340,4 @@ export default function AdminPage() {
     </div>
   );
 }
+
