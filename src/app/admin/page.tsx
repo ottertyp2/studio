@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import * as tf from '@tensorflow/tfjs';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -93,6 +94,7 @@ type TrainDataSet = {
 };
 
 type SensorData = {
+  id: string;
   timestamp: string;
   value: number;
   testSessionId?: string;
@@ -109,6 +111,7 @@ type TestSession = {
     status: 'RUNNING' | 'COMPLETED' | 'SCRAPPED';
     sensorConfigurationId: string;
     measurementType: 'DEMO' | 'ARDUINO';
+    demoType?: 'LEAK' | 'DIFFUSION';
 };
 
 export default function AdminPage() {
@@ -129,6 +132,7 @@ export default function AdminPage() {
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [selectedDataSetId, setSelectedDataSetId] = useState<string | null>(null);
   const [trainingProgress, setTrainingProgress] = useState(0);
+  const [isTraining, setIsTraining] = useState(false);
   const [trainingStatus, setTrainingStatus] = useState({ epoch: 0, loss: 0, accuracy: 0 });
   const [trainingDataFile, setTrainingDataFile] = useState<File | null>(null);
   const trainingDataUploaderRef = useRef<HTMLInputElement>(null);
@@ -544,6 +548,87 @@ export default function AdminPage() {
     toast({ title: 'Training Set Deleted'});
   };
 
+  const handleTrainModel = async () => {
+    if (!selectedDataSetId || !firestore) {
+        toast({variant: 'destructive', title: 'Training Error', description: 'Please select a training dataset.'});
+        return;
+    }
+
+    const trainingSession = testSessions?.find(s => s.id === selectedDataSetId);
+    if (!trainingSession || !trainingSession.sensorConfigurationId) {
+        toast({variant: 'destructive', title: 'Training Error', description: 'The selected session is invalid or has no sensor config.'});
+        return;
+    }
+    setIsTraining(true);
+    setTrainingProgress(0);
+    setTrainingStatus({ epoch: 0, loss: 0, accuracy: 0 });
+
+    try {
+        // 1. Fetch data
+        const sensorDataRef = collection(firestore, `sensor_configurations/${trainingSession.sensorConfigurationId}/sensor_data`);
+        const q = query(sensorDataRef, where('testSessionId', '==', selectedDataSetId));
+        const snapshot = await getDocs(q);
+        const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
+
+        if (sensorData.length < 10) {
+          toast({variant: 'destructive', title: 'Not enough data', description: 'Need at least 10 data points to train.'});
+          setIsTraining(false);
+          return;
+        }
+
+        // 2. Prepare data
+        const isLeak = trainingSession.demoType === 'LEAK';
+        const label = isLeak ? 1 : 0;
+        const features = sensorData.map(d => d.value);
+        const labels = Array(features.length).fill(label);
+
+        // Normalize features
+        const inputTensor = tf.tensor2d(features, [features.length, 1]);
+        const labelTensor = tf.tensor2d(labels, [labels.length, 1]);
+        
+        const {mean, variance} = tf.moments(inputTensor);
+        const normalizedInput = inputTensor.sub(mean).div(variance.sqrt());
+
+        // 3. Define model
+        const model = tf.sequential();
+        model.add(tf.layers.dense({inputShape: [1], units: 50, activation: 'relu'}));
+        model.add(tf.layers.dense({units: 50, activation: 'relu'}));
+        model.add(tf.layers.dense({units: 1, activation: 'sigmoid'}));
+
+        model.compile({
+          optimizer: tf.train.adam(),
+          loss: 'binaryCrossentropy',
+          metrics: ['accuracy'],
+        });
+
+        // 4. Train model
+        await model.fit(normalizedInput, labelTensor, {
+          epochs: 50,
+          batchSize: 32,
+          callbacks: {
+            onEpochEnd: (epoch, logs) => {
+              if (logs) {
+                setTrainingProgress(((epoch + 1) / 50) * 100);
+                setTrainingStatus({ epoch: epoch + 1, loss: logs.loss || 0, accuracy: (logs.acc || 0) * 100 });
+              }
+            }
+          }
+        });
+
+        toast({ title: 'Training Complete!', description: 'Model has been trained in the browser.' });
+
+        // 5. Save model (IndexedDB)
+        await model.save(`indexeddb://${selectedModelId || 'my-leak-model'}`);
+        toast({ title: 'Model Saved', description: `Model saved locally as "${selectedModelId || 'my-leak-model'}"` });
+
+    } catch (e: any) {
+        console.error("Training failed:", e);
+        toast({variant: 'destructive', title: 'Training Failed', description: e.message});
+    } finally {
+        setIsTraining(false);
+    }
+  }
+
 
   const viewSessionData = (sessionId: string) => {
     const queryParams = new URLSearchParams({ sessionId }).toString();
@@ -922,8 +1007,8 @@ export default function AdminPage() {
                     <SelectValue placeholder="Select a data set" />
                   </SelectTrigger>
                   <SelectContent>
-                     {isTrainDataSetsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                     trainDataSets?.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                     {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                     testSessions?.filter(s => s.demoType).map(d => <SelectItem key={d.id} value={d.id}>{d.productName} ({d.demoType})</SelectItem>)}
                   </SelectContent>
                 </Select>
                  <Button variant="link" size="sm" className="pl-0" onClick={() => trainingDataUploaderRef.current?.click()}>
@@ -935,8 +1020,8 @@ export default function AdminPage() {
             </div>
 
             <div>
-              <Button className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md" disabled={!selectedModelId || (!selectedDataSetId && !trainingDataFile)}>
-                Train Model
+              <Button onClick={handleTrainModel} className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md" disabled={isTraining || !selectedModelId || (!selectedDataSetId && !trainingDataFile)}>
+                {isTraining ? 'Training...' : 'Train Model'}
               </Button>
             </div>
             <div className="space-y-2">
