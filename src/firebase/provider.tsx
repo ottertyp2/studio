@@ -6,6 +6,8 @@ import { FirebaseApp } from 'firebase/app';
 import { Firestore, doc, getDoc } from 'firebase/firestore';
 import { Auth, User, onAuthStateChanged } from 'firebase/auth';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener'
+import { FirestorePermissionError } from './errors';
+import { errorEmitter } from './error-emitter';
 
 interface FirebaseProviderProps {
   children: ReactNode;
@@ -138,8 +140,12 @@ export const useUser = (): UserHookResult => {
             setUserRole('user');
           }
         } catch (e) {
-          console.error("Error fetching user role:", e);
-          setUserError(e as Error);
+          const permissionError = new FirestorePermissionError({
+            path: `users/${authUser.uid}`,
+            operation: 'get',
+          });
+          errorEmitter.emit('permission-error', permissionError);
+          setUserError(permissionError);
           setUserRole('user'); // Default role on error
         }
       } else {
