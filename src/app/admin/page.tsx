@@ -148,6 +148,7 @@ export default function AdminPage() {
 
   const [isAutoTraining, setIsAutoTraining] = useState(false);
   const [autoTrainingStatus, setAutoTrainingStatus] = useState<AutomatedTrainingStatus | null>(null);
+  const [autoModelSize, setAutoModelSize] = useState<'small' | 'medium' | 'large'>('medium');
 
 
   useEffect(() => {
@@ -687,8 +688,8 @@ export default function AdminPage() {
       const features = [...leakData, ...diffusionData];
       const labels = [...Array(leakData.length).fill(1), ...Array(diffusionData.length).fill(0)];
       
-      const indices = tf.util.createShuffledIndices(features.length);
-      const shuffledIndices = tf.tensor1d(indices, 'int32');
+      const indicesArray = tf.util.createShuffledIndices(features.length);
+      const shuffledIndices = tf.tensor1d(indicesArray, 'int32');
 
       const inputTensor = tf.tensor2d(features, [features.length, 1]);
       const labelTensor = tf.tensor2d(labels, [labels.length, 1]);
@@ -703,8 +704,20 @@ export default function AdminPage() {
       setAutoTrainingStatus({ step: 'Model Training', progress: 50, details: 'Compiling model...' });
       
       const model = tf.sequential();
-      model.add(tf.layers.dense({ inputShape: [1], units: 50, activation: 'relu' }));
-      model.add(tf.layers.dense({ units: 50, activation: 'relu' }));
+      switch (autoModelSize) {
+        case 'small':
+          model.add(tf.layers.dense({ inputShape: [1], units: 25, activation: 'relu' }));
+          break;
+        case 'large':
+          model.add(tf.layers.dense({ inputShape: [1], units: 100, activation: 'relu' }));
+          model.add(tf.layers.dense({ units: 100, activation: 'relu' }));
+          break;
+        case 'medium':
+        default:
+          model.add(tf.layers.dense({ inputShape: [1], units: 50, activation: 'relu' }));
+          model.add(tf.layers.dense({ units: 50, activation: 'relu' }));
+          break;
+      }
       model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }));
 
       model.compile({
@@ -734,7 +747,7 @@ export default function AdminPage() {
       
       setAutoTrainingStatus({ step: 'Saving Model', progress: 90, details: 'Saving model to browser and Firestore...' });
 
-      const modelName = `auto-model-${new Date().toISOString().split('T')[0]}`;
+      const modelName = `auto-model-${autoModelSize}-${new Date().toISOString().split('T')[0]}`;
       await model.save(`indexeddb://${modelName}`);
       
       const newId = doc(collection(firestore, '_')).id;
@@ -1196,6 +1209,19 @@ export default function AdminPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+           <div>
+              <Label htmlFor="auto-model-size">Model Size</Label>
+              <Select onValueChange={(value) => setAutoModelSize(value as 'small' | 'medium' | 'large')} defaultValue="medium" disabled={isAutoTraining}>
+                <SelectTrigger id="auto-model-size">
+                  <SelectValue placeholder="Select model size" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="small">Small (1x25)</SelectItem>
+                  <SelectItem value="medium">Medium (2x50)</SelectItem>
+                  <SelectItem value="large">Large (2x100)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           <Button onClick={handleAutomatedTraining} disabled={isAutoTraining} className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
             {isAutoTraining ? 'Pipeline Running...' : 'Start Automated Training'}
           </Button>
