@@ -1,97 +1,98 @@
 /**
- * @fileoverview Firestore Security Rules for the application.
+ * @fileoverview Firestore Security Rules for the sensor data application.
  *
  * Core Philosophy:
- * This ruleset assumes a PUBLIC access model for all data.  Any signed-in user can read or write all data. This is suitable for local testing or a fully public dashboard.
+ * This ruleset allows any authenticated user to read and write all data.
+ * There are no user-specific restrictions or ownership checks. This is
+ * suitable for an initial prototyping environment or a public dashboard, but is
+ * not secure for production use with private user data.
  *
  * Data Structure:
- * - /users/{userId}: Stores user profile information (username, email, role).
- * - /sensor_configurations/{sensorConfigurationId}: Stores global sensor configurations.
- * - /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}: Stores sensor data points for a specific configuration.
- * - /analysis_results/{analysisResultId}: Stores global leak analysis results.
- * - /test_sessions/{testSessionId}: Stores all test sessions.
+ * All data resides in top-level collections: /users, /sensor_configurations,
+ * /analysis_results, and /test_sessions. The /sensor_data collection is nested under /sensor_configurations.
  *
  * Key Security Decisions:
- * - No user-specific data ownership. All data is globally accessible to authenticated users.
- * - No role-based access control (other than requiring the user to be signed in).
- * - All write operations are permitted by any signed-in user.
+ * - Authenticated users can read and write all data.
+ * - There is no data ownership or access control based on user roles.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
     /**
-     * @description Allows any signed-in user to read or write user profile data.
+     * @description Allows any authenticated user to read and write user data.
      * @path /users/{userId}
-     * @allow (get, list) When request.auth != null
-     * @allow (create, update, delete) When request.auth != null
-     * @deny (get, list) When request.auth == null
-     * @deny (create, update, delete) When request.auth == null
-     * @principle Allows any signed-in user to manage user profiles.
+     * @allow (create) - Authenticated user can create a user document.
+     * @allow (get, list) - Authenticated user can read all user documents.
+     * @allow (update, delete) - Authenticated user can modify or delete any user document.
+     * @deny (create) - Unauthenticated user cannot create a user document.
+     * @deny (get, list, update, delete) - Unauthenticated user cannot read, modify, or delete user documents.
+     * @principle Allows authenticated users to read and write all user data.
      */
     match /users/{userId} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      allow read, write: if isSignedIn();
     }
 
     /**
-     * @description Allows any signed-in user to read or write sensor data points.
+     * @description Allows any authenticated user to read and write sensor data.
      * @path /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
-     * @allow (get, list) When request.auth != null
-     * @allow (create, update, delete) When request.auth != null
-     * @deny (get, list) When request.auth == null
-     * @deny (create, update, delete) When request.auth == null
-     * @principle Allows any signed-in user to manage sensor data points.
+     * @allow (create) - Authenticated user can create sensor data.
+     * @allow (get, list) - Authenticated user can read all sensor data.
+     * @allow (update, delete) - Authenticated user can modify or delete any sensor data.
+     * @deny (create) - Unauthenticated user cannot create sensor data.
+     * @deny (get, list, update, delete) - Unauthenticated user cannot read, modify, or delete sensor data.
+     * @principle Allows authenticated users to read and write all sensor data.
      */
     match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      allow read, write: if isSignedIn();
     }
 
     /**
-     * @description Allows any signed-in user to read or write sensor configurations.
+     * @description Allows any authenticated user to read and write sensor configurations.
      * @path /sensor_configurations/{sensorConfigurationId}
-     * @allow (get, list) When request.auth != null
-     * @allow (create, update, delete) When request.auth != null
-     * @deny (get, list) When request.auth == null
-     * @deny (create, update, delete) When request.auth == null
-     * @principle Allows any signed-in user to manage sensor configurations.
+     * @allow (create) - Authenticated user can create a sensor configuration.
+     * @allow (get, list) - Authenticated user can read all sensor configurations.
+     * @allow (update, delete) - Authenticated user can modify or delete any sensor configuration.
+     * @deny (create) - Unauthenticated user cannot create sensor configurations.
+     * @deny (get, list, update, delete) - Unauthenticated user cannot read, modify, or delete sensor configurations.
+     * @principle Allows authenticated users to read and write all sensor configurations.
      */
     match /sensor_configurations/{sensorConfigurationId} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      allow read, write: if isSignedIn();
     }
 
     /**
-     * @description Allows any signed-in user to read or write analysis results.
+     * @description Allows any authenticated user to read and write analysis results.
      * @path /analysis_results/{analysisResultId}
-     * @allow (get, list) When request.auth != null
-     * @allow (create, update, delete) When request.auth != null
-     * @deny (get, list) When request.auth == null
-     * @deny (create, update, delete) When request.auth == null
-     * @principle Allows any signed-in user to manage analysis results.
+     * @allow (create) - Authenticated user can create an analysis result.
+     * @allow (get, list) - Authenticated user can read all analysis results.
+     * @allow (update, delete) - Authenticated user can modify or delete any analysis result.
+     * @deny (create) - Unauthenticated user cannot create analysis results.
+     * @deny (get, list, update, delete) - Unauthenticated user cannot read, modify, or delete analysis results.
+     * @principle Allows authenticated users to read and write all analysis results.
      */
     match /analysis_results/{analysisResultId} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      allow read, write: if isSignedIn();
     }
 
-    /**
-     * @description Allows any signed-in user to read or write test sessions.
-     * @path /test_sessions/{testSessionId}
-     * @allow (get, list) When request.auth != null
-     * @allow (create, update, delete) When request.auth != null
-     * @deny (get, list) When request.auth == null
-     * @deny (create, update, delete) When request.auth == null
-     * @principle Allows any signed-in user to manage test sessions.
-     */
+     /**
+      * @description Allows any authenticated user to read and write test sessions.
+      * @path /test_sessions/{testSessionId}
+      * @allow (create) - Authenticated user can create a test session.
+      * @allow (get, list) - Authenticated user can read all test sessions.
+      * @allow (update, delete) - Authenticated user can modify or delete any test session.
+      * @deny (create) - Unauthenticated user cannot create test sessions.
+      * @deny (get, list, update, delete) - Unauthenticated user cannot read, modify, or delete test sessions.
+      * @principle Allows authenticated users to read and write all test sessions.
+      */
     match /test_sessions/{testSessionId} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      allow read, write: if isSignedIn();
     }
+
+  }
+
+  // Helper function to determine if the user is signed in.
+  function isSignedIn() {
+    return request.auth != null;
   }
 }
