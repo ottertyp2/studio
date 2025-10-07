@@ -6,6 +6,10 @@
       "type": "object",
       "description": "Represents a user in the system.",
       "properties": {
+        "id": {
+          "type": "string",
+          "description": "The user's unique ID."
+        },
         "username": {
             "type": "string",
             "description": "The user's unique username."
@@ -21,7 +25,7 @@
           "description": "The user's role in the system."
         }
       },
-      "required": ["username", "email", "role"]
+      "required": ["id", "username", "email", "role"]
     },
     "SensorData": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -178,6 +182,33 @@
             "name": { "type": "string", "description": "The name of the product." }
         },
         "required": ["id", "name"]
+    },
+    "MLModel": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "MLModel",
+      "type": "object",
+      "description": "Represents metadata for a machine learning model.",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the model." },
+        "name": { "type": "string", "description": "The name of the model." },
+        "version": { "type": "string", "description": "Model version string." },
+        "description": { "type": "string", "description": "A brief description of the model." },
+        "fileSize": { "type": "number", "description": "The size of the model file in bytes." }
+      },
+      "required": ["id", "name", "version"]
+    },
+    "TrainDataSet": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "TrainDataSet",
+      "type": "object",
+      "description": "Represents a training dataset, which could be a reference or stored data.",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the dataset." },
+        "name": { "type": "string", "description": "The name of the dataset." },
+        "description": { "type": "string", "description": "A brief description of the dataset." },
+        "storagePath": { "type": "string", "description": "Path to the dataset file in Firebase Storage, or a reference URL." }
+      },
+      "required": ["id", "name", "storagePath"]
     }
   },
   "auth": {
@@ -242,9 +273,24 @@
             "schema": { "$ref": "#/entities/Product" },
             "description": "Stores all available products."
         }
+      },
+      {
+        "path": "/mlModels/{mlModelId}",
+        "definition": {
+            "entityName": "MLModel",
+            "schema": { "$ref": "#/entities/MLModel" },
+            "description": "Stores metadata for machine learning models."
+        }
+      },
+      {
+        "path": "/trainDataSets/{trainDataSetId}",
+        "definition": {
+            "entityName": "TrainDataSet",
+            "schema": { "$ref": "#/entities/TrainDataSet" },
+            "description": "Stores metadata for training datasets."
+        }
       }
     ],
     "reasoning": "This Firestore data structure is designed for a single-user or public-access model. All data is stored in global collections, removing any user-specific paths or ownership. This simplifies data access as there is no user authentication or authorization layer to manage. It's suitable for local testing or a fully public dashboard."
   }
 }
-

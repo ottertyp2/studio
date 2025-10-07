@@ -1,6 +1,6 @@
 
 'use client';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
@@ -45,8 +45,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2 } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
@@ -109,6 +110,14 @@ export default function AdminPage() {
   const [tempTestSession, setTempTestSession] = useState<Partial<TestSession> | null>(null);
   const [sessionDataCounts, setSessionDataCounts] = useState<Record<string, number>>({});
   const [newProductName, setNewProductName] = useState('');
+  
+  // ML State
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const [selectedDataSet, setSelectedDataSet] = useState<string | null>(null);
+  const [trainingProgress, setTrainingProgress] = useState(0);
+  const [trainingStatus, setTrainingStatus] = useState({ epoch: 0, loss: 0, accuracy: 0 });
+  const trainingDataUploaderRef = useRef<HTMLInputElement>(null);
+
 
   useEffect(() => {
     if (!isUserLoading) {
@@ -759,6 +768,80 @@ export default function AdminPage() {
         </Card>
     );
 
+  const renderModelManagement = () => (
+    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <BrainCircuit className="h-6 w-6" />
+          AI Model Management
+        </CardTitle>
+        <CardDescription>
+          Select, train, and manage machine learning models.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Model and Data Selection */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="model-select">Model Catalog</Label>
+            <Select onValueChange={setSelectedModel}>
+              <SelectTrigger id="model-select">
+                <SelectValue placeholder="Select a model" />
+              </SelectTrigger>
+              <SelectContent>
+                {/* To be populated by useMLModels hook */}
+                <SelectItem value="model1">Leak Detection v1.0</SelectItem>
+                <SelectItem value="model2">Pressure Curve Anomaly v2.3</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="dataset-select">Training Data</Label>
+            <Select onValueChange={setSelectedDataSet}>
+              <SelectTrigger id="dataset-select">
+                <SelectValue placeholder="Select a data set" />
+              </SelectTrigger>
+              <SelectContent>
+                {/* To be populated by useTrainDataSets hook */}
+                <SelectItem value="set1">Historical Leak Data 2023</SelectItem>
+                <SelectItem value="set2">Non-linear Diffusion Profiles</SelectItem>
+              </SelectContent>
+            </Select>
+             <Button variant="link" size="sm" className="pl-0" onClick={() => trainingDataUploaderRef.current?.click()}>
+              Or upload CSV...
+            </Button>
+            <input type="file" ref={trainingDataUploaderRef} accept=".csv" className="hidden" />
+          </div>
+        </div>
+
+        {/* Training Controls and Progress */}
+        <div>
+          <Button className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md" disabled={!selectedModel || !selectedDataSet}>
+            Train Model
+          </Button>
+        </div>
+        <div className="space-y-2">
+          <Label>Training Progress</Label>
+          <Progress value={trainingProgress} />
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>Epoch: {trainingStatus.epoch}</span>
+            <span>Loss: {trainingStatus.loss.toFixed(4)}</span>
+            <span>Accuracy: {trainingStatus.accuracy.toFixed(2)}%</span>
+          </div>
+        </div>
+        
+        {/* Save/Upload Section */}
+        <div className="flex justify-center gap-4 pt-4">
+          <Button variant="outline" disabled={trainingProgress < 100}>Save to Browser</Button>
+          <Button variant="outline" disabled={trainingProgress < 100}>Upload to Firebase ML</Button>
+        </div>
+        <p className="text-xs text-center text-muted-foreground">
+          Uploading to Firebase ML is not available in this environment.
+        </p>
+      </CardContent>
+    </Card>
+  );
+
   if (isUserLoading || !user || userRole !== 'superadmin') {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
@@ -855,12 +938,10 @@ export default function AdminPage() {
               {renderProductManagement()}
               {renderTestSessionManager()}
           </div>
+          <div className="lg:col-span-3">
+            {renderModelManagement()}
+          </div>
       </main>
     </div>
   );
 }
-
-
-    
-
-    
