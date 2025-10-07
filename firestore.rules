@@ -2,153 +2,96 @@
  * @fileoverview Firestore Security Rules for the application.
  *
  * Core Philosophy:
- * This ruleset prioritizes ease of prototyping by focusing on authorization and skipping schema enforcement.
- * All collections are treated as publicly readable, but writes are restricted to authenticated users.
+ * This ruleset is configured for a public-access model where all data is globally accessible.
+ * No user authentication or authorization is required for any operations.
  *
  * Data Structure:
- * The Firestore database consists of the following top-level collections:
- * - /users/{userId}: Stores user profiles and roles.
+ * The database consists of several top-level collections:
+ * - /users/{userId}: Stores user profile information.
+ * - /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}: Stores sensor data.
  * - /sensor_configurations/{sensorConfigurationId}: Stores sensor configurations.
- * - /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}: Stores sensor data points for each sensor configuration.
- * - /analysis_results/{analysisResultId}: Stores leak analysis results.
- * - /test_sessions/{testSessionId}: Stores test session data.
- * - /products/{productId}: Stores product data.
+ * - /analysis_results/{analysisResultId}: Stores analysis results.
+ * - /test_sessions/{testSessionId}: Stores test session information.
+ * - /products/{productId}: Stores product information.
  *
  * Key Security Decisions:
- * - All collections are publicly readable to facilitate rapid prototyping and demonstration.
- * - Write access (create, update, delete) is restricted to authenticated users (`isSignedIn()`).
- * - No schema validation is performed in this prototyping phase.
- * - List operations are allowed for all authenticated users for user-scoped subcollections.
- * - All writes are checked for authentication.
- *
- * Denormalization for Authorization:
- *  N/A - There are no specific roles or ownership models that needs to be validated.
- *
- * Structural Segregation:
- *  N/A - There is no clear public vs. private data segregation.
+ * - Public Read: All collections are publicly readable.
+ * - Public Write: All collections are publicly writeable.
  */
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Defines if a user is signed in.
-     */
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    /**
-     * @description Allows the owner to perform an action.
-     */
-    function isOwner(userId) {
-      return request.auth.uid == userId;
-    }
-
-    /**
-     * @description Checks if the user is signed in and the document exists.
-     */
-    function isExistingOwner(userId) {
-        return isSignedIn() && resource != null && isOwner(userId);
-    }
-
-    /**
-     * @description Rules for the /users/{userId} collection.
+     * @description Allows read and write access to user documents for any user.
      * @path /users/{userId}
-     * @allow (create) - Authenticated user can create their own user document.
-     * @allow (get, list) - Authenticated user can get their own user document.
-     * @allow (update, delete) - Authenticated user can update their own user document.
-     * @deny (create) - Unauthenticated user cannot create a user document.
-     * @deny (get, list) - Unauthenticated user cannot get a user document.
-     * @deny (update, delete) - Unauthenticated user cannot update a user document.
-     * @principle Enforces document ownership for writes and authenticated access.
+     * @allow (get, list) Any user can read user data.
+     * @allow (create, update, delete) Any user can create, update, or delete user data.
+     * @principle Public access.
      */
     match /users/{userId} {
-      allow get, list: if isOwner(userId);
-      allow create: if isOwner(userId) && request.resource.data.email is string && request.resource.data.username is string && request.resource.data.role is string;
-      allow update: if isExistingOwner(userId) && request.resource.data.email is string && request.resource.data.username is string && request.resource.data.role is string;
-      allow delete: if isExistingOwner(userId);
+      allow get, list: if true;
+      allow create, update, delete: if true;
     }
 
     /**
-     * @description Rules for the /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} collection.
+     * @description Allows read and write access to sensor data for any user.
      * @path /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
-     * @allow (get, list) - Anyone can read sensor data.
-     * @allow (create) - Authenticated users can create sensor data.
-     * @allow (update, delete) - Authenticated users can update and delete sensor data.
-     * @deny (create, update, delete) - Unauthenticated users cannot create, update, or delete sensor data.
-     * @principle Public read, authenticated writes.
+     * @allow (get, list) Any user can read sensor data.
+     * @allow (create, update, delete) Any user can create, update, or delete sensor data.
+     * @principle Public access.
      */
     match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
       allow get, list: if true;
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && resource != null;
-      allow delete: if isSignedIn() && resource != null;
+      allow create, update, delete: if true;
     }
 
     /**
-     * @description Rules for the /sensor_configurations/{sensorConfigurationId} collection.
+     * @description Allows read and write access to sensor configurations for any user.
      * @path /sensor_configurations/{sensorConfigurationId}
-     * @allow (get, list) - Anyone can read sensor configurations.
-     * @allow (create) - Authenticated users can create sensor configurations.
-     * @allow (update, delete) - Authenticated users can update and delete sensor configurations.
-     * @deny (create, update, delete) - Unauthenticated users cannot create, update, or delete sensor configurations.
-     * @principle Public read, authenticated writes.
+     * @allow (get, list) Any user can read sensor configurations.
+     * @allow (create, update, delete) Any user can create, update, or delete sensor configurations.
+     * @principle Public access.
      */
     match /sensor_configurations/{sensorConfigurationId} {
       allow get, list: if true;
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && resource != null;
-      allow delete: if isSignedIn() && resource != null;
+      allow create, update, delete: if true;
     }
 
     /**
-     * @description Rules for the /analysis_results/{analysisResultId} collection.
+     * @description Allows read and write access to analysis results for any user.
      * @path /analysis_results/{analysisResultId}
-     * @allow (get, list) - Anyone can read analysis results.
-     * @allow (create) - Authenticated users can create analysis results.
-     * @allow (update, delete) - Authenticated users can update and delete analysis results.
-     * @deny (create, update, delete) - Unauthenticated users cannot create, update, or delete analysis results.
-     * @principle Public read, authenticated writes.
+     * @allow (get, list) Any user can read analysis results.
+     * @allow (create, update, delete) Any user can create, update, or delete analysis results.
+     * @principle Public access.
      */
     match /analysis_results/{analysisResultId} {
       allow get, list: if true;
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && resource != null;
-      allow delete: if isSignedIn() && resource != null;
+      allow create, update, delete: if true;
     }
 
     /**
-     * @description Rules for the /test_sessions/{testSessionId} collection.
+     * @description Allows read and write access to test sessions for any user.
      * @path /test_sessions/{testSessionId}
-     * @allow (get, list) - Anyone can read test sessions.
-     * @allow (create) - Authenticated users can create test sessions.
-     * @allow (update, delete) - Authenticated users can update and delete test sessions.
-     * @deny (create, update, delete) - Unauthenticated users cannot create, update, or delete test sessions.
-     * @principle Public read, authenticated writes.
+     * @allow (get, list) Any user can read test sessions.
+     * @allow (create, update, delete) Any user can create, update, or delete test sessions.
+     * @principle Public access.
      */
     match /test_sessions/{testSessionId} {
       allow get, list: if true;
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && resource != null;
-      allow delete: if isSignedIn() && resource != null;
+      allow create, update, delete: if true;
     }
 
     /**
-     * @description Rules for the /products/{productId} collection.
+     * @description Allows read and write access to products for any user.
      * @path /products/{productId}
-     * @allow (get, list) - Anyone can read products.
-     * @allow (create) - Authenticated users can create products.
-     * @allow (update, delete) - Authenticated users can update and delete products.
-     * @deny (create, update, delete) - Unauthenticated users cannot create, update, or delete products.
-     * @principle Public read, authenticated writes.
+     * @allow (get, list) Any user can read product data.
+     * @allow (create, update, delete) Any user can create, update, or delete product data.
+     * @principle Public access.
      */
     match /products/{productId} {
       allow get, list: if true;
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && resource != null;
-      allow delete: if isSignedIn() && resource != null;
+      allow create, update, delete: if true;
     }
   }
 }
