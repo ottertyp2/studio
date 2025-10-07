@@ -25,6 +25,20 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
     email = `${username}@${DUMMY_DOMAIN}`;
   }
 
+  // Check if username already exists
+  const usernameQuery = query(collection(firestore, 'users'), where('username', '==', username));
+  try {
+    const querySnapshot = await getDocs(usernameQuery);
+    if (!querySnapshot.empty) {
+      throw new Error('This username is already taken. Please choose another one.');
+    }
+  } catch (e: any) {
+     // If the query fails due to permissions, we have a bigger problem.
+     // For now, we surface a generic error.
+    throw new Error(`[E1] Could not verify username availability. Please check security rules. Original error: ${e.message}`);
+  }
+
+
   let user: User;
   try {
     const userCredential = await createUserWithEmailAndPassword(authInstance, email, password);
