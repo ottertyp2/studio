@@ -108,6 +108,12 @@ export default function LoginPage() {
               Sign up
             </Link>
           </div>
+           <div className="mt-4 text-center text-xs text-muted-foreground">
+            First time setup?{' '}
+            <Link href="/promote" className="underline text-primary">
+              Promote to Admin
+            </Link>
+          </div>
         </CardContent>
       </Card>
     </div>
