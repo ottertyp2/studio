@@ -228,12 +228,12 @@ function TestingComponent() {
     const currentRunningSession = stateRef.current.testSessions.find(s => s.status === 'RUNNING');
     if (currentFirestore && currentRunningSession && currentSensorConfigId) {
         if (currentRunningSession.sensorConfigurationId === currentSensorConfigId) {
-            const sensorDataRef = collection(currentFirestore, `sensor_configurations/${currentSensorConfigId}/sensor_data`);
+            // Only save the data point if a measurement is active for the current sensor.
             const dataToSave = {...newDataPoint, testSessionId: currentRunningSession.id};
             addDocumentNonBlocking(sensorDataRef, dataToSave);
         }
     }
-}, []);
+  }, []);
 
   const dataLog = useMemo(() => {
     const log = (firestore && selectedSessionIds.length > 0) ? cloudDataLog : localDataLog;
@@ -296,7 +296,8 @@ function TestingComponent() {
       }
       
       if (session?.measurementType === 'ARDUINO' && isConnected) {
-        await sendSerialCommand('p');
+        // We no longer send a 'p' command, just stop associating data.
+        // await sendSerialCommand('p');
       }
   
       const sessionRef = doc(firestore, `test_sessions`, sessionId);
@@ -308,7 +309,8 @@ function TestingComponent() {
         }
       }
       toast({ title: 'Test Session Ended' });
-  }, [firestore, isConnected, selectedSessionIds, stopDemoMode, testSessionsCollectionRef, toast, sendSerialCommand]);
+  }, [firestore, isConnected, selectedSessionIds, stopDemoMode, testSessionsCollectionRef, toast]);
+
 
   const disconnectSerial = useCallback(async () => {
     const { testSessions: currentTestSessions } = stateRef.current;
@@ -336,7 +338,6 @@ function TestingComponent() {
         }
     }
   }, [handleStopTestSession, toast]);
-
 
   const readFromSerial = useCallback(async () => {
     if (!portRef.current?.readable || readingRef.current) return;
@@ -405,6 +406,7 @@ function TestingComponent() {
             setIsConnected(true);
             toast({ title: 'Connected', description: 'Device connected. Ready to start measurement.' });
             
+            readingRef.current = true;
             readFromSerial();
 
         } catch (error) {
@@ -837,15 +839,15 @@ function TestingComponent() {
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                    <AlertDialogTitle className="text-destructive">Permanently Delete Data?</AlertDialogTitle>
                     <AlertDialogDescription>
                     This action cannot be undone. This will permanently delete the recorded
-                    sensor data for the current view (sensor and session).
+                    sensor data for the current view (sensor and session). Are you sure?
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleClearData}>Delete</AlertDialogAction>
+                    <AlertDialogAction variant="destructive" onClick={handleClearData}>Confirm Delete</AlertDialogAction>
                 </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
@@ -865,7 +867,7 @@ function TestingComponent() {
         <CardContent>
           {!tempTestSession && !runningTestSession && (
             <div className="flex justify-center">
-              <Button onClick={() => setTempTestSession({})} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
+              <Button onClick={() => setTempTestSession({})} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1"  disabled={!!runningTestSession || !activeSensorConfigId}>
                 Start New Test Session
               </Button>
             </div>
@@ -920,7 +922,9 @@ function TestingComponent() {
   }
   
   if (isUserLoading || !user) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+    return <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
+      <p className="text-lg">Loading...</p>
+    </div>;
   }
 
   return (
@@ -1195,10 +1199,8 @@ function TestingComponent() {
 
 export default function TestingPage() {
     return (
-        <Suspense fallback={<div>Loading...</div>}>
+        <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
             <TestingComponent />
         </Suspense>
     )
 }
-
-    
