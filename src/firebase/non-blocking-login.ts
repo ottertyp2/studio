@@ -48,13 +48,17 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
       role: 'user' // Default role
     };
 
+    // Use .catch() to handle Firestore-specific errors non-blockingly
     setDoc(userDocRef, userData).catch(error => {
+      // Create a detailed, contextual error for better debugging
       const permissionError = new FirestorePermissionError({
         path: `users/${user.uid}`,
         operation: 'create',
         requestResourceData: userData,
       });
+      // Emit the error for the global listener to catch and display
       errorEmitter.emit('permission-error', permissionError);
+      // Also log it for server-side visibility, but the UI will handle the user-facing error
       console.error("Firestore error during user creation:", permissionError.message);
     });
 
