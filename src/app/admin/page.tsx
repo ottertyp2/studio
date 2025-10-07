@@ -365,6 +365,11 @@ export default function AdminPage() {
         return;
     }
 
+    if (!['LEAK', 'DIFFUSION'].includes(tempTestSession.demoType || '')) {
+      toast({ variant:'destructive', title:'Error', description:'Please select a simulation type.' });
+      return;
+    }
+
     const selectedProduct = products.find(p => p.id === tempTestSession.productId);
     if (!selectedProduct) {
         toast({variant: 'destructive', title: 'Error', description: 'Selected product not found.'});
@@ -372,16 +377,17 @@ export default function AdminPage() {
     }
 
     const newSessionId = doc(collection(firestore!, '_')).id;
-    const newSession: Omit<TestSession, 'dataPointCount'> = {
+    const newSession: TestSession = {
       id: newSessionId,
       productId: selectedProduct.id,
       productName: selectedProduct.name,
       serialNumber: tempTestSession.serialNumber || '',
-      description: tempTestSession.description || '',
+      description: tempTestSession.description || `Admin Demo - ${tempTestSession.demoType}`,
       startTime: new Date().toISOString(),
       status: 'RUNNING',
       sensorConfigurationId: activeSensorConfigId,
-      measurementType: 'DEMO', // Assume admin page only starts DEMO manual sessions
+      measurementType: 'DEMO',
+      demoType: tempTestSession.demoType,
     };
     
     await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
@@ -741,6 +747,18 @@ export default function AdminPage() {
                         {isProductsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
                         products?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
                         }
+                    </SelectContent>
+                </Select>
+              </div>
+               <div>
+                <Label htmlFor="demoType">Simulation Type</Label>
+                <Select onValueChange={value => handleTestSessionFieldChange('demoType', value as 'LEAK' | 'DIFFUSION')}>
+                    <SelectTrigger id="demoType">
+                        <SelectValue placeholder="Select simulation type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="LEAK">Leak Simulation</SelectItem>
+                        <SelectItem value="DIFFUSION">Diffusion Simulation</SelectItem>
                     </SelectContent>
                 </Select>
               </div>
@@ -1156,5 +1174,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-    
