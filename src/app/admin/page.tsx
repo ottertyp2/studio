@@ -43,7 +43,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@/componentsui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
@@ -688,8 +688,7 @@ export default function AdminPage() {
       const features = [...leakData, ...diffusionData];
       const labels = [...Array(leakData.length).fill(1), ...Array(diffusionData.length).fill(0)];
       
-      const indicesArray = tf.util.createShuffledIndices(features.length);
-      const shuffledIndices = tf.tensor1d(indicesArray, 'int32');
+      const shuffledIndices = tf.tensor1d(tf.util.createShuffledIndices(features.length), 'int32');
 
       const inputTensor = tf.tensor2d(features, [features.length, 1]);
       const labelTensor = tf.tensor2d(labels, [labels.length, 1]);
@@ -1342,5 +1341,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-    
