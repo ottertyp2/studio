@@ -17,7 +17,7 @@ export default function PromotePage() {
   const { toast } = useToast();
 
   const [isChecking, setIsChecking] = useState(true);
-  const [adminExists, setAdminExists] = useState(true);
+  const [adminExists, setAdminExists] = useState(false);
   const [isPromoting, setIsPromoting] = useState(false);
 
   useEffect(() => {
@@ -29,18 +29,25 @@ export default function PromotePage() {
     const checkAdmin = async () => {
       if (!firestore) return;
       setIsChecking(true);
-      const usersRef = collection(firestore, 'users');
-      const q = query(usersRef, where('role', '==', 'superadmin'));
-      const querySnapshot = await getDocs(q);
-      setAdminExists(!querySnapshot.empty);
-      setIsChecking(false);
+      try {
+        const usersRef = collection(firestore, 'users');
+        const q = query(usersRef, where('role', '==', 'superadmin'));
+        const querySnapshot = await getDocs(q);
+        setAdminExists(!querySnapshot.empty);
+      } catch (error) {
+        console.error("Error checking for admin:", error);
+        // In case of error, assume no admin exists to allow promotion attempt
+        setAdminExists(false);
+      } finally {
+        setIsChecking(false);
+      }
     };
 
     checkAdmin();
   }, [isUserLoading, firestore]);
 
   const handlePromote = async () => {
-    if (!user) {
+    if (!user || !firestore) {
       toast({ variant: 'destructive', title: 'Error', description: 'You must be logged in to promote an account.' });
       return;
     }
