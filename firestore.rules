@@ -1,108 +1,81 @@
 /**
- * @fileoverview Firestore Security Rules for the application.
- *
- * Core Philosophy:
- * This ruleset is in prototyping mode. It prioritizes strict authorization while being permissive on data shapes for rapid iteration.
- * It enforces identity-based access control based on the currently signed-in user.
- *
- * Data Structure:
- * - /users/{userId}: Stores user profiles.
- * - /sensor_configurations/{sensorConfigurationId}: Stores global sensor configurations.
- * - /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}: Stores sensor data related to a sensor configuration.
- * - /analysis_results/{analysisResultId}: Stores leak analysis results.
- * - /test_sessions/{testSessionId}: Stores test session data.
- *
- * Key Security Decisions:
- * - User listing is disallowed.
- * - Superadmin role is not currently enforced but the field exists on the user object.
- * - Data validation is minimal, focusing on authorization and relational integrity.
- *
- * Denormalization for Authorization:
- * - No denormalization is required as we are not using any collaboration or shared access patterns.
+ * @description This ruleset enforces a public-access model for all data. Any authenticated or unauthenticated client can read or write any data.
+ * @dataStructure
+ *  - /users/{userId}: Stores user profile information.
+ *  - /sensor_configurations/{sensorConfigurationId}: Stores sensor configurations.
+ *  - /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}: Stores sensor data associated with configurations.
+ *  - /analysis_results/{analysisResultId}: Stores analysis results.
+ *  - /test_sessions/{testSessionId}: Stores test session data.
+ * @keySecurityDecisions
+ *  - No user-specific authorization is enforced. All collections are globally readable and writable.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Manages user profiles, restricting access to the owning user.
+     * @description Allows any signed-in user to read and write user profiles.
      * @path /users/{userId}
-     * @allow (create) Signed-in user creates their own profile.
-     * @allow (get, update, delete) Signed-in user accesses their own profile.
-     * @deny (create) Signed-in user attempts to create a profile for another user.
-     * @deny (get, update, delete) Signed-in user attempts to access another user's profile.
-     * @principle Enforces document ownership for all operations.
+     * @allow (get, list) Authenticated or unauthenticated user can read user profiles.
+     * @allow (create, update, delete) Authenticated or unauthenticated user can write user profiles.
+     * @deny None.
+     * @principle Open access: all users can read and write user data.
      */
     match /users/{userId} {
-      function isOwner(userId) {
-        return request.auth.uid == userId;
-      }
-
-      function isSignedIn() {
-          return request.auth != null;
-      }
-
-      allow get: if isSignedIn() && isOwner(userId);
-      allow list: if false;
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow update: if isSignedIn() && isOwner(userId);
-      allow delete: if isSignedIn() && isOwner(userId);
+      allow get, list: if true;
+      allow create, update, delete: if true;
     }
 
     /**
-     * @description Manages sensor configurations. Read and write access are public.
+     * @description Allows any signed-in user to read and write sensor configurations.
      * @path /sensor_configurations/{sensorConfigurationId}
-     * @allow (get, list) Any user can read sensor configurations.
-     * @allow (create, update, delete) Any user can create, update, or delete sensor configurations.
-     * @principle Open access for sensor configurations.
+     * @allow (get, list) Authenticated or unauthenticated user can read sensor configurations.
+     * @allow (create, update, delete) Authenticated or unauthenticated user can write sensor configurations.
+     * @deny None.
+     * @principle Open access: all users can read and write sensor configuration data.
      */
     match /sensor_configurations/{sensorConfigurationId} {
       allow get, list: if true;
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn();
+      allow create, update, delete: if true;
     }
 
     /**
-     * @description Manages sensor data associated with a sensor configuration. Read and write access are public.
+     * @description Allows any signed-in user to read and write sensor data.
      * @path /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
-     * @allow (get, list) Any user can read sensor data.
-     * @allow (create, update, delete) Any user can create, update, or delete sensor data.
-     * @principle Open access for sensor data.
+     * @allow (get, list) Authenticated or unauthenticated user can read sensor data.
+     * @allow (create, update, delete) Authenticated or unauthenticated user can write sensor data.
+     * @deny None.
+     * @principle Open access: all users can read and write sensor data.
      */
     match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
       allow get, list: if true;
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn();
+      allow create, update, delete: if true;
     }
 
     /**
-     * @description Manages analysis results. Read and write access are public.
+     * @description Allows any signed-in user to read and write analysis results.
      * @path /analysis_results/{analysisResultId}
-     * @allow (get, list) Any user can read analysis results.
-     * @allow (create, update, delete) Any user can create, update, or delete analysis results.
-     * @principle Open access for analysis results.
+     * @allow (get, list) Authenticated or unauthenticated user can read analysis results.
+     * @allow (create, update, delete) Authenticated or unauthenticated user can write analysis results.
+     * @deny None.
+     * @principle Open access: all users can read and write analysis result data.
      */
     match /analysis_results/{analysisResultId} {
       allow get, list: if true;
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn();
+      allow create, update, delete: if true;
     }
 
     /**
-     * @description Manages test sessions. Read and write access are public.
+     * @description Allows any signed-in user to read and write test sessions.
      * @path /test_sessions/{testSessionId}
-     * @allow (get, list) Any user can read test sessions.
-     * @allow (create, update, delete) Any user can create, update, or delete test sessions.
-     * @principle Open access for test sessions.
+     * @allow (get, list) Authenticated or unauthenticated user can read test sessions.
+     * @allow (create, update, delete) Authenticated or unauthenticated user can write test sessions.
+     * @deny None.
+     * @principle Open access: all users can read and write test session data.
      */
     match /test_sessions/{testSessionId} {
       allow get, list: if true;
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn();
+      allow create, update, delete: if true;
     }
   }
 }
