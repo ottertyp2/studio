@@ -1,3 +1,4 @@
+
 'use client';
 import {
   Auth, 
@@ -12,8 +13,8 @@ import { errorEmitter } from './error-emitter';
 import { FirestorePermissionError } from './errors';
 
 /** Initiate email/password sign-up (non-blocking). */
-export function initiateEmailSignUp(authInstance: Auth, firestore: Firestore, email: string, password: string): void {
-  createUserWithEmailAndPassword(authInstance, email, password)
+export function initiateEmailSignUp(authInstance: Auth, firestore: Firestore, email: string, password: string): Promise<void> {
+  return createUserWithEmailAndPassword(authInstance, email, password)
     .then(userCredential => {
       // Create user document in Firestore
       const user = userCredential.user;
@@ -23,22 +24,24 @@ export function initiateEmailSignUp(authInstance: Auth, firestore: Firestore, em
         role: 'user' // Default role
       };
 
-      setDoc(userDocRef, userData)
-        .catch(error => {
-          // This catch block is specifically for the setDoc operation.
-          const permissionError = new FirestorePermissionError({
-            path: userDocRef.path,
-            operation: 'create',
-            requestResourceData: userData,
-          });
-          errorEmitter.emit('permission-error', permissionError);
-          console.error("Firestore user creation error:", error); // Keep original error log for server
-        });
+      // Return the promise from setDoc to await it.
+      return setDoc(userDocRef, userData);
     })
     .catch(error => {
-      // This catch block is for createUserWithEmailAndPassword.
-      // We let the UI handle this via the form's error state.
-      console.error("Sign up authentication error:", error);
+      // This catch block can now handle errors from both createUser and setDoc.
+      if (error.code && error.code.startsWith('auth/')) {
+        // This is an authentication error
+        console.error("Sign up authentication error:", error);
+      } else {
+        // This is likely a Firestore permission error
+        const permissionError = new FirestorePermissionError({
+          path: `users/${(authInstance.currentUser?.uid || 'unknown_user')}`,
+          operation: 'create',
+          requestResourceData: { email, role: 'user' },
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        console.error("Firestore user creation error:", error); // Keep original error log
+      }
       // Re-throw to be caught by the form's onSubmit handler
       throw error;
     });

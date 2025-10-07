@@ -297,7 +297,7 @@ function TestingComponent() {
       }
       
       if(session?.measurementType === 'ARDUINO') {
-          await sendSerialCommand('p');
+          // Do not send stop command, just stop associating data.
       }
 
       const sessionRef = doc(firestore, `test_sessions`, sessionId);
@@ -309,7 +309,7 @@ function TestingComponent() {
         }
       }
       toast({ title: 'Test Session Ended' });
-  }, [firestore, selectedSessionIds, stopDemoMode, testSessionsCollectionRef, toast, sendSerialCommand]);
+  }, [firestore, selectedSessionIds, stopDemoMode, testSessionsCollectionRef, toast]);
 
   const disconnectSerial = useCallback(async () => {
     const { testSessions: currentTestSessions } = stateRef.current;
