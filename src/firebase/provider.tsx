@@ -112,7 +112,7 @@ export function useMemoFirebase<T>(factory: () => T, deps: DependencyList): T | 
 }
 
 export interface UserHookResult {
-  user: User | null;
+  user: User | null | undefined; // undefined during load, null if not auth'd
   userRole: string | null;
   isUserLoading: boolean;
   userError: Error | null;
@@ -120,14 +120,13 @@ export interface UserHookResult {
 
 export const useUser = (): UserHookResult => {
   const { auth, firestore } = useFirebase();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null | undefined>(undefined); // Start as undefined
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isUserLoading, setIsUserLoading] = useState(true);
   const [userError, setUserError] = useState<Error | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
-      setIsUserLoading(true);
       if (authUser) {
         setUser(authUser);
         try {
@@ -136,7 +135,6 @@ export const useUser = (): UserHookResult => {
           if (userDoc.exists()) {
             setUserRole(userDoc.data()?.role || 'user');
           } else {
-            // This might happen for a brief moment after sign up
             setUserRole('user');
           }
         } catch (e) {

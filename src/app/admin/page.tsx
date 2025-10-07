@@ -524,12 +524,12 @@ export default function AdminPage() {
     );
   }
 
-  if (isUserLoading) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
-  }
-  
-  if (!user) {
-    return null;
+  if (isUserLoading || user === undefined) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
+        <p className="text-lg">Loading...</p>
+      </div>
+    );
   }
 
 

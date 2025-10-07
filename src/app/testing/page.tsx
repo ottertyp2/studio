@@ -919,19 +919,12 @@ function TestingComponent() {
     );
   }
   
-  if (isUserLoading) {
+  if (isUserLoading || user === undefined) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
         <p className="text-lg">Loading...</p>
       </div>
     );
-  }
-
-  if (!user) {
-    // This case should ideally be handled by the useEffect redirect,
-    // but as a fallback, we can render null or a loading state
-    // while the redirect is in flight.
-    return null;
   }
 
   return (
