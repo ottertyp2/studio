@@ -40,10 +40,11 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical } from 'lucide-react';
+import { FlaskConical, LogOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc } from 'firebase/firestore';
+import { signOut } from '@/firebase/non-blocking-login';
 
 
 type SensorConfig = {
@@ -82,7 +83,7 @@ export default function AdminPage() {
   const { toast } = useToast();
 
   const { user, userRole, isUserLoading } = useUser();
-  const { firestore } = useFirebase();
+  const { firestore, auth } = useFirebase();
 
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
   const [tempSensorConfig, setTempSensorConfig] = useState<Partial<SensorConfig> | null>(null);
@@ -360,6 +361,11 @@ export default function AdminPage() {
     router.push(`/testing?${queryParams}`);
   };
 
+  const handleSignOut = () => {
+    signOut(auth);
+    router.push('/login');
+  };
+
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
     return (
@@ -542,10 +548,16 @@ export default function AdminPage() {
                 <CardTitle className="text-3xl bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
                 Management Panel
                 </CardTitle>
-                 <Button onClick={() => router.push('/testing')} variant="outline">
-                    <FlaskConical className="h-4 w-4 mr-2" />
-                    Go to Testing
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button onClick={() => router.push('/testing')} variant="outline">
+                        <FlaskConical className="h-4 w-4 mr-2" />
+                        Go to Testing
+                    </Button>
+                    <Button onClick={handleSignOut} variant="ghost">
+                        <LogOut className="h-4 w-4 mr-2" />
+                        Logout
+                    </Button>
+                </div>
             </div>
             <CardDescription>
               Manage sensor configurations and test sessions.

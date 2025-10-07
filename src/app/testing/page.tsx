@@ -52,12 +52,13 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Cog, X as XIcon } from 'lucide-react';
+import { Cog, LogOut, X as XIcon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc, useUser } from '@/firebase';
 import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc } from 'firebase/firestore';
+import { signOut } from '@/firebase/non-blocking-login';
 
 
 type SensorData = {
@@ -730,6 +731,11 @@ function TestingComponent() {
     setTempTestSession(prev => ({...prev, [field]: value}));
   };
 
+  const handleSignOut = () => {
+    signOut(auth);
+    router.push('/login');
+  };
+
   const chartData = useMemo(() => {
     const now = new Date();
     let visibleData = [...dataLog].reverse();
@@ -936,12 +942,18 @@ function TestingComponent() {
                 <CardTitle className="text-3xl bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
                 BioThrust Live Dashboard
                 </CardTitle>
-                 {userRole === 'superadmin' && (
-                    <Button onClick={() => router.push('/admin')} variant="outline">
-                        <Cog className="h-4 w-4 mr-2" />
-                        Manage
+                 <div className="flex items-center gap-2">
+                    {userRole === 'superadmin' && (
+                        <Button onClick={() => router.push('/admin')} variant="outline">
+                            <Cog className="h-4 w-4 mr-2" />
+                            Manage
+                        </Button>
+                    )}
+                    <Button onClick={handleSignOut} variant="ghost">
+                        <LogOut className="h-4 w-4 mr-2" />
+                        Logout
                     </Button>
-                )}
+                </div>
             </div>
 
             <CardDescription>
