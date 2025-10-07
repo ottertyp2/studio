@@ -114,6 +114,12 @@ type TestSession = {
     demoType?: 'LEAK' | 'DIFFUSION';
 };
 
+type AutomatedTrainingStatus = {
+  step: string;
+  progress: number;
+  details: string;
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -139,6 +145,9 @@ export default function AdminPage() {
 
   const [newMlModel, setNewMlModel] = useState<Partial<MLModel>>({name: '', version: '1.0', description: '', fileSize: 0});
   const [newTrainDataSet, setNewTrainDataSet] = useState<Partial<TrainDataSet>>({name: '', description: '', storagePath: ''});
+
+  const [isAutoTraining, setIsAutoTraining] = useState(false);
+  const [autoTrainingStatus, setAutoTrainingStatus] = useState<AutomatedTrainingStatus | null>(null);
 
 
   useEffect(() => {
@@ -636,7 +645,120 @@ export default function AdminPage() {
     } finally {
         setIsTraining(false);
     }
-  }
+  };
+
+  const handleAutomatedTraining = async () => {
+    if (!mlModelsCollectionRef || !firestore) return;
+
+    setIsAutoTraining(true);
+    setAutoTrainingStatus({ step: 'Initializing', progress: 0, details: 'Starting pipeline...' });
+
+    try {
+      const generateData = (type: 'LEAK' | 'DIFFUSION', numPoints = 200) => {
+          let data = [];
+          if (type === 'LEAK') {
+              for (let i = 0; i < numPoints; i++) {
+                  const rawValue = 950 - (i * (800 / numPoints));
+                  data.push(rawValue + gaussianNoise(0, 5));
+              }
+          } else { // DIFFUSION
+              const tau = numPoints / 5;
+              for (let i = 0; i < numPoints; i++) {
+                  const rawValue = 800 + (150 * Math.exp(-i / tau));
+                  data.push(rawValue + gaussianNoise(0, 3));
+              }
+          }
+          return data.map(v => Math.min(1023, Math.max(0, v)));
+      };
+
+      setAutoTrainingStatus({ step: 'Data Generation', progress: 10, details: 'Generating leak and diffusion datasets...' });
+      
+      const leakData = generateData('LEAK', 500);
+      const diffusionData = generateData('DIFFUSION', 500);
+      
+      await new Promise(res => setTimeout(res, 500)); // Simulate async work
+
+      setAutoTrainingStatus({ step: 'Data Preparation', progress: 30, details: 'Preparing data for training...' });
+
+      const features = [...leakData, ...diffusionData];
+      const labels = [...Array(leakData.length).fill(1), ...Array(diffusionData.length).fill(0)];
+      
+      const shuffledIndices = tf.util.createShuffledIndices(features.length);
+      const shuffledFeatures = tf.gather(features, shuffledIndices);
+      const shuffledLabels = tf.gather(labels, shuffledIndices);
+
+      const inputTensor = tf.tensor2d(shuffledFeatures.arraySync(), [features.length, 1]);
+      const labelTensor = tf.tensor2d(shuffledLabels.arraySync(), [labels.length, 1]);
+
+      const { mean, variance } = tf.moments(inputTensor);
+      const normalizedInput = inputTensor.sub(mean).div(variance.sqrt());
+
+      setAutoTrainingStatus({ step: 'Model Training', progress: 50, details: 'Compiling model...' });
+      
+      const model = tf.sequential();
+      model.add(tf.layers.dense({ inputShape: [1], units: 50, activation: 'relu' }));
+      model.add(tf.layers.dense({ units: 50, activation: 'relu' }));
+      model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }));
+
+      model.compile({
+          optimizer: tf.train.adam(),
+          loss: 'binaryCrossentropy',
+          metrics: ['accuracy'],
+      });
+      
+      let finalAccuracy = 0;
+      await model.fit(normalizedInput, labelTensor, {
+          epochs: 25,
+          batchSize: 64,
+          callbacks: {
+              onEpochEnd: (epoch, logs) => {
+                  if (logs) {
+                      const progress = 50 + ((epoch + 1) / 25) * 40;
+                      finalAccuracy = (logs.acc || 0) * 100;
+                      setAutoTrainingStatus({
+                          step: 'Model Training',
+                          progress,
+                          details: `Epoch ${epoch + 1}/25 - Loss: ${logs.loss?.toFixed(4)}, Acc: ${finalAccuracy.toFixed(2)}%`
+                      });
+                  }
+              }
+          }
+      });
+      
+      setAutoTrainingStatus({ step: 'Saving Model', progress: 90, details: 'Saving model to browser and Firestore...' });
+
+      const modelName = `auto-model-${new Date().toISOString().split('T')[0]}`;
+      await model.save(`indexeddb://${modelName}`);
+      
+      const newId = doc(collection(firestore, '_')).id;
+      const modelMetaData: MLModel = {
+          id: newId,
+          name: modelName,
+          version: '1.0-auto',
+          description: `Automatically trained on ${new Date().toLocaleDateString()}. Accuracy: ${finalAccuracy.toFixed(2)}%`,
+          fileSize: 0 // Not easily retrievable from IndexedDB
+      };
+
+      addDocumentNonBlocking(mlModelsCollectionRef, modelMetaData);
+      
+      toast({ title: 'Automated Training Complete!', description: `New model "${modelName}" is now available.` });
+
+      setAutoTrainingStatus({ step: 'Complete', progress: 100, details: `Finished with ${finalAccuracy.toFixed(2)}% accuracy.` });
+
+    } catch (e: any) {
+        console.error("Automated training failed:", e);
+        toast({variant: 'destructive', title: 'Automated Training Failed', description: e.message});
+        setAutoTrainingStatus({ step: 'Failed', progress: 100, details: e.message });
+    } finally {
+        setTimeout(() => setIsAutoTraining(false), 5000);
+    }
+  };
+
+  const gaussianNoise = (mean = 0, std = 3) => {
+      const u1 = 1 - Math.random();
+      const u2 = Math.random();
+      return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * std + mean;
+  };
 
 
   const viewSessionData = (sessionId: string) => {
@@ -1057,17 +1179,35 @@ export default function AdminPage() {
                 <span>Accuracy: {trainingStatus.accuracy.toFixed(2)}%</span>
               </div>
             </div>
-            
-            <div className="flex justify-center gap-4 pt-4">
-              <Button variant="outline" disabled={trainingProgress < 100}>Save to Browser</Button>
-              <Button variant="outline" disabled={trainingProgress < 100}>Upload to Firebase ML</Button>
-            </div>
-            <p className="text-xs text-center text-muted-foreground">
-              Uploading to Firebase ML is not available in this environment.
-            </p>
         </div>
 
       </CardContent>
+    </Card>
+  );
+
+  const renderAutomatedTraining = () => (
+    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
+      <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BrainCircuit className="h-6 w-6 text-primary" />
+            Automated Training Pipeline
+          </CardTitle>
+          <CardDescription>
+            Click the button to automatically generate new data, train a model from scratch, and save it to the catalog.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button onClick={handleAutomatedTraining} disabled={isAutoTraining} className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
+            {isAutoTraining ? 'Pipeline Running...' : 'Start Automated Training'}
+          </Button>
+          {isAutoTraining && autoTrainingStatus && (
+            <div className="space-y-2 pt-4">
+                <Label>Pipeline Progress ({autoTrainingStatus.step})</Label>
+                <Progress value={autoTrainingStatus.progress} />
+                <p className="text-xs text-muted-foreground text-center">{autoTrainingStatus.details}</p>
+            </div>
+          )}
+        </CardContent>
     </Card>
   );
 
@@ -1169,6 +1309,9 @@ export default function AdminPage() {
           </div>
           <div className="lg:col-span-3">
             {renderModelManagement()}
+          </div>
+           <div className="lg:col-span-3">
+            {renderAutomatedTraining()}
           </div>
       </main>
     </div>
