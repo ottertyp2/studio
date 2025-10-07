@@ -296,6 +296,10 @@ function TestingComponent() {
         stopDemoMode();
       }
       
+      if(session?.measurementType === 'ARDUINO') {
+          await sendSerialCommand('p');
+      }
+
       const sessionRef = doc(firestore, `test_sessions`, sessionId);
       await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
   
@@ -305,7 +309,7 @@ function TestingComponent() {
         }
       }
       toast({ title: 'Test Session Ended' });
-  }, [firestore, selectedSessionIds, stopDemoMode, testSessionsCollectionRef, toast]);
+  }, [firestore, selectedSessionIds, stopDemoMode, testSessionsCollectionRef, toast, sendSerialCommand]);
 
   const disconnectSerial = useCallback(async () => {
     const { testSessions: currentTestSessions } = stateRef.current;
@@ -1207,5 +1211,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
