@@ -21,7 +21,6 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
   if (emailOrUsername.includes('@')) {
     email = emailOrUsername;
     username = email.split('@')[0];
-    // Check if the auto-generated username already exists
     const usernameQuery = query(collection(firestore, 'users'), where('username', '==', username));
     const usernameSnapshot = await getDocs(usernameQuery);
     if (!usernameSnapshot.empty) {
@@ -30,7 +29,6 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
   } else {
     username = emailOrUsername;
     email = `${username}@${DUMMY_DOMAIN}`;
-    // Check if username already exists
     const usernameQuery = query(collection(firestore, 'users'), where('username', '==', username));
     const usernameSnapshot = await getDocs(usernameQuery);
     if (!usernameSnapshot.empty) {
@@ -38,35 +36,37 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
     }
   }
 
+  let user: User;
   try {
     const userCredential = await createUserWithEmailAndPassword(authInstance, email, password);
-    const user = userCredential.user;
-    const userDocRef = doc(firestore, 'users', user.uid);
-    const userData = {
-      email: user.email, // This will be the real or dummy email
-      username: username,
-      role: 'user' // Default role
-    };
-
-    // Use .catch() to handle Firestore-specific errors non-blockingly
-    setDoc(userDocRef, userData).catch(error => {
-      // Create a detailed, contextual error for better debugging
-      const permissionError = new FirestorePermissionError({
-        path: `users/${user.uid}`,
-        operation: 'create',
-        requestResourceData: userData,
-      });
-      // Emit the error for the global listener to catch and display
-      errorEmitter.emit('permission-error', permissionError);
-    });
-
-  } catch (error: any) {
-    if (error.code === 'auth/email-already-in-use') {
-        // This can happen if a username is chosen that maps to an existing dummy email
-        throw new Error('This username is already taken. Please choose another one.');
+    user = userCredential.user;
+  } catch (authError: any) {
+    if (authError.code === 'auth/email-already-in-use') {
+        throw new Error('This username is already taken as it maps to an existing email. Please choose another one.');
     }
-    // Re-throw other auth errors to be handled by the UI
-    throw error;
+    throw authError; // Re-throw other auth errors
+  }
+  
+  const userDocRef = doc(firestore, 'users', user.uid);
+  const userData = {
+    email: user.email,
+    username: username,
+    role: 'user'
+  };
+
+  try {
+    // Await setDoc to catch its specific errors
+    await setDoc(userDocRef, userData);
+  } catch (firestoreError: any) {
+    // Create and emit a detailed, contextual error for better debugging
+    const permissionError = new FirestorePermissionError({
+      path: userDocRef.path,
+      operation: 'create',
+      requestResourceData: userData,
+    });
+    errorEmitter.emit('permission-error', permissionError);
+    // Also, re-throw the permission error so the UI can know the operation failed.
+    throw permissionError;
   }
 }
 
