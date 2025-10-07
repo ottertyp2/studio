@@ -610,8 +610,10 @@ function TestingComponent() {
 
       try {
           const model = await tf.loadLayersModel(`indexeddb://${selectedAnalysisModelId}`);
-
-          const analysisSegment = dataLog.slice(analysisRange[0], analysisRange[1]).map(d => d.value).reverse();
+          
+          // Data is stored newest-first, so reverse it for chronological analysis
+          const chronologicalData = [...dataLog].reverse(); 
+          const analysisSegment = chronologicalData.slice(analysisRange[0], analysisRange[1]).map(d => d.value);
 
           const requiredLength = 200; // The length the model was trained on
           let dataForAnalysis = analysisSegment;
@@ -622,8 +624,9 @@ function TestingComponent() {
             const padding = Array(requiredLength - dataForAnalysis.length).fill(dataForAnalysis[0] || 0);
             dataForAnalysis = [...padding, ...dataForAnalysis];
           }
-
-          const inputTensor = tf.tensor2d(dataForAnalysis, [1, requiredLength]);
+          
+          const featureMatrix = dataForAnalysis.map(v => [v]);
+          const inputTensor = tf.tensor2d(featureMatrix, [featureMatrix.length, 1]);
 
           // Normalize the data (using a hardcoded mean/variance for now, ideally this comes from training)
           const { mean, variance } = tf.moments(inputTensor);
@@ -1241,8 +1244,8 @@ function TestingComponent() {
                                     disabled={dataLog.length === 0}
                                 />
                                 <div className="flex justify-between text-xs text-muted-foreground mt-2">
-                                  <span>Start: {analysisRange[0]}</span>
-                                  <span>End: {analysisRange[1]}</span>
+                                  <span>Start: {analysisRange[0]} ({dataLog[analysisRange[0]] ? new Date(dataLog[analysisRange[0]].timestamp).toLocaleTimeString() : 'N/A'})</span>
+                                  <span>End: {analysisRange[1]} ({dataLog[analysisRange[1]] ? new Date(dataLog[analysisRange[1]].timestamp).toLocaleTimeString() : 'N/A'})</span>
                                 </div>
                             </div>
                         </div>
