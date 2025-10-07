@@ -21,18 +21,26 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
   if (emailOrUsername.includes('@')) {
     email = emailOrUsername;
     username = email.split('@')[0];
-    const usernameQuery = query(collection(firestore, 'users'), where('username', '==', username));
-    const usernameSnapshot = await getDocs(usernameQuery);
-    if (!usernameSnapshot.empty) {
-      throw new Error(`The username '${username}' derived from your email is already taken. Please try signing up with a unique username instead.`);
+    try {
+        const usernameQuery = query(collection(firestore, 'users'), where('username', '==', username));
+        const usernameSnapshot = await getDocs(usernameQuery);
+        if (!usernameSnapshot.empty) {
+          throw new Error(`[E3] The username '${username}' derived from your email is already taken. Please try signing up with a unique username instead.`);
+        }
+    } catch (e: any) {
+        throw new Error(`[E1] Failed to check username availability: ${e.message}`);
     }
   } else {
     username = emailOrUsername;
     email = `${username}@${DUMMY_DOMAIN}`;
-    const usernameQuery = query(collection(firestore, 'users'), where('username', '==', username));
-    const usernameSnapshot = await getDocs(usernameQuery);
-    if (!usernameSnapshot.empty) {
-      throw new Error('Username already exists.');
+    try {
+        const usernameQuery = query(collection(firestore, 'users'), where('username', '==', username));
+        const usernameSnapshot = await getDocs(usernameQuery);
+        if (!usernameSnapshot.empty) {
+          throw new Error('[E2] Username already exists.');
+        }
+    } catch (e: any) {
+        throw new Error(`[E1] Failed to check username availability: ${e.message}`);
     }
   }
 
@@ -42,9 +50,9 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
     user = userCredential.user;
   } catch (authError: any) {
     if (authError.code === 'auth/email-already-in-use') {
-        throw new Error('This username is already taken as it maps to an existing email. Please choose another one.');
+        throw new Error('[E4] This username is already taken as it maps to an existing email. Please choose another one.');
     }
-    throw authError; // Re-throw other auth errors
+    throw new Error(`[E4] Firebase Auth account creation failed: ${authError.message}`);
   }
   
   const userDocRef = doc(firestore, 'users', user.uid);
@@ -55,18 +63,15 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
   };
 
   try {
-    // Await setDoc to catch its specific errors
     await setDoc(userDocRef, userData);
   } catch (firestoreError: any) {
-    // Create and emit a detailed, contextual error for better debugging
     const permissionError = new FirestorePermissionError({
       path: userDocRef.path,
       operation: 'create',
       requestResourceData: userData,
     });
     errorEmitter.emit('permission-error', permissionError);
-    // Also, re-throw the permission error so the UI can know the operation failed.
-    throw permissionError;
+    throw new Error(`[E5] User profile creation failed. Original error: ${permissionError.message}`);
   }
 }
 

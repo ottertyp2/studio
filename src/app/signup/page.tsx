@@ -48,20 +48,8 @@ export default function SignupPage() {
       console.error(error); // Keep this for now to see the raw error
       let errorMessage = error.message;
       
-      // Check for specific, known error messages from our custom logic
-      if (errorMessage.includes('Username already exists')) {
-        errorMessage = 'This username is already taken. Please choose another one.';
-      } else if (errorMessage.includes('is already taken as it maps to an existing email')) {
-        errorMessage = 'This username is already taken. Please choose another one.';
-      }
-      
-      // Check for Firebase Auth error codes
-      else if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'This email is already associated with an account.';
-      }
-      
-      // Check for the contextual Firestore permission error message
-      else if (errorMessage.includes('Missing or insufficient permissions')) {
+      // Let's use the new numbered errors
+      if (errorMessage.includes('[E5]')) {
           errorMessage = "Couldn't create your user profile. Please contact Louis Otter.";
       }
       
