@@ -1,68 +1,61 @@
 /**
- * @fileoverview Firestore Security Rules for Prototyping.
+ * @file Firestore Security Rules
+ * @version 2
  *
- * Core Philosophy:
- * This ruleset defaults to a public-read, owner-write model where applicable, but with explicit denials for sensitive areas.
- * It prioritizes ease of development and iteration speed over fine-grained access control.  Schema validation is minimal.
+ * @description
+ * Core Philosophy: This ruleset allows public read access and restricts write access. User profiles are created only during account creation and are managed by the system. Sensor configurations, analysis results, and test sessions are globally accessible with no specific ownership enforced.
  *
  * Data Structure:
- * - /users/{userId}: Stores user profiles. Accessible only by the user themselves.
- * - /sensor_configurations/{sensorConfigurationId}: Stores sensor configurations. Publicly readable.
- * - /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}: Stores sensor data. Publicly readable.
- * - /analysis_results/{analysisResultId}: Stores analysis results. Publicly readable.
- * - /test_sessions/{testSessionId}: Stores test session data. Publicly readable.
+ * - /users/{userId}: Stores user profile information, with 'create' permission allowed only if the authenticated user's ID matches the 'userId'. Updates are disallowed.
+ * - /sensor_configurations/{sensorConfigurationId}: Stores sensor configurations.
+ * - /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}: Stores sensor data for each configuration.
+ * - /analysis_results/{analysisResultId}: Stores the results of analysis.
+ * - /test_sessions/{testSessionId}: Stores information of each test session.
  *
  * Key Security Decisions:
  * - User listing is disallowed.
- * - All top-level collections are publicly readable.
- * - Write access to top-level collections defaults to owner-only, based on an `ownerId` field. If this field is missing in the schema, writes are disallowed and a `// TODO` is added to signal the problem.
- *
- * Authorization Denormalization:
- * - To avoid costly `get()` calls in the rules, we rely on the client to include the authenticated user's ID in the document data (e.g., as an `ownerId` or `authorId` field) during creation.
- * - This denormalized ID is then used to enforce ownership on write operations.
+ * - Data validation is not enforced beyond checking ownership on user creation.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Controls access to user profile data.
+     * @description Controls access to user profiles. Users can create their profile on sign-up, but updates are not allowed.
      * @path /users/{userId}
-     * @allow (get, list) User 'a29c789gx0QHISWZN3QNlmwOXG53' can read their own profile data.
-     * @allow (create) User 'a29c789gx0QHISWZN3QNlmwOXG53' can create their own profile data.
-     * @allow (update, delete) User 'a29c789gx0QHISWZN3QNlmwOXG53' can update and delete their own profile data.
-     * @deny (get, list) User 'anotherUser' cannot read user 'a29c789gx0QHISWZN3QNlmwOXG53' profile data.
-     * @deny (create, update, delete) User 'anotherUser' cannot modify user 'a29c789gx0QHISWZN3QNlmwOXG53' profile data.
-     * @principle Enforces user-ownership: Only the authenticated user can read, create, update, or delete their own profile.
+     * @allow (create) - User with UID 'user123' creates a profile with document ID 'user123'.
+     * @deny (create) - User with UID 'user123' tries to create a profile with document ID 'otherUser'.
+     * @deny (update) - Any user tries to update any user profile.
+     * @principle Enforces user-ownership for profile creation and disallows updates.
      */
     match /users/{userId} {
-      allow get: if isOwner(userId);
+      function isSignedIn() {
+        return request.auth != null;
+      }
+
+      function isOwner(userId) {
+        return request.auth.uid == userId;
+      }
+
+      allow get: if false;
       allow list: if false;
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
-      allow delete: if isExistingOwner(userId);
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if false;
+      allow delete: if false;
     }
 
     /**
-     * @description Controls access to sensor configurations.
-     * @path /sensor_configurations/{sensorConfigurationId}
-     * @allow (get, list) Any user can read sensor configurations.
-     * @deny (create, update, delete) No one can create, update or delete sensor configurations.
-     * @principle Public read, no write access.
+     * @description Controls access to sensor data associated with a specific sensor configuration.
+     * @path /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
+     * @allow (get, list) - Any user can read any sensor data.
+     * @deny (create, update, delete) - No user can create, update, or delete sensor data.
+     * @principle Allows public read access but restricts write access.
      */
     match /sensor_configurations/{sensorConfigurationId} {
-      allow get, list: if true;
-      allow create, update, delete: if false;
-    }
-
-    /**
-     * @description Controls access to sensor data under a specific sensor configuration.
-     * @path /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
-     * @allow (get, list) Any user can read sensor data.
-     * @deny (create, update, delete) No one can create, update or delete sensor data.
-     * @principle Public read, no write access.
-     */
-    match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
+      match /sensor_data/{sensorDataId} {
+        allow get, list: if true;
+        allow create, update, delete: if false;
+      }
       allow get, list: if true;
       allow create, update, delete: if false;
     }
@@ -70,9 +63,9 @@ service cloud.firestore {
     /**
      * @description Controls access to analysis results.
      * @path /analysis_results/{analysisResultId}
-     * @allow (get, list) Any user can read analysis results.
-     * @deny (create, update, delete) No one can create, update or delete analysis results.
-     * @principle Public read, no write access.
+     * @allow (get, list) - Any user can read any analysis result.
+     * @deny (create, update, delete) - No user can create, update, or delete analysis results.
+     * @principle Allows public read access but restricts write access.
      */
     match /analysis_results/{analysisResultId} {
       allow get, list: if true;
@@ -82,26 +75,13 @@ service cloud.firestore {
     /**
      * @description Controls access to test sessions.
      * @path /test_sessions/{testSessionId}
-     * @allow (get, list) Any user can read test sessions.
-     * @deny (create, update, delete) No one can create, update or delete test sessions.
-     * @principle Public read, no write access.
+     * @allow (get, list) - Any user can read any test session.
+     * @deny (create, update, delete) - No user can create, update, or delete test sessions.
+     * @principle Allows public read access but restricts write access.
      */
     match /test_sessions/{testSessionId} {
-      allow get, list: if true;
-      allow create, update, delete: if false;
-    }
-
-    // Helper functions
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function isExistingOwner(userId) {
-        return isOwner(userId) && resource != null;
+        allow get, list: if true;
+        allow create, update, delete: if false;
     }
   }
 }
