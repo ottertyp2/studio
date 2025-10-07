@@ -58,8 +58,6 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
       });
       // Emit the error for the global listener to catch and display
       errorEmitter.emit('permission-error', permissionError);
-      // Also log it for server-side visibility, but the UI will handle the user-facing error
-      console.error("Firestore error during user creation:", permissionError.message);
     });
 
   } catch (error: any) {
