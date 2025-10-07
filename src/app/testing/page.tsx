@@ -432,7 +432,7 @@ function TestingComponent() {
         return null;
     }
 
-    const newSessionId = doc(collection(firestore, '_')).id;
+    const newSessionId = doc(collection(firestore!, '_')).id;
     const newSession: TestSession = {
       id: newSessionId,
       productIdentifier: sessionDetails.productIdentifier,
@@ -919,7 +919,7 @@ function TestingComponent() {
     );
   }
   
-  if (isUserLoading || user === undefined) {
+  if (isUserLoading || !user) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
         <p className="text-lg">Loading...</p>

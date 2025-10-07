@@ -524,7 +524,7 @@ export default function AdminPage() {
     );
   }
 
-  if (isUserLoading || user === undefined) {
+  if (isUserLoading || !user || userRole !== 'superadmin') {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
         <p className="text-lg">Loading...</p>
