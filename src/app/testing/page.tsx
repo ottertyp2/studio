@@ -791,37 +791,59 @@ function TestingComponent() {
   };
 
   const chartData = useMemo(() => {
-    const now = new Date();
-    let visibleData = [...dataLog].reverse();
-
-    if (chartInterval !== 'all') {
-      const intervalSeconds = parseInt(chartInterval, 10);
-      visibleData = visibleData.filter(dp => (now.getTime() - new Date(dp.timestamp).getTime()) / 1000 <= intervalSeconds);
-    }
+    const allChronologicalData = [...dataLog].reverse();
 
     if (selectedSessionIds.length > 1) {
-        const dataBySession: { [sessionId: string]: {name: string, value: number | null}[] } = {};
+        const dataBySession: { [sessionId: string]: {name: number, value: number | null}[] } = {};
         
         selectedSessionIds.forEach(id => {
-            dataBySession[id] = [];
+            const session = testSessions?.find(s => s.id === id);
+            if (!session) return;
+
+            const sessionStartTime = new Date(session.startTime).getTime();
+            let sessionData = allChronologicalData
+                .filter(d => d.testSessionId === id)
+                .map(d => {
+                    const elapsedSeconds = (new Date(d.timestamp).getTime() - sessionStartTime) / 1000;
+                    return {
+                        name: elapsedSeconds,
+                        value: convertRawValue(d.value)
+                    };
+                });
+            
+            if (chartInterval !== 'all') {
+                const intervalSeconds = parseInt(chartInterval, 10);
+                sessionData = sessionData.filter(d => d.name <= intervalSeconds);
+            }
+            
+            dataBySession[id] = sessionData;
         });
 
-        visibleData.forEach(d => {
-            if (d.testSessionId && dataBySession[d.testSessionId]) {
-                dataBySession[d.testSessionId].push({
-                    name: new Date(d.timestamp).toLocaleTimeString('en-US'),
-                    value: convertRawValue(d.value)
-                });
-            }
-        });
         return dataBySession;
     }
 
-    return visibleData.map(d => ({
-        name: new Date(d.timestamp).toLocaleTimeString('en-US'),
+    // Single session or local data
+    let visibleData = allChronologicalData;
+    const startTime = activeTestSession ? new Date(activeTestSession.startTime).getTime() : (visibleData.length > 0 ? new Date(visibleData[0].timestamp).getTime() : Date.now());
+
+    let mappedData = visibleData.map(d => ({
+        name: (new Date(d.timestamp).getTime() - startTime) / 1000,
         value: convertRawValue(d.value)
     }));
-  }, [dataLog, chartInterval, convertRawValue, selectedSessionIds]);
+
+    if (chartInterval !== 'all') {
+        const intervalSeconds = parseInt(chartInterval, 10);
+        const now = Date.now();
+        if (runningTestSession) { // Live data filtering
+            mappedData = mappedData.filter(dp => (now - (startTime + dp.name * 1000)) / 1000 <= intervalSeconds);
+        } else { // Historical data filtering
+            mappedData = mappedData.filter(dp => dp.name <= intervalSeconds);
+        }
+    }
+    
+    return mappedData;
+
+  }, [dataLog, chartInterval, convertRawValue, selectedSessionIds, testSessions, activeTestSession, runningTestSession]);
 
   
   const displayValue = currentValue !== null ? convertRawValue(currentValue) : null;
@@ -1137,7 +1159,13 @@ function TestingComponent() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
-                  <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" allowDuplicatedCategory={false} />
+                  <XAxis 
+                    dataKey="name" 
+                    stroke="hsl(var(--muted-foreground))" 
+                    allowDuplicatedCategory={false}
+                    type="number"
+                    label={{ value: selectedSessionIds.length > 1 ? "Time Elapsed (seconds)" : "Time", position: 'insideBottom', offset: -5 }}
+                  />
                   <YAxis
                     stroke="hsl(var(--muted-foreground))"
                     domain={['dataMin', 'dataMax']}
@@ -1149,7 +1177,7 @@ function TestingComponent() {
                       borderColor: 'hsl(var(--border))',
                       backdropFilter: 'blur(4px)',
                     }}
-                    formatter={(value: number, name: string) => [`${Number(value).toFixed(displayDecimals)} ${sensorConfig.unit}`, name]}
+                    formatter={(value: number, name: string, props) => [`${Number(value).toFixed(displayDecimals)} ${sensorConfig.unit}`, props.payload.name.toFixed(2) + 's']}
                   />
                   <Legend />
                   {Array.isArray(chartData) ? (
