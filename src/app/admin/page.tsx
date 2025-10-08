@@ -20,7 +20,7 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from "@/components/ui/accordion"
+} from "@/componentsui/accordion"
 import {
   Card,
   CardContent,
@@ -1069,7 +1069,6 @@ export default function AdminPage() {
                                     <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session.id)}>Stop</Button>
                                 )}
                                 <Button size="sm" variant="outline" onClick={() => viewSessionData(session.id)}>View Data</Button>
-                                <Button size="sm" variant="outline" onClick={() => router.push(`/testing?sessionId=${session.id}&edit=true`)}>Edit</Button>
                                  <AlertDialog>
                                     <AlertDialogTrigger asChild>
                                         <Button size="sm" variant="destructive">Delete</Button>
@@ -1491,7 +1490,7 @@ export default function AdminPage() {
                                                               <AlertDialogCancel>Cancel</AlertDialogCancel>
                                                               <AlertDialogAction variant="destructive" onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
                                                           </AlertDialogFooter>
-                                                          </AlertDialogContent>
+                           </AlertDialogContent>
                                                       </AlertDialog>
 
                                                   </div>

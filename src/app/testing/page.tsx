@@ -143,7 +143,7 @@ function TestingComponent() {
   const preselectedSessionId = searchParams.get('sessionId');
   const editMode = searchParams.get('edit') === 'true';
 
-  const [activeTab, setActiveTab] = useState(editMode && preselectedSessionId ? 'analysis' : 'live');
+  const [activeTab, setActiveTab] = useState('live');
   const [localDataLog, setLocalDataLog] = useState<SensorData[]>([]);
   const [currentValue, setCurrentValue] = useState<number | null>(null);
   
@@ -239,6 +239,7 @@ function TestingComponent() {
       setEditingSessionId(preselectedSessionId);
       setSelectedSessionIds([preselectedSessionId]);
       setChartInterval('all');
+      setActiveTab('analysis');
     }
   }, [editMode, preselectedSessionId]);
 
@@ -850,7 +851,7 @@ function TestingComponent() {
     try {
       const snapshot = await getDocs(q);
       const allSessionData = snapshot.docs
-        .map(d => ({ ...d.data(), id: d.id }) as SensorData & {id: string})
+        .map(d => ({ ...d.data(), id: d.id }))
         .sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
       if (allSessionData.length === 0) {
@@ -1321,9 +1322,9 @@ function TestingComponent() {
              </CardContent>
            </Card>
         </div>
-        <div className="lg:col-span-1 space-y-6">
+        <div className="lg:col-span-1 grid grid-rows-2 gap-6">
           {runningTestSession && (
-          <Card className='p-3 border-primary bg-white/70 backdrop-blur-sm shadow-lg'>
+          <Card className='p-3 border-primary bg-white/70 backdrop-blur-sm shadow-lg row-span-2'>
               <div className="flex justify-between items-center">
                   <div>
                       <p className="font-semibold">{runningTestSession.productName}</p>
@@ -1336,7 +1337,7 @@ function TestingComponent() {
               </div>
           </Card>
           )}
-          <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+          <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
             <CardHeader>
               <CardTitle className="text-lg">Current Value</CardTitle>
             </CardHeader>
@@ -1358,7 +1359,9 @@ function TestingComponent() {
               </div>
             </CardContent>
           </Card>
-          {renderProductManagement()}
+          <div className="h-full">
+            {renderProductManagement()}
+          </div>
         </div>
 
         <Card className="lg:col-span-3 bg-white/70 backdrop-blur-sm border-slate-300/8O shadow-lg">
