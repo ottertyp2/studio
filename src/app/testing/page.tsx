@@ -140,7 +140,7 @@ function TestingComponent() {
   
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
   const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>(preselectedSessionId ? [preselectedSessionId] : []);
-  const [tempTestSession, setTempTestSession] = useState<Partial<TestSession>>({ productId: products?.[0]?.id });
+  const [tempTestSession, setTempTestSession] = useState<Partial<TestSession>>({});
 
   const [chartInterval, setChartInterval] = useState<string>("60");
   const [chartKey, setChartKey] = useState<number>(Date.now());
@@ -896,7 +896,6 @@ function TestingComponent() {
                 <Button 
                     onClick={handleConnect} 
                     className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" 
-                    disabled={!!runningTestSession && isConnected}
                     variant={isConnected ? 'destructive' : 'default'}
                 >
                     {isConnected ? 'Disconnect from Test Bench' : 'Connect to Test Bench'}
@@ -1315,5 +1314,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
