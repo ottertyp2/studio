@@ -161,6 +161,7 @@ function TestingComponent() {
   const [aiAnalysisResult, setAiAnalysisResult] = useState<AiAnalysisResult | null>(null);
   const [analysisRange, setAnalysisRange] = useState([0, 100]);
   
+  const [isDemoRunning, setIsDemoRunning] = useState(false);
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -317,6 +318,7 @@ function TestingComponent() {
         clearInterval(demoIntervalRef.current);
         demoIntervalRef.current = null;
     }
+    setIsDemoRunning(false);
   }, []);
 
   const sendSerialCommand = useCallback(async (command: 's' | 'p') => {
@@ -563,7 +565,7 @@ function TestingComponent() {
             }
         }, 500);
 
-    } else if (!runningTestSession) {
+    } else if (!runningTestSession || runningTestSession.measurementType !== 'DEMO') {
         stopDemoMode();
     }
 
@@ -572,8 +574,8 @@ function TestingComponent() {
 
 
   const handleStartDemo = (demoType: 'LEAK' | 'DIFFUSION') => {
-    if (runningTestSession) {
-        toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
+    if (isDemoRunning || runningTestSession) {
+        toast({variant: 'destructive', title: 'Demo Already Running', description: 'Please wait for the current session to complete.'});
         return;
     }
     if (!products || products.length === 0) {
@@ -581,6 +583,7 @@ function TestingComponent() {
         return;
     }
     
+    setIsDemoRunning(true);
     // Immediately start the session
     const firstProduct = products[0];
     const tempSessionData = { 
@@ -905,7 +908,7 @@ function TestingComponent() {
             )}
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={!!runningTestSession}>
+                <Button variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={isDemoRunning || !!runningTestSession}>
                   Start Demo
                 </Button>
               </AlertDialogTrigger>
@@ -1244,8 +1247,8 @@ function TestingComponent() {
                                     disabled={dataLog.length === 0}
                                 />
                                 <div className="flex justify-between text-xs text-muted-foreground mt-2">
-                                  <span>Start: {analysisRange[0]} ({dataLog[analysisRange[0]] ? new Date(dataLog[analysisRange[0]].timestamp).toLocaleTimeString() : 'N/A'})</span>
-                                  <span>End: {analysisRange[1]} ({dataLog[analysisRange[1]] ? new Date(dataLog[analysisRange[1]].timestamp).toLocaleTimeString() : 'N/A'})</span>
+                                  <span>Start: {analysisRange[0]} ({dataLog.length > analysisRange[0] ? new Date(dataLog[dataLog.length - 1 - analysisRange[0]].timestamp).toLocaleTimeString() : 'N/A'})</span>
+                                  <span>End: {analysisRange[1]} ({dataLog.length > analysisRange[1] ? new Date(dataLog[dataLog.length - 1 - analysisRange[1]].timestamp).toLocaleTimeString() : 'N/A'})</span>
                                 </div>
                             </div>
                         </div>
@@ -1327,3 +1330,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
