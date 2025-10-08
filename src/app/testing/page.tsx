@@ -133,7 +133,7 @@ function TestingComponent() {
   const preselectedSessionId = searchParams.get('sessionId');
   const editMode = searchParams.get('edit') === 'true';
 
-  const [activeTab, setActiveTab] = useState(editMode ? 'analysis' : 'live');
+  const [activeTab, setActiveTab] = useState(editMode && preselectedSessionId ? 'analysis' : 'live');
   const [localDataLog, setLocalDataLog] = useState<SensorData[]>([]);
   const [currentValue, setCurrentValue] = useState<number | null>(null);
   
@@ -435,11 +435,8 @@ function TestingComponent() {
         }
     }
     
-    // Clean up reader
     if(readerRef.current) {
-      try {
-        readerRef.current.releaseLock();
-      } catch {}
+      try { readerRef.current.releaseLock(); } catch {}
     }
     readerRef.current = null;
 
@@ -449,7 +446,7 @@ function TestingComponent() {
   }, [handleNewDataPoint, toast, disconnectSerial]);
   
   const handleConnect = useCallback(async () => {
-    if (portRef.current) {
+    if (isConnected) {
       await disconnectSerial();
       return;
     }
@@ -474,7 +471,7 @@ function TestingComponent() {
             toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish connection.' });
         }
     }
-  }, [toast, readFromSerial, disconnectSerial, baudRate]);
+  }, [isConnected, disconnectSerial, toast, readFromSerial, baudRate]);
 
   const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
     if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products) {
@@ -540,6 +537,7 @@ function TestingComponent() {
         let step = 0;
         const totalSteps = 240; // ~2 minutes of data
         lastValuesRef.current = [];
+        setIsDemoRunning(true);
         
         demoIntervalRef.current = setInterval(() => {
             let rawValue;
@@ -566,22 +564,23 @@ function TestingComponent() {
 
             step++;
             if (step >= totalSteps) {
-                stopDemoMode();
                 if (runningTestSession) {
                     handleStopTestSession(runningTestSession.id);
                 }
             }
         }, 500);
 
-    } else if (!runningTestSession || runningTestSession.measurementType !== 'DEMO') {
-        stopDemoMode();
     }
 
     return () => {
-       stopDemoMode();
+       if (demoIntervalRef.current) {
+         clearInterval(demoIntervalRef.current);
+         demoIntervalRef.current = null;
+       }
        lastValuesRef.current = [];
+       setIsDemoRunning(false);
     };
-  }, [runningTestSession, handleNewDataPoint, stopDemoMode, handleStopTestSession]);
+  }, [runningTestSession, handleNewDataPoint, handleStopTestSession]);
 
 
   const handleStartDemo = (demoType: 'LEAK' | 'DIFFUSION') => {
@@ -594,8 +593,6 @@ function TestingComponent() {
         return;
     }
     
-    setIsDemoRunning(true);
-    // Immediately start the session
     const firstProduct = products[0];
     const tempSessionData = { 
         productId: firstProduct.id, 
@@ -926,7 +923,7 @@ function TestingComponent() {
               Live Control
           </CardTitle>
           <CardDescription className="text-center">
-            Start a measurement via Arduino or Demo mode.
+            Start a measurement via Test Bench or Demo mode.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center gap-4">
@@ -1210,32 +1207,52 @@ function TestingComponent() {
         </Card>
       </header>
 
-      <main className="w-full max-w-7xl mx-auto space-y-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
-            {activeTab === 'live' && renderLiveTab()}
-            {activeTab === 'file' && renderFileTab()}
-            {activeTab === 'analysis' && renderAnalysisTab()}
-          </div>
-          <div className="lg:col-span-1">
-             {runningTestSession && (
-             <Card className='p-3 mb-2 border-primary bg-white/70 backdrop-blur-sm shadow-lg'>
-                <div className="flex justify-between items-center">
-                    <div>
-                        <p className="font-semibold">{runningTestSession.productName}</p>
-                        <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US')} - {runningTestSession.status}</p>
-                         <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.demoType ? `(${runningTestSession.demoType})` : ''}</p>
-                    </div>
-                    <div className="flex gap-2">
-                        <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
-                    </div>
-                </div>
-            </Card>
-           )}
-          </div>
+      <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          {activeTab === 'live' && renderLiveTab()}
+          {activeTab === 'file' && renderFileTab()}
+          {activeTab === 'analysis' && renderAnalysisTab()}
+        </div>
+        <div className="lg:col-span-1 space-y-6">
+          {runningTestSession && (
+          <Card className='p-3 border-primary bg-white/70 backdrop-blur-sm shadow-lg'>
+              <div className="flex justify-between items-center">
+                  <div>
+                      <p className="font-semibold">{runningTestSession.productName}</p>
+                      <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US')} - {runningTestSession.status}</p>
+                        <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.demoType ? `(${runningTestSession.demoType})` : ''}</p>
+                  </div>
+                  <div className="flex gap-2">
+                      <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
+                  </div>
+              </div>
+          </Card>
+          )}
+          <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+            <CardHeader>
+              <CardTitle className="text-lg">Current Value</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center">
+              <div className="text-center">
+                <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
+                  {isConnected ? (displayValue !== null ? displayValue.toFixed(displayDecimals) : '---') : 'N/A'}
+                </p>
+                <p className="text-lg text-muted-foreground">{sensorConfig.unit}</p>
+                  {isConnected && (
+                  <div className="text-xs text-green-600 mt-1 flex items-center justify-center gap-1">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
+                    </span>
+                    {currentValue !== null ? "Live" : "Waiting for data..."}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+        <Card className="lg:col-span-3 bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
           <CardHeader>
             <div className="flex justify-between items-center flex-wrap gap-4">
               <div className='flex items-center gap-4 flex-wrap'>
@@ -1261,7 +1278,7 @@ function TestingComponent() {
                         </SelectTrigger>
                         <SelectContent>
                             {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productName} - {new Date(s.startTime).toLocaleString('en-US')} ({s.status})</SelectItem>)}
+                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productName} - {new Date(s.startTime).toLocaleString('en-US', { timeStyle: 'short' })} ({s.status})</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
@@ -1323,7 +1340,7 @@ function TestingComponent() {
                     stroke="hsl(var(--muted-foreground))"
                     domain={['dataMin', 'dataMax']}
                     tickFormatter={(tick) => typeof tick === 'number' ? tick.toFixed(displayDecimals) : tick}
-                    label={{ value: sensorConfig.unit, angle: -90, position: 'insideLeft', offset: 0 }}
+                    label={{ value: sensorConfig.unit, angle: -90, position: 'insideLeft' }}
                   />
                   <Tooltip
                     contentStyle={{
@@ -1350,61 +1367,31 @@ function TestingComponent() {
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            {/* The Analysis Tab Content is now rendered inside the main component */}
-          </div>
-
-          <div className="lg:col-span-1 grid grid-rows-2 gap-6">
-              <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-                <CardHeader>
-                  <CardTitle className="text-lg">Current Value</CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col items-center">
-                  <div className="text-center">
-                    <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                      {isConnected ? (displayValue !== null ? displayValue.toFixed(displayDecimals) : '---') : 'N/A'}
-                    </p>
-                    <p className="text-lg text-muted-foreground">{sensorConfig.unit}</p>
-                     {isConnected && (
-                      <div className="text-xs text-green-600 mt-1 flex items-center justify-center gap-1">
-                        <span className="relative flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
-                        </span>
-                        {currentValue !== null ? "Live" : "Waiting for data..."}
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-                <CardHeader>
-                  <CardTitle>Data Log</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-64">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Timestamp</TableHead>
-                          <TableHead className="text-right">Value ({sensorConfig.unit})</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {dataLog.map((entry: any, index: number) => (
-                          <TableRow key={entry.id || index}>
-                            <TableCell>{new Date(entry.timestamp).toLocaleTimeString('en-US')}</TableCell>
-                            <TableCell className="text-right">{convertRawValue(entry.value).toFixed(displayDecimals)}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-          </div>
-        </div>
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle>Data Log</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="h-64">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Timestamp</TableHead>
+                    <TableHead className="text-right">Value ({sensorConfig.unit})</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {dataLog.map((entry: any, index: number) => (
+                    <TableRow key={entry.id || index}>
+                      <TableCell>{new Date(entry.timestamp).toLocaleTimeString('en-US')}</TableCell>
+                      <TableCell className="text-right">{convertRawValue(entry.value).toFixed(displayDecimals)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          </CardContent>
+        </Card>
       </main>
     </div>
   );
@@ -1417,3 +1404,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    

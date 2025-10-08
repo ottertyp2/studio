@@ -994,6 +994,7 @@ export default function AdminPage() {
                     placeholder="Search sessions..."
                     value={sessionSearchTerm}
                     onChange={(e) => setSessionSearchTerm(e.target.value)}
+                    className="flex-grow"
                 />
                 <Select value={sessionSortOrder} onValueChange={setSessionSortOrder}>
                     <SelectTrigger className="w-[180px]">
@@ -1061,7 +1062,7 @@ export default function AdminPage() {
   const renderUserManagement = () => {
     return (
         <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
-            <Accordion type="single" collapsible className="w-full">
+            <Accordion type="single" collapsible className="w-full" defaultValue='item-1'>
                 <AccordionItem value="item-1">
                     <AccordionTrigger className="p-6">
                         <CardHeader className="p-0 text-left">
@@ -1463,3 +1464,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    
