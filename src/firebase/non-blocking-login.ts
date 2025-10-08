@@ -30,11 +30,12 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
   try {
     const querySnapshot = await getDocs(usernameQuery);
     if (!querySnapshot.empty) {
+      // This is a normal application error, not a security/permission error.
+      // We throw it directly to be caught by the calling component.
       throw new Error('This username is already taken. Please choose another one.');
     }
   } catch (e: any) {
-     // If the query fails due to permissions, we have a bigger problem.
-     // For now, we surface a generic error.
+     // This catch block is now only for actual Firestore query failures (e.g., permissions).
     throw new Error(`[E1] Could not verify username availability. Please check security rules. Original error: ${e.message}`);
   }
 
@@ -47,8 +48,10 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
     await user.getIdToken(true);
   } catch (authError: any) {
     if (authError.code === 'auth/email-already-in-use') {
-        throw new Error('[E4] This username is already taken as it maps to an existing email. Please choose another one.');
+        // Since we check for username, this implies a username maps to a real email that's already registered.
+        throw new Error('This username is already taken as it maps to an existing email. Please choose another one.');
     }
+    // For other auth errors (weak password, etc.)
     throw new Error(`[E4] Firebase Auth account creation failed: ${authError.message}`);
   }
   
@@ -69,6 +72,7 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
       requestResourceData: userData,
     });
     errorEmitter.emit('permission-error', permissionError);
+    // This error will be thrown to the Next.js overlay for the developer to debug security rules.
     throw new Error(`[E5] User profile creation failed. Original error: ${permissionError.message}`);
   }
 }

@@ -37,6 +37,16 @@ export default function SignupPage() {
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setIsLoading(true);
+    if (!auth || !firestore) {
+      toast({
+        variant: 'destructive',
+        title: 'Configuration Error',
+        description: 'Firebase is not initialized correctly.',
+      });
+      setIsLoading(false);
+      return;
+    }
+
     try {
       await initiateEmailSignUp(auth, firestore, values.emailOrUsername, values.password);
       toast({
@@ -45,18 +55,11 @@ export default function SignupPage() {
       });
       router.push('/');
     } catch (error: any) {
-      console.error(error); // Keep this for now to see the raw error
-      let errorMessage = error.message;
-      
-      // Let's use the new numbered errors
-      if (errorMessage.includes('[E5]')) {
-          errorMessage = "Couldn't create your user profile. Please contact Louis Otter.";
-      }
-      
+      console.error(error); // Keep for debugging
       toast({
         variant: 'destructive',
         title: 'Sign Up Failed',
-        description: errorMessage,
+        description: error.message, // Display the direct, correct error message
       });
     } finally {
         setIsLoading(false);
