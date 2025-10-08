@@ -503,10 +503,7 @@ function TestingComponent() {
         return null;
     }
 
-    const testSessionsCollectionRef = collection(firestore, 'test_sessions');
-    const currentTestSessions = testSessions || [];
-
-    if (currentTestSessions.find(s => s.status === 'RUNNING')) {
+    if (testSessions?.find(s => s.status === 'RUNNING')) {
         toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
         return null;
     }
@@ -517,7 +514,8 @@ function TestingComponent() {
         return null;
     }
 
-    const newSessionId = doc(collection(firestore, '_')).id;
+    const testSessionsCollectionRef = collection(firestore, 'test_sessions');
+    const newSessionId = doc(testSessionsCollectionRef).id;
     const newSession: TestSession = {
       id: newSessionId,
       productId: selectedProduct.id,
