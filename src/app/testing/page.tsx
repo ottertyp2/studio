@@ -1,3 +1,4 @@
+
 'use client';
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -1000,7 +1001,7 @@ function TestingComponent() {
       <div className="flex flex-col gap-2">
         {isConnected ? (
           <Button 
-              onClick={() => handleStartNewTestSession({ measurementType: 'ARDUINO' })} 
+              onClick={async () => await handleStartNewTestSession({ measurementType: 'ARDUINO' })} 
               className="w-full btn-shine bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md"
               disabled={!tempTestSession?.productId || !!runningTestSession}
           >
@@ -1385,7 +1386,7 @@ function TestingComponent() {
         </div>
         <div className="lg:col-span-1 grid grid-rows-2 gap-6">
           {runningTestSession && (
-          <Card className='p-3 border-primary bg-white/70 backdrop-blur-sm shadow-lg row-span-1'>
+          <Card className='p-3 border-primary bg-white/70 backdrop-blur-sm shadow-lg row-span-1 h-full'>
               <div className="flex justify-between items-center">
                   <div>
                       <p className="font-semibold">{runningTestSession.productName}</p>
