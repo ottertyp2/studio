@@ -140,7 +140,7 @@ export default function AdminPage() {
   const [selectedDataSetIds, setSelectedDataSetIds] = useState<string[]>([]);
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [isTraining, setIsTraining] = useState(false);
-  const [trainingStatus, setTrainingStatus] = useState({ epoch: 0, loss: 0, accuracy: 0 });
+  const [trainingStatus, setTrainingStatus] = useState({ epoch: 0, loss: 0, accuracy: 0, val_loss: 0, val_acc: 0 });
   const [trainingDataFile, setTrainingDataFile] = useState<File | null>(null);
   const trainingDataUploaderRef = useRef<HTMLInputElement>(null);
 
@@ -576,11 +576,12 @@ export default function AdminPage() {
 
     setIsTraining(true);
     setTrainingProgress(0);
-    setTrainingStatus({ epoch: 0, loss: 0, accuracy: 0 });
+    setTrainingStatus({ epoch: 0, loss: 0, accuracy: 0, val_loss: 0, val_acc: 0 });
 
     try {
-        let allFeatures: number[] = [];
+        let allWindows: number[][] = [];
         let allLabels: number[] = [];
+        const windowSize = 20;
 
         for (const sessionId of selectedDataSetIds) {
             const trainingSession = testSessions?.find(s => s.id === sessionId);
@@ -592,39 +593,43 @@ export default function AdminPage() {
             const sensorDataRef = collection(firestore, `sensor_configurations/${trainingSession.sensorConfigurationId}/sensor_data`);
             const q = query(sensorDataRef, where('testSessionId', '==', sessionId));
             const snapshot = await getDocs(q);
-            const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
+            const sensorData = snapshot.docs
+                .map(doc => doc.data() as SensorData)
+                .sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-            if (sensorData.length < 10) continue;
+            if (sensorData.length < windowSize) continue;
 
             const isLeak = trainingSession.demoType === 'LEAK';
             const label = isLeak ? 1 : 0;
-            const features = sensorData.map(d => d.value);
+            const values = sensorData.map(d => d.value);
 
-            allFeatures.push(...features);
-            allLabels.push(...Array(features.length).fill(label));
+            const windows = [];
+            for (let i = windowSize; i < values.length; i++) {
+                windows.push(values.slice(i - windowSize, i));
+            }
+
+            allWindows.push(...windows);
+            allLabels.push(...Array(windows.length).fill(label));
         }
 
-        if (allFeatures.length < 20) {
-            toast({variant: 'destructive', title: 'Not enough data', description: 'Need at least 20 data points across all selected sessions to train.'});
+        if (allWindows.length === 0) {
+            toast({variant: 'destructive', title: 'Not enough data', description: `Need at least ${windowSize} data points in a session to create training windows.`});
             setIsTraining(false);
             return;
         }
 
-        const indices = tf.util.createShuffledIndices(allFeatures.length);
-        const shuffledFeatures = Array.from(indices).map(i => allFeatures[i]);
+        const indices = tf.util.createShuffledIndices(allWindows.length);
+        const shuffledWindows = Array.from(indices).map(i => allWindows[i]);
         const shuffledLabels = Array.from(indices).map(i => allLabels[i]);
 
-        const featureMatrix = shuffledFeatures.map(v => [v]);
-        const labelMatrix = shuffledLabels.map(v => [v]);
+        const inputTensor = tf.tensor2d(shuffledWindows, [shuffledWindows.length, windowSize]);
+        const labelTensor = tf.tensor1d(shuffledLabels);
         
-        const inputTensor = tf.tensor2d(featureMatrix, [featureMatrix.length, 1]);
-        const labelTensor = tf.tensor2d(labelMatrix, [labelMatrix.length, 1]);
-
         const {mean, variance} = tf.moments(inputTensor);
         const normalizedInput = inputTensor.sub(mean).div(variance.sqrt());
 
         const model = tf.sequential();
-        model.add(tf.layers.dense({inputShape: [1], units: 50, activation: 'relu'}));
+        model.add(tf.layers.dense({inputShape: [windowSize], units: 50, activation: 'relu'}));
         model.add(tf.layers.dense({units: 50, activation: 'relu'}));
         model.add(tf.layers.dense({units: 1, activation: 'sigmoid'}));
 
@@ -636,17 +641,27 @@ export default function AdminPage() {
 
         let finalAccuracy = 0;
         await model.fit(normalizedInput, labelTensor, {
-          epochs: 50,
+          epochs: 100,
           batchSize: 32,
-          callbacks: {
-            onEpochEnd: (epoch, logs) => {
-              if (logs) {
-                finalAccuracy = (logs.acc || 0) * 100;
-                setTrainingProgress(((epoch + 1) / 50) * 100);
-                setTrainingStatus({ epoch: epoch + 1, loss: logs.loss || 0, accuracy: finalAccuracy });
+          validationSplit: 0.2,
+          callbacks: [
+            tf.callbacks.earlyStopping({ monitor: 'val_loss', patience: 10 }),
+            {
+              onEpochEnd: (epoch, logs) => {
+                if (logs) {
+                  finalAccuracy = (logs.acc || 0) * 100;
+                  setTrainingProgress(((epoch + 1) / 100) * 100);
+                  setTrainingStatus({ 
+                      epoch: epoch + 1, 
+                      loss: logs.loss || 0, 
+                      accuracy: finalAccuracy,
+                      val_loss: logs.val_loss || 0,
+                      val_acc: (logs.val_acc || 0) * 100
+                  });
+                }
               }
             }
-          }
+          ]
         });
 
         toast({ title: 'Training Complete!', description: 'Model has been trained in the browser.' });
@@ -655,7 +670,7 @@ export default function AdminPage() {
         
         const modelRef = doc(firestore, 'mlModels', selectedModelId);
         await updateDoc(modelRef, {
-            description: `Manually trained on ${new Date().toLocaleDateString()}. Accuracy: ${finalAccuracy.toFixed(2)}%`,
+            description: `Manually trained on ${new Date().toLocaleDateString()}. Final Val Accuracy: ${finalAccuracy.toFixed(2)}%`,
             version: `${selectedModel.version.split('-')[0]}-trained`,
         });
 
@@ -1228,8 +1243,8 @@ export default function AdminPage() {
               <Progress value={trainingProgress} />
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>Epoch: {trainingStatus.epoch}</span>
-                <span>Loss: {trainingStatus.loss.toFixed(4)}</span>
-                <span>Accuracy: {trainingStatus.accuracy.toFixed(2)}%</span>
+                <span>Loss: {trainingStatus.loss.toFixed(4)} | Acc: {trainingStatus.accuracy.toFixed(2)}%</span>
+                <span>Val_Loss: {trainingStatus.val_loss.toFixed(4)} | Val_Acc: {trainingStatus.val_acc.toFixed(2)}%</span>
               </div>
             </div>
         </div>
@@ -1384,3 +1399,5 @@ export default function AdminPage() {
   );
 }
 
+
+    
