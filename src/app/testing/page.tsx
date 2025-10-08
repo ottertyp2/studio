@@ -144,7 +144,6 @@ function TestingComponent() {
 
   const [activeTab, setActiveTab] = useState('live');
   const [localDataLog, setLocalDataLog] = useState<SensorData[]>([]);
-  const [currentValue, setCurrentValue] = useState<number | null>(null);
   
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
@@ -162,6 +161,7 @@ function TestingComponent() {
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
   const readingRef = useRef<boolean>(false);
+  const runningTestSessionRef = useRef<TestSession | null>(null);
 
   const importFileRef = useRef<HTMLInputElement>(null);
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -236,7 +236,9 @@ function TestingComponent() {
   const { data: mlModels, isLoading: isMlModelsLoading } = useCollection<MLModel>(mlModelsCollectionRef);
 
   const runningTestSession = useMemo(() => {
-    return testSessions?.find(s => s.status === 'RUNNING');
+    const session = testSessions?.find(s => s.status === 'RUNNING') || null;
+    runningTestSessionRef.current = session;
+    return session;
   }, [testSessions]);
   
   const stopDemoMode = useCallback(() => {
@@ -308,11 +310,9 @@ function TestingComponent() {
   }, [firestore, activeSensorConfigId]);
 
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
-    setCurrentValue(newDataPoint.value);
     setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
     
-    // This logic relies on testSessions being fresh from the useCollection hook
-    const currentRunningSession = testSessions?.find(s => s.status === 'RUNNING');
+    const currentRunningSession = runningTestSessionRef.current;
 
     if (firestore && currentRunningSession && activeSensorConfigId) {
         if (currentRunningSession.sensorConfigurationId === activeSensorConfigId) {
@@ -321,22 +321,38 @@ function TestingComponent() {
             setDocumentNonBlocking(docRef, dataToSave, {});
         }
     }
-  }, [firestore, activeSensorConfigId, testSessions]);
+  }, [firestore, activeSensorConfigId]);
 
 
   const dataLog = useMemo(() => {
-    const log = (firestore && selectedSessionIds.length > 0) ? cloudDataLog : localDataLog;
-    if (!log) return [];
-    
-    return [...log].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [firestore, cloudDataLog, localDataLog, selectedSessionIds]);
-  
-  useEffect(() => {
-    if (dataLog && dataLog.length > 0) {
-      setCurrentValue(dataLog[0].value);
-    } else {
-      setCurrentValue(null);
+    let log: SensorData[] = [];
+
+    // If cloud data is available, use it as the base
+    if (cloudDataLog) {
+      log = [...cloudDataLog];
     }
+  
+    // If there's a running session, we might have local data that hasn't been synced yet.
+    // Merge it in, avoiding duplicates.
+    if (runningTestSessionRef.current) {
+      const cloudDataTimestamps = new Set(log.map(d => d.timestamp));
+      const uniqueLocalData = localDataLog.filter(d => !cloudDataTimestamps.has(d.timestamp));
+      log.push(...uniqueLocalData);
+    } else if (selectedSessionIds.length === 0) {
+      // If no session is selected, only show local data.
+      log = [...localDataLog];
+    }
+    
+    // Always sort by timestamp descending
+    return log.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [cloudDataLog, localDataLog, selectedSessionIds.length]);
+  
+  const currentValue = useMemo(() => {
+    if (dataLog && dataLog.length > 0) {
+        // Since it's sorted descending, the first element is the latest.
+        return dataLog[0].value;
+    }
+    return null;
   }, [dataLog]);
 
   const convertRawValue = useCallback((rawValue: number) => {
@@ -367,6 +383,8 @@ function TestingComponent() {
 
       const sessionRef = doc(firestore, `test_sessions`, sessionId);
       await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
+      runningTestSessionRef.current = null;
+      setLocalDataLog([]); // Clear local log now that session is over.
   
       if (selectedSessionIds.includes(sessionId)) {
         if (selectedSessionIds.length === 1) {
@@ -388,23 +406,17 @@ function TestingComponent() {
     readingRef.current = false;
     if (readerRef.current) {
         try {
-            // This is the correct way to cancel a reader.
             await readerRef.current.cancel(); 
         } catch (error) {
             // Ignore cancel errors, as the port might already be closing.
         }
-        // No need to call releaseLock() after cancel()
-        readerRef.current = null;
-    }
-
-    if (portRef.current?.writable) {
-      try {
-        await portRef.current.writable.getWriter().close();
-      } catch {}
     }
 
     if (portRef.current) {
         try {
+            if (portRef.current.writable) {
+              await portRef.current.writable.getWriter().close();
+            }
             await portRef.current.close();
         } catch (e) {
             console.warn("Error closing serial port:", e);
@@ -413,6 +425,7 @@ function TestingComponent() {
     }
 
     setIsConnected(false);
+    readerRef.current = null;
     toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
   }, [handleStopTestSession, toast, runningArduinoSession]);
 
@@ -431,62 +444,56 @@ function TestingComponent() {
         const port = await (navigator.serial as any).requestPort();
         portRef.current = port;
         await port.open({ baudRate: baudRate });
-        await new Promise(resolve => setTimeout(resolve, 100)); // Short delay for stability
-        
         setIsConnected(true);
         toast({ title: 'Connected', description: 'Device connected. Ready to start measurement.' });
         
-        // --- Start Reading Loop ---
-        if (!portRef.current?.readable || readingRef.current) return;
-
         readingRef.current = true;
-        const textDecoder = new TextDecoderStream();
-        const readableStreamClosed = portRef.current.readable.pipeTo(textDecoder.writable);
-        readerRef.current = textDecoder.readable.getReader();
-
-        let partialLine = '';
-
-        while (readingRef.current) {
+        
+        while (portRef.current && readingRef.current) {
+            const textDecoder = new TextDecoderStream();
             try {
-                const { value, done } = await readerRef.current.read();
-                if (done) {
-                    // Reader was cancelled. This is expected on disconnect.
-                    break;
-                }
+                const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+                readerRef.current = textDecoder.readable.getReader();
+            
+                let partialLine = '';
 
-                partialLine += value;
-                let lines = partialLine.split('\n');
-                partialLine = lines.pop() || '';
-
-                lines.forEach(line => {
-                    const trimmedLine = line.trim();
-                    if (trimmedLine === '') return;
-                    const sensorValue = parseInt(trimmedLine, 10);
-                    if (!isNaN(sensorValue)) {
-                        const newDataPoint = {
-                            timestamp: new Date().toISOString(),
-                            value: sensorValue
-                        };
-                        handleNewDataPoint(newDataPoint);
+                while (true) {
+                    const { value, done } = await readerRef.current.read();
+                    if (done) {
+                        break; // Reader was cancelled.
                     }
-                });
-            } catch (error) {
-                // Only show error if we weren't intentionally disconnecting
-                if (readingRef.current) { 
-                    console.error("Serial read error:", error);
-                    toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
-                    await disconnectSerial();
+                    
+                    partialLine += value;
+                    let lines = partialLine.split('\n');
+                    partialLine = lines.pop() || '';
+
+                    lines.forEach(line => {
+                        const trimmedLine = line.trim();
+                        if (trimmedLine === '') return;
+                        const sensorValue = parseInt(trimmedLine, 10);
+                        if (!isNaN(sensorValue)) {
+                            handleNewDataPoint({
+                                timestamp: new Date().toISOString(),
+                                value: sensorValue
+                            });
+                        }
+                    });
                 }
+                readerRef.current.releaseLock();
+                await readableStreamClosed.catch(() => { /* Ignore abort */ });
+            } catch(e) {
+                if (readingRef.current) {
+                    console.error("Serial read error:", e);
+                    toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
+                }
+                // An error occurred, break the outer loop to disconnect.
                 break;
             }
         }
-        
-        // Cleanup after loop exits
-        readerRef.current?.releaseLock();
-        readerRef.current = null;
-        await readableStreamClosed.catch(() => { /* Ignore abort errors */ });
-        readingRef.current = false;
-        // --- End Reading Loop ---
+        // If the loop is broken, ensure disconnection.
+        if (isConnected) {
+            await disconnectSerial();
+        }
 
     } catch (error) {
         if ((error as Error).name !== 'NotFoundError') {
@@ -496,7 +503,6 @@ function TestingComponent() {
   }, [disconnectSerial, toast, baudRate, isConnected, handleNewDataPoint]);
 
   const handleStartNewTestSession = async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
-    
     const currentUser = users?.find(u => u.id === user?.uid);
     console.log('DEBUG: handleStartNewTestSession called', {
       options,
@@ -539,7 +545,7 @@ function TestingComponent() {
         return;
     }
     if (!currentUser) {
-      toast({variant: 'destructive', title: 'User Profile Error', description: `Your user profile could not be found in the database. UID: ${user.uid}`});
+      toast({variant: 'destructive', title: 'User Profile Error', description: `Your user profile could not be found. Please ensure it exists in the database.`});
       return;
     }
     
@@ -567,6 +573,8 @@ function TestingComponent() {
     };
     
     await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
+    runningTestSessionRef.current = newSession; // Immediately update the ref
+    setLocalDataLog([]); // Clear old local data
     setSelectedSessionIds([newSessionId]);
     setShowNewSessionForm(false);
     setTempTestSession(prev => ({...prev, serialNumber: '', description: ''})); // Reset for next session
@@ -727,7 +735,6 @@ function TestingComponent() {
       }
     } else if (selectedSessionIds.length === 0) {
         setLocalDataLog([]);
-        setCurrentValue(null);
         toast({
             title: 'Local Data Cleared',
             description: 'All recorded data has been removed from the local log.'
@@ -1590,5 +1597,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
