@@ -61,6 +61,15 @@ export default function LoginPage() {
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setIsLoading(true);
+    if (!auth || !firestore) {
+      toast({
+        variant: 'destructive',
+        title: 'Configuration Error',
+        description: 'Firebase is not initialized correctly.',
+      });
+      setIsLoading(false);
+      return;
+    }
     try {
       await initiateEmailSignIn(auth, firestore, values.emailOrUsername, values.password);
       toast({
