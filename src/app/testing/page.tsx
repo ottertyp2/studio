@@ -395,7 +395,7 @@ function TestingComponent() {
 
             lines.forEach(line => {
                 if (line.trim() === '') return;
-                const sensorValue = parseInt(line.trim());
+                const sensorValue = parseInt(line.trim(), 10);
                 if (!isNaN(sensorValue)) {
                     const newDataPoint = {
                         timestamp: new Date().toISOString(),
@@ -646,7 +646,6 @@ function TestingComponent() {
 
   const handleResetZoom = () => {
     setChartKey(Date.now());
-    setSelectedSessionIds([]);
   }
   
   const handleClearData = async () => {
@@ -1133,7 +1132,7 @@ function TestingComponent() {
                         return (
                              <div key={id} className="flex items-center gap-2 bg-muted text-muted-foreground px-2 py-1 rounded-md text-xs">
                                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }}></div>
-                                <span>{session?.productName || id}</span>
+                                <span>{session?.productName || id} - {session ? new Date(session.startTime).toLocaleTimeString() : ''}</span>
                                 <button onClick={() => setSelectedSessionIds(prev => prev.filter(sid => sid !== id))} className="text-muted-foreground hover:text-foreground">
                                     <XIcon className="h-3 w-3" />
                                 </button>
@@ -1147,12 +1146,6 @@ function TestingComponent() {
             <div className="h-80">
               <ResponsiveContainer key={chartKey} width="100%" height="100%">
                 <LineChart margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-                  <defs>
-                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.8}/>
-                      <stop offset="95%" stopColor="hsl(var(--chart-1))" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                   <XAxis 
                     dataKey="name" 
@@ -1177,7 +1170,7 @@ function TestingComponent() {
                   />
                   <Legend verticalAlign="top" height={36} />
                   {Array.isArray(chartData) ? (
-                     <Line type="monotone" data={chartData} dataKey="value" stroke="hsl(var(--chart-1))" fill="url(#colorValue)" name={`${sensorConfig.name} (${sensorConfig.unit})`} dot={false} strokeWidth={2} />
+                     <Line type="monotone" data={chartData} dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig.name} (${sensorConfig.unit})`} dot={false} strokeWidth={2} />
                   ) : (
                     Object.entries(chartData).map(([sessionId, data], index) => {
                        const session = testSessions?.find(s => s.id === sessionId);
@@ -1268,10 +1261,21 @@ function TestingComponent() {
                   <CardTitle className="text-lg">Current Value</CardTitle>
                 </CardHeader>
                 <CardContent className="flex flex-col items-center">
-                  <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                    {displayValue !== null ? displayValue.toFixed(displayDecimals) : '-'}
-                  </p>
-                  <p className="text-lg text-muted-foreground">{sensorConfig.unit}</p>
+                  <div className="text-center">
+                    <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
+                      {isConnected ? (displayValue !== null ? displayValue.toFixed(displayDecimals) : '---') : 'N/A'}
+                    </p>
+                    <p className="text-lg text-muted-foreground">{sensorConfig.unit}</p>
+                     {isConnected && (
+                      <div className="text-xs text-green-600 mt-1 flex items-center justify-center gap-1">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
+                        </span>
+                        Live
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
               <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
@@ -1313,3 +1317,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
