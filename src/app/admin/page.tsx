@@ -54,7 +54,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
@@ -119,6 +119,8 @@ type TestSession = {
     sensorConfigurationId: string;
     measurementType: 'DEMO' | 'ARDUINO';
     demoType?: 'LEAK' | 'DIFFUSION';
+    userId: string;
+    username: string;
 };
 
 type AutomatedTrainingStatus = {
@@ -159,6 +161,7 @@ export default function AdminPage() {
 
   const [sessionSearchTerm, setSessionSearchTerm] = useState('');
   const [sessionSortOrder, setSessionSortOrder] = useState('startTime-desc');
+  const [sessionUserFilter, setSessionUserFilter] = useState('all');
 
 
   useEffect(() => {
@@ -365,8 +368,8 @@ export default function AdminPage() {
   };
 
   const handleStartNewTestSession = async () => {
-    if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products) {
-        toast({variant: 'destructive', title: 'Error', description: 'Please select a product and a sensor.'});
+    if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products || !user?.uid || !user?.displayName) {
+        toast({variant: 'destructive', title: 'Error', description: 'Please select a product and a sensor, and ensure you are logged in.'});
         return;
     }
 
@@ -398,6 +401,8 @@ export default function AdminPage() {
       sensorConfigurationId: activeSensorConfigId,
       measurementType: 'DEMO',
       demoType: tempTestSession.demoType,
+      userId: user.uid,
+      username: user.displayName,
     };
     
     await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
@@ -834,13 +839,20 @@ export default function AdminPage() {
     const filteredAndSortedSessions = useMemo(() => {
     if (!testSessions) return [];
     
-    const filtered = testSessions.filter(session => {
+    let filtered = testSessions;
+
+    if (sessionUserFilter !== 'all') {
+        filtered = filtered.filter(session => session.userId === sessionUserFilter);
+    }
+
+    filtered = filtered.filter(session => {
         const searchTerm = sessionSearchTerm.toLowerCase();
         if (!searchTerm) return true;
         return (
             session.productName.toLowerCase().includes(searchTerm) ||
             session.serialNumber.toLowerCase().includes(searchTerm) ||
-            session.description.toLowerCase().includes(searchTerm)
+            session.description.toLowerCase().includes(searchTerm) ||
+            session.username.toLowerCase().includes(searchTerm)
         );
     });
 
@@ -852,12 +864,14 @@ export default function AdminPage() {
                 return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
             case 'productName-asc':
                 return a.productName.localeCompare(b.productName);
+             case 'username-asc':
+                return a.username.localeCompare(b.username);
             default:
                 return 0;
         }
     });
 
-  }, [testSessions, sessionSearchTerm, sessionSortOrder]);
+  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter]);
 
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
@@ -927,7 +941,7 @@ export default function AdminPage() {
     const runningSession = testSessions?.find(s => s.status === 'RUNNING');
 
     return (
-      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg lg:col-span-2">
         <CardHeader>
           <CardTitle>Test Sessions</CardTitle>
           <CardDescription>
@@ -938,14 +952,14 @@ export default function AdminPage() {
           {!tempTestSession && !runningSession && (
             <div className="flex justify-center">
               <Button onClick={() => setTempTestSession({})} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!activeSensorConfigId || !products || products.length === 0}>
-                Start New Test Session
+                Start New Demo Session
               </Button>
             </div>
           )}
 
           {tempTestSession && !runningSession && (
             <div className="space-y-4">
-              <CardTitle className="text-lg">New Test Session</CardTitle>
+              <CardTitle className="text-lg">New Demo Session</CardTitle>
               <div>
                 <Label htmlFor="productIdentifier">Product</Label>
                 <Select onValueChange={value => handleTestSessionFieldChange('productId', value)}>
@@ -989,39 +1003,53 @@ export default function AdminPage() {
           )}
 
           <div className="space-y-4 mt-6">
-            <div className="flex gap-2 items-center">
+            <div className="flex flex-col sm:flex-row gap-2 items-center">
                 <Input 
                     placeholder="Search sessions..."
                     value={sessionSearchTerm}
                     onChange={(e) => setSessionSearchTerm(e.target.value)}
                     className="flex-grow"
                 />
+                <Select value={sessionUserFilter} onValueChange={setSessionUserFilter}>
+                    <SelectTrigger className="w-full sm:w-[180px]">
+                        <SelectValue placeholder="Filter by user" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Users</SelectItem>
+                        {users?.map(u => <SelectItem key={u.id} value={u.id}>{u.username}</SelectItem>)}
+                    </SelectContent>
+                </Select>
                 <Select value={sessionSortOrder} onValueChange={setSessionSortOrder}>
-                    <SelectTrigger className="w-[180px]">
+                    <SelectTrigger className="w-full sm:w-[180px]">
                         <SelectValue placeholder="Sort by" />
                     </SelectTrigger>
                     <SelectContent>
                         <SelectItem value="startTime-desc">Newest</SelectItem>
                         <SelectItem value="startTime-asc">Oldest</SelectItem>
                         <SelectItem value="productName-asc">Product Name</SelectItem>
+                        <SelectItem value="username-asc">Username</SelectItem>
                     </SelectContent>
                 </Select>
             </div>
-             <ScrollArea className="h-96">
+             <ScrollArea className="h-[40rem]">
               {isTestSessionsLoading ? <p>Loading sessions...</p> : filteredAndSortedSessions.length > 0 ? (
                 filteredAndSortedSessions.map(session => (
                     <Card key={session.id} className={`p-3 mb-2 ${session.status === 'RUNNING' ? 'border-primary' : ''}`}>
-                        <div className="flex justify-between items-start">
+                        <div className="flex justify-between items-start gap-4">
                             <div>
                                 <p className="font-semibold">{session.productName}</p>
                                 <p className="text-sm text-muted-foreground">
                                     {new Date(session.startTime).toLocaleString('en-US')} - {session.status}
                                 </p>
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                                  <User className="h-3 w-3" />
+                                  <span>{session.username}</span>
+                                </div>
                                 <p className="text-xs text-muted-foreground">
                                     Data Points: {sessionDataCounts[session.id] ?? '...'}
                                 </p>
                             </div>
-                            <div className="flex flex-col gap-2 items-end">
+                            <div className="flex flex-col gap-2 items-end shrink-0">
                                 {session.status === 'RUNNING' && (
                                     <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session.id)}>Stop</Button>
                                 )}
@@ -1177,7 +1205,7 @@ export default function AdminPage() {
                                                 <TableCell className="text-right">
                                                      <AlertDialog>
                                                         <AlertDialogTrigger asChild>
-                                                          <Button variant="ghost" size="icon">
+                                                          <Button variant="ghost" size="icon" disabled={!user}>
                                                             <Trash2 className="h-4 w-4 text-destructive" />
                                                           </Button>
                                                         </AlertDialogTrigger>
@@ -1405,7 +1433,7 @@ export default function AdminPage() {
       </header>
 
       <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-1 space-y-6">
              <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
                   <Accordion type="single" collapsible className="w-full">
                       <AccordionItem value="item-1">
@@ -1463,9 +1491,9 @@ export default function AdminPage() {
                       </AccordionItem>
                   </Accordion>
               </Card>
+               {renderProductManagement()}
           </div>
-          <div className="lg:col-span-1 space-y-6">
-              {renderProductManagement()}
+          <div className="lg:col-span-2 space-y-6">
               {renderTestSessionManager()}
           </div>
           <div className="lg:col-span-3">

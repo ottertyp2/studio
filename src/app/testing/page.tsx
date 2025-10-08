@@ -107,6 +107,8 @@ type TestSession = {
     sensorConfigurationId: string;
     measurementType: 'DEMO' | 'ARDUINO';
     demoType?: 'LEAK' | 'DIFFUSION';
+    userId: string;
+    username: string;
 };
 
 type MLModel = {
@@ -180,7 +182,8 @@ function TestingComponent() {
       firestore,
       selectedSessionIds,
       activeSensorConfigId,
-      testSessions: testSessions || [] as TestSession[]
+      testSessions: testSessions || [] as TestSession[],
+      user,
   });
   
   useEffect(() => {
@@ -190,8 +193,8 @@ function TestingComponent() {
   }, [user, isUserLoading, router]);
 
   useEffect(() => {
-    stateRef.current = { firestore, selectedSessionIds, activeSensorConfigId, testSessions: testSessions || [] };
-  }, [firestore, selectedSessionIds, activeSensorConfigId, testSessions]);
+    stateRef.current = { firestore, selectedSessionIds, activeSensorConfigId, testSessions: testSessions || [], user };
+  }, [firestore, selectedSessionIds, activeSensorConfigId, testSessions, user]);
 
 
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
@@ -218,6 +221,7 @@ function TestingComponent() {
   useEffect(() => {
     if (editMode && preselectedSessionId) {
       setEditingSessionId(preselectedSessionId);
+      setSelectedSessionIds([preselectedSessionId]);
       setChartInterval('all');
     }
   }, [editMode, preselectedSessionId]);
@@ -476,12 +480,12 @@ function TestingComponent() {
   }, [disconnectSerial, toast, readFromSerial, baudRate, isConnected]);
 
   const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
-    if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products) {
-        toast({variant: 'destructive', title: 'Error', description: 'Please select a product and a sensor.'});
+    const { firestore, testSessions: currentTestSessions, user: currentUser } = stateRef.current;
+    if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products || !currentUser?.uid || !currentUser?.displayName) {
+        toast({variant: 'destructive', title: 'Error', description: 'Please select a product and a sensor, and ensure you are logged in.'});
         return null;
     }
 
-    const {testSessions: currentTestSessions} = stateRef.current;
 
     if (currentTestSessions?.find(s => s.status === 'RUNNING')) {
         toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
@@ -506,6 +510,8 @@ function TestingComponent() {
       sensorConfigurationId: activeSensorConfigId,
       measurementType: options.measurementType,
       demoType: options.demoType,
+      userId: currentUser.uid,
+      username: currentUser.displayName,
     };
     
     await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
@@ -513,7 +519,7 @@ function TestingComponent() {
     setTempTestSession(prev => ({...prev, serialNumber: '', description: ''})); // Reset for next session
     toast({ title: 'New Test Session Started', description: `Product: ${newSession.productName}`});
     return newSession;
-  }, [activeSensorConfigId, firestore, testSessionsCollectionRef, tempTestSession, toast, products]);
+  }, [activeSensorConfigId, testSessionsCollectionRef, tempTestSession, toast, products]);
 
 
   const gaussianNoise = (mean = 0, std = 1) => {
@@ -851,13 +857,10 @@ function TestingComponent() {
         batch.delete(doc(sensorDataRef, dataPoint.id));
       });
       
-      // Update session start time to the first kept data point
       if (dataToKeep.length > 0) {
         const newStartTime = dataToKeep[0].timestamp;
         const sessionRef = doc(firestore, 'test_sessions', editingSessionId);
         batch.update(sessionRef, { startTime: newStartTime });
-      } else {
-        // If all data is trimmed, maybe mark session as scrapped? For now, we'll just delete data.
       }
       
       await batch.commit();
@@ -911,7 +914,7 @@ function TestingComponent() {
         value: convertRawValue(d.value)
     }));
 
-    if (chartInterval !== 'all') {
+    if (chartInterval !== 'all' && !editingSessionId) {
         const intervalSeconds = parseInt(chartInterval, 10);
         if (runningTestSession) { // Live data filtering
              const now = Date.now();
@@ -923,7 +926,7 @@ function TestingComponent() {
     
     return mappedData;
 
-  }, [dataLog, chartInterval, convertRawValue, selectedSessionIds, testSessions, activeTestSession, runningTestSession]);
+  }, [dataLog, chartInterval, convertRawValue, selectedSessionIds, testSessions, activeTestSession, runningTestSession, editingSessionId]);
 
   
   const displayValue = currentValue !== null ? convertRawValue(currentValue) : null;
@@ -1076,9 +1079,9 @@ function TestingComponent() {
             <Select 
               onValueChange={(id) => {
                 setEditingSessionId(id);
-                setSelectedSessionIds([id]); // Also focus the chart on this session
-                setTrimRange([0, 100]); // Reset trim range on new selection
-                setChartInterval('all'); // Always show all data when starting to edit
+                setSelectedSessionIds([id]);
+                setTrimRange([0, 100]);
+                setChartInterval('all');
               }}
               value={editingSessionId || ''}
             >
