@@ -1004,7 +1004,7 @@ function TestingComponent() {
               className="w-full btn-shine bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md"
               disabled={!tempTestSession?.productId || !!runningTestSession}
           >
-              Start Arduino Session
+              Start Test Bench Session
           </Button>
         ) : (
             <AlertDialog>
