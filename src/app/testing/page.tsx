@@ -131,8 +131,9 @@ function TestingComponent() {
   const { firestore, auth } = useFirebase();
 
   const preselectedSessionId = searchParams.get('sessionId');
+  const editMode = searchParams.get('edit') === 'true';
 
-  const [activeTab, setActiveTab] = useState('live');
+  const [activeTab, setActiveTab] = useState(editMode ? 'analysis' : 'live');
   const [localDataLog, setLocalDataLog] = useState<SensorData[]>([]);
   const [currentValue, setCurrentValue] = useState<number | null>(null);
   
@@ -162,6 +163,11 @@ function TestingComponent() {
   const [analysisRange, setAnalysisRange] = useState([0, 100]);
   
   const [isDemoRunning, setIsDemoRunning] = useState(false);
+
+  // States for session editing
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [trimRange, setTrimRange] = useState([0, 100]);
+
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -207,6 +213,12 @@ function TestingComponent() {
       setTempTestSession(prev => ({ ...prev, productId: products[0].id }));
     }
   }, [products, tempTestSession?.productId]);
+
+  useEffect(() => {
+    if (editMode && preselectedSessionId) {
+      setEditingSessionId(preselectedSessionId);
+    }
+  }, [editMode, preselectedSessionId]);
 
   const mlModelsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -437,7 +449,7 @@ function TestingComponent() {
   }, [handleNewDataPoint, toast, disconnectSerial]);
   
   const handleConnect = useCallback(async () => {
-    if (isConnected) {
+    if (portRef.current) {
       await disconnectSerial();
       return;
     }
@@ -462,7 +474,7 @@ function TestingComponent() {
             toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish connection.' });
         }
     }
-  }, [toast, readFromSerial, disconnectSerial, baudRate, isConnected]);
+  }, [toast, readFromSerial, disconnectSerial, baudRate]);
 
   const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
     if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products) {
@@ -802,6 +814,46 @@ function TestingComponent() {
     router.push('/login');
   };
 
+  const handleTrimSession = async () => {
+    if (!editingSessionId || !firestore) return;
+  
+    const session = testSessions?.find(s => s.id === editingSessionId);
+    if (!session) return;
+  
+    const sensorDataRef = collection(firestore, `sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
+    const q = query(sensorDataRef, where('testSessionId', '==', editingSessionId));
+    
+    try {
+      const snapshot = await getDocs(q);
+      const sessionStart = new Date(session.startTime).getTime();
+      const allSessionData = snapshot.docs.map(d => ({...d.data(), id: d.id, timestamp: d.data().timestamp }) as SensorData & {id: string});
+      
+      const sessionDuration = (new Date(session.endTime || Date.now()).getTime() - sessionStart) / 1000;
+      
+      const trimStartSeconds = (trimRange[0] / 100) * sessionDuration;
+      const trimEndSeconds = (trimRange[1] / 100) * sessionDuration;
+
+      const batch = writeBatch(firestore);
+      let deletedCount = 0;
+      
+      allSessionData.forEach(dataPoint => {
+        const relativeTime = (new Date(dataPoint.timestamp).getTime() - sessionStart) / 1000;
+        
+        if (relativeTime < trimStartSeconds || relativeTime > trimEndSeconds) {
+          batch.delete(doc(sensorDataRef, dataPoint.id));
+          deletedCount++;
+        }
+      });
+      
+      await batch.commit();
+      toast({ title: `Session Trimmed`, description: `Removed ${deletedCount} data points outside the selected range.` });
+      setEditingSessionId(null);
+    } catch(e: any) {
+      toast({ variant: 'destructive', title: 'Trimming Failed', description: e.message });
+    }
+  };
+
+
   const chartData = useMemo(() => {
     const allChronologicalData = [...dataLog].reverse();
 
@@ -923,7 +975,7 @@ function TestingComponent() {
                         className="w-full btn-shine bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md"
                         disabled={!tempTestSession?.productId || !!runningTestSession}
                     >
-                        Start Measurement
+                        Start New Arduino Session
                     </Button>
                 </div>
             )}
@@ -991,6 +1043,120 @@ function TestingComponent() {
       </Card>
   );
 
+  const renderAnalysisTab = () => (
+     <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+        <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+                <BrainCircuit className="h-6 w-6 text-primary" />
+                Analyze & Edit Session
+            </CardTitle>
+            <CardDescription>
+                Use AI to classify the data or trim the session to remove unwanted data points.
+            </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+            <div>
+              <CardTitle className="text-lg mb-2">AI-Powered Analysis</CardTitle>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                      <Label htmlFor="analysis-model-select">Select Model</Label>
+                      <Select onValueChange={setSelectedAnalysisModelName} value={selectedAnalysisModelName || ''}>
+                          <SelectTrigger id="analysis-model-select">
+                              <SelectValue placeholder="Select a trained model" />
+                          </SelectTrigger>
+                          <SelectContent>
+                              {isMlModelsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                              mlModels?.map(m => <SelectItem key={m.id} value={m.name}>{m.name} v{m.version}</SelectItem>)}
+                          </SelectContent>
+                      </Select>
+                  </div>
+                  <div className='space-y-2'>
+                      <Label>Select Data Range for Analysis</Label>
+                      <div className="p-2 border rounded-md">
+                          <Slider
+                              value={analysisRange}
+                              onValueChange={setAnalysisRange}
+                              max={dataLog.length > 0 ? dataLog.length -1 : 1}
+                              min={0}
+                              step={1}
+                              disabled={dataLog.length === 0}
+                          />
+                          <div className="flex justify-between text-xs text-muted-foreground mt-2">
+                            <span>Start: {analysisRange[0]}</span>
+                            <span>End: {analysisRange[1]}</span>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+              <div className="flex gap-4 justify-center mt-4">
+                  <Button onClick={handleAiAnalysis} disabled={isAnalyzing || !selectedAnalysisModelName || dataLog.length === 0} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
+                      {isAnalyzing ? 'Analyzing...' : 'Analyze with AI'}
+                  </Button>
+              </div>
+              <div className="text-center text-muted-foreground pt-4">
+                  {aiAnalysisResult ? (
+                  <>
+                      <p className={`font-semibold text-2xl ${aiAnalysisResult.prediction === 'Leak' ? 'text-destructive' : 'text-primary'}`}>
+                          Result: {aiAnalysisResult.prediction}
+                      </p>
+                      <p className="text-sm">
+                          Confidence: {aiAnalysisResult.confidence.toFixed(2)}%
+                      </p>
+                  </>
+                  ) : (
+                  <>
+                      <p className="font-semibold text-2xl">-</p>
+                      <p className="text-sm">Confidence: -</p>
+                  </>
+                  )}
+              </div>
+            </div>
+
+            <div className="border-t pt-6">
+                <CardTitle className="text-lg mb-2">Trim Session Data</CardTitle>
+                <CardDescription className="mb-4">
+                    Select the percentage range of the session you want to keep. Data outside this range will be permanently deleted.
+                </CardDescription>
+                <div className="space-y-4">
+                    <div className="p-2 border rounded-md">
+                        <Slider
+                            value={trimRange}
+                            onValueChange={setTrimRange}
+                            max={100}
+                            min={0}
+                            step={1}
+                            disabled={dataLog.length === 0}
+                        />
+                        <div className="flex justify-between text-xs text-muted-foreground mt-2">
+                          <span>Start: {trimRange[0]}%</span>
+                          <span>End: {trimRange[1]}%</span>
+                        </div>
+                    </div>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive" className="w-full" disabled={!editingSessionId}>
+                            Apply Trim
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                          <AlertDialogHeader>
+                              <AlertDialogTitle>Confirm Trim</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                  Are you sure you want to permanently delete data outside the {trimRange[0]}% to {trimRange[1]}% range for this session? This action cannot be undone.
+                              </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction variant="destructive" onClick={handleTrimSession}>Confirm & Delete</AlertDialogAction>
+                          </AlertDialogFooter>
+                      </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+            </div>
+        </CardContent>
+    </Card>
+  );
+
   
   if (isUserLoading || !user) {
     return (
@@ -1034,9 +1200,10 @@ function TestingComponent() {
           </CardHeader>
           <CardContent>
              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="live">Live (Arduino)</TabsTrigger>
-                    <TabsTrigger value="file">File (CSV)</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="live">Live Control</TabsTrigger>
+                    <TabsTrigger value="file">File Operations</TabsTrigger>
+                    <TabsTrigger value="analysis" disabled={!activeTestSession && !editingSessionId}>Analyze & Edit</TabsTrigger>
                 </TabsList>
             </Tabs>
           </CardContent>
@@ -1048,6 +1215,7 @@ function TestingComponent() {
           <div className="lg:col-span-2 space-y-6">
             {activeTab === 'live' && renderLiveTab()}
             {activeTab === 'file' && renderFileTab()}
+            {activeTab === 'analysis' && renderAnalysisTab()}
           </div>
           <div className="lg:col-span-1">
              {runningTestSession && (
@@ -1184,72 +1352,7 @@ function TestingComponent() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
-            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <BrainCircuit className="h-6 w-6 text-primary" />
-                        AI-Powered Analysis
-                    </CardTitle>
-                    <CardDescription>
-                        Use a locally trained model to classify the current data trend.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <Label htmlFor="analysis-model-select">Select Model</Label>
-                            <Select onValueChange={setSelectedAnalysisModelName} value={selectedAnalysisModelName || ''}>
-                                <SelectTrigger id="analysis-model-select">
-                                    <SelectValue placeholder="Select a trained model" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {isMlModelsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                                    mlModels?.map(m => <SelectItem key={m.id} value={m.name}>{m.name} v{m.version}</SelectItem>)}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className='space-y-2'>
-                           <Label>Select Data Range for Analysis</Label>
-                           <div className="p-2 border rounded-md">
-                                <Slider
-                                    value={analysisRange}
-                                    onValueChange={setAnalysisRange}
-                                    max={dataLog.length > 0 ? dataLog.length -1 : 1}
-                                    min={0}
-                                    step={1}
-                                    disabled={dataLog.length === 0}
-                                />
-                                <div className="flex justify-between text-xs text-muted-foreground mt-2">
-                                  <span>Start: {analysisRange[0]} ({dataLog.length > analysisRange[0] && dataLog[dataLog.length - 1 - analysisRange[0]] ? new Date(dataLog[dataLog.length - 1 - analysisRange[0]].timestamp).toLocaleTimeString() : 'N/A'})</span>
-                                  <span>End: {analysisRange[1]} ({dataLog.length > analysisRange[1] && dataLog[dataLog.length - 1 - analysisRange[1]] ? new Date(dataLog[dataLog.length - 1 - analysisRange[1]].timestamp).toLocaleTimeString() : 'N/A'})</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="flex gap-4 justify-center">
-                        <Button onClick={handleAiAnalysis} disabled={isAnalyzing || !selectedAnalysisModelName || dataLog.length === 0} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
-                            {isAnalyzing ? 'Analyzing...' : 'Analyze with AI'}
-                        </Button>
-                    </div>
-                    <div className="text-center text-muted-foreground pt-4">
-                        {aiAnalysisResult ? (
-                        <>
-                            <p className={`font-semibold text-2xl ${aiAnalysisResult.prediction === 'Leak' ? 'text-destructive' : 'text-primary'}`}>
-                                Result: {aiAnalysisResult.prediction}
-                            </p>
-                            <p className="text-sm">
-                                Confidence: {aiAnalysisResult.confidence.toFixed(2)}%
-                            </p>
-                        </>
-                        ) : (
-                        <>
-                            <p className="font-semibold text-2xl">-</p>
-                            <p className="text-sm">Confidence: -</p>
-                        </>
-                        )}
-                    </div>
-                </CardContent>
-            </Card>
+            {/* The Analysis Tab Content is now rendered inside the main component */}
           </div>
 
           <div className="lg:col-span-1 grid grid-rows-2 gap-6">

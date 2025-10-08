@@ -49,7 +49,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/componentsui/dropdown-menu';
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
@@ -1025,6 +1025,7 @@ export default function AdminPage() {
                                     <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session.id)}>Stop</Button>
                                 )}
                                 <Button size="sm" variant="outline" onClick={() => viewSessionData(session.id)}>View Data</Button>
+                                <Button size="sm" variant="outline" onClick={() => router.push(`/testing?sessionId=${session.id}&edit=true`)}>Edit</Button>
                                  <AlertDialog>
                                     <AlertDialogTrigger asChild>
                                         <Button size="sm" variant="destructive">Delete</Button>
@@ -1462,4 +1463,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
