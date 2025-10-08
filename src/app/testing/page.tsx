@@ -68,7 +68,7 @@ import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from 
 import Papa from 'papaparse';
 import * as tf from '@tensorflow/tfjs';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc, useUser } from '@/firebase';
-import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc } from 'firebase/firestore';
+import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc, orderBy } from 'firebase/firestore';
 import { signOut } from '@/firebase/non-blocking-login';
 
 
@@ -217,6 +217,7 @@ function TestingComponent() {
   useEffect(() => {
     if (editMode && preselectedSessionId) {
       setEditingSessionId(preselectedSessionId);
+      setChartInterval('all');
     }
   }, [editMode, preselectedSessionId]);
 
@@ -446,7 +447,7 @@ function TestingComponent() {
   }, [handleNewDataPoint, toast, disconnectSerial]);
   
   const handleConnect = useCallback(async () => {
-    if (portRef.current) {
+    if (isConnected) {
       await disconnectSerial();
       return;
     }
@@ -471,7 +472,7 @@ function TestingComponent() {
             toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish connection.' });
         }
     }
-  }, [disconnectSerial, toast, readFromSerial, baudRate]);
+  }, [disconnectSerial, toast, readFromSerial, baudRate, isConnected]);
 
   const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
     if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products) {
@@ -807,6 +808,7 @@ function TestingComponent() {
   };
 
   const handleSignOut = () => {
+    if (!auth) return;
     signOut(auth);
     router.push('/login');
   };
@@ -818,33 +820,47 @@ function TestingComponent() {
     if (!session) return;
   
     const sensorDataRef = collection(firestore, `sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
-    const q = query(sensorDataRef, where('testSessionId', '==', editingSessionId));
+    const q = query(sensorDataRef, where('testSessionId', '==', editingSessionId), orderBy('timestamp', 'asc'));
     
     try {
       const snapshot = await getDocs(q);
-      const sessionStart = new Date(session.startTime).getTime();
-      const allSessionData = snapshot.docs.map(d => ({...d.data(), id: d.id, timestamp: d.data().timestamp }) as SensorData & {id: string});
+      const allSessionData = snapshot.docs.map(d => ({...d.data(), id: d.id }) as SensorData & {id: string});
       
-      const sessionDuration = (new Date(session.endTime || Date.now()).getTime() - sessionStart) / 1000;
+      if (allSessionData.length === 0) {
+        toast({ variant: 'destructive', title: 'Trimming Error', description: 'No data found for this session.' });
+        return;
+      }
       
-      const trimStartSeconds = (trimRange[0] / 100) * sessionDuration;
-      const trimEndSeconds = (trimRange[1] / 100) * sessionDuration;
+      const totalPoints = allSessionData.length;
+      const startIndex = Math.floor((trimRange[0] / 100) * totalPoints);
+      const endIndex = Math.ceil((trimRange[1] / 100) * totalPoints);
+
+      const dataToKeep = allSessionData.slice(startIndex, endIndex);
+      const dataToDelete = [...allSessionData.slice(0, startIndex), ...allSessionData.slice(endIndex)];
+      
+      if (dataToDelete.length === 0) {
+        toast({ title: 'No Changes', description: 'The selected range includes all data points.' });
+        return;
+      }
 
       const batch = writeBatch(firestore);
-      let deletedCount = 0;
-      
-      allSessionData.forEach(dataPoint => {
-        const relativeTime = (new Date(dataPoint.timestamp).getTime() - sessionStart) / 1000;
-        
-        if (relativeTime < trimStartSeconds || relativeTime > trimEndSeconds) {
-          batch.delete(doc(sensorDataRef, dataPoint.id));
-          deletedCount++;
-        }
+      dataToDelete.forEach(dataPoint => {
+        batch.delete(doc(sensorDataRef, dataPoint.id));
       });
       
+      // Update session start time to the first kept data point
+      if (dataToKeep.length > 0) {
+        const newStartTime = dataToKeep[0].timestamp;
+        const sessionRef = doc(firestore, 'test_sessions', editingSessionId);
+        batch.update(sessionRef, { startTime: newStartTime });
+      } else {
+        // If all data is trimmed, maybe mark session as scrapped? For now, we'll just delete data.
+      }
+      
       await batch.commit();
-      toast({ title: `Session Trimmed`, description: `Removed ${deletedCount} data points outside the selected range.` });
+      toast({ title: `Session Trimmed`, description: `Removed ${dataToDelete.length} data points.` });
       setEditingSessionId(null);
+      setTrimRange([0, 100]);
     } catch(e: any) {
       toast({ variant: 'destructive', title: 'Trimming Failed', description: e.message });
     }
@@ -1045,20 +1061,21 @@ function TestingComponent() {
         <CardHeader>
             <CardTitle className="flex items-center gap-2">
                 <BrainCircuit className="h-6 w-6 text-primary" />
-                Analyze & Edit Session
+                Analyze Session
             </CardTitle>
             <CardDescription>
-                Use AI to classify the data or trim the session to remove unwanted data points.
+                Use AI to classify the data.
             </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div>
-            <Label htmlFor="edit-session-select">Select Session to Analyze/Edit</Label>
+            <Label htmlFor="edit-session-select">Select Session to Analyze</Label>
             <Select 
               onValueChange={(id) => {
                 setEditingSessionId(id);
                 setSelectedSessionIds([id]); // Also focus the chart on this session
                 setTrimRange([0, 100]); // Reset trim range on new selection
+                setChartInterval('all'); // Always show all data when starting to edit
               }}
               value={editingSessionId || ''}
             >
@@ -1113,65 +1130,16 @@ function TestingComponent() {
                           {isAnalyzing ? 'Analyzing...' : 'Analyze with AI'}
                       </Button>
                   </div>
-                  <div className="text-center text-muted-foreground pt-4">
-                      {aiAnalysisResult ? (
-                      <>
-                          <p className={`font-semibold text-2xl ${aiAnalysisResult.prediction === 'Leak' ? 'text-destructive' : 'text-primary'}`}>
-                              Result: {aiAnalysisResult.prediction}
-                          </p>
-                          <p className="text-sm">
-                              Confidence: {aiAnalysisResult.confidence.toFixed(2)}%
-                          </p>
-                      </>
-                      ) : (
-                      <>
-                          <p className="font-semibold text-2xl">-</p>
-                          <p className="text-sm">Confidence: -</p>
-                      </>
-                      )}
-                  </div>
-              </div>
-
-              <div className="border-t pt-6">
-                  <CardTitle className="text-lg mb-2">Trim Session Data</CardTitle>
-                  <CardDescription className="mb-4">
-                      Select the percentage range of the session you want to keep. Data outside this range will be permanently deleted.
-                  </CardDescription>
-                  <div className="space-y-4">
-                      <div className="p-2 border rounded-md">
-                          <Slider
-                              value={trimRange}
-                              onValueChange={setTrimRange}
-                              max={100}
-                              min={0}
-                              step={1}
-                              disabled={dataLog.length === 0 || !editingSessionId}
-                          />
-                          <div className="flex justify-between text-xs text-muted-foreground mt-2">
-                            <span>Start: {trimRange[0]}%</span>
-                            <span>End: {trimRange[1]}%</span>
-                          </div>
-                      </div>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="destructive" className="w-full" disabled={!editingSessionId}>
-                              Apply Trim
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                            <AlertDialogHeader>
-                                <AlertDialogTitle>Confirm Trim</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                    Are you sure you want to permanently delete data outside the {trimRange[0]}% to {trimRange[1]}% range for this session? This action cannot be undone.
-                                </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction variant="destructive" onClick={handleTrimSession}>Confirm & Delete</AlertDialogAction>
-                            </AlertDialogFooter>
-                        </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
+                  {aiAnalysisResult && (
+                    <div className="text-center text-muted-foreground pt-4">
+                        <p className={`font-semibold text-2xl ${aiAnalysisResult.prediction === 'Leak' ? 'text-destructive' : 'text-primary'}`}>
+                            Result: {aiAnalysisResult.prediction}
+                        </p>
+                        <p className="text-sm">
+                            Confidence: {aiAnalysisResult.confidence.toFixed(2)}%
+                        </p>
+                    </div>
+                  )}
               </div>
             </>
           )}
@@ -1262,7 +1230,7 @@ function TestingComponent() {
             <CardContent className="flex flex-col items-center">
               <div className="text-center">
                 <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                  {isConnected ? (displayValue !== null ? displayValue.toFixed(displayDecimals) : '---') : 'N/A'}
+                  {displayValue !== null ? displayValue.toFixed(displayDecimals) : (isConnected ? '...' : 'N/A')}
                 </p>
                 <p className="text-lg text-muted-foreground">{sensorConfig.unit}</p>
                   {isConnected && (
@@ -1315,7 +1283,7 @@ function TestingComponent() {
               </div>
               <div className='flex items-center gap-2'>
                  <Label htmlFor="chartInterval" className="whitespace-nowrap">Time Range:</Label>
-                  <Select value={chartInterval} onValueChange={setChartInterval}>
+                  <Select value={chartInterval} onValueChange={setChartInterval} disabled={!!editingSessionId}>
                     <SelectTrigger id="chartInterval" className="w-[150px] bg-white/80">
                       <SelectValue placeholder="Select interval" />
                     </SelectTrigger>
@@ -1394,6 +1362,52 @@ function TestingComponent() {
           </CardContent>
         </Card>
 
+        {editingSessionId && (
+            <Card className="lg:col-span-3 bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+                <CardHeader>
+                    <CardTitle className="text-lg">Trim Session Data</CardTitle>
+                    <CardDescription className="mb-4">
+                        Select the percentage range of the session you want to keep. Data outside this range will be permanently deleted.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="p-2 border rounded-md">
+                        <Slider
+                            value={trimRange}
+                            onValueChange={setTrimRange}
+                            max={100}
+                            min={0}
+                            step={1}
+                            disabled={dataLog.length === 0 || !editingSessionId}
+                        />
+                        <div className="flex justify-between text-xs text-muted-foreground mt-2">
+                            <span>Start: {trimRange[0]}%</span>
+                            <span>End: {trimRange[1]}%</span>
+                        </div>
+                    </div>
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                            <Button variant="destructive" className="w-full" disabled={!editingSessionId}>
+                                Apply Trim
+                            </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Confirm Trim</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    Are you sure you want to permanently delete data outside the {trimRange[0]}% to {trimRange[1]}% range for this session? This action cannot be undone.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction variant="destructive" onClick={handleTrimSession}>Confirm & Delete</AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+                </CardContent>
+            </Card>
+        )}
+
         <div className="lg:col-span-3">
             <Card>
                 <CardHeader>
@@ -1433,3 +1447,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
