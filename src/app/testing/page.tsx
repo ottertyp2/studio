@@ -279,6 +279,20 @@ function TestingComponent() {
     return selectedConfig;
   }, [sensorConfigs, activeSensorConfigId, activeTestSession]);
 
+  const convertRawValue = useCallback((rawValue: number) => {
+    if (!sensorConfig) return rawValue;
+
+    switch (sensorConfig.mode) {
+        case 'VOLTAGE':
+            return (rawValue / 1023) * sensorConfig.arduinoVoltage;
+        case 'CUSTOM':
+            return sensorConfig.min + (rawValue / 1023) * (sensorConfig.max - sensorConfig.min);
+        case 'RAW':
+        default:
+            return rawValue;
+    }
+  }, [sensorConfig]);
+
   useEffect(() => {
     if (runningTestSession) {
         setActiveSensorConfigId(runningTestSession.sensorConfigurationId);
@@ -1554,3 +1568,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
