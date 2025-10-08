@@ -213,6 +213,14 @@ function TestingComponent() {
     return testSessions?.find(s => s.status === 'RUNNING');
   }, [testSessions]);
   
+  const stopDemoMode = useCallback(() => {
+    if (demoIntervalRef.current) {
+        clearInterval(demoIntervalRef.current);
+        demoIntervalRef.current = null;
+    }
+    setIsDemoRunning(false);
+  }, []);
+
   useEffect(() => {
     if (runningTestSession && !selectedSessionIds.includes(runningTestSession.id)) {
         setSelectedSessionIds([runningTestSession.id]);
@@ -223,7 +231,7 @@ function TestingComponent() {
      if (!runningTestSession || runningTestSession.measurementType !== 'DEMO') {
       stopDemoMode();
     }
-  }, [runningTestSession, selectedSessionIds]);
+  }, [runningTestSession, selectedSessionIds, stopDemoMode]);
 
 
   const activeTestSession = useMemo(() => {
@@ -271,8 +279,8 @@ function TestingComponent() {
   }, [firestore, activeSensorConfigId]);
 
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
-    setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
     setCurrentValue(newDataPoint.value);
+    setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
     
     const { firestore: currentFirestore, activeSensorConfigId: currentSensorConfigId } = stateRef.current;
     
@@ -315,30 +323,6 @@ function TestingComponent() {
         return rawValue;
     }
   }, [sensorConfig]);
-  
-  const stopDemoMode = useCallback(() => {
-    if (demoIntervalRef.current) {
-        clearInterval(demoIntervalRef.current);
-        demoIntervalRef.current = null;
-    }
-    setIsDemoRunning(false);
-  }, []);
-
-  const sendSerialCommand = useCallback(async (command: 's' | 'p') => {
-    if (!portRef.current?.writable) return;
-    try {
-      const encoder = new TextEncoder();
-      writerRef.current = portRef.current.writable.getWriter();
-      await writerRef.current.write(encoder.encode(command));
-    } catch (error) {
-      // Missing: Proper cleanup and reconnection logic
-    } finally {
-      if(writerRef.current) {
-        writerRef.current.releaseLock();
-        writerRef.current = null;
-      }
-    }
-  }, []);
   
   const handleStopTestSession = useCallback(async (sessionId: string) => {
       if (!testSessionsCollectionRef || !firestore) return;
@@ -524,7 +508,7 @@ function TestingComponent() {
     setIsNewSessionModalOpen(false);
     const newSession = await handleStartNewTestSession({ measurementType: 'ARDUINO' });
     if (newSession) {
-      await sendSerialCommand('s');
+      // The `s` command is no longer needed as the device streams continuously
     }
   }
 
@@ -547,7 +531,7 @@ function TestingComponent() {
                 const startValue = 900;
                 const endValue = 200;
                 const baseValue = startValue - ((startValue - endValue) * step / totalSteps);
-                const noise = gaussianNoise(0, 2);
+                const noise = gaussianNoise(0, 2); 
                 rawValue = baseValue + noise;
             } else { // DIFFUSION
                 const startValue = 950;
