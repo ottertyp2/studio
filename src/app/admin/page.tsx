@@ -157,6 +157,9 @@ export default function AdminPage() {
   const [autoTrainingStatus, setAutoTrainingStatus] = useState<AutomatedTrainingStatus | null>(null);
   const [autoModelSize, setAutoModelSize] = useState<'small' | 'medium' | 'large'>('medium');
 
+  const [sessionSearchTerm, setSessionSearchTerm] = useState('');
+  const [sessionSortOrder, setSessionSortOrder] = useState('startTime-desc');
+
 
   useEffect(() => {
     if (!isUserLoading) {
@@ -827,6 +830,34 @@ export default function AdminPage() {
     signOut(auth);
     router.push('/login');
   };
+  
+    const filteredAndSortedSessions = useMemo(() => {
+    if (!testSessions) return [];
+    
+    const filtered = testSessions.filter(session => {
+        const searchTerm = sessionSearchTerm.toLowerCase();
+        if (!searchTerm) return true;
+        return (
+            session.productName.toLowerCase().includes(searchTerm) ||
+            session.serialNumber.toLowerCase().includes(searchTerm) ||
+            session.description.toLowerCase().includes(searchTerm)
+        );
+    });
+
+    return filtered.sort((a, b) => {
+        switch (sessionSortOrder) {
+            case 'startTime-desc':
+                return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
+            case 'startTime-asc':
+                return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+            case 'productName-asc':
+                return a.productName.localeCompare(b.productName);
+            default:
+                return 0;
+        }
+    });
+
+  }, [testSessions, sessionSearchTerm, sessionSortOrder]);
 
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
@@ -958,9 +989,26 @@ export default function AdminPage() {
           )}
 
           <div className="space-y-4 mt-6">
+            <div className="flex gap-2 items-center">
+                <Input 
+                    placeholder="Search sessions..."
+                    value={sessionSearchTerm}
+                    onChange={(e) => setSessionSearchTerm(e.target.value)}
+                />
+                <Select value={sessionSortOrder} onValueChange={setSessionSortOrder}>
+                    <SelectTrigger className="w-[180px]">
+                        <SelectValue placeholder="Sort by" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="startTime-desc">Newest</SelectItem>
+                        <SelectItem value="startTime-asc">Oldest</SelectItem>
+                        <SelectItem value="productName-asc">Product Name</SelectItem>
+                    </SelectContent>
+                </Select>
+            </div>
              <ScrollArea className="h-96">
-              {isTestSessionsLoading ? <p>Loading sessions...</p> : testSessions && testSessions.length > 0 ? (
-                testSessions?.map(session => (
+              {isTestSessionsLoading ? <p>Loading sessions...</p> : filteredAndSortedSessions.length > 0 ? (
+                filteredAndSortedSessions.map(session => (
                     <Card key={session.id} className={`p-3 mb-2 ${session.status === 'RUNNING' ? 'border-primary' : ''}`}>
                         <div className="flex justify-between items-start">
                             <div>
@@ -1088,52 +1136,58 @@ export default function AdminPage() {
   
     const renderProductManagement = () => (
         <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-            <CardHeader>
-                <CardTitle>Product Management</CardTitle>
-                <CardDescription>Add, view, and remove testable products.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <div className="flex gap-2 mb-4">
-                    <Input 
-                        placeholder="New product name..." 
-                        value={newProductName} 
-                        onChange={(e) => setNewProductName(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleAddProduct()}
-                    />
-                    <Button onClick={handleAddProduct} disabled={!newProductName.trim()}>
-                        <PackagePlus className="h-4 w-4 mr-2" />
-                        Add
-                    </Button>
-                </div>
-                <ScrollArea className="h-64">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Product Name</TableHead>
-                                <TableHead className="text-right">Action</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {isProductsLoading ? (
-                                <TableRow><TableCell colSpan={2}>Loading products...</TableCell></TableRow>
-                            ) : products && products.length > 0 ? (
-                                products.map(p => (
-                                    <TableRow key={p.id}>
-                                        <TableCell>{p.name}</TableCell>
-                                        <TableCell className="text-right">
-                                            <Button variant="ghost" size="icon" onClick={() => handleDeleteProduct(p.id)}>
-                                                <Trash2 className="h-4 w-4 text-destructive" />
-                                            </Button>
-                                        </TableCell>
+            <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
+                <AccordionItem value="item-1">
+                    <AccordionTrigger className="p-6">
+                        <CardHeader className="p-0 text-left">
+                            <CardTitle>Product Management</CardTitle>
+                            <CardDescription>Add, view, and remove testable products.</CardDescription>
+                        </CardHeader>
+                    </AccordionTrigger>
+                    <AccordionContent className="p-6 pt-0">
+                        <div className="flex gap-2 mb-4">
+                            <Input 
+                                placeholder="New product name..." 
+                                value={newProductName} 
+                                onChange={(e) => setNewProductName(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleAddProduct()}
+                            />
+                            <Button onClick={handleAddProduct} disabled={!newProductName.trim()}>
+                                <PackagePlus className="h-4 w-4 mr-2" />
+                                Add
+                            </Button>
+                        </div>
+                        <ScrollArea className="h-64">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Product Name</TableHead>
+                                        <TableHead className="text-right">Action</TableHead>
                                     </TableRow>
-                                ))
-                            ) : (
-                                <TableRow><TableCell colSpan={2} className="text-center">No products found.</TableCell></TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </ScrollArea>
-            </CardContent>
+                                </TableHeader>
+                                <TableBody>
+                                    {isProductsLoading ? (
+                                        <TableRow><TableCell colSpan={2}>Loading products...</TableCell></TableRow>
+                                    ) : products && products.length > 0 ? (
+                                        products.map(p => (
+                                            <TableRow key={p.id}>
+                                                <TableCell>{p.name}</TableCell>
+                                                <TableCell className="text-right">
+                                                    <Button variant="ghost" size="icon" onClick={() => handleDeleteProduct(p.id)}>
+                                                        <Trash2 className="h-4 w-4 text-destructive" />
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))
+                                    ) : (
+                                        <TableRow><TableCell colSpan={2} className="text-center">No products found.</TableCell></TableRow>
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </ScrollArea>
+                    </AccordionContent>
+                </AccordionItem>
+            </Accordion>
         </Card>
     );
 
@@ -1336,7 +1390,7 @@ export default function AdminPage() {
        
           <div className="lg:col-span-2 space-y-6">
              <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-                  <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
+                  <Accordion type="single" collapsible className="w-full">
                       <AccordionItem value="item-1">
                           <AccordionTrigger className="p-6">
                             <CardHeader className="p-0 text-left">
@@ -1408,3 +1462,4 @@ export default function AdminPage() {
     </div>
   );
 }
+
