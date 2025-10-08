@@ -3,12 +3,20 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useUser, useFirebase } from '@/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { useUser, useFirebase, useCollection, useMemoFirebase } from '@/firebase';
+import { doc, updateDoc, collection } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
+
+type AppUser = {
+  id: string;
+  username: string;
+  email: string;
+  role: 'user' | 'superadmin';
+};
+
 
 export default function PromotePage() {
   const router = useRouter();
@@ -16,10 +24,29 @@ export default function PromotePage() {
   const { firestore } = useFirebase();
   const { toast } = useToast();
   const [isPromoting, setIsPromoting] = useState(false);
+  const [existingAdmin, setExistingAdmin] = useState<AppUser | null>(null);
+
+  const usersCollectionRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'users');
+  }, [firestore]);
+
+  const { data: users, isLoading: isUsersLoading } = useCollection<AppUser>(usersCollectionRef);
+  
+  useEffect(() => {
+    if (!isUsersLoading && users) {
+        const admin = users.find(u => u.role === 'superadmin');
+        setExistingAdmin(admin || null);
+    }
+  }, [users, isUsersLoading]);
 
   const handlePromote = async () => {
     if (!user || !firestore) {
       toast({ variant: 'destructive', title: 'Error', description: 'You must be logged in to promote an account.' });
+      return;
+    }
+     if (existingAdmin) {
+      toast({ variant: 'destructive', title: 'Action Not Allowed', description: `An admin already exists. Please contact ${existingAdmin.username}.` });
       return;
     }
     setIsPromoting(true);
@@ -46,7 +73,7 @@ export default function PromotePage() {
   };
 
   const renderContent = () => {
-    if (isUserLoading) {
+    if (isUserLoading || isUsersLoading) {
       return <p>Checking system status...</p>;
     }
 
@@ -67,11 +94,21 @@ export default function PromotePage() {
             </>
         )
     }
+    
+    if (existingAdmin && existingAdmin.id !== user.uid) {
+        return (
+            <>
+                <p className="text-lg">An administrator account already exists.</p>
+                <p className="text-sm text-muted-foreground mt-2">Please contact <span className="font-semibold text-foreground">{existingAdmin.username}</span> to request elevated privileges.</p>
+                <Button onClick={() => router.push('/')} className="mt-4">Go to Dashboard</Button>
+            </>
+        );
+    }
 
     return (
       <>
         <p className="text-lg">Click the button below to elevate your account, <span className="font-semibold text-foreground">{user.email}</span>, to a superadmin role.</p>
-        <Button onClick={handlePromote} disabled={isPromoting} className="mt-6 btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
+        <Button onClick={handlePromote} disabled={isPromoting || !!existingAdmin} className="mt-6 btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
           {isPromoting ? 'Promoting...' : 'Promote My Account to Superadmin'}
         </Button>
       </>
