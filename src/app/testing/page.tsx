@@ -980,7 +980,9 @@ function TestingComponent() {
       <div className="flex flex-col gap-2">
         {isConnected ? (
           <Button 
-              onClick={async () => await handleStartNewTestSession({ measurementType: 'ARDUINO' })} 
+              onClick={async () => {
+                await handleStartNewTestSession({ measurementType: 'ARDUINO' })
+              }} 
               className="w-full btn-shine bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md"
               disabled={!tempTestSession?.productId || !!runningTestSession}
           >
@@ -1559,3 +1561,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
