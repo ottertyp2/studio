@@ -140,14 +140,13 @@ function TestingComponent() {
   
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
   const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>(preselectedSessionId ? [preselectedSessionId] : []);
-  const [tempTestSession, setTempTestSession] = useState<Partial<TestSession> | null>(null);
+  const [tempTestSession, setTempTestSession] = useState<Partial<TestSession>>({ productId: products?.[0]?.id });
 
   const [chartInterval, setChartInterval] = useState<string>("60");
   const [chartKey, setChartKey] = useState<number>(Date.now());
   
   const [isConnected, setIsConnected] = useState(false);
   const [baudRate, setBaudRate] = useState<number>(9600);
-  const [isNewSessionModalOpen, setIsNewSessionModalOpen] = useState(false);
   
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
@@ -202,6 +201,12 @@ function TestingComponent() {
   }, [firestore]);
 
   const { data: products, isLoading: isProductsLoading } = useCollection<Product>(productsCollectionRef);
+
+  useEffect(() => {
+    if (products && products.length > 0 && !tempTestSession?.productId) {
+      setTempTestSession(prev => ({ ...prev, productId: products[0].id }));
+    }
+  }, [products, tempTestSession?.productId]);
 
   const mlModelsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -494,31 +499,11 @@ function TestingComponent() {
     
     await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
     setSelectedSessionIds([newSessionId]);
-    setTempTestSession(null);
+    setTempTestSession(prev => ({...prev, serialNumber: '', description: ''})); // Reset for next session
     toast({ title: 'New Test Session Started', description: `Product: ${newSession.productName}`});
     return newSession;
   }, [activeSensorConfigId, firestore, testSessionsCollectionRef, tempTestSession, toast, products]);
 
-
-  const toggleMeasurement = useCallback(async () => {
-    const { testSessions: currentTestSessions } = stateRef.current;
-    const arduinoSession = currentTestSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
-
-    if (arduinoSession) {
-      await handleStopTestSession(arduinoSession.id);
-    } else {
-        setTempTestSession({ productId: products?.[0]?.id }); 
-        setIsNewSessionModalOpen(true);
-    }
-  }, [handleStopTestSession, products]);
-
-  const handleStartArduinoSessionFromModal = async () => {
-    setIsNewSessionModalOpen(false);
-    const newSession = await handleStartNewTestSession({ measurementType: 'ARDUINO' });
-    if (newSession) {
-      // The `s` command is no longer needed as the device streams continuously
-    }
-  }
 
   const gaussianNoise = (mean = 0, std = 1) => {
     let u = 0, v = 0;
@@ -876,7 +861,6 @@ function TestingComponent() {
   const displayValue = currentValue !== null ? convertRawValue(currentValue) : null;
   const displayDecimals = sensorConfig.decimalPlaces;
   
-  const isArduinoMeasurementRunning = runningTestSession?.measurementType === 'ARDUINO';
   const chartColors = [
     "#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6",
     "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1"
@@ -893,58 +877,80 @@ function TestingComponent() {
             Start a measurement via Arduino or Demo mode.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap items-center justify-center gap-4">
-            <div className='flex items-center gap-2'>
-                <Label htmlFor="baudRateSelect">Baud Rate:</Label>
-                <Select value={String(baudRate)} onValueChange={(val) => setBaudRate(Number(val))} disabled={isConnected}>
-                    <SelectTrigger id="baudRateSelect" className="w-[120px] bg-white/80">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="9600">9600</SelectItem>
-                        <SelectItem value="19200">19200</SelectItem>
-                        <SelectItem value="57600">57600</SelectItem>
-                        <SelectItem value="115200">115200</SelectItem>
-                    </SelectContent>
-                </Select>
-            </div>
-            <Button 
-                onClick={handleConnect} 
-                className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" 
-                disabled={!!runningTestSession}
-            >
-                {isConnected ? 'Disconnect from Test Bench' : 'Connect to Test Bench'}
-            </Button>
-            {isConnected && (
+        <CardContent className="flex flex-col items-center justify-center gap-4">
+            <div className="flex items-center gap-4">
+                <div className='flex items-center gap-2'>
+                    <Label htmlFor="baudRateSelect">Baud Rate:</Label>
+                    <Select value={String(baudRate)} onValueChange={(val) => setBaudRate(Number(val))} disabled={isConnected}>
+                        <SelectTrigger id="baudRateSelect" className="w-[120px] bg-white/80">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="9600">9600</SelectItem>
+                            <SelectItem value="19200">19200</SelectItem>
+                            <SelectItem value="57600">57600</SelectItem>
+                            <SelectItem value="115200">115200</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
                 <Button 
-                    onClick={toggleMeasurement} 
-                    disabled={!!runningTestSession && !isArduinoMeasurementRunning}
-                    variant={isArduinoMeasurementRunning ? 'destructive' : 'secondary'} 
-                    className="btn-shine shadow-md transition-transform transform hover:-translate-y-1"
+                    onClick={handleConnect} 
+                    className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" 
+                    disabled={!!runningTestSession && isConnected}
+                    variant={isConnected ? 'destructive' : 'default'}
                 >
-                    {isArduinoMeasurementRunning ? 'Stop Measurement' : 'Start Measurement'}
+                    {isConnected ? 'Disconnect from Test Bench' : 'Connect to Test Bench'}
                 </Button>
+            </div>
+            
+            {isConnected && !runningTestSession && (
+                <div className="mt-4 p-4 border rounded-lg bg-background/50 w-full max-w-md space-y-4">
+                    <h3 className="text-lg font-semibold text-center">Start New Arduino Session</h3>
+                    <div>
+                        <Label htmlFor="productIdentifier">Product</Label>
+                        <Select value={tempTestSession?.productId || ''} onValueChange={value => handleTestSessionFieldChange('productId', value)}>
+                            <SelectTrigger id="productIdentifier">
+                                <SelectValue placeholder="Select a product to test" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {isProductsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                                products?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
+                                }
+                            </SelectContent>
+                        </Select>
+                    </div>
+                     <Button 
+                        onClick={() => handleStartNewTestSession({ measurementType: 'ARDUINO' })} 
+                        className="w-full btn-shine bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md"
+                        disabled={!tempTestSession?.productId || !!runningTestSession}
+                    >
+                        Start Measurement
+                    </Button>
+                </div>
             )}
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={isDemoRunning || !!runningTestSession}>
-                  Start Demo
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Start Demo Simulation</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Choose a scenario to simulate for data generation. This will start a new test session.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => handleStartDemo('DIFFUSION')}>Simulate Diffusion</AlertDialogAction>
-                  <AlertDialogAction onClick={() => handleStartDemo('LEAK')}>Simulate Leak</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+
+            <div className="mt-4">
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={isDemoRunning || !!runningTestSession}>
+                      Start Demo
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Start Demo Simulation</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Choose a scenario to simulate for data generation. This will start a new test session.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => handleStartDemo('DIFFUSION')}>Simulate Diffusion</AlertDialogAction>
+                      <AlertDialogAction onClick={() => handleStartDemo('LEAK')}>Simulate Leak</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+            </div>
 
         </CardContent>
       </Card>
@@ -986,51 +992,6 @@ function TestingComponent() {
       </Card>
   );
 
-  const renderNewSessionModal = () => {
-    if (!isNewSessionModalOpen) return null;
-
-    return (
-      <Dialog open={isNewSessionModalOpen} onOpenChange={setIsNewSessionModalOpen}>
-        <DialogContent>
-            <DialogHeader>
-                <DialogTitle>New Arduino Test Session</DialogTitle>
-                <DialogDescription>
-                    Enter details for the new test session.
-                </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div>
-                <Label htmlFor="productIdentifier">Product</Label>
-                 <Select value={tempTestSession?.productId || ''} onValueChange={value => handleTestSessionFieldChange('productId', value)}>
-                    <SelectTrigger id="productIdentifier">
-                        <SelectValue placeholder="Select a product to test" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {isProductsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                        products?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
-                        }
-                    </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="serialNumber">Serial Number</Label>
-                <Input id="serialNumber" placeholder="e.g. 187" value={tempTestSession?.serialNumber || ''} onChange={e => handleTestSessionFieldChange('serialNumber', e.target.value)} />
-              </div>
-              <div>
-                <Label htmlFor="description">Description</Label>
-                <Input id="description" placeholder="Internal R&D..." value={tempTestSession?.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
-              </div>
-            </div>
-            <DialogFooter>
-                <DialogClose asChild>
-                    <Button variant="ghost" onClick={() => setTempTestSession(null)}>Cancel</Button>
-                </DialogClose>
-                <Button onClick={handleStartArduinoSessionFromModal} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Start Session</Button>
-            </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  };
   
   if (isUserLoading || !user) {
     return (
@@ -1106,7 +1067,6 @@ function TestingComponent() {
            )}
           </div>
         </div>
-        {renderNewSessionModal()}
 
         <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
           <CardHeader>
@@ -1261,8 +1221,8 @@ function TestingComponent() {
                                     disabled={dataLog.length === 0}
                                 />
                                 <div className="flex justify-between text-xs text-muted-foreground mt-2">
-                                  <span>Start: {analysisRange[0]} ({dataLog.length > analysisRange[0] ? new Date(dataLog[dataLog.length - 1 - analysisRange[0]].timestamp).toLocaleTimeString() : 'N/A'})</span>
-                                  <span>End: {analysisRange[1]} ({dataLog.length > analysisRange[1] ? new Date(dataLog[dataLog.length - 1 - analysisRange[1]].timestamp).toLocaleTimeString() : 'N/A'})</span>
+                                  <span>Start: {analysisRange[0]} ({dataLog.length > analysisRange[0] && dataLog[dataLog.length - 1 - analysisRange[0]] ? new Date(dataLog[dataLog.length - 1 - analysisRange[0]].timestamp).toLocaleTimeString() : 'N/A'})</span>
+                                  <span>End: {analysisRange[1]} ({dataLog.length > analysisRange[1] && dataLog[dataLog.length - 1 - analysisRange[1]] ? new Date(dataLog[dataLog.length - 1 - analysisRange[1]].timestamp).toLocaleTimeString() : 'N/A'})</span>
                                 </div>
                             </div>
                         </div>
@@ -1355,3 +1315,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
