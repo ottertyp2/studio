@@ -498,17 +498,16 @@ function TestingComponent() {
       currentUser: currentUser || 'not found'
     });
 
-    if (testSessions?.find(s => s.status === 'RUNNING')) {
+    if (runningTestSession) {
         toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
         return;
     }
-
     if (!firestore) {
       toast({variant: 'destructive', title: 'Initialization Error', description: 'Firestore service is not available.'});
       return;
     }
      if (!products || products.length === 0) {
-      toast({variant: 'destructive', title: 'Configuration Error', description: 'No products have been created yet.'});
+      toast({variant: 'destructive', title: 'Configuration Error', description: 'No products have been created yet. Please add one in the "Product Management" section.'});
       return;
     }
     if (!tempTestSession.productId) {
@@ -550,9 +549,9 @@ function TestingComponent() {
       status: 'RUNNING',
       sensorConfigurationId: activeSensorConfigId,
       measurementType: options.measurementType,
-      demoType: options.demoType,
       userId: currentUser.id,
       username: currentUser.username,
+      ...(options.measurementType === 'DEMO' && { demoType: options.demoType })
     };
     
     await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
@@ -1383,7 +1382,7 @@ function TestingComponent() {
            </Card>
         </div>
         <div className="lg:col-span-1 grid grid-rows-2 gap-6">
-          {runningTestSession && (
+          {runningTestSession ? (
           <Card className='p-3 border-primary bg-white/70 backdrop-blur-sm shadow-lg row-span-1 h-full'>
               <div className="flex justify-between items-center">
                   <div>
@@ -1396,6 +1395,10 @@ function TestingComponent() {
                   </div>
               </div>
           </Card>
+          ) : (
+             <div className="row-span-1 h-full">
+                {renderProductManagement()}
+             </div>
           )}
           <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
             <CardHeader>
@@ -1419,9 +1422,6 @@ function TestingComponent() {
               </div>
             </CardContent>
           </Card>
-          <div className="row-span-1 h-full">
-            {renderProductManagement()}
-          </div>
         </div>
 
         <Card className="lg:col-span-3 bg-white/70 backdrop-blur-sm border-slate-300/8O shadow-lg">
@@ -1578,5 +1578,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
