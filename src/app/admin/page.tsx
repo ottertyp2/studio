@@ -1175,9 +1175,25 @@ export default function AdminPage() {
                                             <TableRow key={p.id}>
                                                 <TableCell>{p.name}</TableCell>
                                                 <TableCell className="text-right">
-                                                    <Button variant="ghost" size="icon" onClick={() => handleDeleteProduct(p.id)}>
-                                                        <Trash2 className="h-4 w-4 text-destructive" />
-                                                    </Button>
+                                                     <AlertDialog>
+                                                        <AlertDialogTrigger asChild>
+                                                          <Button variant="ghost" size="icon">
+                                                            <Trash2 className="h-4 w-4 text-destructive" />
+                                                          </Button>
+                                                        </AlertDialogTrigger>
+                                                        <AlertDialogContent>
+                                                            <AlertDialogHeader>
+                                                                <AlertDialogTitle>Delete Product?</AlertDialogTitle>
+                                                                <AlertDialogDescription>
+                                                                    Are you sure you want to delete "{p.name}"? This cannot be undone. Associated test sessions will not be deleted but will reference a missing product.
+                                                                </AlertDialogDescription>
+                                                            </AlertDialogHeader>
+                                                            <AlertDialogFooter>
+                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                <AlertDialogAction variant="destructive" onClick={() => handleDeleteProduct(p.id)}>Confirm Delete</AlertDialogAction>
+                                                            </AlertDialogFooter>
+                                                        </AlertDialogContent>
+                                                    </AlertDialog>
                                                 </TableCell>
                                             </TableRow>
                                         ))
@@ -1465,3 +1481,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    
