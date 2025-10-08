@@ -481,16 +481,16 @@ function TestingComponent() {
     const currentUser = users?.find(u => u.id === user?.uid);
 
     console.log('DEBUG: handleStartNewTestSession called', {
-      options,
-      tempTestSession,
-      activeSensorConfigId,
-      firestore: !!firestore,
-      products: products || 'not loaded',
-      user: user ? { uid: user.uid, email: user.email } : 'not loaded',
-      users: users || 'not loaded',
-      testSessions: testSessions || 'not loaded',
-      currentUser: currentUser || 'not found',
-  });
+        options,
+        tempTestSession,
+        activeSensorConfigId,
+        firestore: !!firestore,
+        products: products || 'not loaded',
+        user: user ? { uid: user.uid, email: user.email } : 'not loaded',
+        users: users || 'not loaded',
+        testSessions: testSessions || 'not loaded',
+        currentUser: currentUser || 'not found',
+    });
 
     if (runningTestSession) {
         toast({variant: 'destructive', title: 'Error Starting Session', description: 'A test session is already running.'});
@@ -1072,7 +1072,7 @@ function TestingComponent() {
             </div>
             
             {!runningTestSession && !showNewSessionForm && (
-              <Button onClick={() => setShowNewSessionForm(true)} className="mt-4 btn-shine">
+              <Button onClick={() => setShowNewSessionForm(true)} className="mt-4 btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
                 Start New Session
               </Button>
             )}
@@ -1286,7 +1286,7 @@ function TestingComponent() {
                                 </TableHeader>
                                 <TableBody>
                                     {isProductsLoading ? (
-                                        <TableRow><TableCell colSpan={2}>Loading products...</TableCell></TableRow>
+                                        <TableRow><TableCell colSpan={2} className="text-center">Loading products...</TableCell></TableRow>
                                     ) : products && products.length > 0 ? (
                                         products.map(p => (
                                             <TableRow key={p.id}>
@@ -1403,9 +1403,7 @@ function TestingComponent() {
                 </div>
             </Card>
           ) : (
-            <div className="row-span-1 h-full">
-              {renderProductManagement()}
-            </div>
+             renderProductManagement()
           )}
           <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
             <CardHeader>
@@ -1431,7 +1429,7 @@ function TestingComponent() {
           </Card>
         </div>
 
-        <Card className="lg:col-span-3 bg-white/70 backdrop-blur-sm border-slate-300/8O shadow-lg">
+        <Card className="lg:col-span-3 bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
           <CardHeader>
             <div className="flex justify-between items-center flex-wrap gap-4">
               <div className='flex items-center gap-4 flex-wrap'>
