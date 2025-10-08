@@ -220,6 +220,9 @@ function TestingComponent() {
             setActiveSensorConfigId(runningTestSession.sensorConfigurationId);
         }
     }
+     if (!runningTestSession || runningTestSession.measurementType !== 'DEMO') {
+      stopDemoMode();
+    }
   }, [runningTestSession, selectedSessionIds]);
 
 
@@ -552,7 +555,7 @@ function TestingComponent() {
                 rawValue = endValue + (startValue - endValue) * Math.exp(-step / tau);
             }
 
-            const noisyValue = Math.min(1023, Math.max(0, Math.round(rawValue + gaussianNoise(0, 3))));
+            const noisyValue = Math.min(1023, Math.max(0, Math.round(rawValue + gaussianNoise(0, 1))));
             
             handleNewDataPoint({ timestamp: new Date().toISOString(), value: noisyValue });
 
@@ -655,7 +658,6 @@ function TestingComponent() {
 
 
   const handleResetZoom = () => {
-    setSelectedSessionIds([]);
     setChartKey(Date.now());
   }
   
@@ -865,16 +867,8 @@ function TestingComponent() {
   
   const isArduinoMeasurementRunning = runningTestSession?.measurementType === 'ARDUINO';
   const chartColors = [
-    "hsl(var(--chart-1))",
-    "hsl(var(--chart-2))",
-    "hsl(var(--chart-3))",
-    "hsl(var(--chart-4))",
-    "hsl(var(--chart-5))",
-    "hsl(20, 80%, 50%)",
-    "hsl(140, 80%, 50%)",
-    "hsl(300, 80%, 50%)",
-    "hsl(60, 80%, 50%)",
-    "hsl(240, 80%, 70%)",
+    "#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6",
+    "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1"
   ];
 
 
@@ -894,7 +888,7 @@ function TestingComponent() {
                 className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" 
                 disabled={!!runningTestSession}
             >
-                {isConnected ? 'Disconnect from Arduino' : 'Connect to Arduino'}
+                {isConnected ? 'Disconnect from Test Bench' : 'Connect to Test Bench'}
             </Button>
             {isConnected && (
                 <Button 
@@ -1110,12 +1104,12 @@ function TestingComponent() {
                  <div className='flex items-center gap-2'>
                     <Label htmlFor="sessionFilter" className="whitespace-nowrap">Session(s):</Label>
                     <Select onValueChange={(val) => setSelectedSessionIds(prev => prev.includes(val) ? prev : [...prev, val])}>
-                        <SelectTrigger id="sessionFilter" className="w-[250px] bg-white/80">
+                        <SelectTrigger id="sessionFilter" className="w-[300px] bg-white/80">
                             <SelectValue placeholder="Select sessions to compare..." />
                         </SelectTrigger>
                         <SelectContent>
                             {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productName} ({s.status})</SelectItem>)}
+                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productName} - {new Date(s.startTime).toLocaleString()} ({s.status})</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
