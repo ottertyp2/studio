@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -11,21 +11,45 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { useFirebase } from '@/firebase';
+import { useFirebase, useCollection, useMemoFirebase } from '@/firebase';
 import { initiateEmailSignIn } from '@/firebase/non-blocking-login';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
+import { collection } from 'firebase/firestore';
 
 const formSchema = z.object({
   emailOrUsername: z.string().min(1, { message: 'Please enter your email or username.' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
 });
 
+type AppUser = {
+  id: string;
+  username: string;
+  email: string;
+  role: 'user' | 'superadmin';
+};
+
+
 export default function LoginPage() {
   const router = useRouter();
   const { auth, firestore } = useFirebase();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [showAdminPromotion, setShowAdminPromotion] = useState(false);
+
+  const usersCollectionRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'users');
+  }, [firestore]);
+
+  const { data: users, isLoading: isUsersLoading } = useCollection<AppUser>(usersCollectionRef);
+
+  useEffect(() => {
+    if (!isUsersLoading && users) {
+        const hasSuperAdmin = users.some(u => u.role === 'superadmin');
+        setShowAdminPromotion(!hasSuperAdmin);
+    }
+  }, [users, isUsersLoading]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -108,12 +132,14 @@ export default function LoginPage() {
               Sign up
             </Link>
           </div>
-           <div className="mt-4 text-center text-xs text-muted-foreground">
-            First time setup?{' '}
-            <Link href="/promote" className="underline text-primary">
-              Promote to Admin
-            </Link>
-          </div>
+           {showAdminPromotion && (
+            <div className="mt-4 text-center text-xs text-muted-foreground">
+              First time setup?{' '}
+              <Link href="/promote" className="underline text-primary">
+                Promote to Admin
+              </Link>
+            </div>
+           )}
         </CardContent>
       </Card>
     </div>

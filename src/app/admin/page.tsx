@@ -16,6 +16,12 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
+import {
   Card,
   CardContent,
   CardDescription,
@@ -236,14 +242,6 @@ export default function AdminPage() {
     }
   }, [testSessions, sensorConfigs, fetchSessionDataCounts]);
 
-
-  useEffect(() => {
-    setActiveSensorConfigId(null);
-    setActiveTestSessionId(null);
-    setTempSensorConfig(null);
-    setTempTestSession(null);
-    setSessionDataCounts({});
-  }, []);
 
   useEffect(() => {
     if (sensorConfigs && sensorConfigs.length > 0 && !activeSensorConfigId) {
@@ -1014,70 +1012,76 @@ export default function AdminPage() {
   const renderUserManagement = () => {
     return (
         <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
-            <CardHeader>
-                <CardTitle>User Management</CardTitle>
-                <CardDescription>Manage user roles and access.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <ScrollArea className="h-96">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Username</TableHead>
-                                <TableHead>Email</TableHead>
-                                <TableHead>Role</TableHead>
-                                <TableHead className="text-right">Actions</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {isUsersLoading ? (
-                                <TableRow><TableCell colSpan={4}>Loading users...</TableCell></TableRow>
-                            ) : (
-                                users?.map((u) => (
-                                    <TableRow key={u.id}>
-                                        <TableCell>{u.username}</TableCell>
-                                        <TableCell>{u.email}</TableCell>
-                                        <TableCell>
-                                            <Select
-                                                value={u.role}
-                                                onValueChange={(newRole) => handleSetUserRole(u.id, newRole as 'user' | 'superadmin')}
-                                                disabled={u.id === user?.uid}
-                                            >
-                                                <SelectTrigger className="w-[120px]">
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="user">User</SelectItem>
-                                                    <SelectItem value="superadmin">Superadmin</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                            <AlertDialog>
-                                                <AlertDialogTrigger asChild>
-                                                    <Button variant="ghost" size="sm" disabled={u.id === user?.uid}>Delete Profile</Button>
-                                                </AlertDialogTrigger>
-                                                <AlertDialogContent>
-                                                    <AlertDialogHeader>
-                                                        <AlertDialogTitle className="text-destructive">Delete User Profile?</AlertDialogTitle>
-                                                        <AlertDialogDescription>
-                                                            This will delete the Firestore profile data for "{u.username}". The user's authentication account will remain, and they will still be able to log in. This action cannot be undone.
-                                                        </AlertDialogDescription>
-                                                    </AlertDialogHeader>
-                                                    <AlertDialogFooter>
-                                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                        <AlertDialogAction variant="destructive" onClick={() => handleDeleteUserProfile(u.id)}>Confirm Delete</AlertDialogAction>
-                                                    </AlertDialogFooter>
-                                                </AlertDialogContent>
-                                            </AlertDialog>
-                                        </TableCell>
+            <Accordion type="single" collapsible className="w-full">
+                <AccordionItem value="item-1">
+                    <AccordionTrigger className="p-6">
+                        <CardHeader className="p-0 text-left">
+                            <CardTitle>User Management</CardTitle>
+                            <CardDescription>Manage user roles and access.</CardDescription>
+                        </CardHeader>
+                    </AccordionTrigger>
+                    <AccordionContent className="p-6 pt-0">
+                        <ScrollArea className="h-96">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Username</TableHead>
+                                        <TableHead>Email</TableHead>
+                                        <TableHead>Role</TableHead>
+                                        <TableHead className="text-right">Actions</TableHead>
                                     </TableRow>
-                                ))
-                            )}
-                        </TableBody>
-                    </Table>
-                </ScrollArea>
-            </CardContent>
+                                </TableHeader>
+                                <TableBody>
+                                    {isUsersLoading ? (
+                                        <TableRow><TableCell colSpan={4}>Loading users...</TableCell></TableRow>
+                                    ) : (
+                                        users?.map((u) => (
+                                            <TableRow key={u.id}>
+                                                <TableCell>{u.username}</TableCell>
+                                                <TableCell>{u.email}</TableCell>
+                                                <TableCell>
+                                                    <Select
+                                                        value={u.role}
+                                                        onValueChange={(newRole) => handleSetUserRole(u.id, newRole as 'user' | 'superadmin')}
+                                                        disabled={u.id === user?.uid}
+                                                    >
+                                                        <SelectTrigger className="w-[120px]">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="user">User</SelectItem>
+                                                            <SelectItem value="superadmin">Superadmin</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                </TableCell>
+                                                <TableCell className="text-right">
+                                                    <AlertDialog>
+                                                        <AlertDialogTrigger asChild>
+                                                            <Button variant="ghost" size="sm" disabled={u.id === user?.uid}>Delete Profile</Button>
+                                                        </AlertDialogTrigger>
+                                                        <AlertDialogContent>
+                                                            <AlertDialogHeader>
+                                                                <AlertDialogTitle className="text-destructive">Delete User Profile?</AlertDialogTitle>
+                                                                <AlertDialogDescription>
+                                                                    This will delete the Firestore profile data for "{u.username}". The user's authentication account will remain, and they will still be able to log in. This action cannot be undone.
+                                                                </AlertDialogDescription>
+                                                            </AlertDialogHeader>
+                                                            <AlertDialogFooter>
+                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                <AlertDialogAction variant="destructive" onClick={() => handleDeleteUserProfile(u.id)}>Confirm Delete</AlertDialogAction>
+                                                            </AlertDialogFooter>
+                                                        </AlertDialogContent>
+                                                    </AlertDialog>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </ScrollArea>
+                    </AccordionContent>
+                </AccordionItem>
+            </Accordion>
         </Card>
     );
   };
@@ -1101,7 +1105,7 @@ export default function AdminPage() {
                         Add
                     </Button>
                 </div>
-                <ScrollArea className="h-48">
+                <ScrollArea className="h-64">
                     <Table>
                         <TableHeader>
                             <TableRow>
@@ -1332,55 +1336,61 @@ export default function AdminPage() {
        
           <div className="lg:col-span-2 space-y-6">
              <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-                  <CardHeader>
-                      <CardTitle>Sensor Management</CardTitle>
-                      <CardDescription>
-                          Manage all sensor configurations.
-                      </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                      <div className="flex justify-center mb-4">
-                          <Button onClick={handleNewSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">New Configuration</Button>
-                      </div>
-                      {isSensorConfigsLoading ? <p>Loading sensors...</p> :
-                      <ScrollArea className="h-96">
-                          <div className="space-y-4">
-                              {sensorConfigs?.map(c => (
-                                  <Card key={c.id} className='p-4'>
-                                      <div className='flex justify-between items-center'>
-                                          <div>
-                                              <p className='font-semibold'>{c.name}</p>
-                                              <p className="text-sm text-muted-foreground">{c.mode} ({c.unit})</p>
-                                          </div>
-                                          <div className='flex gap-2'>
-                                              <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
-                                              <AlertDialog>
-                                                  <AlertDialogTrigger asChild>
-                                                  <Button size="sm" variant="destructive">Delete</Button>
-                                                  </AlertDialogTrigger>
-                                                  <AlertDialogContent>
-                                                  <AlertDialogHeader>
-                                                      <AlertDialogTitle className="text-destructive">Permanently Delete Configuration?</AlertDialogTitle>
-                                                      <AlertDialogDescription>
-                                                      Are you sure you want to delete the configuration "{c.name}"? This will also delete all associated sensor data. This action cannot be undone.
-                                                      </AlertDialogDescription>
-                                                  </AlertDialogHeader>
-                                                  <AlertDialogFooter>
-                                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                      <AlertDialogAction variant="destructive" onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
-                                                  </AlertDialogFooter>
-                                                  </AlertDialogContent>
-                                              </AlertDialog>
+                  <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
+                      <AccordionItem value="item-1">
+                          <AccordionTrigger className="p-6">
+                            <CardHeader className="p-0 text-left">
+                                <CardTitle>Sensor Management</CardTitle>
+                                <CardDescription>
+                                    Manage all sensor configurations.
+                                </CardDescription>
+                            </CardHeader>
+                          </AccordionTrigger>
+                          <AccordionContent className="p-6 pt-0">
+                              <div className="flex justify-center mb-4">
+                                  <Button onClick={handleNewSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">New Configuration</Button>
+                              </div>
+                              {isSensorConfigsLoading ? <p>Loading sensors...</p> :
+                              <ScrollArea className="h-96">
+                                  <div className="space-y-4">
+                                      {sensorConfigs?.map(c => (
+                                          <Card key={c.id} className='p-4'>
+                                              <div className='flex justify-between items-center'>
+                                                  <div>
+                                                      <p className='font-semibold'>{c.name}</p>
+                                                      <p className="text-sm text-muted-foreground">{c.mode} ({c.unit})</p>
+                                                  </div>
+                                                  <div className='flex gap-2'>
+                                                      <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
+                                                      <AlertDialog>
+                                                          <AlertDialogTrigger asChild>
+                                                          <Button size="sm" variant="destructive">Delete</Button>
+                                                          </AlertDialogTrigger>
+                                                          <AlertDialogContent>
+                                                          <AlertDialogHeader>
+                                                              <AlertDialogTitle className="text-destructive">Permanently Delete Configuration?</AlertDialogTitle>
+                                                              <AlertDialogDescription>
+                                                              Are you sure you want to delete the configuration "{c.name}"? This will also delete all associated sensor data. This action cannot be undone.
+                                                              </AlertDialogDescription>
+                                                          </AlertDialogHeader>
+                                                          <AlertDialogFooter>
+                                                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                              <AlertDialogAction variant="destructive" onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
+                                                          </AlertDialogFooter>
+                                                          </AlertDialogContent>
+                                                      </AlertDialog>
 
-                                          </div>
-                                      </div>
-                                  </Card>
-                              ))}
-                          </div>
-                      </ScrollArea>
-                      }
-                      {renderSensorConfigurator()}
-                  </CardContent>
+                                                  </div>
+                                              </div>
+                                          </Card>
+                                      ))}
+                                  </div>
+                              </ScrollArea>
+                              }
+                              {renderSensorConfigurator()}
+                          </AccordionContent>
+                      </AccordionItem>
+                  </Accordion>
               </Card>
               {renderUserManagement()}
           </div>
