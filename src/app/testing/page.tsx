@@ -496,7 +496,7 @@ function TestingComponent() {
     }
   }, [disconnectSerial, toast, readFromSerial, baudRate, isConnected]);
 
-  const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
+  const handleStartNewTestSession = async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
     const currentUser = users?.find(u => u.id === user?.uid);
     if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !firestore || !products || !currentUser) {
         toast({variant: 'destructive', title: 'Error', description: 'Please select a product and a sensor, and ensure you are logged in.'});
@@ -539,7 +539,7 @@ function TestingComponent() {
     setTempTestSession(prev => ({...prev, serialNumber: '', description: ''})); // Reset for next session
     toast({ title: 'New Test Session Started', description: `Product: ${newSession.productName}`});
     return newSession;
-  }, [activeSensorConfigId, tempTestSession, toast, products, firestore, user, users, testSessions]);
+  };
 
 
   const gaussianNoise = (mean = 0, std = 1) => {
@@ -827,8 +827,8 @@ function TestingComponent() {
     try {
       const snapshot = await getDocs(q);
       const allSessionData = snapshot.docs
-        .map(d => ({ ...d.data(), id: d.id }))
-        .sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()) as (SensorData & {id: string})[];
+        .map(d => ({ ...d.data(), id: d.id } as SensorData & {id: string}))
+        .sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
       if (allSessionData.length === 0) {
         toast({ variant: 'destructive', title: 'Trimming Error', description: 'No data found for this session.' });
