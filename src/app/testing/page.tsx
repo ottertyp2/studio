@@ -157,7 +157,7 @@ function TestingComponent() {
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   
-  const [selectedAnalysisModelId, setSelectedAnalysisModelId] = useState<string | null>(null);
+  const [selectedAnalysisModelName, setSelectedAnalysisModelName] = useState<string | null>(null);
   const [aiAnalysisResult, setAiAnalysisResult] = useState<AiAnalysisResult | null>(null);
   const [analysisRange, setAnalysisRange] = useState([0, 100]);
   
@@ -544,18 +544,21 @@ function TestingComponent() {
         demoIntervalRef.current = setInterval(() => {
             let rawValue;
             if (runningTestSession.demoType === 'LEAK') {
-                const startValue = 950;
-                const endValue = 150;
-                const dropPerStep = (startValue - endValue) / totalSteps;
-                rawValue = startValue - (step * dropPerStep);
+                const startValue = 900;
+                const endValue = 200;
+                const baseValue = startValue - ((startValue - endValue) * step / totalSteps);
+                const noise = gaussianNoise(0, 2);
+                rawValue = baseValue + noise;
             } else { // DIFFUSION
                 const startValue = 950;
                 const endValue = 800;
-                const tau = totalSteps / 5;
+                const tau = totalSteps / 4;
                 rawValue = endValue + (startValue - endValue) * Math.exp(-step / tau);
+                const noise = gaussianNoise(0, 1.5);
+                rawValue += noise;
             }
 
-            const noisyValue = Math.min(1023, Math.max(0, Math.round(rawValue + gaussianNoise(0, 1))));
+            const noisyValue = Math.min(1023, Math.max(0, Math.round(rawValue)));
             
             handleNewDataPoint({ timestamp: new Date().toISOString(), value: noisyValue });
 
@@ -603,7 +606,7 @@ function TestingComponent() {
   };
   
   const handleAiAnalysis = async () => {
-      if (!selectedAnalysisModelId) {
+      if (!selectedAnalysisModelName) {
           toast({ variant: 'destructive', title: 'No Model Selected', description: 'Please choose a model to run the analysis.' });
           return;
       }
@@ -615,7 +618,7 @@ function TestingComponent() {
       setAiAnalysisResult(null);
 
       try {
-          const model = await tf.loadLayersModel(`indexeddb://${selectedAnalysisModelId}`);
+          const model = await tf.loadLayersModel(`indexeddb://${selectedAnalysisModelName}`);
           
           // Data is stored newest-first, so reverse it for chronological analysis
           const chronologicalData = [...dataLog].reverse(); 
@@ -659,6 +662,7 @@ function TestingComponent() {
 
   const handleResetZoom = () => {
     setChartKey(Date.now());
+    setSelectedSessionIds([]);
   }
   
   const handleClearData = async () => {
@@ -1109,7 +1113,7 @@ function TestingComponent() {
                         </SelectTrigger>
                         <SelectContent>
                             {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productName} - {new Date(s.startTime).toLocaleString()} ({s.status})</SelectItem>)}
+                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productName} - {new Date(s.startTime).toLocaleString('en-US')} ({s.status})</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
@@ -1158,7 +1162,7 @@ function TestingComponent() {
           <CardContent>
             <div className="h-80">
               <ResponsiveContainer key={chartKey} width="100%" height="100%">
-                <LineChart margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                <LineChart margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.8}/>
@@ -1171,12 +1175,13 @@ function TestingComponent() {
                     stroke="hsl(var(--muted-foreground))" 
                     allowDuplicatedCategory={false}
                     type="number"
-                    label={{ value: selectedSessionIds.length > 1 ? "Time Elapsed (seconds)" : "Time", position: 'insideBottom', offset: -5 }}
+                    label={{ value: "Time (seconds)", position: 'insideBottom', offset: -5 }}
                   />
                   <YAxis
                     stroke="hsl(var(--muted-foreground))"
                     domain={['dataMin', 'dataMax']}
                     tickFormatter={(tick) => typeof tick === 'number' ? tick.toFixed(displayDecimals) : tick}
+                    label={{ value: sensorConfig.unit, angle: -90, position: 'insideLeft', offset: 0 }}
                   />
                   <Tooltip
                     contentStyle={{
@@ -1186,7 +1191,7 @@ function TestingComponent() {
                     }}
                     formatter={(value: number, name: string, props) => [`${Number(value).toFixed(displayDecimals)} ${sensorConfig.unit}`, props.payload.name.toFixed(2) + 's']}
                   />
-                  <Legend />
+                  <Legend verticalAlign="top" height={36} />
                   {Array.isArray(chartData) ? (
                      <Line type="monotone" data={chartData} dataKey="value" stroke="hsl(var(--chart-1))" fill="url(#colorValue)" name={`${sensorConfig.name} (${sensorConfig.unit})`} dot={false} strokeWidth={2} />
                   ) : (
@@ -1219,13 +1224,13 @@ function TestingComponent() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <Label htmlFor="analysis-model-select">Select Model</Label>
-                            <Select onValueChange={setSelectedAnalysisModelId} value={selectedAnalysisModelId || ''}>
+                            <Select onValueChange={setSelectedAnalysisModelName} value={selectedAnalysisModelName || ''}>
                                 <SelectTrigger id="analysis-model-select">
                                     <SelectValue placeholder="Select a trained model" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {isMlModelsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                                    mlModels?.map(m => <SelectItem key={m.id} value={m.id}>{m.name} v{m.version}</SelectItem>)}
+                                    mlModels?.map(m => <SelectItem key={m.id} value={m.name}>{m.name} v{m.version}</SelectItem>)}
                                 </SelectContent>
                             </Select>
                         </div>
@@ -1248,7 +1253,7 @@ function TestingComponent() {
                         </div>
                     </div>
                     <div className="flex gap-4 justify-center">
-                        <Button onClick={handleAiAnalysis} disabled={isAnalyzing || !selectedAnalysisModelId || dataLog.length === 0} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
+                        <Button onClick={handleAiAnalysis} disabled={isAnalyzing || !selectedAnalysisModelName || dataLog.length === 0} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
                             {isAnalyzing ? 'Analyzing...' : 'Analyze with AI'}
                         </Button>
                     </div>
@@ -1324,5 +1329,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    

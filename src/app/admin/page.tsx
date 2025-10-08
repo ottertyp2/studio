@@ -702,21 +702,21 @@ export default function AdminPage() {
     try {
       const generateData = (type: 'LEAK' | 'DIFFUSION', numPoints = 200) => {
           let data = [];
-          const startValue = 950;
-
           if (type === 'LEAK') {
-              const endValue = 150;
-              const dropPerStep = (startValue - endValue) / numPoints;
+              const startValue = 900;
+              const endValue = 200;
+              const baseValueDrop = (startValue - endValue) / numPoints;
               for (let i = 0; i < numPoints; i++) {
-                  const rawValue = startValue - (i * dropPerStep);
-                  data.push(rawValue + gaussianNoise(0, 3));
+                  const baseValue = startValue - (i * baseValueDrop);
+                  data.push(baseValue + gaussianNoise(0, 2));
               }
           } else { // DIFFUSION
+              const startValue = 950;
               const endValue = 800;
-              const tau = numPoints / 5;
+              const tau = numPoints / 4;
               for (let i = 0; i < numPoints; i++) {
                   const rawValue = endValue + (startValue - endValue) * Math.exp(-i / tau);
-                  data.push(rawValue + gaussianNoise(0, 3));
+                  data.push(rawValue + gaussianNoise(0, 1.5));
               }
           }
           return data.map(v => Math.min(1023, Math.max(0, v)));
@@ -1398,6 +1398,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-
-    
