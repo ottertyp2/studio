@@ -1061,7 +1061,7 @@ export default function AdminPage() {
 
   const renderUserManagement = () => {
     return (
-        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
+        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg mt-6 lg:col-span-3">
             <Accordion type="single" collapsible className="w-full" defaultValue='item-1'>
                 <AccordionItem value="item-1">
                     <AccordionTrigger className="p-6">
@@ -1465,3 +1465,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    
