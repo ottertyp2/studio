@@ -1,4 +1,3 @@
-
 'use client';
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -151,6 +150,7 @@ function TestingComponent() {
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
   const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>(preselectedSessionId ? [preselectedSessionId] : []);
   const [tempTestSession, setTempTestSession] = useState<Partial<TestSession>>({});
+  const [showNewSessionForm, setShowNewSessionForm] = useState(false);
 
   const [chartInterval, setChartInterval] = useState<string>("60");
   const [chartKey, setChartKey] = useState<number>(Date.now());
@@ -270,6 +270,9 @@ function TestingComponent() {
     }
      if (!runningTestSession || runningTestSession.measurementType !== 'DEMO') {
       stopDemoMode();
+    }
+    if (runningTestSession) {
+      setShowNewSessionForm(false);
     }
   }, [runningTestSession, selectedSessionIds, stopDemoMode]);
 
@@ -611,23 +614,20 @@ function TestingComponent() {
 
 
   const handleStartDemo = (demoType: 'LEAK' | 'DIFFUSION') => {
-    if (isDemoRunning || runningTestSession) {
-        toast({variant: 'destructive', title: 'Demo Already Running', description: 'Please wait for the current session to complete.'});
+    if (runningTestSession) {
+        toast({variant: 'destructive', title: 'Session in Progress', description: 'Please stop the current session before starting a new one.'});
         return;
     }
     if (!products || products.length === 0) {
-        toast({variant: 'destructive', title: 'Error', description: 'No products available. Please create one in the admin panel.'});
+        toast({variant: 'destructive', title: 'Error', description: 'No products available. Please create one first.'});
         return;
     }
     
-    const firstProduct = products[0];
-    const tempSessionData = { 
-        productId: firstProduct.id, 
-        productName: firstProduct.name,
-        description: `Demo - ${demoType}`
-    };
+    // Set default product if none is selected
+    if (!tempTestSession.productId && products.length > 0) {
+        setTempTestSession(prev => ({ ...prev, productId: products[0].id }));
+    }
 
-    setTempTestSession(tempSessionData);
     // Use a timeout to ensure state is set before calling the session start function
     setTimeout(() => {
         handleStartNewTestSession({ measurementType: 'DEMO', demoType });
@@ -972,6 +972,67 @@ function TestingComponent() {
     "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1"
   ];
 
+  const renderNewSessionForm = () => (
+    <div className="mt-4 p-4 border rounded-lg bg-background/50 w-full max-w-lg space-y-4">
+      <h3 className="text-lg font-semibold text-center">Start New Session</h3>
+      <div>
+        <Label htmlFor="productIdentifier">Product</Label>
+        <Select value={tempTestSession?.productId || ''} onValueChange={value => handleTestSessionFieldChange('productId', value)}>
+            <SelectTrigger id="productIdentifier">
+                <SelectValue placeholder="Select a product to test" />
+            </SelectTrigger>
+            <SelectContent>
+                {isProductsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                products?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
+                }
+            </SelectContent>
+        </Select>
+      </div>
+      <div>
+          <Label htmlFor="serialNumber">Serial Number</Label>
+          <Input id="serialNumber" placeholder="e.g., 187-A" value={tempTestSession.serialNumber || ''} onChange={e => handleTestSessionFieldChange('serialNumber', e.target.value)} />
+      </div>
+      <div>
+          <Label htmlFor="description">Description</Label>
+          <Input id="description" placeholder="e.g., Initial R&D Test" value={tempTestSession.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {isConnected ? (
+          <Button 
+              onClick={() => handleStartNewTestSession({ measurementType: 'ARDUINO' })} 
+              className="w-full btn-shine bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md"
+              disabled={!tempTestSession?.productId || !!runningTestSession}
+          >
+              Start Arduino Session
+          </Button>
+        ) : (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="secondary" className="w-full btn-shine shadow-md" disabled={!!runningTestSession || isConnected}>
+                  Start Demo Session
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Start Demo Simulation</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Choose a scenario to simulate. This will use the product and session details you've entered above.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => handleStartDemo('DIFFUSION')}>Simulate Diffusion</AlertDialogAction>
+                  <AlertDialogAction onClick={() => handleStartDemo('LEAK')}>Simulate Leak</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+        )}
+      </div>
+       <Button variant="ghost" onClick={() => setShowNewSessionForm(false)}>Cancel</Button>
+    </div>
+  );
+
 
   const renderLiveTab = () => (
     <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
@@ -980,7 +1041,7 @@ function TestingComponent() {
               Live Control
           </CardTitle>
           <CardDescription className="text-center">
-            Start a measurement via Test Bench or Demo mode.
+            Connect to a device or start a new measurement session.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center gap-4">
@@ -1008,54 +1069,13 @@ function TestingComponent() {
                 </Button>
             </div>
             
-            {isConnected && !runningTestSession && (
-                <div className="mt-4 p-4 border rounded-lg bg-background/50 w-full max-w-md space-y-4">
-                    <h3 className="text-lg font-semibold text-center">Start New Arduino Session</h3>
-                    <div>
-                        <Label htmlFor="productIdentifier">Product</Label>
-                        <Select value={tempTestSession?.productId || ''} onValueChange={value => handleTestSessionFieldChange('productId', value)}>
-                            <SelectTrigger id="productIdentifier">
-                                <SelectValue placeholder="Select a product to test" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {isProductsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                                products?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
-                                }
-                            </SelectContent>
-                        </Select>
-                    </div>
-                     <Button 
-                        onClick={() => handleStartNewTestSession({ measurementType: 'ARDUINO' })} 
-                        className="w-full btn-shine bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md"
-                        disabled={!tempTestSession?.productId || !!runningTestSession}
-                    >
-                        Start New Arduino Session
-                    </Button>
-                </div>
+            {!runningTestSession && !showNewSessionForm && (
+              <Button onClick={() => setShowNewSessionForm(true)} className="mt-4">
+                Start New Session
+              </Button>
             )}
 
-            <div className="mt-4">
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={isDemoRunning || !!runningTestSession || isConnected}>
-                      Start Demo
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Start Demo Simulation</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Choose a scenario to simulate for data generation. This will start a new test session.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => handleStartDemo('DIFFUSION')}>Simulate Diffusion</AlertDialogAction>
-                      <AlertDialogAction onClick={() => handleStartDemo('LEAK')}>Simulate Leak</AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-            </div>
+            {showNewSessionForm && !runningTestSession && renderNewSessionForm()}
 
         </CardContent>
       </Card>
@@ -1559,5 +1579,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
