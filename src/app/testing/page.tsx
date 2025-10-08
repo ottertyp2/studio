@@ -355,24 +355,23 @@ function TestingComponent() {
         await handleStopTestSession(runningArduinoSession.id);
     }
 
+    readingRef.current = false;
+    if (readerRef.current) {
+        try { await readerRef.current.cancel(); } catch { }
+    }
+    if (writerRef.current) {
+        try { writerRef.current.releaseLock(); } catch { }
+    }
     if (portRef.current) {
-        readingRef.current = false;
-        if (readerRef.current) {
-            try { await readerRef.current.cancel(); } catch { }
-        }
-        if (writerRef.current) {
-            try { writerRef.current.releaseLock(); } catch { }
-        }
         try {
             await portRef.current.close();
         } catch (e) {
             // Error closing port
-        } finally {
-            portRef.current = null;
-            setIsConnected(false);
-            toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
         }
     }
+    portRef.current = null;
+    setIsConnected(false);
+    toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
   }, [handleStopTestSession, toast]);
 
   const readFromSerial = useCallback(async () => {
@@ -406,19 +405,22 @@ function TestingComponent() {
                 }
             });
         } catch (error) {
-            if (!portRef.current?.readable) {
+            if (readingRef.current) { // Only show error if we weren't intentionally disconnecting
                 toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
                 await disconnectSerial();
             }
             break;
         }
     }
-
-    if (readerRef.current) {
-        try { await readerRef.current.cancel(); } catch { }
+    
+    // Clean up reader
+    if(readerRef.current) {
+      try {
         readerRef.current.releaseLock();
-        readerRef.current = null;
+      } catch {}
     }
+    readerRef.current = null;
+
     try { await readableStreamClosed.catch(() => { }); } catch { }
     readingRef.current = false;
 
@@ -936,7 +938,7 @@ function TestingComponent() {
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-center gap-4">
             <Button onClick={handleExportCSV} variant="outline" disabled={isSyncing}>Export CSV</Button>
-            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing || !activeSensorConfigId || selectedSessionIds.length !== 1}>
+            <Button onClick={() => importFileRef.current?.click()} variant="outline" disabled={isSyncing || !!runningTestSession}>
               {isSyncing ? 'Importing...' : 'Import CSV'}
             </Button>
             <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
