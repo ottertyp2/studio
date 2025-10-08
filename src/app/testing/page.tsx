@@ -1251,8 +1251,8 @@ function TestingComponent() {
     </Card>
   );
 
-  function renderProductManagement() {
-    if(runningTestSession) return null;
+  const renderProductManagement = () => {
+    if (runningTestSession) return null;
     return (
         <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
             <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
@@ -1583,3 +1583,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
