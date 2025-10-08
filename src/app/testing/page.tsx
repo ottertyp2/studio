@@ -446,7 +446,7 @@ function TestingComponent() {
   }, [handleNewDataPoint, toast, disconnectSerial]);
   
   const handleConnect = useCallback(async () => {
-    if (isConnected) {
+    if (portRef.current) {
       await disconnectSerial();
       return;
     }
@@ -471,7 +471,7 @@ function TestingComponent() {
             toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish connection.' });
         }
     }
-  }, [isConnected, disconnectSerial, toast, readFromSerial, baudRate]);
+  }, [disconnectSerial, toast, readFromSerial, baudRate]);
 
   const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
     if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products) {
@@ -1122,7 +1122,7 @@ function TestingComponent() {
                             max={100}
                             min={0}
                             step={1}
-                            disabled={dataLog.length === 0}
+                            disabled={dataLog.length === 0 || !editingSessionId}
                         />
                         <div className="flex justify-between text-xs text-muted-foreground mt-2">
                           <span>Start: {trimRange[0]}%</span>
@@ -1367,31 +1367,33 @@ function TestingComponent() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-3">
-          <CardHeader>
-            <CardTitle>Data Log</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-64">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Timestamp</TableHead>
-                    <TableHead className="text-right">Value ({sensorConfig.unit})</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {dataLog.map((entry: any, index: number) => (
-                    <TableRow key={entry.id || index}>
-                      <TableCell>{new Date(entry.timestamp).toLocaleTimeString('en-US')}</TableCell>
-                      <TableCell className="text-right">{convertRawValue(entry.value).toFixed(displayDecimals)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </ScrollArea>
-          </CardContent>
-        </Card>
+        <div className="lg:col-span-3">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Data Log</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <ScrollArea className="h-64">
+                    <Table>
+                        <TableHeader>
+                        <TableRow>
+                            <TableHead>Timestamp</TableHead>
+                            <TableHead className="text-right">Value ({sensorConfig.unit})</TableHead>
+                        </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                        {dataLog.map((entry: any, index: number) => (
+                            <TableRow key={entry.id || index}>
+                            <TableCell>{new Date(entry.timestamp).toLocaleTimeString('en-US')}</TableCell>
+                            <TableCell className="text-right">{convertRawValue(entry.value).toFixed(displayDecimals)}</TableCell>
+                            </TableRow>
+                        ))}
+                        </TableBody>
+                    </Table>
+                    </ScrollArea>
+                </CardContent>
+            </Card>
+        </div>
       </main>
     </div>
   );
