@@ -146,6 +146,7 @@ function TestingComponent() {
   const [chartKey, setChartKey] = useState<number>(Date.now());
   
   const [isConnected, setIsConnected] = useState(false);
+  const [baudRate, setBaudRate] = useState<number>(9600);
   const [isNewSessionModalOpen, setIsNewSessionModalOpen] = useState(false);
   
   const portRef = useRef<any>(null);
@@ -434,13 +435,12 @@ function TestingComponent() {
         try {
             const port = await (navigator.serial as any).requestPort();
             portRef.current = port;
-            await port.open({ baudRate: 9600 });
+            await port.open({ baudRate: baudRate });
             await new Promise(resolve => setTimeout(resolve, 100)); 
             
             setIsConnected(true);
             toast({ title: 'Connected', description: 'Device connected. Ready to start measurement.' });
             
-            readingRef.current = true;
             readFromSerial();
 
         } catch (error) {
@@ -449,7 +449,7 @@ function TestingComponent() {
             }
         }
     }
-  }, [toast, readFromSerial, disconnectSerial]);
+  }, [toast, readFromSerial, disconnectSerial, baudRate]);
 
   const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
     if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products) {
@@ -870,6 +870,20 @@ function TestingComponent() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-center gap-4">
+            <div className='flex items-center gap-2'>
+                <Label htmlFor="baudRateSelect">Baud Rate:</Label>
+                <Select value={String(baudRate)} onValueChange={(val) => setBaudRate(Number(val))} disabled={isConnected}>
+                    <SelectTrigger id="baudRateSelect" className="w-[120px] bg-white/80">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="9600">9600</SelectItem>
+                        <SelectItem value="19200">19200</SelectItem>
+                        <SelectItem value="57600">57600</SelectItem>
+                        <SelectItem value="115200">115200</SelectItem>
+                    </SelectContent>
+                </Select>
+            </div>
             <Button 
                 onClick={handleConnect} 
                 className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" 
@@ -1272,7 +1286,7 @@ function TestingComponent() {
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
                         </span>
-                        Live
+                        {currentValue !== null ? "Live" : "Waiting for data..."}
                       </div>
                     )}
                   </div>
@@ -1317,5 +1331,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
