@@ -161,7 +161,6 @@ function TestingComponent() {
   
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
-  const writerRef = useRef<any>(null);
   const readingRef = useRef<boolean>(false);
 
   const importFileRef = useRef<HTMLInputElement>(null);
@@ -312,6 +311,7 @@ function TestingComponent() {
     setCurrentValue(newDataPoint.value);
     setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
     
+    // This logic relies on testSessions being fresh from the useCollection hook
     const currentRunningSession = testSessions?.find(s => s.status === 'RUNNING');
 
     if (firestore && currentRunningSession && activeSensorConfigId) {
@@ -322,6 +322,7 @@ function TestingComponent() {
         }
     }
   }, [firestore, activeSensorConfigId, testSessions]);
+
 
   const dataLog = useMemo(() => {
     const log = (firestore && selectedSessionIds.length > 0) ? cloudDataLog : localDataLog;
@@ -386,75 +387,35 @@ function TestingComponent() {
 
     readingRef.current = false;
     if (readerRef.current) {
-        try { await readerRef.current.cancel(); } catch { }
-        try { readerRef.current.releaseLock(); } catch {}
+        try {
+            // This is the correct way to cancel a reader.
+            await readerRef.current.cancel(); 
+        } catch (error) {
+            // Ignore cancel errors, as the port might already be closing.
+        }
+        // No need to call releaseLock() after cancel()
         readerRef.current = null;
     }
-    if (writerRef.current) {
-        try { writerRef.current.releaseLock(); } catch { }
-        writerRef.current = null;
+
+    if (portRef.current?.writable) {
+      try {
+        await portRef.current.writable.getWriter().close();
+      } catch {}
     }
+
     if (portRef.current) {
         try {
             await portRef.current.close();
         } catch (e) {
-            // Error closing port
+            console.warn("Error closing serial port:", e);
         }
         portRef.current = null;
     }
+
     setIsConnected(false);
     toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
   }, [handleStopTestSession, toast, runningArduinoSession]);
 
-  const readFromSerial = useCallback(async () => {
-    if (!portRef.current?.readable || readingRef.current) return;
-
-    readingRef.current = true;
-    const textDecoder = new TextDecoderStream();
-    const readableStreamClosed = portRef.current.readable.pipeTo(textDecoder.writable);
-    readerRef.current = textDecoder.readable.getReader();
-
-    let partialLine = '';
-
-    while (readingRef.current) {
-        try {
-            const { value, done } = await readerRef.current.read();
-            if (done) break;
-
-            partialLine += value;
-            let lines = partialLine.split('\n');
-            partialLine = lines.pop() || '';
-
-            lines.forEach(line => {
-                if (line.trim() === '') return;
-                const sensorValue = parseInt(line.trim(), 10);
-                if (!isNaN(sensorValue)) {
-                    const newDataPoint = {
-                        timestamp: new Date().toISOString(),
-                        value: sensorValue
-                    };
-                    handleNewDataPoint(newDataPoint);
-                }
-            });
-        } catch (error) {
-            if (readingRef.current) { // Only show error if we weren't intentionally disconnecting
-                toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
-                await disconnectSerial();
-            }
-            break;
-        }
-    }
-    
-    if(readerRef.current) {
-      try { readerRef.current.releaseLock(); } catch {}
-    }
-    readerRef.current = null;
-
-    try { await readableStreamClosed.catch(() => { }); } catch { }
-    readingRef.current = false;
-
-  }, [handleNewDataPoint, toast, disconnectSerial]);
-  
   const handleConnect = useCallback(async () => {
     if (isConnected) {
       await disconnectSerial();
@@ -465,23 +426,74 @@ function TestingComponent() {
         toast({ variant: 'destructive', title: 'Unsupported Browser', description: 'Web Serial API is not supported here.' });
         return;
     }
+
     try {
         const port = await (navigator.serial as any).requestPort();
         portRef.current = port;
         await port.open({ baudRate: baudRate });
-        await new Promise(resolve => setTimeout(resolve, 100)); 
+        await new Promise(resolve => setTimeout(resolve, 100)); // Short delay for stability
         
         setIsConnected(true);
         toast({ title: 'Connected', description: 'Device connected. Ready to start measurement.' });
         
-        readFromSerial();
+        // --- Start Reading Loop ---
+        if (!portRef.current?.readable || readingRef.current) return;
+
+        readingRef.current = true;
+        const textDecoder = new TextDecoderStream();
+        const readableStreamClosed = portRef.current.readable.pipeTo(textDecoder.writable);
+        readerRef.current = textDecoder.readable.getReader();
+
+        let partialLine = '';
+
+        while (readingRef.current) {
+            try {
+                const { value, done } = await readerRef.current.read();
+                if (done) {
+                    // Reader was cancelled. This is expected on disconnect.
+                    break;
+                }
+
+                partialLine += value;
+                let lines = partialLine.split('\n');
+                partialLine = lines.pop() || '';
+
+                lines.forEach(line => {
+                    const trimmedLine = line.trim();
+                    if (trimmedLine === '') return;
+                    const sensorValue = parseInt(trimmedLine, 10);
+                    if (!isNaN(sensorValue)) {
+                        const newDataPoint = {
+                            timestamp: new Date().toISOString(),
+                            value: sensorValue
+                        };
+                        handleNewDataPoint(newDataPoint);
+                    }
+                });
+            } catch (error) {
+                // Only show error if we weren't intentionally disconnecting
+                if (readingRef.current) { 
+                    console.error("Serial read error:", error);
+                    toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
+                    await disconnectSerial();
+                }
+                break;
+            }
+        }
+        
+        // Cleanup after loop exits
+        readerRef.current?.releaseLock();
+        readerRef.current = null;
+        await readableStreamClosed.catch(() => { /* Ignore abort errors */ });
+        readingRef.current = false;
+        // --- End Reading Loop ---
 
     } catch (error) {
         if ((error as Error).name !== 'NotFoundError') {
             toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish connection.' });
         }
     }
-  }, [disconnectSerial, toast, readFromSerial, baudRate, isConnected]);
+  }, [disconnectSerial, toast, baudRate, isConnected, handleNewDataPoint]);
 
   const handleStartNewTestSession = async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
     
@@ -551,7 +563,7 @@ function TestingComponent() {
       measurementType: options.measurementType,
       userId: currentUser.id,
       username: currentUser.username,
-      ...(options.measurementType === 'DEMO' && { demoType: options.demoType })
+      ...(options.measurementType === 'DEMO' && { demoType: options.demoType }),
     };
     
     await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
@@ -847,7 +859,7 @@ function TestingComponent() {
     try {
       const snapshot = await getDocs(q);
       const allSessionData = snapshot.docs
-        .map(d => ({ ...d.data(), id: d.id } as SensorData & {id: string}))
+        .map(d => ({...d.data(), id: d.id }) as SensorData & {id: string})
         .sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
       if (allSessionData.length === 0) {
@@ -1578,3 +1590,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
