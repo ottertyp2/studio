@@ -198,8 +198,6 @@ function TestingComponent() {
       selectedSessionIds,
       activeSensorConfigId,
       testSessions: testSessions || [] as TestSession[],
-      user,
-      users: users || [] as AppUser[],
   });
   
   useEffect(() => {
@@ -209,8 +207,8 @@ function TestingComponent() {
   }, [user, isUserLoading, router]);
 
   useEffect(() => {
-    stateRef.current = { firestore, selectedSessionIds, activeSensorConfigId, testSessions: testSessions || [], user, users: users || [] };
-  }, [firestore, selectedSessionIds, activeSensorConfigId, testSessions, user, users]);
+    stateRef.current = { firestore, selectedSessionIds, activeSensorConfigId, testSessions: testSessions || [] };
+  }, [firestore, selectedSessionIds, activeSensorConfigId, testSessions]);
 
 
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
@@ -499,18 +497,16 @@ function TestingComponent() {
   }, [disconnectSerial, toast, readFromSerial, baudRate, isConnected]);
 
   const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
-    const { firestore, testSessions: currentTestSessions, user: authUser, users: allUsers } = stateRef.current;
-    
-    const currentUser = allUsers.find(u => u.id === authUser?.uid);
-
+    const currentUser = users?.find(u => u.id === user?.uid);
     if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !firestore || !products || !currentUser) {
         toast({variant: 'destructive', title: 'Error', description: 'Please select a product and a sensor, and ensure you are logged in.'});
         return null;
     }
 
     const testSessionsCollectionRef = collection(firestore, 'test_sessions');
+    const currentTestSessions = testSessions || [];
 
-    if (currentTestSessions?.find(s => s.status === 'RUNNING')) {
+    if (currentTestSessions.find(s => s.status === 'RUNNING')) {
         toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
         return null;
     }
@@ -521,7 +517,7 @@ function TestingComponent() {
         return null;
     }
 
-    const newSessionId = doc(collection(firestore!, '_')).id;
+    const newSessionId = doc(collection(firestore, '_')).id;
     const newSession: TestSession = {
       id: newSessionId,
       productId: selectedProduct.id,
@@ -543,7 +539,7 @@ function TestingComponent() {
     setTempTestSession(prev => ({...prev, serialNumber: '', description: ''})); // Reset for next session
     toast({ title: 'New Test Session Started', description: `Product: ${newSession.productName}`});
     return newSession;
-  }, [activeSensorConfigId, tempTestSession, toast, products]);
+  }, [activeSensorConfigId, tempTestSession, toast, products, firestore, user, users, testSessions]);
 
 
   const gaussianNoise = (mean = 0, std = 1) => {
@@ -1561,5 +1557,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
