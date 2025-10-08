@@ -160,7 +160,6 @@ function TestingComponent() {
   
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
-  const readingRef = useRef<boolean>(false);
   const runningTestSessionRef = useRef<TestSession | null>(null);
 
   const importFileRef = useRef<HTMLInputElement>(null);
@@ -304,11 +303,6 @@ function TestingComponent() {
 
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
   
-  const sensorDataRef = useMemoFirebase(() => {
-      if (!firestore || !activeSensorConfigId) return null;
-      return collection(firestore, `sensor_configurations/${activeSensorConfigId}/sensor_data`);
-  }, [firestore, activeSensorConfigId]);
-
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
     setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
     
@@ -327,48 +321,28 @@ function TestingComponent() {
   const dataLog = useMemo(() => {
     let log: SensorData[] = [];
 
-    // If cloud data is available, use it as the base
     if (cloudDataLog) {
       log = [...cloudDataLog];
     }
   
-    // If there's a running session, we might have local data that hasn't been synced yet.
-    // Merge it in, avoiding duplicates.
-    if (runningTestSessionRef.current) {
-      const cloudDataTimestamps = new Set(log.map(d => d.timestamp));
-      const uniqueLocalData = localDataLog.filter(d => !cloudDataTimestamps.has(d.timestamp));
-      log.push(...uniqueLocalData);
-    } else if (selectedSessionIds.length === 0) {
-      // If no session is selected, only show local data.
-      log = [...localDataLog];
-    }
+    const cloudDataTimestamps = new Set(log.map(d => d.timestamp));
+    const uniqueLocalData = localDataLog.filter(d => !cloudDataTimestamps.has(d.timestamp));
+    log.push(...uniqueLocalData);
     
-    // Always sort by timestamp descending
+    if (selectedSessionIds.length === 0 && !isConnected) {
+      return [];
+    }
+
     return log.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [cloudDataLog, localDataLog, selectedSessionIds.length]);
+  }, [cloudDataLog, localDataLog, selectedSessionIds, isConnected]);
   
   const currentValue = useMemo(() => {
-    if (dataLog && dataLog.length > 0) {
-        // Since it's sorted descending, the first element is the latest.
-        return dataLog[0].value;
+    if (localDataLog && localDataLog.length > 0) {
+        return localDataLog[0].value;
     }
     return null;
-  }, [dataLog]);
+  }, [localDataLog]);
 
-  const convertRawValue = useCallback((rawValue: number) => {
-    if (rawValue === null || rawValue === undefined) return rawValue;
-    switch (sensorConfig.mode) {
-      case 'VOLTAGE':
-        return (rawValue / 1023.0) * sensorConfig.arduinoVoltage;
-      case 'CUSTOM':
-        if (sensorConfig.max === sensorConfig.min) return sensorConfig.min;
-        return sensorConfig.min + (rawValue / 1023.0) * (sensorConfig.max - sensorConfig.min);
-      case 'RAW':
-      default:
-        return rawValue;
-    }
-  }, [sensorConfig]);
-  
   const handleStopTestSession = useCallback(async (sessionId: string) => {
       if (!testSessionsCollectionRef || !firestore) return;
       const session = testSessions?.find(s => s.id === sessionId);
@@ -377,22 +351,12 @@ function TestingComponent() {
         stopDemoMode();
       }
       
-      if(session?.measurementType === 'ARDUINO') {
-          // Do not send stop command, just stop associating data.
-      }
-
       const sessionRef = doc(firestore, `test_sessions`, sessionId);
       await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
       runningTestSessionRef.current = null;
-      setLocalDataLog([]); // Clear local log now that session is over.
   
-      if (selectedSessionIds.includes(sessionId)) {
-        if (selectedSessionIds.length === 1) {
-          // Keep it selected for analysis
-        }
-      }
       toast({ title: 'Test Session Ended' });
-  }, [firestore, selectedSessionIds, stopDemoMode, testSessionsCollectionRef, toast, testSessions]);
+  }, [firestore, stopDemoMode, testSessionsCollectionRef, testSessions]);
   
   const runningArduinoSession = useMemo(() => {
     return testSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
@@ -403,29 +367,27 @@ function TestingComponent() {
         await handleStopTestSession(runningArduinoSession.id);
     }
 
-    readingRef.current = false;
     if (readerRef.current) {
         try {
-            await readerRef.current.cancel(); 
+            await readerRef.current.cancel();
+            readerRef.current.releaseLock();
         } catch (error) {
-            // Ignore cancel errors, as the port might already be closing.
+            // Ignore cancel errors
         }
     }
 
     if (portRef.current) {
         try {
-            if (portRef.current.writable) {
-              await portRef.current.writable.getWriter().close();
-            }
             await portRef.current.close();
         } catch (e) {
             console.warn("Error closing serial port:", e);
         }
-        portRef.current = null;
     }
-
-    setIsConnected(false);
+    
+    portRef.current = null;
     readerRef.current = null;
+    setIsConnected(false);
+    setLocalDataLog([]);
     toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
   }, [handleStopTestSession, toast, runningArduinoSession]);
 
@@ -443,24 +405,21 @@ function TestingComponent() {
     try {
         const port = await (navigator.serial as any).requestPort();
         portRef.current = port;
-        await port.open({ baudRate: baudRate });
+        await port.open({ baudRate });
         setIsConnected(true);
         toast({ title: 'Connected', description: 'Device connected. Ready to start measurement.' });
         
-        readingRef.current = true;
-        
-        while (portRef.current && readingRef.current) {
+        while (port.readable) {
             const textDecoder = new TextDecoderStream();
-            try {
-                const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
-                readerRef.current = textDecoder.readable.getReader();
-            
-                let partialLine = '';
+            const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+            readerRef.current = textDecoder.readable.getReader();
 
+            try {
+                let partialLine = '';
                 while (true) {
                     const { value, done } = await readerRef.current.read();
                     if (done) {
-                        break; // Reader was cancelled.
+                        break;
                     }
                     
                     partialLine += value;
@@ -479,21 +438,19 @@ function TestingComponent() {
                         }
                     });
                 }
-                readerRef.current.releaseLock();
-                await readableStreamClosed.catch(() => { /* Ignore abort */ });
             } catch(e) {
-                if (readingRef.current) {
-                    console.error("Serial read error:", e);
-                    toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
+                console.error("Serial read error:", e);
+                if (port.readable) { // Avoid toast if we intended to disconnect
+                   toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
                 }
-                // An error occurred, break the outer loop to disconnect.
-                break;
+            } finally {
+                readerRef.current?.releaseLock();
+                await readableStreamClosed.catch(() => {});
             }
         }
-        // If the loop is broken, ensure disconnection.
-        if (isConnected) {
-            await disconnectSerial();
-        }
+        
+        await port.close();
+        setIsConnected(false);
 
     } catch (error) {
         if ((error as Error).name !== 'NotFoundError') {
