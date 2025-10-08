@@ -62,7 +62,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Cog, LogOut, X as XIcon, UserPlus, BrainCircuit } from 'lucide-react';
+import { Cog, LogOut, X as XIcon, UserPlus, BrainCircuit, Trash2, PackagePlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
@@ -70,6 +70,7 @@ import * as tf from '@tensorflow/tfjs';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc, useUser } from '@/firebase';
 import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc, orderBy } from 'firebase/firestore';
 import { signOut } from '@/firebase/non-blocking-login';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
 
 type SensorData = {
@@ -176,6 +177,7 @@ function TestingComponent() {
   // States for session editing
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [trimRange, setTrimRange] = useState([0, 100]);
+  const [newProductName, setNewProductName] = useState('');
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -848,7 +850,7 @@ function TestingComponent() {
     try {
       const snapshot = await getDocs(q);
       const allSessionData = snapshot.docs
-        .map(d => ({...d.data(), id: d.id }) as SensorData & {id: string})
+        .map(d => ({ ...d.data(), id: d.id }) as SensorData & {id: string})
         .sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
       if (allSessionData.length === 0) {
@@ -886,6 +888,22 @@ function TestingComponent() {
     } catch(e: any) {
       toast({ variant: 'destructive', title: 'Trimming Failed', description: e.message });
     }
+  };
+
+  const handleAddProduct = () => {
+    if (!newProductName.trim() || !firestore) return;
+    const newProductId = doc(collection(firestore, '_')).id;
+    const productRef = doc(firestore, 'products', newProductId);
+    setDoc(productRef, { id: newProductId, name: newProductName.trim() });
+    setNewProductName('');
+    toast({ title: 'Product Added', description: `"${newProductName.trim()}" has been added.`});
+  };
+
+  const handleDeleteProduct = (productId: string) => {
+    if (!firestore) return;
+    const productRef = doc(firestore, 'products', productId);
+    deleteDoc(productRef);
+    toast({ title: 'Product Deleted'});
   };
 
 
@@ -1169,6 +1187,79 @@ function TestingComponent() {
     </Card>
   );
 
+  const renderProductManagement = () => (
+    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+        <Accordion type="single" collapsible className="w-full">
+            <AccordionItem value="item-1">
+                <AccordionTrigger className="p-6">
+                    <CardHeader className="p-0 text-left">
+                        <CardTitle>Product Management</CardTitle>
+                        <CardDescription>Add, view, and remove your products.</CardDescription>
+                    </CardHeader>
+                </AccordionTrigger>
+                <AccordionContent className="p-6 pt-0">
+                    <div className="flex gap-2 mb-4">
+                        <Input 
+                            placeholder="New product name..." 
+                            value={newProductName} 
+                            onChange={(e) => setNewProductName(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleAddProduct()}
+                        />
+                        <Button onClick={handleAddProduct} disabled={!newProductName.trim()}>
+                            <PackagePlus className="h-4 w-4 mr-2" />
+                            Add
+                        </Button>
+                    </div>
+                    <ScrollArea className="h-40">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Product Name</TableHead>
+                                    <TableHead className="text-right">Action</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {isProductsLoading ? (
+                                    <TableRow><TableCell colSpan={2}>Loading products...</TableCell></TableRow>
+                                ) : products && products.length > 0 ? (
+                                    products.map(p => (
+                                        <TableRow key={p.id}>
+                                            <TableCell>{p.name}</TableCell>
+                                            <TableCell className="text-right">
+                                                 <AlertDialog>
+                                                    <AlertDialogTrigger asChild>
+                                                      <Button variant="ghost" size="icon" disabled={!user}>
+                                                        <Trash2 className="h-4 w-4 text-destructive" />
+                                                      </Button>
+                                                    </AlertDialogTrigger>
+                                                    <AlertDialogContent>
+                                                        <AlertDialogHeader>
+                                                            <AlertDialogTitle>Delete Product?</AlertDialogTitle>
+                                                            <AlertDialogDescription>
+                                                                Are you sure you want to delete "{p.name}"? This cannot be undone. Associated test sessions will not be deleted but will reference a missing product.
+                                                            </AlertDialogDescription>
+                                                        </AlertDialogHeader>
+                                                        <AlertDialogFooter>
+                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteProduct(p.id)}>Confirm Delete</AlertDialogAction>
+                                                        </AlertDialogFooter>
+                                                    </AlertDialogContent>
+                                                </AlertDialog>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                ) : (
+                                    <TableRow><TableCell colSpan={2} className="text-center">No products found.</TableCell></TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </ScrollArea>
+                </AccordionContent>
+            </AccordionItem>
+        </Accordion>
+    </Card>
+);
+
   
   if (isUserLoading || !user) {
     return (
@@ -1267,6 +1358,7 @@ function TestingComponent() {
               </div>
             </CardContent>
           </Card>
+          {renderProductManagement()}
         </div>
 
         <Card className="lg:col-span-3 bg-white/70 backdrop-blur-sm border-slate-300/8O shadow-lg">

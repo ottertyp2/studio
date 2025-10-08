@@ -208,7 +208,7 @@
         "id": { "type": "string", "description": "Unique identifier for the dataset." },
         "name": { "type": "string", "description": "The name of the dataset." },
         "description": { "type": "string", "description": "A brief description of the dataset." },
-        "storagePath": { "type": "string", "description": "Path to the dataset file in Firebase Storage, or a reference URL." }
+        "storagePath": { "type": a"string", "description": "Path to the dataset file in Firebase Storage, or a reference URL." }
       },
       "required": ["id", "name", "storagePath"]
     }
@@ -296,6 +296,3 @@
     "reasoning": "This Firestore data structure is designed for a single-user or public-access model. All data is stored in global collections, removing any user-specific paths or ownership. This simplifies data access as there is no user authentication or authorization layer to manage. It's suitable for local testing or a fully public dashboard."
   }
 }
-
-
-    

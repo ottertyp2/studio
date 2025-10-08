@@ -162,6 +162,7 @@ export default function AdminPage() {
   const [sessionSearchTerm, setSessionSearchTerm] = useState('');
   const [sessionSortOrder, setSessionSortOrder] = useState('startTime-desc');
   const [sessionUserFilter, setSessionUserFilter] = useState('all');
+  const [sessionProductFilter, setSessionProductFilter] = useState('all');
 
 
   useEffect(() => {
@@ -845,6 +846,10 @@ export default function AdminPage() {
     if (sessionUserFilter !== 'all') {
         filtered = filtered.filter(session => session.userId === sessionUserFilter);
     }
+    
+    if (sessionProductFilter !== 'all') {
+        filtered = filtered.filter(session => session.productId === sessionProductFilter);
+    }
 
     filtered = filtered.filter(session => {
         const searchTerm = sessionSearchTerm.toLowerCase();
@@ -872,7 +877,7 @@ export default function AdminPage() {
         }
     });
 
-  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter]);
+  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionProductFilter]);
 
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
@@ -1004,15 +1009,15 @@ export default function AdminPage() {
           )}
 
           <div className="space-y-4 mt-6">
-            <div className="flex flex-col sm:flex-row gap-2 items-center">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 items-center">
                 <Input 
                     placeholder="Search sessions..."
                     value={sessionSearchTerm}
                     onChange={(e) => setSessionSearchTerm(e.target.value)}
-                    className="flex-grow"
+                    className="md:col-span-4"
                 />
                 <Select value={sessionUserFilter} onValueChange={setSessionUserFilter}>
-                    <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectTrigger>
                         <SelectValue placeholder="Filter by user" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1020,8 +1025,17 @@ export default function AdminPage() {
                         {users?.map(u => <SelectItem key={u.id} value={u.id}>{u.username}</SelectItem>)}
                     </SelectContent>
                 </Select>
+                <Select value={sessionProductFilter} onValueChange={setSessionProductFilter}>
+                    <SelectTrigger>
+                        <SelectValue placeholder="Filter by product" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Products</SelectItem>
+                        {products?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
                 <Select value={sessionSortOrder} onValueChange={setSessionSortOrder}>
-                    <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectTrigger>
                         <SelectValue placeholder="Sort by" />
                     </SelectTrigger>
                     <SelectContent>
