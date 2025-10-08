@@ -53,6 +53,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { signOut } from '@/firebase/non-blocking-login';
+import { Checkbox } from '@/components/ui/checkbox';
 
 
 type SensorConfig = {
@@ -136,7 +137,7 @@ export default function AdminPage() {
   
   // ML State
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
-  const [selectedDataSetId, setSelectedDataSetId] = useState<string | null>(null);
+  const [selectedDataSetIds, setSelectedDataSetIds] = useState<string[]>([]);
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [isTraining, setIsTraining] = useState(false);
   const [trainingStatus, setTrainingStatus] = useState({ epoch: 0, loss: 0, accuracy: 0 });
@@ -562,47 +563,66 @@ export default function AdminPage() {
   };
 
   const handleTrainModel = async () => {
-    if (!selectedDataSetId || !firestore) {
-        toast({variant: 'destructive', title: 'Training Error', description: 'Please select a training dataset.'});
+    if (selectedDataSetIds.length === 0 || !firestore || !selectedModelId) {
+        toast({variant: 'destructive', title: 'Training Error', description: 'Please select a model and at least one training dataset.'});
         return;
     }
 
-    const trainingSession = testSessions?.find(s => s.id === selectedDataSetId);
-    if (!trainingSession || !trainingSession.sensorConfigurationId) {
-        toast({variant: 'destructive', title: 'Training Error', description: 'The selected session is invalid or has no sensor config.'});
+    const selectedModel = mlModels?.find(m => m.id === selectedModelId);
+    if (!selectedModel) {
+        toast({variant: 'destructive', title: 'Training Error', description: 'Selected model not found in catalog.'});
         return;
     }
+
     setIsTraining(true);
     setTrainingProgress(0);
     setTrainingStatus({ epoch: 0, loss: 0, accuracy: 0 });
 
     try {
-        // 1. Fetch data
-        const sensorDataRef = collection(firestore, `sensor_configurations/${trainingSession.sensorConfigurationId}/sensor_data`);
-        const q = query(sensorDataRef, where('testSessionId', '==', selectedDataSetId));
-        const snapshot = await getDocs(q);
-        const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
+        let allFeatures: number[] = [];
+        let allLabels: number[] = [];
 
-        if (sensorData.length < 10) {
-          toast({variant: 'destructive', title: 'Not enough data', description: 'Need at least 10 data points to train.'});
-          setIsTraining(false);
-          return;
+        for (const sessionId of selectedDataSetIds) {
+            const trainingSession = testSessions?.find(s => s.id === sessionId);
+            if (!trainingSession || !trainingSession.sensorConfigurationId || !trainingSession.demoType) {
+                toast({variant: 'warning', title: 'Skipping Session', description: `Session ${sessionId} is invalid or has no demo type.`});
+                continue;
+            }
+
+            const sensorDataRef = collection(firestore, `sensor_configurations/${trainingSession.sensorConfigurationId}/sensor_data`);
+            const q = query(sensorDataRef, where('testSessionId', '==', sessionId));
+            const snapshot = await getDocs(q);
+            const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
+
+            if (sensorData.length < 10) continue;
+
+            const isLeak = trainingSession.demoType === 'LEAK';
+            const label = isLeak ? 1 : 0;
+            const features = sensorData.map(d => d.value);
+
+            allFeatures.push(...features);
+            allLabels.push(...Array(features.length).fill(label));
         }
 
-        // 2. Prepare data
-        const isLeak = trainingSession.demoType === 'LEAK';
-        const label = isLeak ? 1 : 0;
-        const features = sensorData.map(d => d.value);
-        const labels = Array(features.length).fill(label);
+        if (allFeatures.length < 20) {
+            toast({variant: 'destructive', title: 'Not enough data', description: 'Need at least 20 data points across all selected sessions to train.'});
+            setIsTraining(false);
+            return;
+        }
 
-        // Normalize features
-        const inputTensor = tf.tensor2d(features, [features.length, 1]);
-        const labelTensor = tf.tensor2d(labels, [labels.length, 1]);
+        const indices = tf.util.createShuffledIndices(allFeatures.length);
+        const shuffledFeatures = Array.from(indices).map(i => allFeatures[i]);
+        const shuffledLabels = Array.from(indices).map(i => allLabels[i]);
+
+        const featureMatrix = shuffledFeatures.map(v => [v]);
+        const labelMatrix = shuffledLabels.map(v => [v]);
         
+        const inputTensor = tf.tensor2d(featureMatrix, [featureMatrix.length, 1]);
+        const labelTensor = tf.tensor2d(labelMatrix, [labelMatrix.length, 1]);
+
         const {mean, variance} = tf.moments(inputTensor);
         const normalizedInput = inputTensor.sub(mean).div(variance.sqrt());
 
-        // 3. Define model
         const model = tf.sequential();
         model.add(tf.layers.dense({inputShape: [1], units: 50, activation: 'relu'}));
         model.add(tf.layers.dense({units: 50, activation: 'relu'}));
@@ -614,15 +634,16 @@ export default function AdminPage() {
           metrics: ['accuracy'],
         });
 
-        // 4. Train model
+        let finalAccuracy = 0;
         await model.fit(normalizedInput, labelTensor, {
           epochs: 50,
           batchSize: 32,
           callbacks: {
             onEpochEnd: (epoch, logs) => {
               if (logs) {
+                finalAccuracy = (logs.acc || 0) * 100;
                 setTrainingProgress(((epoch + 1) / 50) * 100);
-                setTrainingStatus({ epoch: epoch + 1, loss: logs.loss || 0, accuracy: (logs.acc || 0) * 100 });
+                setTrainingStatus({ epoch: epoch + 1, loss: logs.loss || 0, accuracy: finalAccuracy });
               }
             }
           }
@@ -630,11 +651,15 @@ export default function AdminPage() {
 
         toast({ title: 'Training Complete!', description: 'Model has been trained in the browser.' });
 
-        // 5. Save model (IndexedDB)
-        if (selectedModelId) {
-          await model.save(`indexeddb://${selectedModelId}`);
-          toast({ title: 'Model Saved', description: `Model saved locally as "${selectedModelId}"` });
-        }
+        await model.save(`indexeddb://${selectedModel.name}`);
+        
+        const modelRef = doc(firestore, 'mlModels', selectedModelId);
+        await updateDoc(modelRef, {
+            description: `Manually trained on ${new Date().toLocaleDateString()}. Accuracy: ${finalAccuracy.toFixed(2)}%`,
+            version: `${selectedModel.version.split('-')[0]}-trained`,
+        });
+
+        toast({ title: 'Model Saved', description: `Model "${selectedModel.name}" updated in catalog and saved locally.` });
 
 
     } catch (e: any) {
@@ -643,6 +668,7 @@ export default function AdminPage() {
         setIsTraining(false);
     }
   };
+
 
   const gaussianNoise = (mean = 0, std = 1) => {
     let u = 0, v = 0;
@@ -661,15 +687,20 @@ export default function AdminPage() {
     try {
       const generateData = (type: 'LEAK' | 'DIFFUSION', numPoints = 200) => {
           let data = [];
+          const startValue = 950;
+
           if (type === 'LEAK') {
+              const endValue = 150;
+              const dropPerStep = (startValue - endValue) / numPoints;
               for (let i = 0; i < numPoints; i++) {
-                  const rawValue = 950 - (i * (800 / numPoints));
-                  data.push(rawValue + gaussianNoise(0, 5));
+                  const rawValue = startValue - (i * dropPerStep);
+                  data.push(rawValue + gaussianNoise(0, 3));
               }
           } else { // DIFFUSION
+              const endValue = 800;
               const tau = numPoints / 5;
               for (let i = 0; i < numPoints; i++) {
-                  const rawValue = 800 + (150 * Math.exp(-i / tau));
+                  const rawValue = endValue + (startValue - endValue) * Math.exp(-i / tau);
                   data.push(rawValue + gaussianNoise(0, 3));
               }
           }
@@ -1112,7 +1143,10 @@ export default function AdminPage() {
                 <ScrollArea className="h-48 border rounded-md p-2">
                     {isMlModelsLoading ? <p>Loading...</p> : mlModels?.map(m => (
                         <div key={m.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted">
-                            <p>{m.name} <span className="text-xs text-muted-foreground">v{m.version}</span></p>
+                            <div>
+                                <p>{m.name} <span className="text-xs text-muted-foreground">v{m.version}</span></p>
+                                {m.description && <p className="text-xs text-muted-foreground">{m.description}</p>}
+                            </div>
                             <Button variant="ghost" size="icon" onClick={() => handleDeleteMlModel(m.id)}>
                                 <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
@@ -1141,10 +1175,10 @@ export default function AdminPage() {
         </div>
 
         <div className="border-t pt-6 space-y-4">
-            <CardTitle className="text-lg">Model Training</CardTitle>
+            <CardTitle className="text-lg">Manual Model Training</CardTitle>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="model-select">Select Model</Label>
+                <Label htmlFor="model-select">Select Model to Update</Label>
                 <Select onValueChange={setSelectedModelId} value={selectedModelId || ''}>
                   <SelectTrigger id="model-select">
                     <SelectValue placeholder="Select a model to train/update" />
@@ -1156,30 +1190,37 @@ export default function AdminPage() {
                 </Select>
               </div>
               <div>
-                <Label htmlFor="dataset-select">Select Training Data</Label>
-                <Select onValueChange={setSelectedDataSetId} value={selectedDataSetId || ''}>
-                  <SelectTrigger id="dataset-select">
-                    <SelectValue placeholder="Select a data set" />
-                  </SelectTrigger>
-                  <SelectContent>
-                     {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                     testSessions?.filter(s => s.demoType).map(d => <SelectItem key={d.id} value={d.id}>{d.productName} ({d.demoType})</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <Label>Select Training Datasets</Label>
+                <ScrollArea className="h-40 border rounded-md p-2">
+                    <div className="space-y-2">
+                    {isTestSessionsLoading ? <p>Loading...</p> :
+                     testSessions?.filter(s => s.demoType).map(d => (
+                         <div key={d.id} className="flex items-center space-x-2">
+                             <Checkbox
+                                id={d.id}
+                                checked={selectedDataSetIds.includes(d.id)}
+                                onCheckedChange={(checked) => {
+                                    return checked
+                                        ? setSelectedDataSetIds([...selectedDataSetIds, d.id])
+                                        : setSelectedDataSetIds(selectedDataSetIds.filter(id => id !== d.id))
+                                }}
+                             />
+                             <label htmlFor={d.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                 {d.productName} ({d.demoType})
+                             </label>
+                         </div>
+                     ))}
+                    </div>
+                </ScrollArea>
                  <p className="text-xs text-muted-foreground mt-1">
                   Generate training data sets on the <a href="/testing" className="underline text-primary">Testing</a> page via the "Start Demo" button.
                 </p>
-                <Button variant="link" size="sm" className="pl-0" onClick={() => trainingDataUploaderRef.current?.click()}>
-                  Or upload new CSV...
-                </Button>
-                <input type="file" ref={trainingDataUploaderRef} accept=".csv" className="hidden" onChange={e => setTrainingDataFile(e.target.files?.[0] || null)} />
-                 {trainingDataFile && <p className="text-xs text-muted-foreground">Selected: {trainingDataFile.name}</p>}
               </div>
             </div>
 
             <div>
-              <Button onClick={handleTrainModel} className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md" disabled={isTraining || !selectedModelId || (!selectedDataSetId && !trainingDataFile)}>
-                {isTraining ? 'Training...' : 'Train Model'}
+              <Button onClick={handleTrainModel} className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md" disabled={isTraining || !selectedModelId || selectedDataSetIds.length === 0}>
+                {isTraining ? 'Training...' : 'Train & Update Selected Model'}
               </Button>
             </div>
             <div className="space-y-2">
