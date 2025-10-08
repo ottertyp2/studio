@@ -90,6 +90,13 @@ type SensorConfig = {
     decimalPlaces: number;
 };
 
+type AppUser = {
+    id: string;
+    username: string;
+    email: string;
+    role: 'user' | 'superadmin';
+};
+
 type Product = {
     id: string;
     name: string;
@@ -170,7 +177,6 @@ function TestingComponent() {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [trimRange, setTrimRange] = useState([0, 100]);
 
-
   const testSessionsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
     return collection(firestore, `test_sessions`);
@@ -178,12 +184,20 @@ function TestingComponent() {
   
   const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
   
+  const usersCollectionRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'users');
+  }, [firestore]);
+
+  const { data: users, isLoading: isUsersLoading } = useCollection<AppUser>(usersCollectionRef);
+
   const stateRef = useRef({
       firestore,
       selectedSessionIds,
       activeSensorConfigId,
       testSessions: testSessions || [] as TestSession[],
       user,
+      users: users || [] as AppUser[],
   });
   
   useEffect(() => {
@@ -193,8 +207,8 @@ function TestingComponent() {
   }, [user, isUserLoading, router]);
 
   useEffect(() => {
-    stateRef.current = { firestore, selectedSessionIds, activeSensorConfigId, testSessions: testSessions || [], user };
-  }, [firestore, selectedSessionIds, activeSensorConfigId, testSessions, user]);
+    stateRef.current = { firestore, selectedSessionIds, activeSensorConfigId, testSessions: testSessions || [], user, users: users || [] };
+  }, [firestore, selectedSessionIds, activeSensorConfigId, testSessions, user, users]);
 
 
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
@@ -480,12 +494,14 @@ function TestingComponent() {
   }, [disconnectSerial, toast, readFromSerial, baudRate, isConnected]);
 
   const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
-    const { firestore, testSessions: currentTestSessions, user: currentUser } = stateRef.current;
-    if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products || !currentUser?.uid || !currentUser?.displayName) {
+    const { firestore, testSessions: currentTestSessions, user: authUser, users: allUsers } = stateRef.current;
+    
+    const currentUser = allUsers.find(u => u.id === authUser?.uid);
+
+    if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products || !currentUser) {
         toast({variant: 'destructive', title: 'Error', description: 'Please select a product and a sensor, and ensure you are logged in.'});
         return null;
     }
-
 
     if (currentTestSessions?.find(s => s.status === 'RUNNING')) {
         toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
@@ -510,8 +526,8 @@ function TestingComponent() {
       sensorConfigurationId: activeSensorConfigId,
       measurementType: options.measurementType,
       demoType: options.demoType,
-      userId: currentUser.uid,
-      username: currentUser.displayName,
+      userId: currentUser.id,
+      username: currentUser.username,
     };
     
     await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);

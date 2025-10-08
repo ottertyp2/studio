@@ -368,7 +368,8 @@ export default function AdminPage() {
   };
 
   const handleStartNewTestSession = async () => {
-    if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products || !user?.uid || !user?.displayName) {
+    const currentUser = users?.find(u => u.id === user?.uid);
+    if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products || !currentUser) {
         toast({variant: 'destructive', title: 'Error', description: 'Please select a product and a sensor, and ensure you are logged in.'});
         return;
     }
@@ -401,8 +402,8 @@ export default function AdminPage() {
       sensorConfigurationId: activeSensorConfigId,
       measurementType: 'DEMO',
       demoType: tempTestSession.demoType,
-      userId: user.uid,
-      username: user.displayName,
+      userId: currentUser.id,
+      username: currentUser.username,
     };
     
     await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
