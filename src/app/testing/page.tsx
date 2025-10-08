@@ -318,7 +318,9 @@ function TestingComponent() {
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
   
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
-    setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
+    if (isConnected) {
+        setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
+    }
     
     const currentRunningSession = runningTestSessionRef.current;
 
@@ -329,16 +331,16 @@ function TestingComponent() {
             setDocumentNonBlocking(docRef, dataToSave, {});
         }
     }
-  }, [firestore, activeSensorConfigId]);
+  }, [firestore, activeSensorConfigId, isConnected]);
 
 
   const dataLog = useMemo(() => {
     let log: SensorData[] = [];
 
+    // Merge cloud data and unique local data
     if (cloudDataLog) {
       log = [...cloudDataLog];
     }
-  
     const cloudDataTimestamps = new Set(log.map(d => d.timestamp));
     const uniqueLocalData = localDataLog.filter(d => !cloudDataTimestamps.has(d.timestamp));
     log.push(...uniqueLocalData);
@@ -477,6 +479,7 @@ function TestingComponent() {
 
   const handleStartNewTestSession = async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
     const currentUser = users?.find(u => u.id === user?.uid);
+
     console.log('DEBUG: handleStartNewTestSession called', {
       options,
       tempTestSession,
@@ -486,11 +489,11 @@ function TestingComponent() {
       user: user ? { uid: user.uid, email: user.email } : 'not loaded',
       users: users || 'not loaded',
       testSessions: testSessions || 'not loaded',
-      currentUser: currentUser || 'not found'
-    });
+      currentUser: currentUser || 'not found',
+  });
 
     if (runningTestSession) {
-        toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
+        toast({variant: 'destructive', title: 'Error Starting Session', description: 'A test session is already running.'});
         return;
     }
     if (!firestore) {
@@ -1236,7 +1239,7 @@ function TestingComponent() {
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction variant="destructive" onClick={handleTrimSession}>Confirm & Delete</AlertDialogAction>
+                                <AlertDialogAction variant="destructive" onClick={handleTrimSession}>Confirm &amp; Delete</AlertDialogAction>
                             </AlertDialogFooter>
                         </AlertDialogContent>
                     </AlertDialog>
@@ -1248,78 +1251,81 @@ function TestingComponent() {
     </Card>
   );
 
-  const renderProductManagement = () => (
-    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-        <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
-            <AccordionItem value="item-1">
-                <AccordionTrigger className="p-6">
-                    <CardHeader className="p-0 text-left">
-                        <CardTitle>Product Management</CardTitle>
-                        <CardDescription>Add, view, and remove your products.</CardDescription>
-                    </CardHeader>
-                </AccordionTrigger>
-                <AccordionContent className="p-6 pt-0">
-                    <div className="flex gap-2 mb-4">
-                        <Input 
-                            placeholder="New product name..." 
-                            value={newProductName} 
-                            onChange={(e) => setNewProductName(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleAddProduct()}
-                        />
-                        <Button onClick={handleAddProduct} disabled={!newProductName.trim()}>
-                            <PackagePlus className="h-4 w-4 mr-2" />
-                            Add
-                        </Button>
-                    </div>
-                    <ScrollArea className="h-40">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Product Name</TableHead>
-                                    <TableHead className="text-right">Action</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {isProductsLoading ? (
-                                    <TableRow><TableCell colSpan={2}>Loading products...</TableCell></TableRow>
-                                ) : products && products.length > 0 ? (
-                                    products.map(p => (
-                                        <TableRow key={p.id}>
-                                            <TableCell>{p.name}</TableCell>
-                                            <TableCell className="text-right">
-                                                 <AlertDialog>
-                                                    <AlertDialogTrigger asChild>
-                                                      <Button variant="ghost" size="icon" disabled={!user}>
-                                                        <Trash2 className="h-4 w-4 text-destructive" />
-                                                      </Button>
-                                                    </AlertDialogTrigger>
-                                                    <AlertDialogContent>
-                                                        <AlertDialogHeader>
-                                                            <AlertDialogTitle>Delete Product?</AlertDialogTitle>
-                                                            <AlertDialogDescription>
-                                                                Are you sure you want to delete "{p.name}"? This cannot be undone. Associated test sessions will not be deleted but will reference a missing product.
-                                                            </AlertDialogDescription>
-                                                        </AlertDialogHeader>
-                                                        <AlertDialogFooter>
-                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteProduct(p.id)}>Confirm Delete</AlertDialogAction>
-                                                        </AlertDialogFooter>
-                                                    </AlertDialogContent>
-                                                </AlertDialog>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))
-                                ) : (
-                                    <TableRow><TableCell colSpan={2} className="text-center">No products found.</TableCell></TableRow>
-                                )}
-                            </TableBody>
-                        </Table>
-                    </ScrollArea>
-                </AccordionContent>
-            </AccordionItem>
-        </Accordion>
-    </Card>
-);
+  function renderProductManagement() {
+    if(runningTestSession) return null;
+    return (
+        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+            <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
+                <AccordionItem value="item-1">
+                    <AccordionTrigger className="p-6">
+                        <CardHeader className="p-0 text-left">
+                            <CardTitle>Product Management</CardTitle>
+                            <CardDescription>Add, view, and remove your products.</CardDescription>
+                        </CardHeader>
+                    </AccordionTrigger>
+                    <AccordionContent className="p-6 pt-0">
+                        <div className="flex gap-2 mb-4">
+                            <Input
+                                placeholder="New product name..."
+                                value={newProductName}
+                                onChange={(e) => setNewProductName(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleAddProduct()}
+                            />
+                            <Button onClick={handleAddProduct} disabled={!newProductName.trim()}>
+                                <PackagePlus className="h-4 w-4 mr-2" />
+                                Add
+                            </Button>
+                        </div>
+                        <ScrollArea className="h-40">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Product Name</TableHead>
+                                        <TableHead className="text-right">Action</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {isProductsLoading ? (
+                                        <TableRow><TableCell colSpan={2}>Loading products...</TableCell></TableRow>
+                                    ) : products && products.length > 0 ? (
+                                        products.map(p => (
+                                            <TableRow key={p.id}>
+                                                <TableCell>{p.name}</TableCell>
+                                                <TableCell className="text-right">
+                                                    <AlertDialog>
+                                                        <AlertDialogTrigger asChild>
+                                                            <Button variant="ghost" size="icon" disabled={!user}>
+                                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                                            </Button>
+                                                        </AlertDialogTrigger>
+                                                        <AlertDialogContent>
+                                                            <AlertDialogHeader>
+                                                                <AlertDialogTitle>Delete Product?</AlertDialogTitle>
+                                                                <AlertDialogDescription>
+                                                                    Are you sure you want to delete "{p.name}"? This cannot be undone. Associated test sessions will not be deleted but will reference a missing product.
+                                                                </AlertDialogDescription>
+                                                            </AlertDialogHeader>
+                                                            <AlertDialogFooter>
+                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                <AlertDialogAction variant="destructive" onClick={() => handleDeleteProduct(p.id)}>Confirm Delete</AlertDialogAction>
+                                                            </AlertDialogFooter>
+                                                        </AlertDialogContent>
+                                                    </AlertDialog>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))
+                                    ) : (
+                                        <TableRow><TableCell colSpan={2} className="text-center">No products found.</TableCell></TableRow>
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </ScrollArea>
+                    </AccordionContent>
+                </AccordionItem>
+            </Accordion>
+        </Card>
+    );
+  }
 
   
   if (isUserLoading || !user) {
@@ -1370,10 +1376,10 @@ function TestingComponent() {
            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
              <CardContent className="p-4">
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                    <TabsList className="grid w-full grid-cols-3 bg-muted/60">
+                    <TabsList className="grid w-full grid-cols-3 bg-muted/80">
                         <TabsTrigger value="live">Live Control</TabsTrigger>
                         <TabsTrigger value="file">File Operations</TabsTrigger>
-                        <TabsTrigger value="analysis">Analyze & Edit</TabsTrigger>
+                        <TabsTrigger value="analysis">Analyze &amp; Edit</TabsTrigger>
                     </TabsList>
                     <TabsContent value="live" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
                     <TabsContent value="file" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
@@ -1384,22 +1390,22 @@ function TestingComponent() {
         </div>
         <div className="lg:col-span-1 grid grid-rows-2 gap-6">
           {runningTestSession ? (
-          <Card className='p-3 border-primary bg-white/70 backdrop-blur-sm shadow-lg row-span-1 h-full'>
-              <div className="flex justify-between items-center">
-                  <div>
-                      <p className="font-semibold">{runningTestSession.productName}</p>
-                      <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US')} - {runningTestSession.status}</p>
-                        <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.demoType ? `(${runningTestSession.demoType})` : ''}</p>
-                  </div>
-                  <div className="flex gap-2">
-                      <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
-                  </div>
-              </div>
-          </Card>
+            <Card className='p-3 border-primary bg-white/70 backdrop-blur-sm shadow-lg row-span-1 h-full'>
+                <div className="flex justify-between items-center">
+                    <div>
+                        <p className="font-semibold">{runningTestSession.productName}</p>
+                        <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US')} - {runningTestSession.status}</p>
+                          <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.demoType ? `(${runningTestSession.demoType})` : ''}</p>
+                    </div>
+                    <div className="flex gap-2">
+                        <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
+                    </div>
+                </div>
+            </Card>
           ) : (
-             <div className="row-span-1 h-full">
-                {renderProductManagement()}
-             </div>
+            <div className="row-span-1 h-full">
+              {renderProductManagement()}
+            </div>
           )}
           <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
             <CardHeader>
@@ -1451,7 +1457,7 @@ function TestingComponent() {
                         </SelectTrigger>
                         <SelectContent>
                             {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productName} - {new Date(s.startTime).toLocaleString('en-US', { time Style: 'short' })} ({s.status})</SelectItem>)}
+                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productName} - {new Date(s.startTime).toLocaleString('en-US', { timeStyle: 'short' })} ({s.status})</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
@@ -1469,7 +1475,7 @@ function TestingComponent() {
                       <SelectItem value="10">10 Seconds</SelectItem>
                       <SelectItem value="30">30 Seconds</SelectItem>
                       <SelectItem value="60">1 Minute</SelectItem>
-                      <SelectItem value="300">5 Minutes</SelectItem>
+                      <SelectItem value="300">5 Minutes</SectectItem>
                       <SelectItem value="900">15 Minutes</SelectItem>
                       <SelectItem value="all">All Data</SelectItem>
                     </SelectContent>
