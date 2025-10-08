@@ -175,7 +175,7 @@ function TestingComponent() {
   const [isDemoRunning, setIsDemoRunning] = useState(false);
 
   // States for session editing
-  const [editingSessionId, setEditingSessionId] = useState<string | null>(preselectedSessionId || null);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [trimRange, setTrimRange] = useState([0, 100]);
   const [newProductName, setNewProductName] = useState('');
 
@@ -539,6 +539,7 @@ function TestingComponent() {
     
     await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
     setSelectedSessionIds([newSessionId]);
+    setShowNewSessionForm(false);
     setTempTestSession(prev => ({...prev, serialNumber: '', description: ''})); // Reset for next session
     toast({ title: 'New Test Session Started', description: `Product: ${newSession.productName}`});
     return newSession;
@@ -612,28 +613,6 @@ function TestingComponent() {
        setIsDemoRunning(false);
     };
   }, [runningTestSession, handleNewDataPoint, handleStopTestSession]);
-
-
-  const handleStartDemo = (demoType: 'LEAK' | 'DIFFUSION') => {
-    if (runningTestSession) {
-        toast({variant: 'destructive', title: 'Session in Progress', description: 'Please stop the current session before starting a new one.'});
-        return;
-    }
-    if (!products || products.length === 0) {
-        toast({variant: 'destructive', title: 'Error', description: 'No products available. Please create one first.'});
-        return;
-    }
-    
-    // Set default product if none is selected
-    if (!tempTestSession.productId && products.length > 0) {
-        setTempTestSession(prev => ({ ...prev, productId: products[0].id }));
-    }
-
-    // Use a timeout to ensure state is set before calling the session start function
-    setTimeout(() => {
-        handleStartNewTestSession({ measurementType: 'DEMO', demoType });
-    }, 0);
-  };
   
   const handleAiAnalysis = async () => {
       if (!selectedAnalysisModelName) {
@@ -1023,8 +1002,8 @@ function TestingComponent() {
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => handleStartDemo('DIFFUSION')}>Simulate Diffusion</AlertDialogAction>
-                  <AlertDialogAction onClick={() => handleStartDemo('LEAK')}>Simulate Leak</AlertDialogAction>
+                  <AlertDialogAction onClick={async () => await handleStartNewTestSession({ measurementType: 'DEMO', demoType: 'DIFFUSION' })}>Simulate Diffusion</AlertDialogAction>
+                  <AlertDialogAction onClick={async () => await handleStartNewTestSession({ measurementType: 'DEMO', demoType: 'LEAK' })}>Simulate Leak</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
