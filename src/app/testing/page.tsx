@@ -347,10 +347,12 @@ function TestingComponent() {
       }
       toast({ title: 'Test Session Ended' });
   }, [firestore, selectedSessionIds, stopDemoMode, testSessionsCollectionRef, toast]);
+  
+  const runningArduinoSession = useMemo(() => {
+    return testSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
+  }, [testSessions]);
 
   const disconnectSerial = useCallback(async () => {
-    const { testSessions: currentTestSessions } = stateRef.current;
-    const runningArduinoSession = currentTestSessions.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
     if (runningArduinoSession) {
         await handleStopTestSession(runningArduinoSession.id);
     }
@@ -358,9 +360,12 @@ function TestingComponent() {
     readingRef.current = false;
     if (readerRef.current) {
         try { await readerRef.current.cancel(); } catch { }
+        try { readerRef.current.releaseLock(); } catch {}
+        readerRef.current = null;
     }
     if (writerRef.current) {
         try { writerRef.current.releaseLock(); } catch { }
+        writerRef.current = null;
     }
     if (portRef.current) {
         try {
@@ -368,11 +373,11 @@ function TestingComponent() {
         } catch (e) {
             // Error closing port
         }
+        portRef.current = null;
     }
-    portRef.current = null;
     setIsConnected(false);
     toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
-  }, [handleStopTestSession, toast]);
+  }, [handleStopTestSession, toast, runningArduinoSession]);
 
   const readFromSerial = useCallback(async () => {
     if (!portRef.current?.readable || readingRef.current) return;
@@ -427,31 +432,32 @@ function TestingComponent() {
   }, [handleNewDataPoint, toast, disconnectSerial]);
   
   const handleConnect = useCallback(async () => {
-    if (portRef.current) {
-        await disconnectSerial();
-    } else { 
-        if (!('serial' in navigator)) {
-            toast({ variant: 'destructive', title: 'Unsupported Browser', description: 'Web Serial API is not supported here.' });
-            return;
-        }
-        try {
-            const port = await (navigator.serial as any).requestPort();
-            portRef.current = port;
-            await port.open({ baudRate: baudRate });
-            await new Promise(resolve => setTimeout(resolve, 100)); 
-            
-            setIsConnected(true);
-            toast({ title: 'Connected', description: 'Device connected. Ready to start measurement.' });
-            
-            readFromSerial();
+    if (isConnected) {
+      await disconnectSerial();
+      return;
+    }
 
-        } catch (error) {
-            if ((error as Error).name !== 'NotFoundError') {
-                toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish connection.' });
-            }
+    if (!('serial' in navigator)) {
+        toast({ variant: 'destructive', title: 'Unsupported Browser', description: 'Web Serial API is not supported here.' });
+        return;
+    }
+    try {
+        const port = await (navigator.serial as any).requestPort();
+        portRef.current = port;
+        await port.open({ baudRate: baudRate });
+        await new Promise(resolve => setTimeout(resolve, 100)); 
+        
+        setIsConnected(true);
+        toast({ title: 'Connected', description: 'Device connected. Ready to start measurement.' });
+        
+        readFromSerial();
+
+    } catch (error) {
+        if ((error as Error).name !== 'NotFoundError') {
+            toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish connection.' });
         }
     }
-  }, [toast, readFromSerial, disconnectSerial, baudRate]);
+  }, [toast, readFromSerial, disconnectSerial, baudRate, isConnected]);
 
   const handleStartNewTestSession = useCallback(async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
     if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products) {
@@ -521,11 +527,22 @@ function TestingComponent() {
     let num = Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
     return num * std + mean;
   }
+  
+  const lastValuesRef = useRef<number[]>([]);
+  const smoothValue = (value: number, windowSize: number = 5) => {
+    const arr = lastValuesRef.current;
+    arr.push(value);
+    if (arr.length > windowSize) arr.shift();
+    const sum = arr.reduce((a,b) => a + b, 0);
+    return sum / arr.length;
+  };
+
 
   useEffect(() => {
     if (runningTestSession && runningTestSession.measurementType === 'DEMO' && !demoIntervalRef.current) {
         let step = 0;
         const totalSteps = 240; // ~2 minutes of data
+        lastValuesRef.current = [];
         
         demoIntervalRef.current = setInterval(() => {
             let rawValue;
@@ -535,6 +552,8 @@ function TestingComponent() {
                 const baseValue = startValue - ((startValue - endValue) * step / totalSteps);
                 const noise = gaussianNoise(0, 2); 
                 rawValue = baseValue + noise;
+                const smoothed = smoothValue(rawValue);
+                rawValue = smoothed;
             } else { // DIFFUSION
                 const startValue = 950;
                 const endValue = 800;
@@ -544,9 +563,9 @@ function TestingComponent() {
                 rawValue += noise;
             }
 
-            const noisyValue = Math.min(1023, Math.max(0, Math.round(rawValue)));
+            const finalValue = Math.min(1023, Math.max(0, Math.round(rawValue)));
             
-            handleNewDataPoint({ timestamp: new Date().toISOString(), value: noisyValue });
+            handleNewDataPoint({ timestamp: new Date().toISOString(), value: finalValue });
 
             step++;
             if (step >= totalSteps) {
@@ -561,7 +580,10 @@ function TestingComponent() {
         stopDemoMode();
     }
 
-    return () => stopDemoMode();
+    return () => {
+       stopDemoMode();
+       lastValuesRef.current = [];
+    };
   }, [runningTestSession, handleNewDataPoint, stopDemoMode, handleStopTestSession]);
 
 
@@ -1333,3 +1355,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
