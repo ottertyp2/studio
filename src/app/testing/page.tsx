@@ -358,7 +358,7 @@ function TestingComponent() {
   }, [localDataLog]);
 
   const handleStopTestSession = useCallback(async (sessionId: string) => {
-      if (!testSessionsCollectionRef || !firestore) return;
+      if (!firestore) return;
       const session = testSessions?.find(s => s.id === sessionId);
   
       if (session?.measurementType === 'DEMO') {
@@ -370,7 +370,7 @@ function TestingComponent() {
       runningTestSessionRef.current = null;
   
       toast({ title: 'Test Session Ended' });
-  }, [firestore, stopDemoMode, testSessionsCollectionRef, testSessions]);
+  }, [firestore, stopDemoMode, testSessions]);
   
   const runningArduinoSession = useMemo(() => {
     return testSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
@@ -384,9 +384,11 @@ function TestingComponent() {
     if (readerRef.current) {
         try {
             await readerRef.current.cancel();
-            readerRef.current.releaseLock();
         } catch (error) {
             // Ignore cancel errors
+        } finally {
+          readerRef.current.releaseLock();
+          readerRef.current = null;
         }
     }
 
@@ -395,11 +397,11 @@ function TestingComponent() {
             await portRef.current.close();
         } catch (e) {
             console.warn("Error closing serial port:", e);
+        } finally {
+          portRef.current = null;
         }
     }
     
-    portRef.current = null;
-    readerRef.current = null;
     setIsConnected(false);
     setLocalDataLog([]);
     toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
@@ -543,13 +545,22 @@ function TestingComponent() {
       ...(options.measurementType === 'DEMO' && { demoType: options.demoType }),
     };
     
-    await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
-    runningTestSessionRef.current = newSession; // Immediately update the ref
-    setLocalDataLog([]); // Clear old local data
-    setSelectedSessionIds([newSessionId]);
-    setShowNewSessionForm(false);
-    setTempTestSession(prev => ({...prev, serialNumber: '', description: ''})); // Reset for next session
-    toast({ title: 'New Test Session Started', description: `Product: ${newSession.productName}`});
+    try {
+      await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
+      runningTestSessionRef.current = newSession; // Immediately update the ref
+      setLocalDataLog([]); // Clear old local data
+      setSelectedSessionIds([newSessionId]);
+      setShowNewSessionForm(false);
+      setTempTestSession(prev => ({...prev, serialNumber: '', description: ''})); // Reset for next session
+      toast({ title: 'New Test Session Started', description: `Product: ${newSession.productName}`});
+    } catch(e: any) {
+        console.error("FirebaseError:", e);
+        toast({
+            variant: 'destructive',
+            title: 'Failed to Start Session',
+            description: e.message || 'An error occurred when trying to save the session to Firestore.'
+        });
+    }
   };
 
 
@@ -1058,7 +1069,7 @@ function TestingComponent() {
             </div>
             
             {!runningTestSession && !showNewSessionForm && (
-              <Button onClick={() => setShowNewSessionForm(true)} className="mt-4">
+              <Button onClick={() => setShowNewSessionForm(true)} className="mt-4 btn-shine">
                 Start New Session
               </Button>
             )}
@@ -1359,14 +1370,14 @@ function TestingComponent() {
            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
              <CardContent className="p-4">
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                    <TabsList className="grid w-full grid-cols-3">
+                    <TabsList className="grid w-full grid-cols-3 bg-muted/60">
                         <TabsTrigger value="live">Live Control</TabsTrigger>
                         <TabsTrigger value="file">File Operations</TabsTrigger>
                         <TabsTrigger value="analysis">Analyze & Edit</TabsTrigger>
                     </TabsList>
-                    <TabsContent value="live" className="mt-4">{renderLiveTab()}</TabsContent>
-                    <TabsContent value="file" className="mt-4">{renderFileTab()}</TabsContent>
-                    <TabsContent value="analysis" className="mt-4">{renderAnalysisTab()}</TabsContent>
+                    <TabsContent value="live" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
+                    <TabsContent value="file" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
+                    <TabsContent value="analysis" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderAnalysisTab()}</TabsContent>
                 </Tabs>
              </CardContent>
            </Card>
@@ -1440,7 +1451,7 @@ function TestingComponent() {
                         </SelectTrigger>
                         <SelectContent>
                             {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productName} - {new Date(s.startTime).toLocaleString('en-US', { timeStyle: 'short' })} ({s.status})</SelectItem>)}
+                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productName} - {new Date(s.startTime).toLocaleString('en-US', { time Style: 'short' })} ({s.status})</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
@@ -1568,5 +1579,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
