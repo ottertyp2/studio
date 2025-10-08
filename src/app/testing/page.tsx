@@ -209,10 +209,11 @@ function TestingComponent() {
   const { data: products, isLoading: isProductsLoading } = useCollection<Product>(productsCollectionRef);
 
   useEffect(() => {
-    if (products && products.length > 0 && !tempTestSession?.productId) {
+    if (!isProductsLoading && products && products.length > 0 && !tempTestSession.productId) {
       setTempTestSession(prev => ({ ...prev, productId: products[0].id }));
     }
-  }, [products, tempTestSession?.productId]);
+  }, [products, isProductsLoading, tempTestSession.productId]);
+
 
   useEffect(() => {
     if (editMode && preselectedSessionId) {
@@ -820,12 +821,14 @@ function TestingComponent() {
     if (!session) return;
   
     const sensorDataRef = collection(firestore, `sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
-    const q = query(sensorDataRef, where('testSessionId', '==', editingSessionId), orderBy('timestamp', 'asc'));
+    const q = query(sensorDataRef, where('testSessionId', '==', editingSessionId));
     
     try {
       const snapshot = await getDocs(q);
-      const allSessionData = snapshot.docs.map(d => ({...d.data(), id: d.id }) as SensorData & {id: string});
-      
+      const allSessionData = snapshot.docs
+        .map(d => ({...d.data(), id: d.id }) as SensorData & {id: string})
+        .sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
       if (allSessionData.length === 0) {
         toast({ variant: 'destructive', title: 'Trimming Error', description: 'No data found for this session.' });
         return;
@@ -1069,7 +1072,7 @@ function TestingComponent() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div>
-            <Label htmlFor="edit-session-select">Select Session to Analyze</Label>
+            <Label htmlFor="edit-session-select">Select Session to Analyze/Edit</Label>
             <Select 
               onValueChange={(id) => {
                 setEditingSessionId(id);
@@ -1247,7 +1250,7 @@ function TestingComponent() {
           </Card>
         </div>
 
-        <Card className="lg:col-span-3 bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+        <Card className="lg:col-span-3 bg-white/70 backdrop-blur-sm border-slate-300/8O shadow-lg">
           <CardHeader>
             <div className="flex justify-between items-center flex-wrap gap-4">
               <div className='flex items-center gap-4 flex-wrap'>
@@ -1447,5 +1450,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
