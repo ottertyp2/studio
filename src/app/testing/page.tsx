@@ -68,7 +68,7 @@ import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from 
 import Papa from 'papaparse';
 import * as tf from '@tensorflow/tfjs';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc, useUser } from '@/firebase';
-import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc, orderBy } from 'firebase/firestore';
+import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc, orderBy, deleteDoc } from 'firebase/firestore';
 import { signOut } from '@/firebase/non-blocking-login';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
@@ -141,7 +141,6 @@ function TestingComponent() {
   const { firestore, auth } = useFirebase();
 
   const preselectedSessionId = searchParams.get('sessionId');
-  const editMode = searchParams.get('edit') === 'true';
 
   const [activeTab, setActiveTab] = useState('live');
   const [localDataLog, setLocalDataLog] = useState<SensorData[]>([]);
@@ -175,7 +174,7 @@ function TestingComponent() {
   const [isDemoRunning, setIsDemoRunning] = useState(false);
 
   // States for session editing
-  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(preselectedSessionId || null);
   const [trimRange, setTrimRange] = useState([0, 100]);
   const [newProductName, setNewProductName] = useState('');
 
@@ -235,13 +234,13 @@ function TestingComponent() {
 
 
   useEffect(() => {
-    if (editMode && preselectedSessionId) {
+    if (preselectedSessionId) {
       setEditingSessionId(preselectedSessionId);
       setSelectedSessionIds([preselectedSessionId]);
       setChartInterval('all');
       setActiveTab('analysis');
     }
-  }, [editMode, preselectedSessionId]);
+  }, [preselectedSessionId]);
 
   const mlModelsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -324,17 +323,16 @@ function TestingComponent() {
     setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
     
     const { firestore: currentFirestore, activeSensorConfigId: currentSensorConfigId } = stateRef.current;
-    
     const currentRunningSession = stateRef.current.testSessions.find(s => s.status === 'RUNNING');
+
     if (currentFirestore && currentRunningSession && currentSensorConfigId) {
         if (currentRunningSession.sensorConfigurationId === currentSensorConfigId) {
-            const dataToSave = {...newDataPoint, testSessionId: currentRunningSession.id};
-            if(sensorDataRef){
-                 addDocumentNonBlocking(sensorDataRef, dataToSave);
-            }
+            const dataToSave = { ...newDataPoint, testSessionId: currentRunningSession.id };
+            const docRef = doc(collection(currentFirestore, `sensor_configurations/${currentSensorConfigId}/sensor_data`));
+            setDocumentNonBlocking(docRef, dataToSave, {});
         }
     }
-  }, [sensorDataRef]);
+  }, []);
 
   const dataLog = useMemo(() => {
     const log = (firestore && selectedSessionIds.length > 0) ? cloudDataLog : localDataLog;
@@ -501,10 +499,12 @@ function TestingComponent() {
     
     const currentUser = allUsers.find(u => u.id === authUser?.uid);
 
-    if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products || !currentUser) {
+    if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !firestore || !products || !currentUser) {
         toast({variant: 'destructive', title: 'Error', description: 'Please select a product and a sensor, and ensure you are logged in.'});
         return null;
     }
+
+    const testSessionsCollectionRef = collection(firestore, 'test_sessions');
 
     if (currentTestSessions?.find(s => s.status === 'RUNNING')) {
         toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
@@ -538,7 +538,7 @@ function TestingComponent() {
     setTempTestSession(prev => ({...prev, serialNumber: '', description: ''})); // Reset for next session
     toast({ title: 'New Test Session Started', description: `Product: ${newSession.productName}`});
     return newSession;
-  }, [activeSensorConfigId, testSessionsCollectionRef, tempTestSession, toast, products]);
+  }, [activeSensorConfigId, tempTestSession, toast, products]);
 
 
   const gaussianNoise = (mean = 0, std = 1) => {
@@ -852,7 +852,7 @@ function TestingComponent() {
       const snapshot = await getDocs(q);
       const allSessionData = snapshot.docs
         .map(d => ({ ...d.data(), id: d.id }))
-        .sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        .sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()) as (SensorData & {id: string})[];
 
       if (allSessionData.length === 0) {
         toast({ variant: 'destructive', title: 'Trimming Error', description: 'No data found for this session.' });
@@ -1037,7 +1037,7 @@ function TestingComponent() {
             <div className="mt-4">
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={isDemoRunning || !!runningTestSession}>
+                    <Button variant="secondary" className="btn-shine shadow-md transition-transform transform hover:-translate-y-1" disabled={isDemoRunning || !!runningTestSession || isConnected}>
                       Start Demo
                     </Button>
                   </AlertDialogTrigger>
@@ -1105,7 +1105,7 @@ function TestingComponent() {
                 Analyze Session
             </CardTitle>
             <CardDescription>
-                Use AI to classify the data.
+                Use AI to classify the data or trim session logs.
             </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -1182,6 +1182,47 @@ function TestingComponent() {
                     </div>
                   )}
               </div>
+                <div className="border-t pt-6">
+                <CardTitle className="text-lg">Trim Session Data</CardTitle>
+                <CardDescription className="mb-4">
+                    Select the percentage range of the session you want to keep. Data outside this range will be permanently deleted.
+                </CardDescription>
+                <div className="space-y-4">
+                    <div className="p-2 border rounded-md">
+                        <Slider
+                            value={trimRange}
+                            onValueChange={setTrimRange}
+                            max={100}
+                            min={0}
+                            step={1}
+                            disabled={dataLog.length === 0 || !editingSessionId}
+                        />
+                        <div className="flex justify-between text-xs text-muted-foreground mt-2">
+                            <span>Start: {trimRange[0]}%</span>
+                            <span>End: {trimRange[1]}%</span>
+                        </div>
+                    </div>
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                            <Button variant="destructive" className="w-full" disabled={!editingSessionId}>
+                                Apply Trim
+                            </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Confirm Trim</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    Are you sure you want to permanently delete data outside the {trimRange[0]}% to {trimRange[1]}% range for this session? This action cannot be undone.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction variant="destructive" onClick={handleTrimSession}>Confirm & Delete</AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+                </div>
+            </div>
             </>
           )}
         </CardContent>
@@ -1190,7 +1231,7 @@ function TestingComponent() {
 
   const renderProductManagement = () => (
     <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-        <Accordion type="single" collapsible className="w-full">
+        <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
             <AccordionItem value="item-1">
                 <AccordionTrigger className="p-6">
                     <CardHeader className="p-0 text-left">
@@ -1324,7 +1365,7 @@ function TestingComponent() {
         </div>
         <div className="lg:col-span-1 grid grid-rows-2 gap-6">
           {runningTestSession && (
-          <Card className='p-3 border-primary bg-white/70 backdrop-blur-sm shadow-lg row-span-2'>
+          <Card className='p-3 border-primary bg-white/70 backdrop-blur-sm shadow-lg row-span-1'>
               <div className="flex justify-between items-center">
                   <div>
                       <p className="font-semibold">{runningTestSession.productName}</p>
@@ -1479,52 +1520,6 @@ function TestingComponent() {
           </CardContent>
         </Card>
 
-        {editingSessionId && (
-            <Card className="lg:col-span-3 bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-                <CardHeader>
-                    <CardTitle className="text-lg">Trim Session Data</CardTitle>
-                    <CardDescription className="mb-4">
-                        Select the percentage range of the session you want to keep. Data outside this range will be permanently deleted.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="p-2 border rounded-md">
-                        <Slider
-                            value={trimRange}
-                            onValueChange={setTrimRange}
-                            max={100}
-                            min={0}
-                            step={1}
-                            disabled={dataLog.length === 0 || !editingSessionId}
-                        />
-                        <div className="flex justify-between text-xs text-muted-foreground mt-2">
-                            <span>Start: {trimRange[0]}%</span>
-                            <span>End: {trimRange[1]}%</span>
-                        </div>
-                    </div>
-                    <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                            <Button variant="destructive" className="w-full" disabled={!editingSessionId}>
-                                Apply Trim
-                            </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                            <AlertDialogHeader>
-                                <AlertDialogTitle>Confirm Trim</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                    Are you sure you want to permanently delete data outside the {trimRange[0]}% to {trimRange[1]}% range for this session? This action cannot be undone.
-                                </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction variant="destructive" onClick={handleTrimSession}>Confirm & Delete</AlertDialogAction>
-                            </AlertDialogFooter>
-                        </AlertDialogContent>
-                    </AlertDialog>
-                </CardContent>
-            </Card>
-        )}
-
         <div className="lg:col-span-3">
             <Card>
                 <CardHeader>
@@ -1564,3 +1559,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
