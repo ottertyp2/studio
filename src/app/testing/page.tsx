@@ -79,6 +79,7 @@ type SensorData = {
   timestamp: string;
   value: number; // Always RAW value
   testSessionId?: string;
+  testBenchId: string;
 };
 
 type SensorConfig = {
@@ -90,6 +91,7 @@ type SensorConfig = {
     max: number;
     arduinoVoltage: number;
     decimalPlaces: number;
+    testBenchId: string;
 };
 
 type AppUser = {
@@ -104,6 +106,13 @@ type Product = {
     name: string;
 };
 
+type TestBench = {
+    id: string;
+    name: string;
+    location?: string;
+    description?: string;
+}
+
 type TestSession = {
     id: string;
     productId: string;
@@ -113,6 +122,7 @@ type TestSession = {
     startTime: string;
     endTime?: string;
     status: 'RUNNING' | 'COMPLETED' | 'SCRAPPED';
+    testBenchId: string;
     sensorConfigurationId: string;
     measurementType: 'DEMO' | 'ARDUINO';
     demoType?: 'LEAK' | 'DIFFUSION';
@@ -149,6 +159,7 @@ function TestingComponent() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
+  const [activeTestBenchId, setActiveTestBenchId] = useState<string | null>(null);
   const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>(preselectedSessionId ? [preselectedSessionId] : []);
   const [tempTestSession, setTempTestSession] = useState<Partial<TestSession>>({});
   const [showNewSessionForm, setShowNewSessionForm] = useState(false);
@@ -211,12 +222,25 @@ function TestingComponent() {
   }, [firestore]);
 
   const { data: products, isLoading: isProductsLoading } = useCollection<Product>(productsCollectionRef);
+  
+  const testBenchesCollectionRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'testbenches');
+  }, [firestore]);
+
+  const { data: testBenches, isLoading: isTestBenchesLoading } = useCollection<TestBench>(testBenchesCollectionRef);
 
   useEffect(() => {
     if (!isProductsLoading && products && products.length > 0 && !tempTestSession.productId) {
       setTempTestSession(prev => ({ ...prev, productId: products[0].id }));
     }
   }, [products, isProductsLoading, tempTestSession.productId]);
+
+  useEffect(() => {
+    if (!isTestBenchesLoading && testBenches && testBenches.length > 0 && !activeTestBenchId) {
+      setActiveTestBenchId(testBenches[0].id);
+    }
+  }, [testBenches, isTestBenchesLoading, activeTestBenchId]);
 
 
   useEffect(() => {
@@ -255,6 +279,9 @@ function TestingComponent() {
         if (runningTestSession.sensorConfigurationId) {
             setActiveSensorConfigId(runningTestSession.sensorConfigurationId);
         }
+        if (runningTestSession.testBenchId) {
+            setActiveTestBenchId(runningTestSession.testBenchId);
+        }
     }
      if (!runningTestSession || runningTestSession.measurementType !== 'DEMO') {
       stopDemoMode();
@@ -271,11 +298,11 @@ function TestingComponent() {
   }, [testSessions, selectedSessionIds]);
   
 
-  const sensorConfig: SensorConfig = useMemo(() => {
+  const sensorConfig: SensorConfig | null = useMemo(() => {
     const currentConfigId = activeTestSession?.sensorConfigurationId || activeSensorConfigId;
     const selectedConfig = sensorConfigs?.find(c => c.id === currentConfigId);
     if (!selectedConfig) {
-        return { id: 'default', name: 'Default', mode: 'RAW', unit: 'RAW', min: 0, max: 1023, arduinoVoltage: 5, decimalPlaces: 0 };
+        return null;
     }
     return selectedConfig;
   }, [sensorConfigs, activeSensorConfigId, activeTestSession]);
@@ -283,15 +310,18 @@ function TestingComponent() {
   useEffect(() => {
     if (runningTestSession) {
         setActiveSensorConfigId(runningTestSession.sensorConfigurationId);
-    } else if (sensorConfigs && sensorConfigs.length > 0 && !activeSensorConfigId) {
-        setActiveSensorConfigId(sensorConfigs[0].id);
+    } else if (sensorConfigs && activeTestBenchId) {
+        const benchConfigs = sensorConfigs.filter(c => c.testBenchId === activeTestBenchId);
+        if (benchConfigs.length > 0 && !activeSensorConfigId) {
+          setActiveSensorConfigId(benchConfigs[0].id)
+        }
     }
-  }, [sensorConfigs, activeSensorConfigId, runningTestSession]);
+  }, [sensorConfigs, activeSensorConfigId, runningTestSession, activeTestBenchId]);
+
 
   const sensorDataCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !sensorConfig.id) return null;
+    if (!firestore || !sensorConfig?.id) return null;
     
-    // If we have selected sessions, query for their data.
     if (selectedSessionIds.length > 0) {
         return query(
             collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`),
@@ -299,52 +329,50 @@ function TestingComponent() {
         );
     }
     
-    // If connected without a session, we don't need to fetch from the cloud,
-    // as we're only interested in the live localDataLog.
     if (isConnected) {
         return null;
     }
 
-    // If no sessions are selected and not connected, return a query that finds nothing.
     return query(
         collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`),
         where('testSessionId', '==', '---NEVER_MATCH---')
     );
-  }, [firestore, sensorConfig.id, selectedSessionIds, isConnected]);
+  }, [firestore, sensorConfig?.id, selectedSessionIds, isConnected]);
 
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
   
-  const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
-    setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
+  const handleNewDataPoint = useCallback((newDataPoint: Omit<SensorData, 'testBenchId'>) => {
+    setLocalDataLog(prevLog => [ { ...newDataPoint, testBenchId: activeTestBenchId! }, ...prevLog].slice(0, 1000));
     
     const currentRunningSession = runningTestSessionRef.current;
 
-    if (firestore && currentRunningSession && activeSensorConfigId) {
+    if (firestore && currentRunningSession && activeSensorConfigId && activeTestBenchId) {
         if (currentRunningSession.sensorConfigurationId === activeSensorConfigId) {
-            const dataToSave = { ...newDataPoint, testSessionId: currentRunningSession.id };
+            const dataToSave: SensorData = { 
+              ...newDataPoint,
+              testSessionId: currentRunningSession.id,
+              testBenchId: activeTestBenchId,
+            };
             const docRef = doc(collection(firestore, `sensor_configurations/${activeSensorConfigId}/sensor_data`));
             setDocumentNonBlocking(docRef, dataToSave, {});
         }
     }
-  }, [firestore, activeSensorConfigId]);
+  }, [firestore, activeSensorConfigId, activeTestBenchId]);
 
 
   const dataLog = useMemo(() => {
     let log: SensorData[] = [];
 
-    // Always include the local log if connected, as it's the most real-time data source.
     if (isConnected) {
       log = [...localDataLog];
     }
     
-    // If cloud data is available, merge it with the local log, avoiding duplicates.
     if (cloudDataLog && !isCloudDataLoading) {
       const localTimestamps = new Set(log.map(d => d.timestamp));
       const uniqueCloudData = cloudDataLog.filter(d => !localTimestamps.has(d.timestamp));
       log.push(...uniqueCloudData);
     }
 
-    // Final sort to ensure chronological order (newest first).
     return log.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [cloudDataLog, isCloudDataLoading, localDataLog, isConnected]);
   
@@ -419,7 +447,6 @@ function TestingComponent() {
         return;
     }
 
-    // Defensively close any existing port reference before opening a new one.
     if (portRef.current) {
       try { await portRef.current.close(); } catch (e) { /* Ignore */ }
       portRef.current = null;
@@ -510,6 +537,10 @@ function TestingComponent() {
       toast({variant: 'destructive', title: 'Configuration Error', description: 'No sensor configuration is selected.'});
       return;
     }
+    if (!activeTestBenchId) {
+      toast({variant: 'destructive', title: 'Configuration Error', description: 'No test bench is selected.'});
+      return;
+    }
     if (!user) {
       toast({variant: 'destructive', title: 'Authentication Error', description: 'You must be logged in to start a session.'});
       return;
@@ -539,6 +570,7 @@ function TestingComponent() {
       description: tempTestSession.description || '',
       startTime: new Date().toISOString(),
       status: 'RUNNING',
+      testBenchId: activeTestBenchId,
       sensorConfigurationId: activeSensorConfigId,
       measurementType: options.measurementType,
       userId: currentUser.id,
@@ -648,11 +680,10 @@ function TestingComponent() {
       try {
           const model = await tf.loadLayersModel(`indexeddb://${selectedAnalysisModelName}`);
           
-          // Data is stored newest-first, so reverse it for chronological analysis
           const chronologicalData = [...dataLog].reverse(); 
           const analysisSegment = chronologicalData.slice(analysisRange[0], analysisRange[1]).map(d => d.value);
 
-          const requiredLength = 200; // The length the model was trained on
+          const requiredLength = 200;
           let dataForAnalysis = analysisSegment;
           
           if (dataForAnalysis.length > requiredLength) {
@@ -665,7 +696,6 @@ function TestingComponent() {
           const featureMatrix = dataForAnalysis.map(v => [v]);
           const inputTensor = tf.tensor2d(featureMatrix, [featureMatrix.length, 1]);
 
-          // Normalize the data (using a hardcoded mean/variance for now, ideally this comes from training)
           const { mean, variance } = tf.moments(inputTensor);
           const normalizedInput = inputTensor.sub(mean).div(tf.sqrt(variance));
 
@@ -693,7 +723,7 @@ function TestingComponent() {
   }
   
   const handleClearData = async () => {
-    if (firestore && sensorConfig.id && selectedSessionIds.length > 0) {
+    if (firestore && sensorConfig?.id && selectedSessionIds.length > 0) {
       try {
         const baseCollectionRef = collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`);
 
@@ -726,7 +756,7 @@ function TestingComponent() {
   }
 
   const handleExportCSV = () => {
-    if (dataLog.length === 0) {
+    if (dataLog.length === 0 || !sensorConfig) {
       toast({ title: 'No data to export' });
       return;
     }
@@ -770,7 +800,7 @@ function TestingComponent() {
         return;
     }
     
-    if (!sensorConfig.id) {
+    if (!sensorConfig?.id) {
         toast({ variant: 'destructive', title: 'Import Error', description: 'Please select a sensor configuration before importing data.' });
         return;
     }
@@ -794,10 +824,11 @@ function TestingComponent() {
             return;
         }
 
-        const importedData: SensorData[] = results.data.map((row: any) => ({
+        const importedData: SensorData[] = (results.data as any[]).map((row: any) => ({
           timestamp: row.timestamp,
           value: parseFloat(row.raw_value),
           testSessionId: currentSessionId,
+          testBenchId: activeTestSession?.testBenchId || 'unknown'
         })).filter(d => d.timestamp && !isNaN(d.value));
         
         importedData.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -907,6 +938,7 @@ function TestingComponent() {
 
 
   const chartData = useMemo(() => {
+    if (!sensorConfig) return [];
     const allChronologicalData = [...dataLog].reverse();
 
     if (selectedSessionIds.length > 1) {
@@ -938,12 +970,10 @@ function TestingComponent() {
         return dataBySession;
     }
 
-    // Single session or local data
     let visibleData = allChronologicalData;
     if (selectedSessionIds.length === 1) {
         visibleData = allChronologicalData.filter(d => d.testSessionId === selectedSessionIds[0]);
     } else if (isConnected) {
-        // If connected but no session is selected, use the local data log
         visibleData = [...localDataLog].reverse();
     }
     
@@ -956,10 +986,10 @@ function TestingComponent() {
 
     if (chartInterval !== 'all' && !editingSessionId) {
         const intervalSeconds = parseInt(chartInterval, 10);
-        if (runningTestSession || isConnected) { // Live data filtering (running session or just connected)
+        if (runningTestSession || isConnected) {
              const now = Date.now();
              mappedData = mappedData.filter(dp => dp.name >= 0 && ((now - (startTime + dp.name * 1000)) / 1000 <= intervalSeconds));
-        } else { // Historical data filtering
+        } else {
             mappedData = mappedData.filter(dp => dp.name >= 0 && dp.name <= intervalSeconds);
         }
     }
@@ -969,8 +999,8 @@ function TestingComponent() {
   }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, activeTestSession, runningTestSession, editingSessionId, localDataLog, isConnected]);
 
   
-  const displayValue = currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
-  const displayDecimals = sensorConfig.decimalPlaces;
+  const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
+  const displayDecimals = sensorConfig?.decimalPlaces ?? 0;
   
   const chartColors = [
     "#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6",
@@ -1176,7 +1206,7 @@ function TestingComponent() {
             <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
              <AlertDialog>
                 <AlertDialogTrigger asChild>
-                <Button variant="destructive" className="ml-4" disabled={!activeSensorConfigId || !!runningTestSession}>Clear Data</Button>
+                <Button variant="destructive" className="ml-4" disabled={!sensorConfig?.id || !!runningTestSession}>Clear Data</Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                 <AlertDialogHeader>
@@ -1347,7 +1377,7 @@ function TestingComponent() {
                 BioThrust Live Dashboard
                 </CardTitle>
                  <div className="flex items-center gap-2">
-                    {user && userRole === 'superadmin' && (
+                    {user && (
                         <Button onClick={() => router.push('/admin')} variant="outline">
                             <Cog className="h-4 w-4 mr-2" />
                             Manage
@@ -1410,7 +1440,7 @@ function TestingComponent() {
                 <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
                   {displayValue !== null ? displayValue.toFixed(displayDecimals) : (isConnected ? '...' : 'N/A')}
                 </p>
-                <p className="text-lg text-muted-foreground">{sensorConfig.unit}</p>
+                <p className="text-lg text-muted-foreground">{sensorConfig?.unit || 'N/A'}</p>
                   {isConnected && (
                   <div className="text-xs text-green-600 mt-1 flex items-center justify-center gap-1">
                     <span className="relative flex h-2 w-2">
@@ -1431,14 +1461,27 @@ function TestingComponent() {
               <div className='flex items-center gap-4 flex-wrap'>
                 <CardTitle>Data Visualization</CardTitle>
                 <div className='flex items-center gap-2'>
-                    <Label htmlFor="sensorConfigSelect" className="whitespace-nowrap">Sensor:</Label>
-                    <Select value={sensorConfig.id || ''} onValueChange={setActiveSensorConfigId} disabled={!!runningTestSession}>
+                    <Label htmlFor="testBenchSelect" className="whitespace-nowrap">Test Bench:</Label>
+                    <Select value={activeTestBenchId || ''} onValueChange={setActiveTestBenchId} disabled={!!runningTestSession}>
+                        <SelectTrigger id="testBenchSelect" className="w-[200px] bg-white/80">
+                            <SelectValue placeholder="Select a test bench" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {isTestBenchesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                            testBenches?.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)
+                            }
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className='flex items-center gap-2'>
+                    <Label htmlFor="sensorConfigSelect" className="whitespace-nowrap">Sensor Config:</Label>
+                    <Select value={sensorConfig?.id || ''} onValueChange={setActiveSensorConfigId} disabled={!!runningTestSession}>
                         <SelectTrigger id="sensorConfigSelect" className="w-[200px] bg-white/80">
                         <SelectValue placeholder="Select a sensor" />
                         </SelectTrigger>
                         <SelectContent>
                             {isSensorConfigsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            sensorConfigs?.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)
+                            sensorConfigs?.filter(c => c.testBenchId === activeTestBenchId).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)
                             }
                         </SelectContent>
                     </Select>
@@ -1451,7 +1494,7 @@ function TestingComponent() {
                         </SelectTrigger>
                         <SelectContent>
                             {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productName} - {new Date(s.startTime).toLocaleString('en-US', { timeStyle: 'short' })} ({s.status})</SelectItem>)}
+                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productName} - {new Date(s.startTime).toLocaleString('en-US', { timeStyle: 'short' })} ({s.status})</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
@@ -1512,8 +1555,8 @@ function TestingComponent() {
                   <YAxis
                     stroke="hsl(var(--muted-foreground))"
                     domain={['dataMin', 'dataMax']}
-                    tickFormatter={(tick) => typeof tick === 'number' ? tick.toFixed(displayDecimals) : tick}
-                    label={{ value: sensorConfig.unit, angle: -90, position: 'insideLeft' }}
+                    tickFormatter={(tick) => typeof tick === 'number' && sensorConfig ? tick.toFixed(sensorConfig.decimalPlaces) : tick}
+                    label={{ value: sensorConfig?.unit, angle: -90, position: 'insideLeft' }}
                   />
                   <Tooltip
                     contentStyle={{
@@ -1521,11 +1564,11 @@ function TestingComponent() {
                       borderColor: 'hsl(var(--border))',
                       backdropFilter: 'blur(4px)',
                     }}
-                    formatter={(value: number, name: string, props) => [`${Number(value).toFixed(displayDecimals)} ${sensorConfig.unit}`, props.payload.name.toFixed(2) + 's']}
+                    formatter={(value: number, name: string, props) => [`${Number(value).toFixed(sensorConfig?.decimalPlaces ?? 2)} ${sensorConfig?.unit}`, props.payload.name.toFixed(2) + 's']}
                   />
                   <Legend verticalAlign="top" height={36} />
                   {Array.isArray(chartData) ? (
-                     <Line type="monotone" data={chartData} dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig.name} (${sensorConfig.unit})`} dot={false} strokeWidth={2} />
+                     <Line type="monotone" data={chartData} dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig?.name} (${sensorConfig?.unit})`} dot={false} strokeWidth={2} />
                   ) : (
                     Object.entries(chartData).map(([sessionId, data], index) => {
                        const session = testSessions?.find(s => s.id === sessionId);
@@ -1551,14 +1594,14 @@ function TestingComponent() {
                         <TableHeader>
                         <TableRow>
                             <TableHead>Timestamp</TableHead>
-                            <TableHead className="text-right">Value ({sensorConfig.unit})</TableHead>
+                            <TableHead className="text-right">Value ({sensorConfig?.unit})</TableHead>
                         </TableRow>
                         </TableHeader>
                         <TableBody>
                         {dataLog.map((entry: any, index: number) => (
                             <TableRow key={entry.id || index}>
                             <TableCell>{new Date(entry.timestamp).toLocaleTimeString('en-US')}</TableCell>
-                            <TableCell className="text-right">{convertRawValue(entry.value, sensorConfig).toFixed(displayDecimals)}</TableCell>
+                            <TableCell className="text-right">{sensorConfig ? convertRawValue(entry.value, sensorConfig).toFixed(sensorConfig.decimalPlaces) : entry.value}</TableCell>
                             </TableRow>
                         ))}
                         </TableBody>
@@ -1579,8 +1622,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-
-
-
-    

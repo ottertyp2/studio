@@ -56,11 +56,15 @@
         },
         "sensorConfigId": {
           "type": "string",
-          "description": "Reference to SensorConfiguration. (Relationship: SensorConfiguration 1:N SensorData)"
+          "description": "Reference to SensorConfiguration."
         },
         "testSessionId": {
             "type": "string",
             "description": "Reference to the test session this data point belongs to."
+        },
+        "testBenchId": {
+            "type": "string",
+            "description": "Reference to the test bench this data point was recorded on."
         }
       },
       "required": [
@@ -69,7 +73,8 @@
         "value",
         "convertedValue",
         "unit",
-        "sensorConfigId"
+        "sensorConfigId",
+        "testBenchId"
       ]
     },
     "SensorConfiguration": {
@@ -104,11 +109,16 @@
         },
         "decimalPlaces": {
             "type": "number"
+        },
+        "testBenchId": {
+            "type": "string",
+            "description": "Reference to the TestBench this configuration belongs to."
         }
       },
       "required": [
         "id",
-        "mode"
+        "mode",
+        "testBenchId"
       ]
     },
     "AnalysisResult": {
@@ -167,12 +177,13 @@
             "startTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test started." },
             "endTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test ended." },
             "status": { "type": "string", "enum": ["RUNNING", "COMPLETED", "SCRAPPED"], "description": "The status of the test session." },
+            "testBenchId": { "type": "string", "description": "The test bench used for this test." },
             "sensorConfigurationId": { "type": "string", "description": "The sensor configuration used for this test." },
             "measurementType": { "type": "string", "enum": ["DEMO", "ARDUINO"], "description": "The source of the measurement data." },
             "userId": { "type": "string", "description": "The ID of the user who started the session." },
             "username": { "type": "string", "description": "The username of the user who started the session." }
         },
-        "required": ["id", "productId", "productName", "startTime", "status", "sensorConfigurationId", "measurementType", "userId", "username"]
+        "required": ["id", "productId", "productName", "startTime", "status", "testBenchId", "sensorConfigurationId", "measurementType", "userId", "username"]
     },
     "Product": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -184,6 +195,19 @@
             "name": { "type": "string", "description": "The name of the product." }
         },
         "required": ["id", "name"]
+    },
+    "TestBench": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "TestBench",
+      "type": "object",
+      "description": "Represents a physical test bench or sensor unit.",
+      "properties": {
+          "id": { "type": "string", "description": "Unique identifier for the test bench." },
+          "name": { "type": "string", "description": "The name of the test bench." },
+          "location": { "type": "string", "description": "The physical location of the test bench." },
+          "description": { "type": "string", "description": "A description of the test bench." }
+      },
+      "required": ["id", "name"]
     },
     "MLModel": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -208,7 +232,7 @@
         "id": { "type": "string", "description": "Unique identifier for the dataset." },
         "name": { "type": "string", "description": "The name of the dataset." },
         "description": { "type": "string", "description": "A brief description of the dataset." },
-        "storagePath": { "type": a"string", "description": "Path to the dataset file in Firebase Storage, or a reference URL." }
+        "storagePath": { "type": "string", "description": "Path to the dataset file in Firebase Storage, or a reference URL." }
       },
       "required": ["id", "name", "storagePath"]
     }
@@ -248,6 +272,14 @@
             "$ref": "#/entities/SensorConfiguration"
           },
           "description": "Stores all sensor configurations globally."
+        }
+      },
+      {
+        "path": "/testbenches/{testBenchId}",
+        "definition": {
+          "entityName": "TestBench",
+          "schema": { "$ref": "#/entities/TestBench" },
+          "description": "Stores all available test benches."
         }
       },
       {

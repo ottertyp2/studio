@@ -54,7 +54,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
@@ -72,6 +72,7 @@ type SensorConfig = {
     arduinoVoltage: number;
     decimalPlaces: number;
     ownerId?: string;
+    testBenchId: string;
 };
 
 type AppUser = {
@@ -85,6 +86,13 @@ type Product = {
     id: string;
     name: string;
 };
+
+type TestBench = {
+    id: string;
+    name: string;
+    location?: string;
+    description?: string;
+}
 
 type MLModel = {
     id: string;
@@ -106,6 +114,7 @@ type SensorData = {
   timestamp: string;
   value: number;
   testSessionId?: string;
+  testBenchId: string;
 }
 
 type TestSession = {
@@ -117,6 +126,7 @@ type TestSession = {
     startTime: string;
     endTime?: string;
     status: 'RUNNING' | 'COMPLETED' | 'SCRAPPED';
+    testBenchId: string;
     sensorConfigurationId: string;
     measurementType: 'DEMO' | 'ARDUINO';
     demoType?: 'LEAK' | 'DIFFUSION';
@@ -166,6 +176,8 @@ export default function AdminPage() {
   const [sessionUserFilter, setSessionUserFilter] = useState('all');
   const [sessionProductFilter, setSessionProductFilter] = useState('all');
 
+  const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
+
 
   useEffect(() => {
     if (!isUserLoading) {
@@ -202,6 +214,13 @@ export default function AdminPage() {
   }, [firestore]);
 
   const { data: products, isLoading: isProductsLoading } = useCollection<Product>(productsCollectionRef);
+
+  const testBenchesCollectionRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'testbenches');
+  }, [firestore]);
+
+  const { data: testBenches, isLoading: isTestBenchesLoading } = useCollection<TestBench>(testBenchesCollectionRef);
 
   const mlModelsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -256,6 +275,29 @@ export default function AdminPage() {
     }
   }, [sensorConfigs, activeSensorConfigId]);
 
+  const handleAddTestBench = () => {
+    if (!firestore || !newTestBench.name?.trim()) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Test bench name is required.' });
+      return;
+    }
+    const newId = doc(collection(firestore, '_')).id;
+    const docToSave: TestBench = {
+      id: newId,
+      name: newTestBench.name,
+      location: newTestBench.location || '',
+      description: newTestBench.description || ''
+    };
+    addDocumentNonBlocking(testBenchesCollectionRef, docToSave);
+    toast({ title: 'Test Bench Added', description: `Added "${docToSave.name}" to the catalog.` });
+    setNewTestBench({ name: '', location: '', description: '' });
+  };
+
+  const handleDeleteTestBench = (benchId: string) => {
+    if (!firestore) return;
+    deleteDocumentNonBlocking(doc(firestore, 'testbenches', benchId));
+    toast({ title: 'Test Bench Deleted' });
+  };
+
 
   const handleConfigChange = (field: keyof SensorConfig, value: any) => {
     if (!tempSensorConfig) return;
@@ -290,8 +332,12 @@ export default function AdminPage() {
   }
 
   const handleSaveSensorConfig = () => {
-    if (!tempSensorConfig || !tempSensorConfig.name || tempSensorConfig.name.trim() === '') {
+    if (!tempSensorConfig || !tempSensorConfig.name?.trim()) {
         toast({ variant: 'destructive', title: 'Invalid Input', description: 'Configuration name cannot be empty.'});
+        return;
+    }
+    if (!tempSensorConfig.testBenchId) {
+        toast({ variant: 'destructive', title: 'Invalid Input', description: 'A test bench must be selected.'});
         return;
     }
     if (tempSensorConfig.mode === 'CUSTOM' && (!tempSensorConfig.unit || tempSensorConfig.unit.trim() === '')) {
@@ -313,6 +359,7 @@ export default function AdminPage() {
       arduinoVoltage: tempSensorConfig.arduinoVoltage || 5,
       decimalPlaces: tempSensorConfig.decimalPlaces || 0,
       ownerId: tempSensorConfig.ownerId || user.uid,
+      testBenchId: tempSensorConfig.testBenchId,
     };
 
     const configRef = doc(firestore, `sensor_configurations`, configId);
@@ -330,6 +377,10 @@ export default function AdminPage() {
         toast({ variant: 'destructive', title: 'Authentication Error', description: 'You must be logged in to create a configuration.'});
         return;
     }
+    if (!testBenches || testBenches.length === 0) {
+        toast({ variant: 'destructive', title: 'Prerequisite Missing', description: 'Please create a Test Bench before adding a sensor configuration.'});
+        return;
+    }
     setTempSensorConfig({
       name: `New Sensor ${sensorConfigs?.length ? sensorConfigs.length + 1 : 1}`,
       mode: 'RAW',
@@ -339,6 +390,7 @@ export default function AdminPage() {
       arduinoVoltage: 5,
       decimalPlaces: 0,
       ownerId: user.uid,
+      testBenchId: testBenches[0].id,
     });
   };
 
@@ -387,6 +439,12 @@ export default function AdminPage() {
         toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
         return;
     }
+    
+    const activeConfig = sensorConfigs?.find(c => c.id === activeSensorConfigId);
+    if (!activeConfig) {
+        toast({variant: 'destructive', title: 'Error', description: 'Active sensor configuration not found.'});
+        return;
+    }
 
     if (!['LEAK', 'DIFFUSION'].includes(tempTestSession.demoType || '')) {
       toast({ variant:'destructive', title:'Error', description:'Please select a simulation type.' });
@@ -408,6 +466,7 @@ export default function AdminPage() {
       description: tempTestSession.description || `Admin Demo - ${tempTestSession.demoType}`,
       startTime: new Date().toISOString(),
       status: 'RUNNING',
+      testBenchId: activeConfig.testBenchId,
       sensorConfigurationId: activeSensorConfigId,
       measurementType: 'DEMO',
       demoType: tempTestSession.demoType,
@@ -471,7 +530,7 @@ export default function AdminPage() {
     }
   };
   
-    const handleCreateUser = async () => {
+  const handleCreateUser = async () => {
     if (!auth || !firestore) {
       toast({ variant: 'destructive', title: 'Initialization Error', description: 'Firebase services not available.' });
       return;
@@ -905,6 +964,18 @@ export default function AdminPage() {
                     <Input id="configName" value={tempSensorConfig.name || ''} onChange={(e) => handleConfigChange('name', e.target.value)} />
                 </div>
                 <div>
+                  <Label htmlFor="testBenchSelect">Test Bench</Label>
+                  <Select value={tempSensorConfig.testBenchId} onValueChange={(value) => handleConfigChange('testBenchId', value)}>
+                    <SelectTrigger id="testBenchSelect">
+                      <SelectValue placeholder="Select a test bench" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {isTestBenchesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                       testBenches?.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
                   <Label htmlFor="conversionMode">Display Mode</Label>
                   <Select value={tempSensorConfig.mode} onValueChange={(value) => handleConfigChange('mode', value)}>
                     <SelectTrigger id="conversionMode">
@@ -943,7 +1014,7 @@ export default function AdminPage() {
                         )}
                         <div>
                             <Label htmlFor="decimalPlacesInput">Decimal Places</Label>
-                            <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces || 0} onChange={(e) => handleConfigChange('decimalPlaces', e.target.value)} />
+                            <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces || 0} onChange={(e) => handleConfigChange('decimalPlaces', parseInt(e.target.value))} />
                         </div>
                     </div>
                  )}
@@ -1392,10 +1463,12 @@ export default function AdminPage() {
                 Management Panel
                 </CardTitle>
                 <div className="flex items-center gap-2">
-                    <Button onClick={() => router.push('/testing')} variant="outline">
-                        <FlaskConical className="h-4 w-4 mr-2" />
-                        Go to Testing
-                    </Button>
+                    {user && (
+                      <Button onClick={() => router.push('/testing')} variant="outline">
+                          <FlaskConical className="h-4 w-4 mr-2" />
+                          Go to Testing
+                      </Button>
+                    )}
                     <Button onClick={handleSignOut} variant="ghost">
                         <LogOut className="h-4 w-4 mr-2" />
                         Logout
@@ -1412,6 +1485,60 @@ export default function AdminPage() {
       <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1 space-y-6">
              <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+                  <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
+                      <AccordionItem value="item-1">
+                          <AccordionTrigger className="p-6">
+                            <CardHeader className="p-0 text-left">
+                                <CardTitle>Test Bench Management</CardTitle>
+                                <CardDescription>Manage physical test benches.</CardDescription>
+                            </CardHeader>
+                          </AccordionTrigger>
+                          <AccordionContent className="p-6 pt-0">
+                              <div className="flex flex-col gap-2 mb-4 p-4 border rounded-lg">
+                                  <h3 className="font-semibold">New Test Bench</h3>
+                                  <Input placeholder="Name..." value={newTestBench.name || ''} onChange={(e) => setNewTestBench(p => ({...p, name: e.target.value}))} />
+                                  <Input placeholder="Location..." value={newTestBench.location || ''} onChange={(e) => setNewTestBench(p => ({...p, location: e.target.value}))} />
+                                  <Input placeholder="Description..." value={newTestBench.description || ''} onChange={(e) => setNewTestBench(p => ({...p, description: e.target.value}))} />
+                                  <Button onClick={handleAddTestBench} size="sm">Add Bench</Button>
+                              </div>
+                              {isTestBenchesLoading ? <p>Loading test benches...</p> :
+                              <ScrollArea className="h-64">
+                                  <div className="space-y-4">
+                                      {testBenches?.map(b => (
+                                          <Card key={b.id} className='p-4'>
+                                              <div className='flex justify-between items-center'>
+                                                  <div>
+                                                      <p className='font-semibold'>{b.name}</p>
+                                                      <p className="text-sm text-muted-foreground">{b.location}</p>
+                                                  </div>
+                                                    <AlertDialog>
+                                                      <AlertDialogTrigger asChild>
+                                                          <Button size="sm" variant="destructive">Delete</Button>
+                                                      </AlertDialogTrigger>
+                                                      <AlertDialogContent>
+                                                          <AlertDialogHeader>
+                                                              <AlertDialogTitle className="text-destructive">Delete Test Bench?</AlertDialogTitle>
+                                                              <AlertDialogDescription>
+                                                                  Are you sure you want to delete "{b.name}"? This action cannot be undone.
+                                                              </AlertDialogDescription>
+                                                          </AlertDialogHeader>
+                                                          <AlertDialogFooter>
+                                                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                              <AlertDialogAction variant="destructive" onClick={() => handleDeleteTestBench(b.id)}>Delete</AlertDialogAction>
+                                                          </AlertDialogFooter>
+                                                      </AlertDialogContent>
+                                                  </AlertDialog>
+                                              </div>
+                                          </Card>
+                                      ))}
+                                  </div>
+                              </ScrollArea>
+                              }
+                          </AccordionContent>
+                      </AccordionItem>
+                  </Accordion>
+              </Card>
+              <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
                   <Accordion type="single" collapsible className="w-full">
                       <AccordionItem value="item-1">
                           <AccordionTrigger className="p-6">
@@ -1435,6 +1562,7 @@ export default function AdminPage() {
                                                   <div>
                                                       <p className='font-semibold'>{c.name}</p>
                                                       <p className="text-sm text-muted-foreground">{c.mode} ({c.unit})</p>
+                                                      <p className="text-xs text-muted-foreground">Bench: {testBenches?.find(b => b.id === c.testBenchId)?.name || 'N/A'}</p>
                                                   </div>
                                                   <div className='flex gap-2'>
                                                       <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
