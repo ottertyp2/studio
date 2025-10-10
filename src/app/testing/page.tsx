@@ -1,4 +1,3 @@
-
 'use client';
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -666,7 +665,7 @@ function TestingComponent() {
 
 
   useEffect(() => {
-    if (runningTestSession && runningTestSession.measurementType === 'DEMO' && !demoIntervalRef.current) {
+    if (runningTestSession && runningTestSession.measurementType === 'DEMO' && !demoIntervalRef.current && runningTestSession.userId === user?.uid) {
         let step = 0;
         const totalSteps = 240; // ~2 minutes of data
         lastValuesRef.current = [];
@@ -713,7 +712,7 @@ function TestingComponent() {
        lastValuesRef.current = [];
        setIsDemoRunning(false);
     };
-  }, [runningTestSession, handleNewDataPoint, handleStopTestSession]);
+  }, [runningTestSession, handleNewDataPoint, handleStopTestSession, user?.uid]);
   
   const handleAiAnalysis = async () => {
       if (!selectedAnalysisModelName) {
@@ -1710,5 +1709,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
