@@ -387,10 +387,10 @@ function TestingComponent() {
     if (readerRef.current) {
         try {
             await readerRef.current.cancel();
+            await readerRef.current.releaseLock();
         } catch (error) {
             // Ignore cancel errors
         } finally {
-          readerRef.current.releaseLock();
           readerRef.current = null;
         }
     }
@@ -1338,7 +1338,7 @@ function TestingComponent() {
                 BioThrust Live Dashboard
                 </CardTitle>
                  <div className="flex items-center gap-2">
-                    {user && userRole === 'superadmin' && (
+                    {user && (
                         <Button onClick={() => router.push('/admin')} variant="outline">
                             <Cog className="h-4 w-4 mr-2" />
                             Manage
@@ -1570,3 +1570,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    

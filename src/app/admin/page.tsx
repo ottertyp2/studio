@@ -1385,7 +1385,7 @@ export default function AdminPage() {
                                                           <AlertDialogHeader>
                                                               <AlertDialogTitle className="text-destructive">Permanently Delete Configuration?</AlertDialogTitle>
                                                               <AlertDialogDescription>
-                                                              Are you sure you want to delete the configuration "{c.name}"? This will also delete all associated sensor data. This action cannot be undone.
+                                                               Are you sure you want to delete the configuration "{c.name}"? This will also delete all associated sensor data. This action cannot be undone.
                                                               </AlertDialogDescription>
                                                           </AlertDialogHeader>
                                                           <AlertDialogFooter>
