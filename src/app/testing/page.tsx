@@ -71,6 +71,7 @@ import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, se
 import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc, orderBy, deleteDoc } from 'firebase/firestore';
 import { signOut } from '@/firebase/non-blocking-login';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { convertRawValue } from '@/lib/utils';
 
 
 type SensorData = {
@@ -279,20 +280,6 @@ function TestingComponent() {
     return selectedConfig;
   }, [sensorConfigs, activeSensorConfigId, activeTestSession]);
 
-  const convertRawValue = useCallback((rawValue: number) => {
-    if (!sensorConfig) return rawValue;
-
-    switch (sensorConfig.mode) {
-        case 'VOLTAGE':
-            return (rawValue / 1023) * sensorConfig.arduinoVoltage;
-        case 'CUSTOM':
-            return sensorConfig.min + (rawValue / 1023) * (sensorConfig.max - sensorConfig.min);
-        case 'RAW':
-        default:
-            return rawValue;
-    }
-  }, [sensorConfig]);
-
   useEffect(() => {
     if (runningTestSession) {
         setActiveSensorConfigId(runningTestSession.sensorConfigurationId);
@@ -336,28 +323,35 @@ function TestingComponent() {
 
   const dataLog = useMemo(() => {
     let log: SensorData[] = [];
-
-    // Merge cloud data and unique local data
-    if (cloudDataLog) {
+    const cloudDataIsReady = cloudDataLog && !isCloudDataLoading;
+  
+    // Use cloud data if it's ready and relevant sessions are selected
+    if (cloudDataIsReady && selectedSessionIds.length > 0) {
       log = [...cloudDataLog];
     }
+    
+    // Merge unique local data
     const cloudDataTimestamps = new Set(log.map(d => d.timestamp));
     const uniqueLocalData = localDataLog.filter(d => !cloudDataTimestamps.has(d.timestamp));
     log.push(...uniqueLocalData);
     
+    // If no sessions are selected and we are not connected, show nothing.
     if (selectedSessionIds.length === 0 && !isConnected) {
       return [];
     }
 
     return log.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [cloudDataLog, localDataLog, selectedSessionIds, isConnected]);
+  }, [cloudDataLog, isCloudDataLoading, localDataLog, selectedSessionIds, isConnected]);
   
   const currentValue = useMemo(() => {
     if (localDataLog && localDataLog.length > 0) {
         return localDataLog[0].value;
     }
+    if (dataLog && dataLog.length > 0) {
+        return dataLog[0].value;
+    }
     return null;
-  }, [localDataLog]);
+  }, [localDataLog, dataLog]);
 
   const handleStopTestSession = useCallback(async (sessionId: string) => {
       if (!firestore) return;
@@ -371,6 +365,7 @@ function TestingComponent() {
       await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
       runningTestSessionRef.current = null;
   
+      // Don't clear local log, just stop writing
       toast({ title: 'Test Session Ended' });
   }, [firestore, stopDemoMode, testSessions]);
   
@@ -479,18 +474,6 @@ function TestingComponent() {
 
   const handleStartNewTestSession = async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
     const currentUser = users?.find(u => u.id === user?.uid);
-
-    console.log('DEBUG: handleStartNewTestSession called', {
-        options,
-        tempTestSession,
-        activeSensorConfigId,
-        firestore: !!firestore,
-        products: products || 'not loaded',
-        user: user ? { uid: user.uid, email: user.email } : 'not loaded',
-        users: users || 'not loaded',
-        testSessions: testSessions || 'not loaded',
-        currentUser: currentUser || 'not found',
-    });
 
     if (runningTestSession) {
         toast({variant: 'destructive', title: 'Error Starting Session', description: 'A test session is already running.'});
@@ -734,7 +717,7 @@ function TestingComponent() {
     }
     
     const convertedDataLog = dataLog.map(entry => {
-        const converted = convertRawValue(entry.value);
+        const converted = convertRawValue(entry.value, sensorConfig);
         return {
             ...entry,
             convertedValue: typeof converted === 'number' ? converted.toFixed(sensorConfig.decimalPlaces) : converted
@@ -925,7 +908,7 @@ function TestingComponent() {
                     const elapsedSeconds = (new Date(d.timestamp).getTime() - sessionStartTime) / 1000;
                     return {
                         name: elapsedSeconds,
-                        value: convertRawValue(d.value)
+                        value: convertRawValue(d.value, sensorConfig)
                     };
                 });
             
@@ -946,7 +929,7 @@ function TestingComponent() {
 
     let mappedData = visibleData.map(d => ({
         name: (new Date(d.timestamp).getTime() - startTime) / 1000,
-        value: convertRawValue(d.value)
+        value: convertRawValue(d.value, sensorConfig)
     }));
 
     if (chartInterval !== 'all' && !editingSessionId) {
@@ -961,10 +944,10 @@ function TestingComponent() {
     
     return mappedData;
 
-  }, [dataLog, chartInterval, convertRawValue, selectedSessionIds, testSessions, activeTestSession, runningTestSession, editingSessionId]);
+  }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, activeTestSession, runningTestSession, editingSessionId]);
 
   
-  const displayValue = currentValue !== null ? convertRawValue(currentValue) : null;
+  const displayValue = currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
   const displayDecimals = sensorConfig.decimalPlaces;
   
   const chartColors = [
@@ -1035,6 +1018,80 @@ function TestingComponent() {
     </div>
   );
 
+  const renderProductManagement = () => {
+    return (
+        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+            <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
+                <AccordionItem value="item-1">
+                    <AccordionTrigger className="p-6">
+                        <CardHeader className="p-0 text-left">
+                            <CardTitle>Product Management</CardTitle>
+                            <CardDescription>Add, view, and remove your products.</CardDescription>
+                        </CardHeader>
+                    </AccordionTrigger>
+                    <AccordionContent className="p-6 pt-0">
+                        <div className="flex gap-2 mb-4">
+                            <Input
+                                placeholder="New product name..."
+                                value={newProductName}
+                                onChange={(e) => setNewProductName(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleAddProduct()}
+                            />
+                            <Button onClick={handleAddProduct} disabled={!newProductName.trim()}>
+                                <PackagePlus className="h-4 w-4 mr-2" />
+                                Add
+                            </Button>
+                        </div>
+                        <ScrollArea className="h-40">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Product Name</TableHead>
+                                        <TableHead className="text-right">Action</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {isProductsLoading ? (
+                                        <TableRow><TableCell colSpan={2} className="text-center">Loading products...</TableCell></TableRow>
+                                    ) : products && products.length > 0 ? (
+                                        products.map(p => (
+                                            <TableRow key={p.id}>
+                                                <TableCell>{p.name}</TableCell>
+                                                <TableCell className="text-right">
+                                                    <AlertDialog>
+                                                        <AlertDialogTrigger asChild>
+                                                            <Button variant="ghost" size="icon" disabled={!user}>
+                                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                                            </Button>
+                                                        </AlertDialogTrigger>
+                                                        <AlertDialogContent>
+                                                            <AlertDialogHeader>
+                                                                <AlertDialogTitle>Delete Product?</AlertDialogTitle>
+                                                                <AlertDialogDescription>
+                                                                    Are you sure you want to delete "{p.name}"? This cannot be undone. Associated test sessions will not be deleted but will reference a missing product.
+                                                                </AlertDialogDescription>
+                                                            </AlertDialogHeader>
+                                                            <AlertDialogFooter>
+                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                <AlertDialogAction variant="destructive" onClick={() => handleDeleteProduct(p.id)}>Confirm Delete</AlertDialogAction>
+                                                            </AlertDialogFooter>
+                                                        </AlertDialogContent>
+                                                    </AlertDialog>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))
+                                    ) : (
+                                        <TableRow><TableCell colSpan={2} className="text-center">No products found.</TableCell></TableRow>
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </ScrollArea>
+                    </AccordionContent>
+                </AccordionItem>
+            </Accordion>
+        </Card>
+    );
+  }
 
   const renderLiveTab = () => (
     <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
@@ -1251,82 +1308,6 @@ function TestingComponent() {
     </Card>
   );
 
-  const renderProductManagement = () => {
-    if (runningTestSession) return null;
-    return (
-        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-            <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
-                <AccordionItem value="item-1">
-                    <AccordionTrigger className="p-6">
-                        <CardHeader className="p-0 text-left">
-                            <CardTitle>Product Management</CardTitle>
-                            <CardDescription>Add, view, and remove your products.</CardDescription>
-                        </CardHeader>
-                    </AccordionTrigger>
-                    <AccordionContent className="p-6 pt-0">
-                        <div className="flex gap-2 mb-4">
-                            <Input
-                                placeholder="New product name..."
-                                value={newProductName}
-                                onChange={(e) => setNewProductName(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleAddProduct()}
-                            />
-                            <Button onClick={handleAddProduct} disabled={!newProductName.trim()}>
-                                <PackagePlus className="h-4 w-4 mr-2" />
-                                Add
-                            </Button>
-                        </div>
-                        <ScrollArea className="h-40">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Product Name</TableHead>
-                                        <TableHead className="text-right">Action</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {isProductsLoading ? (
-                                        <TableRow><TableCell colSpan={2} className="text-center">Loading products...</TableCell></TableRow>
-                                    ) : products && products.length > 0 ? (
-                                        products.map(p => (
-                                            <TableRow key={p.id}>
-                                                <TableCell>{p.name}</TableCell>
-                                                <TableCell className="text-right">
-                                                    <AlertDialog>
-                                                        <AlertDialogTrigger asChild>
-                                                            <Button variant="ghost" size="icon" disabled={!user}>
-                                                                <Trash2 className="h-4 w-4 text-destructive" />
-                                                            </Button>
-                                                        </AlertDialogTrigger>
-                                                        <AlertDialogContent>
-                                                            <AlertDialogHeader>
-                                                                <AlertDialogTitle>Delete Product?</AlertDialogTitle>
-                                                                <AlertDialogDescription>
-                                                                    Are you sure you want to delete "{p.name}"? This cannot be undone. Associated test sessions will not be deleted but will reference a missing product.
-                                                                </AlertDialogDescription>
-                                                            </AlertDialogHeader>
-                                                            <AlertDialogFooter>
-                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                <AlertDialogAction variant="destructive" onClick={() => handleDeleteProduct(p.id)}>Confirm Delete</AlertDialogAction>
-                                                            </AlertDialogFooter>
-                                                        </AlertDialogContent>
-                                                    </AlertDialog>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))
-                                    ) : (
-                                        <TableRow><TableCell colSpan={2} className="text-center">No products found.</TableCell></TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </ScrollArea>
-                    </AccordionContent>
-                </AccordionItem>
-            </Accordion>
-        </Card>
-    );
-  }
-
   
   if (isUserLoading || !user) {
     return (
@@ -1403,7 +1384,7 @@ function TestingComponent() {
                 </div>
             </Card>
           ) : (
-             renderProductManagement()
+            renderProductManagement()
           )}
           <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
             <CardHeader>
@@ -1473,7 +1454,7 @@ function TestingComponent() {
                       <SelectItem value="10">10 Seconds</SelectItem>
                       <SelectItem value="30">30 Seconds</SelectItem>
                       <SelectItem value="60">1 Minute</SelectItem>
-                      <SelectItem value="300">5 Minutes</SectectItem>
+                      <SelectItem value="300">5 Minutes</SelectItem>
                       <SelectItem value="900">15 Minutes</SelectItem>
                       <SelectItem value="all">All Data</SelectItem>
                     </SelectContent>
@@ -1562,7 +1543,7 @@ function TestingComponent() {
                         {dataLog.map((entry: any, index: number) => (
                             <TableRow key={entry.id || index}>
                             <TableCell>{new Date(entry.timestamp).toLocaleTimeString('en-US')}</TableCell>
-                            <TableCell className="text-right">{convertRawValue(entry.value).toFixed(displayDecimals)}</TableCell>
+                            <TableCell className="text-right">{convertRawValue(entry.value, sensorConfig).toFixed(displayDecimals)}</TableCell>
                             </TableRow>
                         ))}
                         </TableBody>
@@ -1583,5 +1564,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
