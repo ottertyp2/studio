@@ -188,51 +188,51 @@ export default function AdminPage() {
   }, [user, isUserLoading, router]);
   
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, `sensor_configurations`);
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
-      if (!firestore) return null;
+      if (!firestore || !user) return null;
       return collection(firestore, `test_sessions`);
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
   
   const usersCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'users');
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: users, isLoading: isUsersLoading } = useCollection<AppUser>(usersCollectionRef);
 
   const productsCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'products');
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: products, isLoading: isProductsLoading } = useCollection<Product>(productsCollectionRef);
 
   const testBenchesCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'testbenches');
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: testBenches, isLoading: isTestBenchesLoading } = useCollection<TestBench>(testBenchesCollectionRef);
 
   const mlModelsCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'mlModels');
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: mlModels, isLoading: isMlModelsLoading } = useCollection<MLModel>(mlModelsCollectionRef);
 
   const trainDataSetsCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'trainDataSets');
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: trainDataSets, isLoading: isTrainDataSetsLoading } = useCollection<TrainDataSet>(trainDataSetsCollectionRef);
 
@@ -1615,3 +1615,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    

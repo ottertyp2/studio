@@ -191,16 +191,16 @@ function TestingComponent() {
   const [newProductName, setNewProductName] = useState('');
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, `test_sessions`);
-  }, [firestore]);
+  }, [firestore, user]);
   
   const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
   
   const usersCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'users');
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: users, isLoading: isUsersLoading } = useCollection<AppUser>(usersCollectionRef);
 
@@ -211,23 +211,23 @@ function TestingComponent() {
   }, [user, isUserLoading, router]);
 
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, `sensor_configurations`);
-  }, [firestore]);
+  }, [firestore, user]);
   
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
 
   const productsCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'products');
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: products, isLoading: isProductsLoading } = useCollection<Product>(productsCollectionRef);
   
   const testBenchesCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'testbenches');
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: testBenches, isLoading: isTestBenchesLoading } = useCollection<TestBench>(testBenchesCollectionRef);
 
@@ -254,9 +254,9 @@ function TestingComponent() {
   }, [preselectedSessionId]);
 
   const mlModelsCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'mlModels');
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: mlModels, isLoading: isMlModelsLoading } = useCollection<MLModel>(mlModelsCollectionRef);
 
@@ -321,21 +321,13 @@ function TestingComponent() {
 
 
   const sensorDataCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !sensorConfig?.id) return null;
+    if (!firestore || !user || !sensorConfig?.id || selectedSessionIds.length === 0) return null;
     
-    if (selectedSessionIds.length > 0) {
-        return query(
-            collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`),
-            where('testSessionId', 'in', selectedSessionIds.slice(0, 10))
-        );
-    }
-    
-    // This condition prevents fetching all sensor data if no session is selected and not connected
     return query(
         collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`),
-        where('testSessionId', '==', '---NEVER_MATCH---')
+        where('testSessionId', 'in', selectedSessionIds.slice(0, 10))
     );
-  }, [firestore, sensorConfig?.id, selectedSessionIds]);
+  }, [firestore, user, sensorConfig?.id, selectedSessionIds]);
 
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
   
@@ -376,7 +368,7 @@ function TestingComponent() {
     }
 
     return log.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [cloudDataLog, isCloudDataLoading, localDataLog, isConnected, selectedSessionIds.length]);
+  }, [cloudDataLog, isCloudDataLoading, localDataLog, isConnected, selectedSessionIds]);
   
   const currentValue = useMemo(() => {
     if (localDataLog && localDataLog.length > 0) {
@@ -408,6 +400,8 @@ function TestingComponent() {
   }, [testSessions]);
 
   const disconnectSerial = useCallback(async () => {
+    stopDemoMode();
+
     if (runningArduinoSession) {
         await handleStopTestSession(runningArduinoSession.id);
     }
@@ -436,7 +430,7 @@ function TestingComponent() {
     setIsConnected(false);
     setLocalDataLog([]);
     toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
-  }, [handleStopTestSession, toast, runningArduinoSession]);
+  }, [handleStopTestSession, toast, runningArduinoSession, stopDemoMode]);
 
   const handleConnect = useCallback(async () => {
     if (isConnected) {
@@ -1624,3 +1618,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
