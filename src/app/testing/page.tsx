@@ -991,7 +991,9 @@ function TestingComponent() {
         visibleData = [...localDataLog].reverse();
     }
     
-    const startTime = activeTestSession ? new Date(activeTestSession.startTime).getTime() : (visibleData.length > 0 ? new Date(visibleData[0].timestamp).getTime() : Date.now());
+    const startTime = visibleData.length > 0 
+        ? new Date(visibleData[0].timestamp).getTime() 
+        : (activeTestSession ? new Date(activeTestSession.startTime).getTime() : Date.now());
 
     let mappedData = visibleData.map(d => ({
         name: (new Date(d.timestamp).getTime() - startTime) / 1000,
@@ -1636,5 +1638,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
