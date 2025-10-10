@@ -576,6 +576,10 @@ function TestingComponent() {
       toast({variant: 'destructive', title: 'Input Error', description: 'Please select a product for the session.'});
       return;
     }
+     if (options.measurementType === 'DEMO' && !options.demoType) {
+        toast({variant: 'destructive', title: 'Input Error', description: 'Please select a simulation type for the demo session.'});
+        return;
+    }
     if (!activeSensorConfigId) {
       toast({variant: 'destructive', title: 'Configuration Error', description: 'No sensor configuration is selected.'});
       return;
@@ -964,7 +968,11 @@ function TestingComponent() {
   };
 
   const handleAddProduct = () => {
-    if (!newProductName.trim() || !firestore || !productsCollectionRef) return;
+    if (!newProductName.trim()) {
+        toast({ variant: 'destructive', title: 'Invalid Input', description: 'Product name cannot be empty.' });
+        return;
+    }
+    if (!firestore || !productsCollectionRef) return;
     const newProductId = doc(collection(firestore, '_')).id;
     const productRef = doc(productsCollectionRef, newProductId);
     setDoc(productRef, { id: newProductId, name: newProductName.trim() });
@@ -1131,7 +1139,7 @@ function TestingComponent() {
                             placeholder="New product name..."
                             value={newProductName}
                             onChange={(e) => setNewProductName(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleAddProduct()}
+                            onKeyDown={(e) => e.key === 'Enter' && newProductName.trim() && handleAddProduct()}
                         />
                         <Button onClick={handleAddProduct} disabled={!newProductName.trim()}>
                             <PackagePlus className="h-4 w-4 mr-2" />
@@ -1152,7 +1160,7 @@ function TestingComponent() {
                                 ) : products && products.length > 0 ? (
                                     products.map(p => (
                                         <TableRow key={p.id}>
-                                            <TableCell>{p.name}</TableCell>
+                                            <TableCell className="truncate max-w-[200px]">{p.name}</TableCell>
                                             <TableCell className="text-right">
                                                 <AlertDialog>
                                                     <AlertDialogTrigger asChild>
@@ -1667,5 +1675,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
