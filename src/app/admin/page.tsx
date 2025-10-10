@@ -57,7 +57,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
-import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { signOut, adminCreateUser } from '@/firebase/non-blocking-login';
 import { Checkbox } from '@/components/ui/checkbox';
 
@@ -238,36 +238,46 @@ export default function AdminPage() {
   const { data: trainDataSets, isLoading: isTrainDataSetsLoading } = useCollection<TrainDataSet>(trainDataSetsCollectionRef);
 
 
-  const fetchSessionDataCounts = useCallback(async () => {
-    if (!firestore || !testSessions || !sensorConfigs) return;
-    
-    const counts: Record<string, number> = {};
-
-    for (const session of testSessions) {
-      const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
-      if (!config) {
-        counts[session.id] = 0; 
-        continue;
-      };
-
-      try {
-        const sensorDataRef = collection(firestore, `sensor_configurations/${config.id}/sensor_data`);
-        const q = query(sensorDataRef, where('testSessionId', '==', session.id));
-        const snapshot = await getDocs(q);
-        counts[session.id] = snapshot.size;
-      } catch (e) {
-          counts[session.id] = 0;
-      }
-    }
-    setSessionDataCounts(counts);
-
-  }, [firestore, testSessions, sensorConfigs]);
-
   useEffect(() => {
-    if (testSessions && sensorConfigs) {
-      fetchSessionDataCounts();
-    }
-  }, [testSessions, sensorConfigs, fetchSessionDataCounts]);
+    if (!firestore || !testSessions || !sensorConfigs) return;
+
+    const unsubscribers: (() => void)[] = [];
+
+    testSessions.forEach(session => {
+        const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
+        if (config) {
+            const sensorDataRef = collection(firestore, `sensor_configurations/${config.id}/sensor_data`);
+            const q = query(sensorDataRef, where('testSessionId', '==', session.id));
+            
+            const unsubscribe = onSnapshot(q, (snapshot) => {
+                setSessionDataCounts(prevCounts => ({
+                    ...prevCounts,
+                    [session.id]: snapshot.size,
+                }));
+            }, (error) => {
+                // You can add error handling here if needed
+                console.error(`Error fetching data count for session ${session.id}:`, error);
+                setSessionDataCounts(prevCounts => ({
+                    ...prevCounts,
+                    [session.id]: prevCounts[session.id] || 0, // Keep existing count or set to 0 on error
+                }));
+            });
+
+            unsubscribers.push(unsubscribe);
+        } else {
+            // If no config found, set count to 0
+            setSessionDataCounts(prevCounts => ({
+                ...prevCounts,
+                [session.id]: 0
+            }));
+        }
+    });
+
+    // Cleanup function
+    return () => {
+        unsubscribers.forEach(unsub => unsub());
+    };
+}, [firestore, testSessions, sensorConfigs]);
 
 
   useEffect(() => {
@@ -332,11 +342,13 @@ export default function AdminPage() {
     
     if (field === 'min' || field === 'max' || field === 'arduinoVoltage') {
         if (value === '') {
-            newConfig[field] = 0;
+            newConfig = { ...newConfig, [field]: '' }; // Allow empty input in the view
         } else {
             const num = parseFloat(value);
             if (!isNaN(num)) {
                 newConfig[field] = num;
+            } else {
+                 newConfig = { ...newConfig, [field]: '' };
             }
         }
     }
@@ -365,9 +377,9 @@ export default function AdminPage() {
       name: tempSensorConfig.name,
       mode: tempSensorConfig.mode || 'RAW',
       unit: tempSensorConfig.unit || 'RAW',
-      min: tempSensorConfig.min || 0,
-      max: tempSensorConfig.max || 1023,
-      arduinoVoltage: tempSensorConfig.arduinoVoltage || 5,
+      min: typeof tempSensorConfig.min === 'number' ? tempSensorConfig.min : 0,
+      max: typeof tempSensorConfig.max === 'number' ? tempSensorConfig.max : 1023,
+      arduinoVoltage: typeof tempSensorConfig.arduinoVoltage === 'number' ? tempSensorConfig.arduinoVoltage : 5,
       decimalPlaces: tempSensorConfig.decimalPlaces || 0,
       ownerId: tempSensorConfig.ownerId || user.uid,
       testBenchId: tempSensorConfig.testBenchId,
@@ -1652,5 +1664,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-    
