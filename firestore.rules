@@ -1,51 +1,72 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-  
+
     function isSignedIn() {
       return request.auth != null;
     }
-    
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
-    
+
     function isSuperAdmin() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
+      // Use exists() to check for document existence to prevent errors on non-existent paths.
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
     }
 
     match /users/{userId} {
+      // Publicly readable for username lookups and filtering.
       allow get, list: if true;
+      // Allow users to create their own profile upon signup.
       allow create: if isOwner(userId);
+      // Users can update their own profile, admins can update any.
       allow update: if isOwner(userId) || isSuperAdmin();
+      // Only admins can delete user profiles, and not themselves.
       allow delete: if isSuperAdmin() && request.auth.uid != userId;
     }
 
     match /sensor_configurations/{sensorConfigurationId} {
+      // Configurations are publicly viewable.
       allow get, list: if true;
+      // Any authenticated user can create configurations.
       allow create: if isSignedIn();
-      allow update, delete: if isOwner(resource.data.ownerId) || isSuperAdmin();
-    }
-    
-    match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
-      allow read, write: if true;
+      // Only the owner or an admin can modify/delete.
+      allow update, delete: if (isSignedIn() && request.auth.uid == resource.data.ownerId) || isSuperAdmin();
     }
 
+    match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
+      // Sensor data is linked to its configuration, allow writes for logged-in users.
+      // This is permissive for the demo app; in production, this could be tightened.
+      allow read, write: if isSignedIn();
+    }
+    
     match /analysis_results/{analysisResultId} {
-      allow read, write: if true;
+       allow read, write: if true;
     }
 
     match /test_sessions/{testSessionId} {
+      // Test session metadata is publicly viewable.
       allow get, list: if true;
+      // Any authenticated user can create, update, or delete sessions.
       allow create, update, delete: if isSignedIn();
     }
 
     match /products/{productId} {
+      // Product list is publicly viewable.
       allow get, list: if true;
+      // Any authenticated user can add new products.
       allow create: if isSignedIn();
+      // Only admins can modify the product catalog.
       allow update, delete: if isSuperAdmin();
+    }
+
+    match /testbenches/{testbenchId} {
+      // Test benches are publicly viewable.
+      allow get, list: if true;
+      // Any authenticated user can manage test benches.
+      allow create, update, delete: if isSignedIn();
     }
 
     match /mlModels/{mlModelId} {
