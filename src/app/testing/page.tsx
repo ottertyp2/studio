@@ -195,14 +195,14 @@ function TestingComponent() {
     return collection(firestore, `test_sessions`);
   }, [firestore, user]);
   
-  const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
+  const { data: testSessions, isLoading: isTestSessionsLoading, error: testSessionsError } = useCollection<TestSession>(testSessionsCollectionRef);
   
   const usersCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return collection(firestore, 'users');
   }, [firestore, user]);
 
-  const { data: users, isLoading: isUsersLoading } = useCollection<AppUser>(usersCollectionRef);
+  const { data: users, isLoading: isUsersLoading, error: usersError } = useCollection<AppUser>(usersCollectionRef);
 
   useEffect(() => {
     if (!isUserLoading && !user) {
@@ -210,26 +210,44 @@ function TestingComponent() {
     }
   }, [user, isUserLoading, router]);
 
+  useEffect(() => {
+    const hasPermissionError =
+      testSessionsError?.message.includes('permission-denied') ||
+      usersError?.message.includes('permission-denied') ||
+      sensorConfigsError?.message.includes('permission-denied') ||
+      productsError?.message.includes('permission-denied') ||
+      testBenchesError?.message.includes('permission-denied');
+
+    if (hasPermissionError) {
+      toast({
+        title: 'Access Denied',
+        description: 'You do not have permission. Please log in again.',
+        variant: 'destructive',
+      });
+      router.replace('/login');
+    }
+  }, [testSessionsError, usersError, sensorConfigsError, productsError, testBenchesError, router, toast]);
+
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return collection(firestore, `sensor_configurations`);
   }, [firestore, user]);
   
-  const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
+  const { data: sensorConfigs, isLoading: isSensorConfigsLoading, error: sensorConfigsError } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
 
   const productsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return collection(firestore, 'products');
   }, [firestore, user]);
 
-  const { data: products, isLoading: isProductsLoading } = useCollection<Product>(productsCollectionRef);
+  const { data: products, isLoading: isProductsLoading, error: productsError } = useCollection<Product>(productsCollectionRef);
   
   const testBenchesCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return collection(firestore, 'testbenches');
   }, [firestore, user]);
 
-  const { data: testBenches, isLoading: isTestBenchesLoading } = useCollection<TestBench>(testBenchesCollectionRef);
+  const { data: testBenches, isLoading: isTestBenchesLoading, error: testBenchesError } = useCollection<TestBench>(testBenchesCollectionRef);
 
   useEffect(() => {
     if (!isProductsLoading && products && products.length > 0 && !tempTestSession.productId) {
@@ -1618,5 +1636,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
