@@ -232,7 +232,8 @@ function TestingComponent() {
     }
   }, [user, isUserLoading, router]);
 
-  useEffect(() => {
+ useEffect(() => {
+    // Check for Permission-Error in all Collections
     const hasPermissionError =
       (testSessionsError as any)?.message.includes('permission-denied') ||
       (usersError as any)?.message.includes('permission-denied') ||
@@ -262,7 +263,7 @@ function TestingComponent() {
     }
   }, [testBenches, isTestBenchesLoading, activeTestBenchId]);
 
-  useEffect(() => {
+ useEffect(() => {
     if (activeTestBenchId && sensorConfigs) {
       const benchConfigs = sensorConfigs.filter(c => c.testBenchId === activeTestBenchId);
       if (benchConfigs.length > 0) {
@@ -577,18 +578,19 @@ function TestingComponent() {
       toast({variant: 'destructive', title: 'Input Error', description: 'Please select a product for the session.'});
       return;
     }
+    if (!tempTestSession.testBenchId) {
+      toast({variant: 'destructive', title: 'Configuration Error', description: 'Please select a Test Bench.'});
+      return;
+    }
+    if (!tempTestSession.sensorConfigurationId) {
+      toast({variant: 'destructive', title: 'Configuration Error', description: 'Please select a Sensor Configuration.'});
+      return;
+    }
      if (options.measurementType === 'DEMO' && !options.demoType) {
         toast({variant: 'destructive', title: 'Input Error', description: 'Please select a simulation type for the demo session.'});
         return;
     }
-    if (!activeSensorConfigId) {
-      toast({variant: 'destructive', title: 'Configuration Error', description: 'No sensor configuration is selected.'});
-      return;
-    }
-    if (!activeTestBenchId) {
-      toast({variant: 'destructive', title: 'Configuration Error', description: 'No test bench is selected.'});
-      return;
-    }
+
     if (!user) {
       toast({variant: 'destructive', title: 'Authentication Error', description: 'You must be logged in to start a session.'});
       return;
@@ -618,8 +620,8 @@ function TestingComponent() {
       description: tempTestSession.description || '',
       startTime: new Date().toISOString(),
       status: 'RUNNING',
-      testBenchId: activeTestBenchId,
-      sensorConfigurationId: activeSensorConfigId,
+      testBenchId: tempTestSession.testBenchId,
+      sensorConfigurationId: tempTestSession.sensorConfigurationId,
       measurementType: options.measurementType,
       userId: currentUser.id,
       username: currentUser.username,
@@ -632,7 +634,7 @@ function TestingComponent() {
       setLocalDataLog([]); // Clear old local data
       setSelectedSessionIds([newSessionId]);
       setShowNewSessionForm(false);
-      setTempTestSession(prev => ({...prev, serialNumber: '', description: ''})); // Reset for next session
+      setTempTestSession({});
       toast({ title: 'New Test Session Started', description: `Product: ${newSession.productName}`});
     } catch(e: any) {
         console.error("FirebaseError:", e);
@@ -906,8 +908,14 @@ function TestingComponent() {
   };
 
   const handleTestSessionFieldChange = (field: keyof TestSession, value: any) => {
-    if (!tempTestSession) return;
-    setTempTestSession(prev => ({...prev, [field]: value}));
+    setTempTestSession(prev => {
+        const newState = {...prev, [field]: value};
+        if (field === 'testBenchId') {
+            // Reset sensor config if bench changes
+            newState.sensorConfigurationId = undefined;
+        }
+        return newState;
+    });
   };
 
   const handleSignOut = () => {
@@ -1064,6 +1072,32 @@ function TestingComponent() {
   const renderNewSessionForm = () => (
     <div className="mt-4 p-4 border rounded-lg bg-background/50 w-full max-w-lg space-y-4">
       <h3 className="text-lg font-semibold text-center">Start New Session</h3>
+       <div>
+          <Label htmlFor="new-session-bench">Test Bench</Label>
+          <Select value={tempTestSession.testBenchId || ''} onValueChange={value => handleTestSessionFieldChange('testBenchId', value)}>
+              <SelectTrigger id="new-session-bench">
+                  <SelectValue placeholder="Select a Test Bench" />
+              </SelectTrigger>
+              <SelectContent>
+                  {isTestBenchesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                  testBenches?.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)
+                  }
+              </SelectContent>
+          </Select>
+      </div>
+      <div>
+          <Label htmlFor="new-session-sensor">Sensor Configuration</Label>
+          <Select value={tempTestSession.sensorConfigurationId || ''} onValueChange={value => handleTestSessionFieldChange('sensorConfigurationId', value)} disabled={!tempTestSession.testBenchId}>
+              <SelectTrigger id="new-session-sensor">
+                  <SelectValue placeholder="Select a Sensor" />
+              </SelectTrigger>
+              <SelectContent>
+                  {isSensorConfigsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                  sensorConfigs?.filter(c => c.testBenchId === tempTestSession.testBenchId).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)
+                  }
+              </SelectContent>
+          </Select>
+      </div>
       <div>
         <Label htmlFor="productIdentifier">Product</Label>
         <Select value={tempTestSession?.productId || ''} onValueChange={value => handleTestSessionFieldChange('productId', value)}>
@@ -1093,14 +1127,14 @@ function TestingComponent() {
                 await handleStartNewTestSession({ measurementType: 'ARDUINO' })
               }} 
               className="w-full btn-shine bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md"
-              disabled={!tempTestSession?.productId || !!runningTestSession}
+              disabled={!tempTestSession?.productId || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId || !!runningTestSession}
           >
               Start Test Bench Session
           </Button>
         ) : (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="secondary" className="w-full btn-shine shadow-md" disabled={!!runningTestSession || isConnected}>
+                <Button variant="secondary" className="w-full btn-shine shadow-md" disabled={!!runningTestSession || isConnected || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId}>
                   Start Demo Session
                 </Button>
               </AlertDialogTrigger>
@@ -1676,3 +1710,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
