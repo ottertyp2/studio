@@ -173,6 +173,7 @@ function TestingComponent() {
   
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
+  const readableStreamClosedRef = useRef<Promise<void> | null>(null);
   const runningTestSessionRef = useRef<TestSession | null>(null);
 
   const importFileRef = useRef<HTMLInputElement>(null);
@@ -213,7 +214,7 @@ function TestingComponent() {
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return collection(firestore, `sensor_configurations`);
-  }, [firestore, user]);
+  }, [firestore_user]);
   
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading, error: sensorConfigsError } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
 
@@ -321,28 +322,34 @@ function TestingComponent() {
     if (readerRef.current) {
         try {
             await readerRef.current.cancel();
-            await readerRef.current.releaseLock();
         } catch (error) {
-            // Ignore cancel errors, port may already be closed or unlocked
-        } finally {
-          readerRef.current = null;
+            // Ignore cancel errors
         }
     }
 
+    if (readableStreamClosedRef.current) {
+        try {
+            await readableStreamClosedRef.current;
+        } catch (error) {
+            // Ignore errors on stream closing
+        }
+    }
+    
     if (portRef.current) {
         try {
             await portRef.current.close();
         } catch (e) {
             console.warn("Error closing serial port:", e);
-        } finally {
-          portRef.current = null;
         }
     }
     
+    portRef.current = null;
+    readerRef.current = null;
+    readableStreamClosedRef.current = null;
     setIsConnected(false);
     setLocalDataLog([]);
     toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
-  }, [handleStopTestSession, toast, runningArduinoSession, stopDemoMode]);
+}, [handleStopTestSession, toast, runningArduinoSession, stopDemoMode]);
 
   useEffect(() => {
     if (runningTestSession && !selectedSessionIds.includes(runningTestSession.id)) {
@@ -462,8 +469,12 @@ function TestingComponent() {
     }
 
     if (portRef.current) {
-      try { await portRef.current.close(); } catch (e) { /* Ignore */ }
-      portRef.current = null;
+        try {
+            await portRef.current.close();
+        } catch (e) {
+            /* Ignore */
+        }
+        portRef.current = null;
     }
 
     try {
@@ -476,7 +487,7 @@ function TestingComponent() {
         
         while (port.readable) {
             const textDecoder = new TextDecoderStream();
-            const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+            readableStreamClosedRef.current = port.readable.pipeTo(textDecoder.writable);
             readerRef.current = textDecoder.readable.getReader();
 
             try {
@@ -510,20 +521,22 @@ function TestingComponent() {
                 }
             } finally {
                 if(readerRef.current) {
-                    readerRef.current.releaseLock();
+                    try {
+                        readerRef.current.releaseLock();
+                    } catch (lockError) {
+                        // Ignore if already unlocked
+                    }
                 }
-                await readableStreamClosed.catch(() => {});
             }
         }
-        
-        if (portRef.current) {
-          await portRef.current.close();
-        }
-        setIsConnected(false);
 
     } catch (error) {
         if ((error as Error).name !== 'NotFoundError') {
             toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish connection.' });
+        }
+    } finally {
+        if (isConnected) {
+            await disconnectSerial();
         }
     }
   }, [disconnectSerial, toast, baudRate, isConnected, handleNewDataPoint]);
@@ -1638,3 +1651,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
