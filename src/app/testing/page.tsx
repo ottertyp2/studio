@@ -241,8 +241,8 @@ function TestingComponent() {
 
     if (hasPermissionError) {
       toast({
-        title: 'Access Denied',
-        description: 'You do not have permission. Please log in again.',
+        title: 'Zugriff verweigert',
+        description: 'Du hast keine Berechtigung für diese Aktion. Bitte neu einloggen.',
         variant: 'destructive',
       });
       router.replace('/login');
