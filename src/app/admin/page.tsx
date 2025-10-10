@@ -58,7 +58,7 @@ import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { signOut } from '@/firebase/non-blocking-login';
+import { signOut, adminCreateUser } from '@/firebase/non-blocking-login';
 import { Checkbox } from '@/components/ui/checkbox';
 
 
@@ -71,6 +71,7 @@ type SensorConfig = {
     max: number;
     arduinoVoltage: number;
     decimalPlaces: number;
+    ownerId?: string;
 };
 
 type AppUser = {
@@ -153,6 +154,8 @@ export default function AdminPage() {
 
   const [newMlModel, setNewMlModel] = useState<Partial<MLModel>>({name: '', version: '1.0', description: '', fileSize: 0});
   const [newTrainDataSet, setNewTrainDataSet] = useState<Partial<TrainDataSet>>({name: '', description: '', storagePath: ''});
+  
+  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'user' });
 
   const [isAutoTraining, setIsAutoTraining] = useState(false);
   const [autoTrainingStatus, setAutoTrainingStatus] = useState<AutomatedTrainingStatus | null>(null);
@@ -295,9 +298,11 @@ export default function AdminPage() {
         toast({ variant: 'destructive', title: 'Invalid Input', description: 'The unit cannot be empty.'});
         return;
     }
-    if (!firestore) return;
+    if (!firestore || !user) return;
 
     const configId = tempSensorConfig.id || doc(collection(firestore, '_')).id;
+    const isNew = !tempSensorConfig.id;
+
     const configToSave: SensorConfig = {
       id: configId,
       name: tempSensorConfig.name,
@@ -307,7 +312,8 @@ export default function AdminPage() {
       max: tempSensorConfig.max || 1023,
       arduinoVoltage: tempSensorConfig.arduinoVoltage || 5,
       decimalPlaces: tempSensorConfig.decimalPlaces || 0,
-    }
+      ownerId: tempSensorConfig.ownerId || user.uid,
+    };
 
     const configRef = doc(firestore, `sensor_configurations`, configId);
     setDocumentNonBlocking(configRef, configToSave, { merge: true });
@@ -320,6 +326,10 @@ export default function AdminPage() {
   };
 
   const handleNewSensorConfig = () => {
+    if (!user) {
+        toast({ variant: 'destructive', title: 'Authentication Error', description: 'You must be logged in to create a configuration.'});
+        return;
+    }
     setTempSensorConfig({
       name: `New Sensor ${sensorConfigs?.length ? sensorConfigs.length + 1 : 1}`,
       mode: 'RAW',
@@ -328,6 +338,7 @@ export default function AdminPage() {
       max: 1023,
       arduinoVoltage: 5,
       decimalPlaces: 0,
+      ownerId: user.uid,
     });
   };
 
@@ -457,6 +468,32 @@ export default function AdminPage() {
             title: 'Error Deleting Session',
             description: (serverError as Error).message
         });
+    }
+  };
+  
+    const handleCreateUser = async () => {
+    if (!auth || !firestore) {
+      toast({ variant: 'destructive', title: 'Initialization Error', description: 'Firebase services not available.' });
+      return;
+    }
+    if (!newUser.username.trim() || !newUser.password.trim()) {
+      toast({ variant: 'destructive', title: 'Invalid Input', description: 'Username and password are required.' });
+      return;
+    }
+
+    try {
+      await adminCreateUser(auth, firestore, newUser.username, newUser.password, newUser.role as 'user' | 'superadmin');
+      toast({
+        title: 'User Created',
+        description: `Account for ${newUser.username} has been created successfully.`,
+      });
+      setNewUser({ username: '', password: '', role: 'user' });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to Create User',
+        description: error.message,
+      });
     }
   };
   
@@ -1084,10 +1121,34 @@ export default function AdminPage() {
                     <AccordionTrigger className="p-6">
                         <CardHeader className="p-0 text-left">
                             <CardTitle>User Management</CardTitle>
-                            <CardDescription>Manage user roles and access.</CardDescription>
+                            <CardDescription>Create users, manage roles, and access.</CardDescription>
                         </CardHeader>
                     </AccordionTrigger>
                     <AccordionContent className="p-6 pt-0">
+                        <div className="mb-6 p-4 border rounded-lg">
+                            <h3 className="text-lg font-semibold mb-2">Create New User</h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div>
+                                    <Label htmlFor="new-username">Username</Label>
+                                    <Input id="new-username" value={newUser.username} onChange={(e) => setNewUser(p => ({ ...p, username: e.target.value }))} />
+                                </div>
+                                <div>
+                                    <Label htmlFor="new-password">Password</Label>
+                                    <Input id="new-password" type="password" value={newUser.password} onChange={(e) => setNewUser(p => ({ ...p, password: e.target.value }))} />
+                                </div>
+                                <div>
+                                    <Label htmlFor="new-role">Role</Label>
+                                    <Select value={newUser.role} onValueChange={(value) => setNewUser(p => ({ ...p, role: value }))}>
+                                        <SelectTrigger id="new-role"><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="user">User</SelectItem>
+                                            <SelectItem value="superadmin">Superadmin</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+                            <Button onClick={handleCreateUser} className="mt-4">Create User Account</Button>
+                        </div>
                         <ScrollArea className="h-96">
                             <Table>
                                 <TableHeader>
@@ -1392,7 +1453,7 @@ export default function AdminPage() {
                                                               <AlertDialogCancel>Cancel</AlertDialogCancel>
                                                               <AlertDialogAction variant="destructive" onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
                                                           </AlertDialogFooter>
-                           </AlertDialogContent>
+                                                          </AlertDialogContent>
                                                       </AlertDialog>
 
                                                   </div>

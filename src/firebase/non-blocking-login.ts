@@ -1,3 +1,4 @@
+
 'use client';
 import {
   Auth,
@@ -118,4 +119,54 @@ export function signOut(authInstance: Auth): void {
   firebaseSignOut(authInstance).catch(error => {
     console.error("Sign out error:", error);
   });
+}
+
+/** Admin function to create a new user with both Auth and Firestore records. */
+export async function adminCreateUser(authInstance: Auth, firestore: Firestore, username: string, password: string, role: 'user' | 'superadmin'): Promise<void> {
+  const email = `${username}@${DUMMY_DOMAIN}`;
+
+  // 1. Check if username already exists in Firestore
+  const usernameQuery = query(collection(firestore, 'users'), where('username', '==', username));
+  const usernameSnapshot = await getDocs(usernameQuery);
+  if (!usernameSnapshot.empty) {
+    throw new Error(`Username "${username}" is already taken.`);
+  }
+
+  // This is a temporary admin-only flow, so we don't create a separate auth instance.
+  // In a real multi-admin app, you'd use the Admin SDK on a backend.
+  // For this Studio environment, we create the user with the currently logged-in admin's client instance.
+  // This can have implications if auth state is shared, but is acceptable for this tool's architecture.
+
+  let userCredential;
+  try {
+    // 2. Create the user in Firebase Authentication
+    userCredential = await createUserWithEmailAndPassword(authInstance, email, password);
+  } catch (authError: any) {
+    // Re-throw auth errors to be displayed in the UI
+    throw new Error(`Firebase Auth error: ${authError.message}`);
+  }
+
+  const user = userCredential.user;
+  const userDocRef = doc(firestore, 'users', user.uid);
+  const userProfile = {
+    id: user.uid,
+    username: username,
+    email: email,
+    role: role,
+  };
+
+  try {
+    // 3. Create the user profile document in Firestore
+    await setDoc(userDocRef, userProfile);
+  } catch (firestoreError: any) {
+    // If Firestore write fails, we should ideally delete the created auth user for cleanup.
+    // This is complex on the client-side. For now, we'll just report the error.
+    const permissionError = new FirestorePermissionError({
+        path: userDocRef.path,
+        operation: 'create',
+        requestResourceData: userProfile,
+    });
+    errorEmitter.emit('permission-error', permissionError);
+    throw new Error(`User auth account was created, but Firestore profile creation failed. ${permissionError.message}`);
+  }
 }

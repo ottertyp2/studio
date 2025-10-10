@@ -1,114 +1,59 @@
+
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
+  
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function isSuperAdmin() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
+    }
 
-    /**
-     * @description Manages user profiles. Allows creating a profile with the matching user ID, and public read access.
-     * @path /users/{userId}
-     * @allow (create) - Authenticated user creates their profile with matching user ID.
-     * @allow (get, list) - Any user can read this data
-     * @deny (create) - User attempts to create a profile with a mismatched user ID.
-     * @deny (update, delete) - Only the user can update or delete their own profile.
-     * @principle Enforces document ownership for writes, allows public reads.
-     */
     match /users/{userId} {
-      allow get, list: if true; // Public list/get. Includes queries
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow update, delete: if isSignedIn() && request.auth.uid == userId;
-    }
-
-    /**
-     * @description Manages sensor data associated with sensor configurations. Allows public read, denies all writes
-     * @path /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
-     * @allow (get, list) - Any user can read the sensor data.
-     * @deny (create, update, delete) - No one can create, update, or delete sensor data.
-     * @principle Allows public read-only access to sensor data.
-     */
-    match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
       allow get, list: if true;
-      allow create, update, delete: if false;
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isSuperAdmin();
+      allow delete: if isSuperAdmin() && request.auth.uid != userId;
     }
 
-    /**
-     * @description Manages sensor configurations. Allows public read access.
-     * @path /sensor_configurations/{sensorConfigurationId}
-     * @allow (get, list) - Any user can read the sensor configurations.
-     * @deny (create, update, delete) - No one can create, update, or delete sensor configurations.
-     * @principle Allows public read-only access to sensor configurations.
-     */
     match /sensor_configurations/{sensorConfigurationId} {
       allow get, list: if true;
-      allow create, update, delete: if false;
+      allow create: if isSignedIn();
+      allow update, delete: if isOwner(resource.data.ownerId) || isSuperAdmin();
+    }
+    
+    match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
+      allow read, write: if true;
     }
 
-    /**
-     * @description Manages analysis results. Allows public read access.
-     * @path /analysis_results/{analysisResultId}
-     * @allow (get, list) - Any user can read the analysis results.
-     * @deny (create, update, delete) - No one can create, update, or delete analysis results.
-     * @principle Allows public read-only access to analysis results.
-     */
     match /analysis_results/{analysisResultId} {
-      allow get, list: if true;
-      allow create, update, delete: if false;
+      allow read, write: if true;
     }
 
-    /**
-     * @description Manages test sessions. Allows public read access.
-     * @path /test_sessions/{testSessionId}
-     * @allow (get, list) - Any user can read the test sessions.
-     * @deny (create, update, delete) - No one can create, update, or delete test sessions.
-     * @principle Allows public read-only access to test sessions.
-     */
     match /test_sessions/{testSessionId} {
       allow get, list: if true;
-      allow create, update, delete: if false;
+      allow create, update, delete: if isSignedIn();
     }
 
-    /**
-     * @description Manages products. Allows public read access.
-     * @path /products/{productId}
-     * @allow (get, list) - Any user can read the products.
-     * @deny (create, update, delete) - No one can create, update, or delete products.
-     * @principle Allows public read-only access to product information.
-     */
     match /products/{productId} {
       allow get, list: if true;
-      allow create, update, delete: if false;
+      allow create: if isSignedIn();
+      allow update, delete: if isSuperAdmin();
     }
 
-    /**
-     * @description Manages machine learning models. Allows public read access.
-     * @path /mlModels/{mlModelId}
-     * @allow (get, list) - Any user can read the machine learning models.
-     * @deny (create, update, delete) - No one can create, update, or delete machine learning models.
-     * @principle Allows public read-only access to machine learning model metadata.
-     */
     match /mlModels/{mlModelId} {
-      allow get, list: if true;
-      allow create, update, delete: if false;
+      allow read, write: if true;
     }
 
-    /**
-     * @description Manages training datasets. Allows public read access.
-     * @path /trainDataSets/{trainDataSetId}
-     * @allow (get, list) - Any user can read the training datasets.
-     * @deny (create, update, delete) - No one can create, update, or delete training datasets.
-     * @principle Allows public read-only access to training dataset metadata.
-     */
     match /trainDataSets/{trainDataSetId} {
-      allow get, list: if true;
-      allow create, update, delete: if false;
+      allow read, write: if true;
     }
-  }
-
-  // Helper function to check if the user is signed in
-  function isSignedIn() {
-    return request.auth != null;
-  }
-
-  // Helper function to check if the user is the owner of the document
-  function isOwner(userId) {
-    return request.auth.uid == userId;
   }
 }
