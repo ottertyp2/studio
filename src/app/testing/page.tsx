@@ -205,16 +205,10 @@ function TestingComponent() {
 
   const { data: users, isLoading: isUsersLoading, error: usersError } = useCollection<AppUser>(usersCollectionRef);
 
-  useEffect(() => {
-    if (!isUserLoading && !user) {
-      router.replace('/login');
-    }
-  }, [user, isUserLoading, router]);
-
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return collection(firestore, `sensor_configurations`);
-  }, [firestore_user]);
+  }, [firestore, user]);
   
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading, error: sensorConfigsError } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
 
@@ -231,14 +225,20 @@ function TestingComponent() {
   }, [firestore, user]);
 
   const { data: testBenches, isLoading: isTestBenchesLoading, error: testBenchesError } = useCollection<TestBench>(testBenchesCollectionRef);
+  
+  useEffect(() => {
+    if (!isUserLoading && !user) {
+      router.replace('/login');
+    }
+  }, [user, isUserLoading, router]);
 
   useEffect(() => {
     const hasPermissionError =
-      testSessionsError?.message.includes('permission-denied') ||
-      usersError?.message.includes('permission-denied') ||
-      sensorConfigsError?.message.includes('permission-denied') ||
-      productsError?.message.includes('permission-denied') ||
-      testBenchesError?.message.includes('permission-denied');
+      (testSessionsError as any)?.message.includes('permission-denied') ||
+      (usersError as any)?.message.includes('permission-denied') ||
+      (sensorConfigsError as any)?.message.includes('permission-denied') ||
+      (productsError as any)?.message.includes('permission-denied') ||
+      (testBenchesError as any)?.message.includes('permission-denied');
 
     if (hasPermissionError) {
       toast({
@@ -261,6 +261,19 @@ function TestingComponent() {
       setActiveTestBenchId(testBenches[0].id);
     }
   }, [testBenches, isTestBenchesLoading, activeTestBenchId]);
+
+  useEffect(() => {
+    if (activeTestBenchId && sensorConfigs) {
+      const benchConfigs = sensorConfigs.filter(c => c.testBenchId === activeTestBenchId);
+      if (benchConfigs.length > 0) {
+        if (!activeSensorConfigId || !benchConfigs.some(c => c.id === activeSensorConfigId)) {
+          setActiveSensorConfigId(benchConfigs[0].id);
+        }
+      } else {
+        setActiveSensorConfigId(null);
+      }
+    }
+  }, [activeTestBenchId, sensorConfigs, activeSensorConfigId]);
 
 
   useEffect(() => {
@@ -323,7 +336,7 @@ function TestingComponent() {
         try {
             await readerRef.current.cancel();
         } catch (error) {
-            // Ignore cancel errors
+            // Ignore cancel errors as the stream might already be closed
         }
     }
 
@@ -331,7 +344,7 @@ function TestingComponent() {
         try {
             await readableStreamClosedRef.current;
         } catch (error) {
-            // Ignore errors on stream closing
+            // Ignore errors on stream closing, it might already be closed or cancelled.
         }
     }
     
@@ -390,7 +403,7 @@ function TestingComponent() {
         setActiveSensorConfigId(runningTestSession.sensorConfigurationId);
     } else if (sensorConfigs && activeTestBenchId) {
         const benchConfigs = sensorConfigs.filter(c => c.testBenchId === activeTestBenchId);
-        if (benchConfigs.length > 0 && !activeSensorConfigId) {
+        if (benchConfigs.length > 0 && (!activeSensorConfigId || !benchConfigs.some(c => c.id === activeSensorConfigId))) {
           setActiveSensorConfigId(benchConfigs[0].id)
         }
     }
@@ -409,7 +422,8 @@ function TestingComponent() {
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
   
   const handleNewDataPoint = useCallback((newDataPoint: Omit<SensorData, 'testBenchId'>) => {
-    setLocalDataLog(prevLog => [ { ...newDataPoint, testBenchId: activeTestBenchId! }, ...prevLog].slice(0, 1000));
+    if (!activeTestBenchId) return;
+    setLocalDataLog(prevLog => [ { ...newDataPoint, testBenchId: activeTestBenchId }, ...prevLog].slice(0, 1000));
     
     const currentRunningSession = runningTestSessionRef.current;
 
@@ -485,7 +499,7 @@ function TestingComponent() {
         setLocalDataLog([]);
         toast({ title: 'Connected', description: 'Device connected. Ready to start measurement.' });
         
-        while (port.readable) {
+        while (port.readable && portRef.current === port) {
             const textDecoder = new TextDecoderStream();
             readableStreamClosedRef.current = port.readable.pipeTo(textDecoder.writable);
             readerRef.current = textDecoder.readable.getReader();
@@ -515,9 +529,11 @@ function TestingComponent() {
                     });
                 }
             } catch(e) {
-                console.error("Serial read error:", e);
-                if (portRef.current && portRef.current.readable) {
-                   toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
+                if ((e as Error).name !== 'AbortError') {
+                    console.error("Serial read error:", e);
+                    if (portRef.current && portRef.current.readable) {
+                        toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
+                    }
                 }
             } finally {
                 if(readerRef.current) {
@@ -657,7 +673,7 @@ function TestingComponent() {
                 const baseValue = startValue - ((startValue - endValue) * step / totalSteps);
                 const noise = gaussianNoise(0, 0.5); 
                 rawValue = baseValue + noise;
-                const smoothed = smoothValue(rawValue);
+                const smoothed = smoothValue(rawValue, 10);
                 rawValue = smoothed;
             } else { // DIFFUSION
                 const startValue = 950;
@@ -1504,7 +1520,7 @@ function TestingComponent() {
                 </div>
                 <div className='flex items-center gap-2'>
                     <Label htmlFor="sensorConfigSelect" className="whitespace-nowrap">Sensor Config:</Label>
-                    <Select value={sensorConfig?.id || ''} onValueChange={setActiveSensorConfigId} disabled={!!runningTestSession}>
+                    <Select value={activeSensorConfigId || ''} onValueChange={setActiveSensorConfigId} disabled={!!runningTestSession}>
                         <SelectTrigger id="sensorConfigSelect" className="w-[200px] bg-white/80">
                         <SelectValue placeholder="Select a sensor" />
                         </SelectTrigger>
@@ -1651,5 +1667,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
