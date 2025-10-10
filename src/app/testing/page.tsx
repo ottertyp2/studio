@@ -92,6 +92,7 @@ type SensorConfig = {
     arduinoVoltage: number;
     decimalPlaces: number;
     testBenchId: string;
+    ownerId?: string;
 };
 
 type AppUser = {
@@ -329,15 +330,12 @@ function TestingComponent() {
         );
     }
     
-    if (isConnected) {
-        return null;
-    }
-
+    // This condition prevents fetching all sensor data if no session is selected and not connected
     return query(
         collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`),
         where('testSessionId', '==', '---NEVER_MATCH---')
     );
-  }, [firestore, sensorConfig?.id, selectedSessionIds, isConnected]);
+  }, [firestore, sensorConfig?.id, selectedSessionIds]);
 
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
   
@@ -372,9 +370,13 @@ function TestingComponent() {
       const uniqueCloudData = cloudDataLog.filter(d => !localTimestamps.has(d.timestamp));
       log.push(...uniqueCloudData);
     }
+    
+    if (selectedSessionIds.length === 0 && !isConnected) {
+        return [];
+    }
 
     return log.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [cloudDataLog, isCloudDataLoading, localDataLog, isConnected]);
+  }, [cloudDataLog, isCloudDataLoading, localDataLog, isConnected, selectedSessionIds.length]);
   
   const currentValue = useMemo(() => {
     if (localDataLog && localDataLog.length > 0) {
@@ -628,7 +630,7 @@ function TestingComponent() {
                 const startValue = 900;
                 const endValue = 200;
                 const baseValue = startValue - ((startValue - endValue) * step / totalSteps);
-                const noise = gaussianNoise(0, 1); 
+                const noise = gaussianNoise(0, 0.5); 
                 rawValue = baseValue + noise;
                 const smoothed = smoothValue(rawValue);
                 rawValue = smoothed;
@@ -637,7 +639,7 @@ function TestingComponent() {
                 const endValue = 800;
                 const tau = totalSteps / 4;
                 rawValue = endValue + (startValue - endValue) * Math.exp(-step / tau);
-                const noise = gaussianNoise(0, 0.75);
+                const noise = gaussianNoise(0, 0.3);
                 rawValue += noise;
             }
 
@@ -939,7 +941,7 @@ function TestingComponent() {
 
   const chartData = useMemo(() => {
     if (!sensorConfig) return [];
-    const allChronologicalData = [...dataLog].reverse();
+    let allChronologicalData = [...dataLog].reverse();
 
     if (selectedSessionIds.length > 1) {
         const dataBySession: { [sessionId: string]: {name: number, value: number | null}[] } = {};
@@ -969,7 +971,7 @@ function TestingComponent() {
 
         return dataBySession;
     }
-
+    
     let visibleData = allChronologicalData;
     if (selectedSessionIds.length === 1) {
         visibleData = allChronologicalData.filter(d => d.testSessionId === selectedSessionIds[0]);
@@ -987,8 +989,8 @@ function TestingComponent() {
     if (chartInterval !== 'all' && !editingSessionId) {
         const intervalSeconds = parseInt(chartInterval, 10);
         if (runningTestSession || isConnected) {
-             const now = Date.now();
-             mappedData = mappedData.filter(dp => dp.name >= 0 && ((now - (startTime + dp.name * 1000)) / 1000 <= intervalSeconds));
+             const maxTime = mappedData.length > 0 ? Math.max(...mappedData.map(d => d.name)) : 0;
+             mappedData = mappedData.filter(dp => dp.name >= (maxTime - intervalSeconds));
         } else {
             mappedData = mappedData.filter(dp => dp.name >= 0 && dp.name <= intervalSeconds);
         }
@@ -1377,7 +1379,7 @@ function TestingComponent() {
                 BioThrust Live Dashboard
                 </CardTitle>
                  <div className="flex items-center gap-2">
-                    {user && (
+                    {user && userRole === 'superadmin' && (
                         <Button onClick={() => router.push('/admin')} variant="outline">
                             <Cog className="h-4 w-4 mr-2" />
                             Manage
