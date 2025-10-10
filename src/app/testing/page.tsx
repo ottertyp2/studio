@@ -210,24 +210,6 @@ function TestingComponent() {
     }
   }, [user, isUserLoading, router]);
 
-  useEffect(() => {
-    const hasPermissionError =
-      testSessionsError?.message.includes('permission-denied') ||
-      usersError?.message.includes('permission-denied') ||
-      sensorConfigsError?.message.includes('permission-denied') ||
-      productsError?.message.includes('permission-denied') ||
-      testBenchesError?.message.includes('permission-denied');
-
-    if (hasPermissionError) {
-      toast({
-        title: 'Access Denied',
-        description: 'You do not have permission. Please log in again.',
-        variant: 'destructive',
-      });
-      router.replace('/login');
-    }
-  }, [testSessionsError, usersError, sensorConfigsError, productsError, testBenchesError, router, toast]);
-
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return collection(firestore, `sensor_configurations`);
@@ -248,6 +230,24 @@ function TestingComponent() {
   }, [firestore, user]);
 
   const { data: testBenches, isLoading: isTestBenchesLoading, error: testBenchesError } = useCollection<TestBench>(testBenchesCollectionRef);
+
+  useEffect(() => {
+    const hasPermissionError =
+      testSessionsError?.message.includes('permission-denied') ||
+      usersError?.message.includes('permission-denied') ||
+      sensorConfigsError?.message.includes('permission-denied') ||
+      productsError?.message.includes('permission-denied') ||
+      testBenchesError?.message.includes('permission-denied');
+
+    if (hasPermissionError) {
+      toast({
+        title: 'Access Denied',
+        description: 'You do not have permission. Please log in again.',
+        variant: 'destructive',
+      });
+      router.replace('/login');
+    }
+  }, [testSessionsError, usersError, sensorConfigsError, productsError, testBenchesError, router, toast]);
 
   useEffect(() => {
     if (!isProductsLoading && products && products.length > 0 && !tempTestSession.productId) {
@@ -291,6 +291,58 @@ function TestingComponent() {
     }
     setIsDemoRunning(false);
   }, []);
+
+  const handleStopTestSession = useCallback(async (sessionId: string) => {
+      if (!firestore) return;
+      const session = testSessions?.find(s => s.id === sessionId);
+  
+      if (session?.measurementType === 'DEMO') {
+        stopDemoMode();
+      }
+      
+      const sessionRef = doc(firestore, `test_sessions`, sessionId);
+      await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
+      runningTestSessionRef.current = null;
+  
+      toast({ title: 'Test Session Ended' });
+  }, [firestore, stopDemoMode, testSessions, toast]);
+  
+  const runningArduinoSession = useMemo(() => {
+    return testSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
+  }, [testSessions]);
+
+  const disconnectSerial = useCallback(async () => {
+    stopDemoMode();
+
+    if (runningArduinoSession) {
+        await handleStopTestSession(runningArduinoSession.id);
+    }
+
+    if (readerRef.current) {
+        try {
+            await readerRef.current.cancel();
+            await readerRef.current.releaseLock();
+        } catch (error) {
+            // Ignore cancel errors, port may already be closed or unlocked
+        } finally {
+          readerRef.current = null;
+        }
+    }
+
+    if (portRef.current) {
+        try {
+            await portRef.current.close();
+        } catch (e) {
+            console.warn("Error closing serial port:", e);
+        } finally {
+          portRef.current = null;
+        }
+    }
+    
+    setIsConnected(false);
+    setLocalDataLog([]);
+    toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
+  }, [handleStopTestSession, toast, runningArduinoSession, stopDemoMode]);
 
   useEffect(() => {
     if (runningTestSession && !selectedSessionIds.includes(runningTestSession.id)) {
@@ -397,59 +449,7 @@ function TestingComponent() {
     }
     return null;
   }, [localDataLog, dataLog]);
-
-  const handleStopTestSession = useCallback(async (sessionId: string) => {
-      if (!firestore) return;
-      const session = testSessions?.find(s => s.id === sessionId);
   
-      if (session?.measurementType === 'DEMO') {
-        stopDemoMode();
-      }
-      
-      const sessionRef = doc(firestore, `test_sessions`, sessionId);
-      await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
-      runningTestSessionRef.current = null;
-  
-      toast({ title: 'Test Session Ended' });
-  }, [firestore, stopDemoMode, testSessions, toast]);
-  
-  const runningArduinoSession = useMemo(() => {
-    return testSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
-  }, [testSessions]);
-
-  const disconnectSerial = useCallback(async () => {
-    stopDemoMode();
-
-    if (runningArduinoSession) {
-        await handleStopTestSession(runningArduinoSession.id);
-    }
-
-    if (readerRef.current) {
-        try {
-            await readerRef.current.cancel();
-            await readerRef.current.releaseLock();
-        } catch (error) {
-            // Ignore cancel errors, port may already be closed or unlocked
-        } finally {
-          readerRef.current = null;
-        }
-    }
-
-    if (portRef.current) {
-        try {
-            await portRef.current.close();
-        } catch (e) {
-            console.warn("Error closing serial port:", e);
-        } finally {
-          portRef.current = null;
-        }
-    }
-    
-    setIsConnected(false);
-    setLocalDataLog([]);
-    toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
-  }, [handleStopTestSession, toast, runningArduinoSession, stopDemoMode]);
-
   const handleConnect = useCallback(async () => {
     if (isConnected) {
       await disconnectSerial();
@@ -1391,7 +1391,7 @@ function TestingComponent() {
                 BioThrust Live Dashboard
                 </CardTitle>
                  <div className="flex items-center gap-2">
-                    {user && (
+                    {user && userRole === 'superadmin' && (
                         <Button onClick={() => router.push('/admin')} variant="outline">
                             <Cog className="h-4 w-4 mr-2" />
                             Manage
@@ -1636,3 +1636,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
