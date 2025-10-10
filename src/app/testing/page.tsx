@@ -1340,17 +1340,10 @@ function TestingComponent() {
                 BioThrust Live Dashboard
                 </CardTitle>
                  <div className="flex items-center gap-2">
-                    {userRole === 'superadmin' ? (
-                        <Button onClick={() => router.push('/admin')} variant="outline">
-                            <Cog className="h-4 w-4 mr-2" />
-                            Manage
-                        </Button>
-                    ) : (
-                       <Button onClick={() => router.push('/promote')} variant="outline">
-                            <UserPlus className="h-4 w-4 mr-2" />
-                            Promote to Admin
-                        </Button>
-                    )}
+                    <Button onClick={() => router.push('/admin')} variant="outline">
+                        <Cog className="h-4 w-4 mr-2" />
+                        Manage
+                    </Button>
                     <Button onClick={handleSignOut} variant="ghost">
                         <LogOut className="h-4 w-4 mr-2" />
                         Logout

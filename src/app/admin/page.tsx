@@ -168,11 +168,9 @@ export default function AdminPage() {
     if (!isUserLoading) {
       if (!user) {
         router.replace('/login');
-      } else if (userRole !== 'superadmin') {
-        router.replace('/testing');
       }
     }
-  }, [user, userRole, isUserLoading, router]);
+  }, [user, isUserLoading, router]);
   
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -1314,7 +1312,7 @@ export default function AdminPage() {
     </Card>
   );
 
-  if (isUserLoading || !user || userRole !== 'superadmin') {
+  if (isUserLoading || !user) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
         <p className="text-lg">Loading...</p>
@@ -1413,9 +1411,11 @@ export default function AdminPage() {
           <div className="lg:col-span-2 space-y-6">
               {renderTestSessionManager()}
           </div>
-          <div className="lg:col-span-3">
-              {renderUserManagement()}
-          </div>
+          {userRole === 'superadmin' && (
+            <div className="lg:col-span-3">
+                {renderUserManagement()}
+            </div>
+          )}
           <div className="lg:col-span-3">
             {renderModelManagement()}
           </div>
@@ -1427,4 +1427,3 @@ export default function AdminPage() {
   );
 }
 
-    
