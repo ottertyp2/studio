@@ -175,6 +175,7 @@ export default function AdminPage() {
   const [sessionSortOrder, setSessionSortOrder] = useState('startTime-desc');
   const [sessionUserFilter, setSessionUserFilter] = useState('all');
   const [sessionProductFilter, setSessionProductFilter] = useState('all');
+  const [sessionTestBenchFilter, setSessionTestBenchFilter] = useState('all');
 
   const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
 
@@ -447,7 +448,7 @@ export default function AdminPage() {
         return;
     }
 
-    if (!['LEAK', 'DIFFUSION'].includes(tempTestSession.demoType || '')) {
+    if (tempTestSession.demoType && !['LEAK', 'DIFFUSION'].includes(tempTestSession.demoType)) {
       toast({ variant:'destructive', title:'Error', description:'Please select a simulation type.' });
       return;
     }
@@ -923,6 +924,10 @@ export default function AdminPage() {
     if (sessionProductFilter !== 'all') {
         filtered = filtered.filter(session => session.productId === sessionProductFilter);
     }
+    
+    if (sessionTestBenchFilter !== 'all') {
+        filtered = filtered.filter(session => session.testBenchId === sessionTestBenchFilter);
+    }
 
     filtered = filtered.filter(session => {
         const searchTerm = sessionSearchTerm.toLowerCase();
@@ -945,12 +950,17 @@ export default function AdminPage() {
                 return a.productName.localeCompare(b.productName);
              case 'username-asc':
                 return a.username.localeCompare(b.username);
+            case 'testBenchName-asc': {
+              const benchAName = testBenches?.find(tb => tb.id === a.testBenchId)?.name || '';
+              const benchBName = testBenches?.find(tb => tb.id === b.testBenchId)?.name || '';
+              return benchAName.localeCompare(benchBName);
+            }
             default:
                 return 0;
         }
     });
 
-  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionProductFilter]);
+  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionProductFilter, sessionTestBenchFilter, testBenches]);
 
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
@@ -1119,6 +1129,15 @@ export default function AdminPage() {
                         {products?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                     </SelectContent>
                 </Select>
+                <Select value={sessionTestBenchFilter} onValueChange={setSessionTestBenchFilter}>
+                    <SelectTrigger>
+                        <SelectValue placeholder="Filter by bench" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Benches</SelectItem>
+                        {testBenches?.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
                 <Select value={sessionSortOrder} onValueChange={setSessionSortOrder}>
                     <SelectTrigger>
                         <SelectValue placeholder="Sort by" />
@@ -1128,22 +1147,30 @@ export default function AdminPage() {
                         <SelectItem value="startTime-asc">Oldest</SelectItem>
                         <SelectItem value="productName-asc">Product Name</SelectItem>
                         <SelectItem value="username-asc">Username</SelectItem>
+                        <SelectItem value="testBenchName-asc">Test Bench</SelectItem>
                     </SelectContent>
                 </Select>
             </div>
              <ScrollArea className="h-[40rem]">
               {isTestSessionsLoading ? <p>Loading sessions...</p> : filteredAndSortedSessions.length > 0 ? (
-                filteredAndSortedSessions.map(session => (
+                filteredAndSortedSessions.map(session => {
+                  const bench = testBenches?.find(b => b.id === session.testBenchId);
+                  const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+                  return (
                     <Card key={session.id} className={`p-3 mb-2 ${session.status === 'RUNNING' ? 'border-primary' : ''}`}>
                         <div className="flex justify-between items-start gap-4">
                             <div>
-                                <p className="font-semibold">{session.productName}</p>
+                                <p className="font-semibold">{session.productName} <span className="text-sm text-muted-foreground">({session.serialNumber || 'N/A'})</span></p>
                                 <p className="text-sm text-muted-foreground">
                                     {new Date(session.startTime).toLocaleString('en-US')} - {session.status}
                                 </p>
                                 <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
                                   <User className="h-3 w-3" />
                                   <span>{session.username}</span>
+                                </div>
+                                 <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                                  <Server className="h-3 w-3" />
+                                  <span>{bench?.name || 'N/A'} / {config?.name || 'N/A'}</span>
                                 </div>
                                 <p className="text-xs text-muted-foreground">
                                     Data Points: {sessionDataCounts[session.id] ?? '...'}
@@ -1173,7 +1200,7 @@ export default function AdminPage() {
                             </div>
                         </div>
                     </Card>
-                ))
+                )})
               ) : (
                  <p className="text-sm text-muted-foreground text-center">No test sessions found.</p>
               )}
@@ -1616,5 +1643,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-    
