@@ -565,7 +565,7 @@ function TestingComponent() {
   }
   
   const lastValuesRef = useRef<number[]>([]);
-  const smoothValue = (value: number, windowSize: number = 5) => {
+  const smoothValue = (value: number, windowSize: number = 10) => {
     const arr = lastValuesRef.current;
     arr.push(value);
     if (arr.length > windowSize) arr.shift();
@@ -587,7 +587,7 @@ function TestingComponent() {
                 const startValue = 900;
                 const endValue = 200;
                 const baseValue = startValue - ((startValue - endValue) * step / totalSteps);
-                const noise = gaussianNoise(0, 2); 
+                const noise = gaussianNoise(0, 1); 
                 rawValue = baseValue + noise;
                 const smoothed = smoothValue(rawValue);
                 rawValue = smoothed;
@@ -596,7 +596,7 @@ function TestingComponent() {
                 const endValue = 800;
                 const tau = totalSteps / 4;
                 rawValue = endValue + (startValue - endValue) * Math.exp(-step / tau);
-                const noise = gaussianNoise(0, 1.5);
+                const noise = gaussianNoise(0, 0.75);
                 rawValue += noise;
             }
 
@@ -1338,7 +1338,7 @@ function TestingComponent() {
                 BioThrust Live Dashboard
                 </CardTitle>
                  <div className="flex items-center gap-2">
-                    {user && (
+                    {user && userRole === 'superadmin' && (
                         <Button onClick={() => router.push('/admin')} variant="outline">
                             <Cog className="h-4 w-4 mr-2" />
                             Manage
@@ -1571,4 +1571,4 @@ export default function TestingPage() {
     )
 }
 
-    
+
