@@ -336,15 +336,16 @@ function TestingComponent() {
         try {
             await readerRef.current.cancel();
         } catch (error) {
-            // Ignore cancel errors as the stream might already be closed
+            // Ignore cancel errors as the stream might already be closing
         }
     }
 
     if (readableStreamClosedRef.current) {
         try {
+             // This is the crucial step: waiting for the stream to fully close.
             await readableStreamClosedRef.current;
         } catch (error) {
-            // Ignore errors on stream closing, it might already be closed or cancelled.
+            // Ignore errors here, as the stream might have been forcefully closed.
         }
     }
     
