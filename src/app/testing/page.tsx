@@ -964,9 +964,9 @@ function TestingComponent() {
   };
 
   const handleAddProduct = () => {
-    if (!newProductName.trim() || !firestore) return;
+    if (!newProductName.trim() || !firestore || !productsCollectionRef) return;
     const newProductId = doc(collection(firestore, '_')).id;
-    const productRef = doc(firestore, 'products', newProductId);
+    const productRef = doc(productsCollectionRef, newProductId);
     setDoc(productRef, { id: newProductId, name: newProductName.trim() });
     setNewProductName('');
     toast({ title: 'Product Added', description: `"${newProductName.trim()}" has been added.`});
@@ -1667,3 +1667,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    

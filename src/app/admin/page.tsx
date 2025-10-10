@@ -280,6 +280,7 @@ export default function AdminPage() {
       toast({ variant: 'destructive', title: 'Error', description: 'Test bench name is required.' });
       return;
     }
+    if (!testBenchesCollectionRef) return;
     const newId = doc(collection(firestore, '_')).id;
     const docToSave: TestBench = {
       id: newId,
@@ -1615,3 +1616,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    
