@@ -296,11 +296,15 @@ function TestingComponent() {
     if (selectedSessionIds.length > 0) {
         q = query(q, where('testSessionId', 'in', selectedSessionIds.slice(0, 10)));
     } else {
-        return null;
+        // If we are not connected and have no session selected, there's no data to fetch.
+        if (!isConnected) return null;
+        // If connected, we might still want to show an empty chart, so we create a query that returns nothing.
+        // This avoids fetching all data for the sensor config.
+        q = query(q, where('testSessionId', '==', '---NEVER_MATCH---'));
     }
     
     return q;
-  }, [firestore, sensorConfig.id, selectedSessionIds]);
+  }, [firestore, sensorConfig.id, selectedSessionIds, isConnected]);
 
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
   
@@ -323,19 +327,23 @@ function TestingComponent() {
 
   const dataLog = useMemo(() => {
     let log: SensorData[] = [];
-    const cloudDataIsReady = cloudDataLog && !isCloudDataLoading;
-  
-    // Use cloud data if it's ready and relevant sessions are selected
-    if (cloudDataIsReady && selectedSessionIds.length > 0) {
-      log = [...cloudDataLog];
+
+    // Always include the local log if connected, as it's the most real-time data source.
+    if (isConnected) {
+      log = [...localDataLog];
     }
     
-    // Merge unique local data
-    const cloudDataTimestamps = new Set(log.map(d => d.timestamp));
-    const uniqueLocalData = localDataLog.filter(d => !cloudDataTimestamps.has(d.timestamp));
-    log.push(...uniqueLocalData);
-    
-    // If no sessions are selected and we are not connected, show nothing.
+    // If cloud data is available, merge it with the local log.
+    if (cloudDataLog && !isCloudDataLoading) {
+      const localTimestamps = new Set(log.map(d => d.timestamp));
+      const uniqueCloudData = cloudDataLog.filter(d => !localTimestamps.has(d.timestamp));
+      log.push(...uniqueCloudData);
+    } else if (!isConnected && cloudDataLog) {
+      // If not connected, but cloud data exists (for selected sessions), use it.
+      log = [...cloudDataLog];
+    }
+
+    // If no sessions are selected AND we are not connected, there is no data to show.
     if (selectedSessionIds.length === 0 && !isConnected) {
       return [];
     }
@@ -365,7 +373,6 @@ function TestingComponent() {
       await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
       runningTestSessionRef.current = null;
   
-      // Don't clear local log, just stop writing
       toast({ title: 'Test Session Ended' });
   }, [firestore, stopDemoMode, testSessions]);
   
