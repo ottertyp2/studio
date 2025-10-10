@@ -291,19 +291,25 @@ function TestingComponent() {
   const sensorDataCollectionRef = useMemoFirebase(() => {
     if (!firestore || !sensorConfig.id) return null;
     
-    let q = query(collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`));
-
+    // If we have selected sessions, query for their data.
     if (selectedSessionIds.length > 0) {
-        q = query(q, where('testSessionId', 'in', selectedSessionIds.slice(0, 10)));
-    } else {
-        // If we are not connected and have no session selected, there's no data to fetch.
-        if (!isConnected) return null;
-        // If connected, we might still want to show an empty chart, so we create a query that returns nothing.
-        // This avoids fetching all data for the sensor config.
-        q = query(q, where('testSessionId', '==', '---NEVER_MATCH---'));
+        return query(
+            collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`),
+            where('testSessionId', 'in', selectedSessionIds.slice(0, 10))
+        );
     }
     
-    return q;
+    // If connected without a session, we don't need to fetch from the cloud,
+    // as we're only interested in the live localDataLog.
+    if (isConnected) {
+        return null;
+    }
+
+    // If no sessions are selected and not connected, return a query that finds nothing.
+    return query(
+        collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`),
+        where('testSessionId', '==', '---NEVER_MATCH---')
+    );
   }, [firestore, sensorConfig.id, selectedSessionIds, isConnected]);
 
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
@@ -333,23 +339,16 @@ function TestingComponent() {
       log = [...localDataLog];
     }
     
-    // If cloud data is available, merge it with the local log.
+    // If cloud data is available, merge it with the local log, avoiding duplicates.
     if (cloudDataLog && !isCloudDataLoading) {
       const localTimestamps = new Set(log.map(d => d.timestamp));
       const uniqueCloudData = cloudDataLog.filter(d => !localTimestamps.has(d.timestamp));
       log.push(...uniqueCloudData);
-    } else if (!isConnected && cloudDataLog) {
-      // If not connected, but cloud data exists (for selected sessions), use it.
-      log = [...cloudDataLog];
     }
 
-    // If no sessions are selected AND we are not connected, there is no data to show.
-    if (selectedSessionIds.length === 0 && !isConnected) {
-      return [];
-    }
-
+    // Final sort to ensure chronological order (newest first).
     return log.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [cloudDataLog, isCloudDataLoading, localDataLog, selectedSessionIds, isConnected]);
+  }, [cloudDataLog, isCloudDataLoading, localDataLog, isConnected]);
   
   const currentValue = useMemo(() => {
     if (localDataLog && localDataLog.length > 0) {
@@ -932,6 +931,13 @@ function TestingComponent() {
 
     // Single session or local data
     let visibleData = allChronologicalData;
+    if (selectedSessionIds.length === 1) {
+        visibleData = allChronologicalData.filter(d => d.testSessionId === selectedSessionIds[0]);
+    } else if (isConnected) {
+        // If connected but no session is selected, use the local data log
+        visibleData = [...localDataLog].reverse();
+    }
+    
     const startTime = activeTestSession ? new Date(activeTestSession.startTime).getTime() : (visibleData.length > 0 ? new Date(visibleData[0].timestamp).getTime() : Date.now());
 
     let mappedData = visibleData.map(d => ({
@@ -941,7 +947,7 @@ function TestingComponent() {
 
     if (chartInterval !== 'all' && !editingSessionId) {
         const intervalSeconds = parseInt(chartInterval, 10);
-        if (runningTestSession) { // Live data filtering
+        if (runningTestSession || isConnected) { // Live data filtering (running session or just connected)
              const now = Date.now();
              mappedData = mappedData.filter(dp => dp.name >= 0 && ((now - (startTime + dp.name * 1000)) / 1000 <= intervalSeconds));
         } else { // Historical data filtering
@@ -951,7 +957,7 @@ function TestingComponent() {
     
     return mappedData;
 
-  }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, activeTestSession, runningTestSession, editingSessionId]);
+  }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, activeTestSession, runningTestSession, editingSessionId, localDataLog, isConnected]);
 
   
   const displayValue = currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
