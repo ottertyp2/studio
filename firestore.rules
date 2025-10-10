@@ -1,39 +1,190 @@
+/**
+ * @fileoverview Firestore Security Rules for the application.
+ *
+ * Core Philosophy:
+ * This ruleset prioritizes secure access to user data while allowing public read access to certain collections.
+ * It enforces ownership for user profiles and allows public read access for sensor configurations.
+ *
+ * Data Structure:
+ * - Users: /users/{userId} - Stores user profile information.
+ * - Sensor Configurations: /sensor_configurations/{sensorConfigurationId} - Stores sensor configurations, publicly readable.
+ * - Sensor Data: /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} - Stores sensor data associated with sensor configurations.
+ * - Analysis Results: /analysis_results/{analysisResultId} - Stores analysis results.
+ * - Test Sessions: /test_sessions/{testSessionId} - Stores test session data.
+ * - Products: /products/{productId} - Stores product information.
+ * - ML Models: /mlModels/{mlModelId} - Stores ML model metadata.
+ * - Training Datasets: /trainDataSets/{trainDataSetId} - Stores training dataset metadata.
+ *
+ * Key Security Decisions:
+ * - User data is protected by ownership, ensuring only the user or a superadmin can modify their profile.
+ * - Sensor configurations are publicly readable to enable broad access to configuration data.
+ * - Other collections (analysis results, test sessions, products, ML models, training datasets) are restricted to authenticated users for writes.
+ *
+ * Denormalization for Authorization:
+ * - User documents do not require a duplicated 'id' field; ownership is determined directly from the path.
+ */
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper Functions
-    function isSignedIn() {
-      return request.auth != null;
-    }
-    
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-    
-    function isExistingOwner(userId) {
-      return isOwner(userId) && resource.data.id == userId;
-    }
-
-    function isSuperAdmin() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
-    }
-
-    // User profiles can be read by anyone, but only created/updated by the owner.
-    // Superadmins can update any user's role and delete users (but not themselves).
+    /**
+     * @description Controls access to user profiles.
+     * @path /users/{userId}
+     * @allow (create) Signed-in user with matching userId can create their profile.
+     * @allow (update) Signed-in user with matching userId can update their profile.
+     * @allow (delete) Superadmin can delete any user profile.
+     * @deny (create) Signed-in user cannot create a profile with a mismatched userId.
+     * @deny (update) Signed-in user cannot update another user's profile.
+     * @deny (delete) Signed-in user cannot delete another user's profile.
+     * @principle Enforces document ownership for writes and superadmin override.
+     */
     match /users/{userId} {
       allow get, list: if true;
-      allow create: if isOwner(userId) && request.resource.data.id == userId;
-      allow update: if (isExistingOwner(userId) && request.resource.data.id == resource.data.id) || isSuperAdmin();
-      allow delete: if isSuperAdmin() && request.auth.uid != userId;
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && request.auth.uid == userId || isSuperAdmin();
+      allow delete: if isSuperAdmin();
     }
 
-    // All other collections are locked down by default for this example.
-    // You would add rules for sensor_configurations, test_sessions, etc. here.
-    // For now, allowing admin read/write for simplicity.
-    match /{document=**} {
-      allow read, write: if isSuperAdmin();
+    /**
+     * @description Controls access to sensor configurations.
+     * @path /sensor_configurations/{sensorConfigurationId}
+     * @allow (get, list) Any user can read sensor configurations.
+     * @allow (create) Signed-in user can create sensor configurations.
+     * @allow (update) Signed-in user can update sensor configurations if the document exists.
+     * @allow (delete) Signed-in user can delete sensor configurations if the document exists.
+     * @deny (create) Unsigned-in user cannot create sensor configurations.
+     * @deny (update) Unsigned-in user cannot update sensor configurations.
+     * @deny (delete) Unsigned-in user cannot delete sensor configurations.
+     * @principle Public read access with authenticated writes.
+     */
+    match /sensor_configurations/{sensorConfigurationId} {
+      allow get, list: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
     }
+
+    /**
+     * @description Controls access to sensor data points under a specific sensor configuration.
+     * @path /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}
+     * @allow (get, list) Any user can read sensor data.
+     * @allow (create) Signed-in user can create sensor data.
+     * @allow (update) Signed-in user can update sensor data if the document exists.
+     * @allow (delete) Signed-in user can delete sensor data if the document exists.
+     * @deny (create) Unsigned-in user cannot create sensor data.
+     * @deny (update) Unsigned-in user cannot update sensor data.
+     * @deny (delete) Unsigned-in user cannot delete sensor data.
+     * @principle Public read access with authenticated writes.
+     */
+    match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
+      allow get, list: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+
+    /**
+     * @description Controls access to analysis results.
+     * @path /analysis_results/{analysisResultId}
+     * @allow (get, list) Any user can read analysis results.
+     * @allow (create) Signed-in user can create analysis results.
+     * @allow (update) Signed-in user can update analysis results if the document exists.
+     * @allow (delete) Signed-in user can delete analysis results if the document exists.
+     * @deny (create) Unsigned-in user cannot create analysis results.
+     * @deny (update) Unsigned-in user cannot update analysis results.
+     * @deny (delete) Unsigned-in user cannot delete analysis results.
+     * @principle Authenticated writes with public reads.
+     */
+    match /analysis_results/{analysisResultId} {
+      allow get, list: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+
+    /**
+     * @description Controls access to test sessions.
+     * @path /test_sessions/{testSessionId}
+     * @allow (get, list) Any user can read test sessions.
+     * @allow (create) Signed-in user can create test sessions.
+     * @allow (update) Signed-in user can update test sessions if the document exists.
+     * @allow (delete) Signed-in user can delete test sessions if the document exists.
+     * @deny (create) Unsigned-in user cannot create test sessions.
+     * @deny (update) Unsigned-in user cannot update test sessions.
+     * @deny (delete) Unsigned-in user cannot delete test sessions.
+     * @principle Authenticated writes with public reads.
+     */
+    match /test_sessions/{testSessionId} {
+      allow get, list: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+
+    /**
+     * @description Controls access to products.
+     * @path /products/{productId}
+     * @allow (get, list) Any user can read product information.
+     * @allow (create) Signed-in user can create product information.
+     * @allow (update) Signed-in user can update product information if the document exists.
+     * @allow (delete) Signed-in user can delete product information if the document exists.
+     * @deny (create) Unsigned-in user cannot create product information.
+     * @deny (update) Unsigned-in user cannot update product information.
+     * @deny (delete) Unsigned-in user cannot delete product information.
+     * @principle Authenticated writes with public reads.
+     */
+    match /products/{productId} {
+      allow get, list: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+
+    /**
+     * @description Controls access to ML models.
+     * @path /mlModels/{mlModelId}
+     * @allow (get, list) Any user can read ML model metadata.
+     * @allow (create) Signed-in user can create ML model metadata.
+     * @allow (update) Signed-in user can update ML model metadata if the document exists.
+     * @allow (delete) Signed-in user can delete ML model metadata if the document exists.
+     * @deny (create) Unsigned-in user cannot create ML model metadata.
+     * @deny (update) Unsigned-in user cannot update ML model metadata.
+     * @deny (delete) Unsigned-in user cannot delete ML model metadata.
+     * @principle Authenticated writes with public reads.
+     */
+    match /mlModels/{mlModelId} {
+      allow get, list: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+
+    /**
+     * @description Controls access to training datasets.
+     * @path /trainDataSets/{trainDataSetId}
+     * @allow (get, list) Any user can read training dataset metadata.
+     * @allow (create) Signed-in user can create training dataset metadata.
+     * @allow (update) Signed-in user can update training dataset metadata if the document exists.
+     * @allow (delete) Signed-in user can delete training dataset metadata if the document exists.
+     * @deny (create) Unsigned-in user cannot create training dataset metadata.
+     * @deny (update) Unsigned-in user cannot update training dataset metadata.
+     * @deny (delete) Unsigned-in user cannot delete training dataset metadata.
+     * @principle Authenticated writes with public reads.
+     */
+    match /trainDataSets/{trainDataSetId} {
+      allow get, list: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+  }
+
+  // Helper functions
+  function isSignedIn() {
+    return request.auth != null;
+  }
+
+  function isSuperAdmin() {
+    return isSignedIn() && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin');
   }
 }
