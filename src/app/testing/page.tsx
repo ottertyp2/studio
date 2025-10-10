@@ -1031,80 +1031,78 @@ function TestingComponent() {
     </div>
   );
 
-  const renderProductManagement = () => {
-    return (
-        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-            <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
-                <AccordionItem value="item-1">
-                    <AccordionTrigger className="p-6">
-                        <CardHeader className="p-0 text-left">
-                            <CardTitle>Product Management</CardTitle>
-                            <CardDescription>Add, view, and remove your products.</CardDescription>
-                        </CardHeader>
-                    </AccordionTrigger>
-                    <AccordionContent className="p-6 pt-0">
-                        <div className="flex gap-2 mb-4">
-                            <Input
-                                placeholder="New product name..."
-                                value={newProductName}
-                                onChange={(e) => setNewProductName(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleAddProduct()}
-                            />
-                            <Button onClick={handleAddProduct} disabled={!newProductName.trim()}>
-                                <PackagePlus className="h-4 w-4 mr-2" />
-                                Add
-                            </Button>
-                        </div>
-                        <ScrollArea className="h-40">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Product Name</TableHead>
-                                        <TableHead className="text-right">Action</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {isProductsLoading ? (
-                                        <TableRow><TableCell colSpan={2} className="text-center">Loading products...</TableCell></TableRow>
-                                    ) : products && products.length > 0 ? (
-                                        products.map(p => (
-                                            <TableRow key={p.id}>
-                                                <TableCell>{p.name}</TableCell>
-                                                <TableCell className="text-right">
-                                                    <AlertDialog>
-                                                        <AlertDialogTrigger asChild>
-                                                            <Button variant="ghost" size="icon" disabled={!user}>
-                                                                <Trash2 className="h-4 w-4 text-destructive" />
-                                                            </Button>
-                                                        </AlertDialogTrigger>
-                                                        <AlertDialogContent>
-                                                            <AlertDialogHeader>
-                                                                <AlertDialogTitle>Delete Product?</AlertDialogTitle>
-                                                                <AlertDialogDescription>
-                                                                    Are you sure you want to delete "{p.name}"? This cannot be undone. Associated test sessions will not be deleted but will reference a missing product.
-                                                                </AlertDialogDescription>
-                                                            </AlertDialogHeader>
-                                                            <AlertDialogFooter>
-                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                <AlertDialogAction variant="destructive" onClick={() => handleDeleteProduct(p.id)}>Confirm Delete</AlertDialogAction>
-                                                            </AlertDialogFooter>
-                                                        </AlertDialogContent>
-                                                    </AlertDialog>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))
-                                    ) : (
-                                        <TableRow><TableCell colSpan={2} className="text-center">No products found.</TableCell></TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </ScrollArea>
-                    </AccordionContent>
-                </AccordionItem>
-            </Accordion>
-        </Card>
-    );
-  }
+  const renderProductManagement = () => (
+    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+        <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
+            <AccordionItem value="item-1">
+                <AccordionTrigger className="p-6">
+                    <CardHeader className="p-0 text-left">
+                        <CardTitle>Product Management</CardTitle>
+                        <CardDescription>Add, view, and remove your products.</CardDescription>
+                    </CardHeader>
+                </AccordionTrigger>
+                <AccordionContent className="p-6 pt-0">
+                    <div className="flex gap-2 mb-4">
+                        <Input
+                            placeholder="New product name..."
+                            value={newProductName}
+                            onChange={(e) => setNewProductName(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleAddProduct()}
+                        />
+                        <Button onClick={handleAddProduct} disabled={!newProductName.trim()}>
+                            <PackagePlus className="h-4 w-4 mr-2" />
+                            Add
+                        </Button>
+                    </div>
+                    <ScrollArea className="h-40">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Product Name</TableHead>
+                                    <TableHead className="text-right">Action</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {isProductsLoading ? (
+                                    <TableRow><TableCell colSpan={2} className="text-center">Loading products...</TableCell></TableRow>
+                                ) : products && products.length > 0 ? (
+                                    products.map(p => (
+                                        <TableRow key={p.id}>
+                                            <TableCell>{p.name}</TableCell>
+                                            <TableCell className="text-right">
+                                                <AlertDialog>
+                                                    <AlertDialogTrigger asChild>
+                                                        <Button variant="ghost" size="icon" disabled={!user}>
+                                                            <Trash2 className="h-4 w-4 text-destructive" />
+                                                        </Button>
+                                                    </AlertDialogTrigger>
+                                                    <AlertDialogContent>
+                                                        <AlertDialogHeader>
+                                                            <AlertDialogTitle>Delete Product?</AlertDialogTitle>
+                                                            <AlertDialogDescription>
+                                                                Are you sure you want to delete "{p.name}"? This cannot be undone. Associated test sessions will not be deleted but will reference a missing product.
+                                                            </AlertDialogDescription>
+                                                        </AlertDialogHeader>
+                                                        <AlertDialogFooter>
+                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteProduct(p.id)}>Confirm Delete</AlertDialogAction>
+                                                        </AlertDialogFooter>
+                                                    </AlertDialogContent>
+                                                </AlertDialog>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                ) : (
+                                    <TableRow><TableCell colSpan={2} className="text-center">No products found.</TableCell></TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </ScrollArea>
+                </AccordionContent>
+            </AccordionItem>
+        </Accordion>
+    </Card>
+);
 
   const renderLiveTab = () => (
     <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
@@ -1340,10 +1338,12 @@ function TestingComponent() {
                 BioThrust Live Dashboard
                 </CardTitle>
                  <div className="flex items-center gap-2">
-                    <Button onClick={() => router.push('/admin')} variant="outline">
-                        <Cog className="h-4 w-4 mr-2" />
-                        Manage
-                    </Button>
+                    {user && userRole === 'superadmin' && (
+                        <Button onClick={() => router.push('/admin')} variant="outline">
+                            <Cog className="h-4 w-4 mr-2" />
+                            Manage
+                        </Button>
+                    )}
                     <Button onClick={handleSignOut} variant="ghost">
                         <LogOut className="h-4 w-4 mr-2" />
                         Logout
