@@ -304,7 +304,7 @@ export default function AdminPage() {
   const handleConfigChange = (field: keyof SensorConfig, value: any) => {
     if (!tempSensorConfig) return;
 
-    let newConfig = {...tempSensorConfig, [field]: value} as SensorConfig;
+    let newConfig = {...tempSensorConfig, [field]: value} as Partial<SensorConfig>;
     
     if (field === 'mode') {
       switch(value) {
@@ -329,6 +329,17 @@ export default function AdminPage() {
             newConfig.decimalPlaces = num;
         }
     }
+    
+    if (field === 'min' || field === 'max' || field === 'arduinoVoltage') {
+        if (value === '') {
+            newConfig[field] = 0;
+        } else {
+            const num = parseFloat(value);
+            if (!isNaN(num)) {
+                newConfig[field] = num;
+            }
+        }
+    }
 
     setTempSensorConfig(newConfig);
   }
@@ -342,15 +353,13 @@ export default function AdminPage() {
         toast({ variant: 'destructive', title: 'Invalid Input', description: 'A test bench must be selected.'});
         return;
     }
-    if (tempSensorConfig.mode === 'CUSTOM' && (!tempSensorConfig.unit || tempSensorConfig.unit.trim() === '')) {
-        toast({ variant: 'destructive', title: 'Invalid Input', description: 'The unit cannot be empty.'});
-        return;
+    if (tempSensorConfig.mode === 'CUSTOM' && !tempSensorConfig.unit) {
+       tempSensorConfig.unit = 'RAW'; // Default if empty
     }
     if (!firestore || !user) return;
 
     const configId = tempSensorConfig.id || doc(collection(firestore, '_')).id;
-    const isNew = !tempSensorConfig.id;
-
+    
     const configToSave: SensorConfig = {
       id: configId,
       name: tempSensorConfig.name,
@@ -1007,11 +1016,11 @@ export default function AdminPage() {
                         </div>
                         <div>
                             <Label htmlFor="minValueInput">Minimum Value</Label>
-                            <Input id="minValueInput" type="number" value={tempSensorConfig.min || 0} onChange={(e) => handleConfigChange('min', parseFloat(e.target.value))} />
+                            <Input id="minValueInput" type="number" value={tempSensorConfig.min ?? ''} onChange={(e) => handleConfigChange('min', e.target.value)} />
                         </div>
                         <div>
                             <Label htmlFor="maxValueInput">Maximum Value</Label>
-                            <Input id="maxValueInput" type="number" value={tempSensorConfig.max || 1023} onChange={(e) => handleConfigChange('max', parseFloat(e.target.value))} />
+                            <Input id="maxValueInput" type="number" value={tempSensorConfig.max ?? ''} onChange={(e) => handleConfigChange('max', e.target.value)} />
                         </div>
                     </div>
                  )}
@@ -1020,7 +1029,7 @@ export default function AdminPage() {
                         {tempSensorConfig.mode === 'VOLTAGE' && (
                             <div>
                                 <Label htmlFor="arduinoVoltageInput">Reference Voltage (V)</Label>
-                                <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage || 5} onChange={(e) => handleConfigChange('arduinoVoltage', parseFloat(e.target.value))} />
+                                <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage ?? ''} onChange={(e) => handleConfigChange('arduinoVoltage', e.target.value)} />
                             </div>
                         )}
                         <div>
@@ -1643,3 +1652,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    
