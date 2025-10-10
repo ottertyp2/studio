@@ -371,7 +371,7 @@ function TestingComponent() {
       log.push(...uniqueCloudData);
     }
     
-    if (selectedSessionIds.length === 0 && !isConnected) {
+    if (!isConnected && selectedSessionIds.length === 0) {
         return [];
     }
 
@@ -417,7 +417,7 @@ function TestingComponent() {
             await readerRef.current.cancel();
             await readerRef.current.releaseLock();
         } catch (error) {
-            // Ignore cancel errors, port may already be closed
+            // Ignore cancel errors, port may already be closed or unlocked
         } finally {
           readerRef.current = null;
         }
@@ -1379,7 +1379,7 @@ function TestingComponent() {
                 BioThrust Live Dashboard
                 </CardTitle>
                  <div className="flex items-center gap-2">
-                    {user && userRole === 'superadmin' && (
+                    {user && (
                         <Button onClick={() => router.push('/admin')} variant="outline">
                             <Cog className="h-4 w-4 mr-2" />
                             Manage
