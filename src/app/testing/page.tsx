@@ -315,9 +315,7 @@ function TestingComponent() {
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
   
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
-    if (isConnected) {
-        setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
-    }
+    setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
     
     const currentRunningSession = runningTestSessionRef.current;
 
@@ -328,7 +326,7 @@ function TestingComponent() {
             setDocumentNonBlocking(docRef, dataToSave, {});
         }
     }
-  }, [firestore, activeSensorConfigId, isConnected]);
+  }, [firestore, activeSensorConfigId]);
 
 
   const dataLog = useMemo(() => {
@@ -373,7 +371,7 @@ function TestingComponent() {
       runningTestSessionRef.current = null;
   
       toast({ title: 'Test Session Ended' });
-  }, [firestore, stopDemoMode, testSessions]);
+  }, [firestore, stopDemoMode, testSessions, toast]);
   
   const runningArduinoSession = useMemo(() => {
     return testSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
@@ -389,7 +387,7 @@ function TestingComponent() {
             await readerRef.current.cancel();
             await readerRef.current.releaseLock();
         } catch (error) {
-            // Ignore cancel errors
+            // Ignore cancel errors, port may already be closed
         } finally {
           readerRef.current = null;
         }
@@ -421,11 +419,18 @@ function TestingComponent() {
         return;
     }
 
+    // Defensively close any existing port reference before opening a new one.
+    if (portRef.current) {
+      try { await portRef.current.close(); } catch (e) { /* Ignore */ }
+      portRef.current = null;
+    }
+
     try {
         const port = await (navigator.serial as any).requestPort();
         portRef.current = port;
         await port.open({ baudRate });
         setIsConnected(true);
+        setLocalDataLog([]);
         toast({ title: 'Connected', description: 'Device connected. Ready to start measurement.' });
         
         while (port.readable) {
@@ -459,16 +464,20 @@ function TestingComponent() {
                 }
             } catch(e) {
                 console.error("Serial read error:", e);
-                if (port.readable) { // Avoid toast if we intended to disconnect
+                if (portRef.current && portRef.current.readable) {
                    toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
                 }
             } finally {
-                readerRef.current?.releaseLock();
+                if(readerRef.current) {
+                    readerRef.current.releaseLock();
+                }
                 await readableStreamClosed.catch(() => {});
             }
         }
         
-        await port.close();
+        if (portRef.current) {
+          await portRef.current.close();
+        }
         setIsConnected(false);
 
     } catch (error) {
@@ -707,7 +716,7 @@ function TestingComponent() {
           description: (error as Error).message
         });
       }
-    } else if (selectedSessionIds.length === 0) {
+    } else {
         setLocalDataLog([]);
         toast({
             title: 'Local Data Cleared',
@@ -1167,7 +1176,7 @@ function TestingComponent() {
             <input type="file" ref={importFileRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
              <AlertDialog>
                 <AlertDialogTrigger asChild>
-                <Button variant="destructive" className="ml-4" disabled={!activeSensorConfigId || !!runningTestSession || selectedSessionIds.length === 0}>Clear Data</Button>
+                <Button variant="destructive" className="ml-4" disabled={!activeSensorConfigId || !!runningTestSession}>Clear Data</Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                 <AlertDialogHeader>
@@ -1572,3 +1581,6 @@ export default function TestingPage() {
 }
 
 
+
+
+    
