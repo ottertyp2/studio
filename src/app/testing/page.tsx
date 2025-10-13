@@ -191,15 +191,10 @@ function TestingComponent() {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [trimRange, setTrimRange] = useState([0, 100]);
 
-  // Zoom and Pan states
-  const chartContainerRef = useRef<HTMLDivElement>(null);
-  const [zoomDomain, setZoomDomain] = useState<{ startIndex: number; endIndex: number } | null>(null);
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState<{ x: number; domain: { startIndex: number; endIndex: number } } | null>(null);
-  const [liveUpdateEnabled, setLiveUpdateEnabled] = useState(true);
-
-  const [newProductName, setNewProductName] = useState('');
-
+  // Pan states for horizontal scroll
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, scrollLeft: 0 });
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -795,9 +790,6 @@ const disconnectSerial = useCallback(async () => {
   };
 
 
-  const handleResetZoom = () => {
-    setZoomDomain(null);
-  }
   
   const handleClearData = async () => {
     if (firestore && sensorConfig?.id && selectedSessionIds.length > 0) {
@@ -1003,7 +995,7 @@ const disconnectSerial = useCallback(async () => {
     }
   };
 
-  const fullChartData = useMemo(() => {
+  const chartData = useMemo(() => {
     if (!sensorConfig) return [];
     let allChronologicalData = [...dataLog].reverse();
 
@@ -1066,135 +1058,32 @@ const disconnectSerial = useCallback(async () => {
 
   }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, activeTestSession, runningTestSession, editingSessionId, localDataLog, isConnected]);
 
-  useEffect(() => {
-    if ((runningTestSession || isConnected) && Array.isArray(fullChartData) && chartInterval !== 'all') {
-      const maxTime = fullChartData.length > 0 ? Math.max(...fullChartData.map(d => d.name)) : 0;
-      const currentInterval = parseInt(chartInterval, 10);
-  
-      if (maxTime > currentInterval) {
-        const intervalOptions = [10, 30, 60, 300, 900];
-        const nextIntervalIndex = intervalOptions.findIndex(i => i > currentInterval);
-        
-        if (nextIntervalIndex !== -1) {
-            const nextInterval = intervalOptions[nextIntervalIndex];
-            if (maxTime > nextInterval) {
-                 const evenNextInterval = intervalOptions[nextIntervalIndex + 1];
-                 if(evenNextInterval) {
-                    setChartInterval(String(evenNextInterval));
-                 } else {
-                    setChartInterval('all');
-                 }
-            } else {
-                setChartInterval(String(nextInterval));
-            }
-
-        } else {
-          setChartInterval('all');
-        }
-      }
-    }
-  }, [fullChartData, chartInterval, runningTestSession, isConnected]);
-
-  const chartData = useMemo(() => {
-    if (Array.isArray(fullChartData) && zoomDomain) {
-      return fullChartData.slice(zoomDomain.startIndex, zoomDomain.endIndex);
-    }
-    return fullChartData;
-  }, [fullChartData, zoomDomain]);
-
-  useEffect(() => {
-    if (liveUpdateEnabled && Array.isArray(fullChartData)) {
-      setZoomDomain(null);
-    }
-  }, [fullChartData, liveUpdateEnabled]);
-
-  useEffect(() => {
-    const container = chartContainerRef.current;
-    if (!container) return;
-
-    const handleWheelCapture = (e: WheelEvent) => {
-      if (Array.isArray(fullChartData) && fullChartData.length > 0) {
-        e.preventDefault();
-        const zoomIntensity = 0.1;
-        const { deltaY } = e;
-
-        setZoomDomain(prevDomain => {
-          const currentDomain = prevDomain ?? { startIndex: 0, endIndex: fullChartData.length };
-          const range = currentDomain.endIndex - currentDomain.startIndex;
-          const change = Math.ceil(range * zoomIntensity * (deltaY > 0 ? 1 : -1));
-          
-          let newStartIndex = currentDomain.startIndex + change;
-          let newEndIndex = currentDomain.endIndex - change;
-
-          if (newEndIndex - newStartIndex < 20) { // Minimum zoom window
-            return prevDomain;
-          }
-
-          newStartIndex = Math.max(0, newStartIndex);
-          newEndIndex = Math.min(fullChartData.length, newEndIndex);
-
-          if(newStartIndex >= newEndIndex){
-            return prevDomain;
-          }
-          if (liveUpdateEnabled) {
-            setLiveUpdateEnabled(false);
-          }
-          return { startIndex: newStartIndex, endIndex: newEndIndex };
-        });
-      }
-    };
-
-    container.addEventListener('wheel', handleWheelCapture, { passive: false });
-    return () => {
-      if (container) {
-        container.removeEventListener('wheel', handleWheelCapture);
-      }
-    };
-  }, [fullChartData, zoomDomain, liveUpdateEnabled]);
-
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (Array.isArray(fullChartData) && zoomDomain) {
-      e.preventDefault();
-      setIsPanning(true);
-      setPanStart({ x: e.clientX, domain: zoomDomain });
-       if (liveUpdateEnabled) {
-        setLiveUpdateEnabled(false);
-      }
+    if (scrollContainerRef.current) {
+        e.preventDefault();
+        setIsDragging(true);
+        setDragStart({
+            x: e.pageX - scrollContainerRef.current.offsetLeft,
+            scrollLeft: scrollContainerRef.current.scrollLeft,
+        });
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (isPanning && panStart && Array.isArray(fullChartData)) {
+      if (!isDragging || !scrollContainerRef.current) return;
       e.preventDefault();
-      const dx = e.clientX - panStart.x;
-      const currentRange = panStart.domain.endIndex - panStart.domain.startIndex;
-      const totalRange = e.currentTarget.clientWidth;
-      
-      if (totalRange === 0) return;
-
-      const pointsPerPixel = currentRange / totalRange;
-      const panAmount = Math.round(dx * pointsPerPixel);
-
-      let newStartIndex = panStart.domain.startIndex - panAmount;
-      let newEndIndex = panStart.domain.endIndex - panAmount;
-
-      if (newStartIndex < 0) {
-        newStartIndex = 0;
-        newEndIndex = currentRange;
-      }
-      if (newEndIndex > fullChartData.length) {
-        newEndIndex = fullChartData.length;
-        newStartIndex = newEndIndex - currentRange;
-      }
-
-      setZoomDomain({ startIndex: newStartIndex, endIndex: newEndIndex });
-    }
+      const x = e.pageX - scrollContainerRef.current.offsetLeft;
+      const walk = (x - dragStart.x) * 1.5; // multiplier for scroll speed
+      scrollContainerRef.current.scrollLeft = dragStart.scrollLeft - walk;
   };
 
   const handleMouseUp = () => {
-    setIsPanning(false);
-    setPanStart(null);
+      setIsDragging(false);
+  };
+  
+  const handleMouseLeave = () => {
+    setIsDragging(false);
   };
   
   const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
@@ -1221,23 +1110,6 @@ const disconnectSerial = useCallback(async () => {
     return null;
   }, [isConnected, runningTestSession, instanceId]);
 
-    const handleAddProduct = () => {
-    if (!newProductName.trim()) {
-        toast({ variant: 'destructive', title: 'Invalid Input', description: 'Product name cannot be empty.' });
-        return;
-    }
-    if (!firestore || !productsCollectionRef) return;
-    const newProductId = doc(collection(firestore, '_')).id;
-    addDocumentNonBlocking(productsCollectionRef, { id: newProductId, name: newProductName.trim() });
-    setNewProductName('');
-    toast({ title: 'Product Added', description: `"${newProductName.trim()}" has been added.`});
-  };
-
-  const handleDeleteProduct = (productId: string) => {
-    if (!firestore) return;
-    deleteDocumentNonBlocking(doc(firestore, 'products', productId));
-    toast({ title: 'Product Deleted'});
-  };
 
   const renderNewSessionForm = () => (
     <div className="mt-4 p-4 border rounded-lg bg-background/50 w-full max-w-lg space-y-4">
@@ -1728,10 +1600,7 @@ const disconnectSerial = useCallback(async () => {
                       <SelectItem value="all">All Data</SelectItem>
                     </SelectContent>
                   </Select>
-                <Button onClick={() => setLiveUpdateEnabled(!liveUpdateEnabled)} variant={liveUpdateEnabled ? 'default': 'secondary'} size="sm" className="transition-all">
-                  {liveUpdateEnabled ? 'Live: ON' : 'Live: OFF'}
-                </Button>
-                <Button onClick={handleResetZoom} variant="outline" size="sm" className="transition-transform transform hover:-translate-y-0.5">
+                <Button onClick={() => {}} variant={'secondary'} size="sm" className="transition-transform transform hover:-translate-y-0.5">
                     Reset Zoom
                 </Button>
               </div>
@@ -1756,15 +1625,15 @@ const disconnectSerial = useCallback(async () => {
           </CardHeader>
           <CardContent>
             <div 
-              ref={chartContainerRef}
-              className="h-80"
+              ref={scrollContainerRef}
+              className="h-80 w-full min-w-full overflow-x-auto"
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseUp}
-              style={{ cursor: isPanning ? 'grabbing' : (Array.isArray(fullChartData) && zoomDomain ? 'grab' : 'default') }}
+              onMouseLeave={handleMouseLeave}
+              style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
             >
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={800}>
                 <LineChart data={Array.isArray(chartData) ? chartData : undefined} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                   <XAxis 
@@ -1774,16 +1643,12 @@ const disconnectSerial = useCallback(async () => {
                     type="number"
                     domain={Array.isArray(chartData) && chartData.length > 0 ? [chartData[0].name, chartData[chartData.length - 1].name] : [0, 1]}
                     label={{ value: "Time (seconds)", position: 'insideBottom', offset: -5 }}
-                    animationDuration={300}
-                    animationEasing="ease-out"
                   />
                   <YAxis
                     stroke="hsl(var(--muted-foreground))"
                     domain={['dataMin', 'dataMax']}
                     tickFormatter={(tick) => typeof tick === 'number' && sensorConfig ? tick.toFixed(sensorConfig.decimalPlaces) : tick}
                     label={{ value: sensorConfig?.unit, angle: -90, position: 'insideLeft' }}
-                    animationDuration={300}
-                    animationEasing="ease-out"
                   />
                   <Tooltip
                     contentStyle={{
@@ -1850,5 +1715,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    

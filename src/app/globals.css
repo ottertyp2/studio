@@ -70,6 +70,22 @@ body {
   body {
     @apply bg-background text-foreground;
   }
+  /* Custom Scrollbar for modern look */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--primary) / 0.5);
+    border-radius: 6px;
+    transition: background 0.2s;
+  }
+  :hover::-webkit-scrollbar-thumb {
+    background: hsl(var(--primary) / 0.7);
+  }
 }
 
 @layer utilities {
