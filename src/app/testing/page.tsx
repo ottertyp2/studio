@@ -1,4 +1,3 @@
-
 'use client';
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -167,7 +166,6 @@ function TestingComponent() {
   const [showNewSessionForm, setShowNewSessionForm] = useState(false);
 
   const [chartInterval, setChartInterval] = useState<string>("60");
-  const [chartKey, setChartKey] = useState<number>(Date.now());
   
   const [isConnected, setIsConnected] = useState(false);
   const [baudRate, setBaudRate] = useState<number>(9600);
@@ -192,6 +190,12 @@ function TestingComponent() {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [trimRange, setTrimRange] = useState([0, 100]);
   const [newProductName, setNewProductName] = useState('');
+
+  // Zoom and Pan states
+  const [zoomDomain, setZoomDomain] = useState<{ startIndex: number; endIndex: number } | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState<{ x: number; domain: { startIndex: number; endIndex: number } } | null>(null);
+
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -244,9 +248,10 @@ function TestingComponent() {
         description: 'Du hast keine Berechtigung für diese Aktion. Bitte neu einloggen.',
         variant: 'destructive',
       });
+      if(auth) signOut(auth);
       router.replace('/login');
     }
-  }, [testSessionsError, usersError, sensorConfigsError, productsError, testBenchesError, router, toast]);
+  }, [testSessionsError, usersError, sensorConfigsError, productsError, testBenchesError, router, toast, auth]);
 
   useEffect(() => {
     if (!isProductsLoading && products && products.length > 0 && !tempTestSession.productId) {
@@ -773,7 +778,7 @@ function TestingComponent() {
 
 
   const handleResetZoom = () => {
-    setChartKey(Date.now());
+    setZoomDomain(null);
   }
   
   const handleClearData = async () => {
@@ -1001,7 +1006,7 @@ function TestingComponent() {
   };
 
 
-  const chartData = useMemo(() => {
+  const fullChartData = useMemo(() => {
     if (!sensorConfig) return [];
     let allChronologicalData = [...dataLog].reverse();
 
@@ -1064,6 +1069,86 @@ function TestingComponent() {
 
   }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, activeTestSession, runningTestSession, editingSessionId, localDataLog, isConnected]);
 
+  const chartData = useMemo(() => {
+    if (Array.isArray(fullChartData) && zoomDomain) {
+      return fullChartData.slice(zoomDomain.startIndex, zoomDomain.endIndex);
+    }
+    return fullChartData;
+  }, [fullChartData, zoomDomain]);
+
+  useEffect(() => {
+    if (Array.isArray(fullChartData)) {
+      setZoomDomain(null); // Reset zoom when data changes
+    }
+  }, [fullChartData]);
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (Array.isArray(fullChartData) && fullChartData.length > 0) {
+      e.preventDefault();
+      const zoomIntensity = 0.1;
+      const { deltaY } = e;
+
+      setZoomDomain(prevDomain => {
+        const currentDomain = prevDomain ?? { startIndex: 0, endIndex: fullChartData.length };
+        const range = currentDomain.endIndex - currentDomain.startIndex;
+        const change = Math.ceil(range * zoomIntensity * (deltaY > 0 ? 1 : -1));
+        
+        let newStartIndex = currentDomain.startIndex + change;
+        let newEndIndex = currentDomain.endIndex - change;
+
+        if (newEndIndex - newStartIndex < 20) { // Minimum zoom window
+          return prevDomain;
+        }
+
+        newStartIndex = Math.max(0, newStartIndex);
+        newEndIndex = Math.min(fullChartData.length, newEndIndex);
+
+        if(newStartIndex >= newEndIndex){
+          return prevDomain;
+        }
+
+        return { startIndex: newStartIndex, endIndex: newEndIndex };
+      });
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (Array.isArray(fullChartData) && zoomDomain) {
+      e.preventDefault();
+      setIsPanning(true);
+      setPanStart({ x: e.clientX, domain: zoomDomain });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (isPanning && panStart && Array.isArray(fullChartData)) {
+      e.preventDefault();
+      const dx = e.clientX - panStart.x;
+      const currentRange = panStart.domain.endIndex - panStart.domain.startIndex;
+      const totalRange = e.currentTarget.clientWidth;
+      const pointsPerPixel = currentRange / totalRange;
+      const panAmount = Math.round(dx * pointsPerPixel);
+
+      let newStartIndex = panStart.domain.startIndex - panAmount;
+      let newEndIndex = panStart.domain.endIndex - panAmount;
+
+      if (newStartIndex < 0) {
+        newStartIndex = 0;
+        newEndIndex = currentRange;
+      }
+      if (newEndIndex > fullChartData.length) {
+        newEndIndex = fullChartData.length;
+        newStartIndex = newEndIndex - currentRange;
+      }
+
+      setZoomDomain({ startIndex: newStartIndex, endIndex: newEndIndex });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsPanning(false);
+    setPanStart(null);
+  };
   
   const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
   const displayDecimals = sensorConfig?.decimalPlaces ?? 0;
@@ -1650,15 +1735,24 @@ function TestingComponent() {
             )}
           </CardHeader>
           <CardContent>
-            <div className="h-80">
-              <ResponsiveContainer key={chartKey} width="100%" height="100%">
-                <LineChart margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+            <div 
+              className="h-80"
+              onWheel={handleWheel}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              style={{ cursor: isPanning ? 'grabbing' : 'grab' }}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={Array.isArray(chartData) ? chartData : undefined} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                   <XAxis 
                     dataKey="name" 
                     stroke="hsl(var(--muted-foreground))" 
                     allowDuplicatedCategory={false}
                     type="number"
+                    domain={Array.isArray(chartData) && chartData.length > 0 ? [chartData[0].name, chartData[chartData.length - 1].name] : [0, 1]}
                     label={{ value: "Time (seconds)", position: 'insideBottom', offset: -5 }}
                     animationDuration={300}
                     animationEasing="ease-out"
@@ -1681,7 +1775,7 @@ function TestingComponent() {
                   />
                   <Legend verticalAlign="top" height={36} />
                   {Array.isArray(chartData) ? (
-                     <Line type="monotone" data={chartData} dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig?.name} (${sensorConfig?.unit})`} dot={false} strokeWidth={2} isAnimationActive={!runningTestSession && !isConnected} />
+                     <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig?.name} (${sensorConfig?.unit})`} dot={false} strokeWidth={2} isAnimationActive={!runningTestSession && !isConnected} />
                   ) : (
                     Object.entries(chartData).map(([sessionId, data], index) => {
                        const session = testSessions?.find(s => s.id === sessionId);
