@@ -290,6 +290,14 @@ function TestingComponent() {
     }
   }, [preselectedSessionId]);
 
+  useEffect(() => {
+    // Reset Chart & Zoom when switching from multi-session comparison to single-session view
+    if (selectedSessionIds.length === 1) {
+      setZoomDomain(null);
+      setLiveUpdateEnabled(true);
+    }
+  }, [selectedSessionIds]);
+
   const mlModelsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return collection(firestore, 'mlModels');
@@ -1052,7 +1060,7 @@ const disconnectSerial = useCallback(async () => {
   }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, activeTestSession, runningTestSession, editingSessionId, localDataLog, isConnected]);
 
   useEffect(() => {
-    if ((runningTestSession || isConnected) && Array.isArray(chartData)) {
+    if ((runningTestSession || isConnected) && Array.isArray(chartData) && liveUpdateEnabled) {
       const maxTime = chartData.length > 0 ? Math.max(...chartData.map(d => d.name)) : 0;
       const currentInterval = parseInt(chartInterval, 10);
 
@@ -1062,7 +1070,7 @@ const disconnectSerial = useCallback(async () => {
         setChartInterval(String(nextInterval));
       }
     }
-  }, [chartData, chartInterval, runningTestSession, isConnected]);
+  }, [chartData, chartInterval, runningTestSession, isConnected, liveUpdateEnabled]);
 
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -1725,7 +1733,7 @@ const disconnectSerial = useCallback(async () => {
                       borderColor: 'hsl(var(--border))',
                       backdropFilter: 'blur(4px)',
                     }}
-                    formatter={(value: number, name: string, props) => [`${Number(value).toFixed(sensorConfig?.decimalPlaces ?? 2)} ${sensorConfig?.unit || ''}`, props.payload.name.toFixed(2) + 's']}
+                    formatter={(value: number, name: string, props) => [`${Number(value).toFixed(sensorConfig?.decimalPlaces ?? 2)} ${sensorConfig?.unit || ''}`, `${props.payload.name.toFixed(2)}s`]}
                   />
                   <Legend verticalAlign="top" height={36} />
                   {Array.isArray(chartData) ? (
@@ -1784,5 +1792,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
