@@ -236,7 +236,12 @@
     ]
   },
   "firestore": {
-    "structure": [],
+    "structure": [
+      {
+        "collection": "/products/{productId}",
+        "description": "Allows any authenticated user to read and write (create, update, delete) products. This is suitable for a development environment where all users need to manage the product catalog."
+      }
+    ],
     "reasoning": "To ensure an unblocked and seamless development experience, the security rules are configured to be completely open. A single, universal wildcard rule `match /{document=**}` is applied. This rule grants full read and write access (`get`, `list`, `create`, `update`, `delete`) to *every* collection and document in the database for *any* authenticated user (`if request.auth != null`). This approach eliminates all permission-related errors during development. For a production environment, these rules would need to be replaced with more granular, restrictive rules that enforce data ownership and roles."
   }
 }
