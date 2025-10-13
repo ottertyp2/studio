@@ -1037,9 +1037,11 @@ const disconnectSerial = useCallback(async () => {
         visibleData = [...localDataLog].reverse();
     }
     
-    const startTime = visibleData.length > 0 
-        ? new Date(visibleData[0].timestamp).getTime() 
-        : (activeTestSession ? new Date(activeTestSession.startTime).getTime() : Date.now());
+    const startTime = activeTestSession
+    ? new Date(activeTestSession.startTime).getTime()
+    : (visibleData.length > 0
+        ? new Date(visibleData[0].timestamp).getTime()
+        : Date.now());
 
     let mappedData = visibleData.map(d => ({
         name: (new Date(d.timestamp).getTime() - startTime) / 1000,
@@ -1063,10 +1065,10 @@ const disconnectSerial = useCallback(async () => {
   useEffect(() => {
     if ((runningTestSession || isConnected) && Array.isArray(chartData)) {
       const maxTime = chartData.length > 0 ? Math.max(...chartData.map(d => d.name)) : 0;
-      const intervalOptions = [10, 30, 60, 300, 900];
       const currentInterval = parseInt(chartInterval, 10);
 
       if (chartInterval !== 'all' && maxTime > currentInterval) {
+        const intervalOptions = [10, 30, 60, 300, 900];
         const nextInterval = intervalOptions.find(i => maxTime < i) || 'all';
         setChartInterval(String(nextInterval));
       }
