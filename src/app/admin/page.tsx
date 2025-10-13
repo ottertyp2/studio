@@ -58,7 +58,7 @@ import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
-import { signOut, adminCreateUser } from '@/firebase/non-blocking-login';
+import { signOut, adminCreateUser } from '@/firebase/non-blocking-login.ts';
 import { Checkbox } from '@/components/ui/checkbox';
 
 
@@ -1781,3 +1781,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    

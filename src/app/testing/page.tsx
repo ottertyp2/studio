@@ -69,7 +69,7 @@ import Papa from 'papaparse';
 import * as tf from '@tensorflow/tfjs';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc, useUser } from '@/firebase';
 import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc, orderBy, deleteDoc } from 'firebase/firestore';
-import { signOut } from '@/firebase';
+import { signOut } from 'firebase/auth';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { convertRawValue } from '@/lib/utils';
 
@@ -1035,18 +1035,16 @@ const disconnectSerial = useCallback(async () => {
         visibleData = [...localDataLog].reverse();
     }
     
-    const startTime = activeTestSession
-    ? new Date(activeTestSession.startTime).getTime()
-    : (visibleData.length > 0
-        ? new Date(visibleData[0].timestamp).getTime()
-        : Date.now());
+    const startTime = (runningTestSession || activeTestSession)
+        ? new Date((runningTestSession || activeTestSession)!.startTime).getTime()
+        : (visibleData.length > 0 ? new Date(visibleData[0].timestamp).getTime() : Date.now());
 
     let mappedData = visibleData.map(d => ({
         name: (new Date(d.timestamp).getTime() - startTime) / 1000,
         value: convertRawValue(d.value, sensorConfig)
     }));
 
-    if (chartInterval !== 'all' && !editingSessionId && liveUpdateEnabled) {
+    if (liveUpdateEnabled && chartInterval !== 'all' && !editingSessionId) {
         const intervalSeconds = parseInt(chartInterval, 10);
         if (runningTestSession || isConnected) {
              const maxTime = mappedData.length > 0 ? mappedData[mappedData.length - 1].name : 0;
@@ -1806,5 +1804,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
