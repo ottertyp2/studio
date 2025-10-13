@@ -1,36 +1,36 @@
 {
   "entities": {
-    "SensorData": {
+    "SensorReading": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "SensorData",
+      "title": "SensorReading",
       "type": "object",
-      "description": "Represents a single sensor reading at a specific point in time.",
+      "description": "Represents a single sensor reading with its value and timestamp.",
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique identifier for the sensor data entry."
-        },
-        "timestamp": {
-          "type": "string",
-          "description": "Timestamp of when the sensor data was recorded, in ISO 8601 format.",
-          "format": "date-time"
+          "description": "Unique identifier for the sensor reading."
         },
         "value": {
           "type": "number",
-          "description": "The raw value recorded by the sensor."
+          "description": "The value of the sensor reading. The unit depends on the current configuration of the BioThrust dashboard."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "The timestamp of when the sensor reading was recorded, in ISO 8601 format.",
+          "format": "date-time"
         }
       },
       "required": [
         "id",
-        "timestamp",
-        "value"
+        "value",
+        "timestamp"
       ]
     },
     "SensorConfiguration": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "SensorConfiguration",
       "type": "object",
-      "description": "Represents the configuration settings applied to the sensor.",
+      "description": "Represents the configuration settings for the sensor, including mode, unit, and custom values.",
       "properties": {
         "id": {
           "type": "string",
@@ -43,27 +43,31 @@
         },
         "unit": {
           "type": "string",
-          "description": "The unit of measurement for the sensor data."
+          "description": "The unit of measurement for the sensor (e.g., RAW, V, bar).",
+          "format": "string"
         },
-        "min": {
+        "minValue": {
           "type": "number",
-          "description": "The minimum value for custom sensor scaling."
+          "description": "The minimum value for the sensor in custom mode.",
+          "format": "number"
         },
-        "max": {
+        "maxValue": {
           "type": "number",
-          "description": "The maximum value for custom sensor scaling."
+          "description": "The maximum value for the sensor in custom mode.",
+          "format": "number"
         },
         "arduinoVoltage": {
           "type": "number",
-          "description": "The reference voltage of the Arduino."
+          "description": "The reference voltage for the Arduino in voltage mode.",
+          "format": "number"
         }
       },
       "required": [
         "id",
         "mode",
         "unit",
-        "min",
-        "max",
+        "minValue",
+        "maxValue",
         "arduinoVoltage"
       ]
     },
@@ -71,35 +75,41 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "LeakAnalysis",
       "type": "object",
-      "description": "Represents the results of a leak analysis performed on sensor data.",
+      "description": "Represents the result of a leak analysis performed on sensor data.",
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique identifier for the leak analysis result."
+          "description": "Unique identifier for the leak analysis."
         },
         "analysisModel": {
           "type": "string",
-          "description": "The type of analysis model used (linear_leak, nonlinear_leak)."
+          "description": "The analysis model used for leak detection (linear_leak, nonlinear_leak).",
+          "format": "string"
         },
         "startThreshold": {
           "type": "number",
-          "description": "The starting threshold value for the analysis."
+          "description": "The start threshold value for the leak analysis.",
+          "format": "number"
         },
         "endThreshold": {
           "type": "number",
-          "description": "The ending threshold value for the analysis."
+          "description": "The end threshold value for the leak analysis.",
+          "format": "number"
         },
         "sensitivity": {
           "type": "number",
-          "description": "The sensitivity setting for the analysis (R² value)."
+          "description": "The sensitivity value (R²) used for the leak analysis.",
+          "format": "number"
         },
         "result": {
           "type": "string",
-          "description": "The result of the leak analysis (Leak probable, Diffusion probable)."
+          "description": "The result of the leak analysis (e.g., Leak Likely, Diffusion Likely).",
+          "format": "string"
         },
         "analyzedRange": {
           "type": "string",
-          "description": "The range of data points analyzed."
+          "description": "A description of data range that was used when running the leak analysis tool.",
+          "format": "string"
         }
       },
       "required": [
@@ -108,28 +118,7 @@
         "startThreshold",
         "endThreshold",
         "sensitivity",
-        "result",
-        "analyzedRange"
-      ]
-    },
-    "Product": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Product",
-      "type": "object",
-      "description": "Represents a product that can be tested.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the product."
-        },
-        "name": {
-          "type": "string",
-          "description": "The name of the product."
-        }
-      },
-      "required": [
-        "id",
-        "name"
+        "result"
       ]
     }
   },
@@ -142,72 +131,62 @@
   "firestore": {
     "structure": [
       {
-        "path": "/sensor_data/{sensorDataId}",
-        "definition": {
-          "entityName": "SensorData",
-          "schema": {
-            "$ref": "#/backend/entities/SensorData"
-          },
-          "description": "Stores individual sensor readings. All authenticated users can delete.",
-          "params": [
-            {
-              "name": "sensorDataId",
-              "description": "Unique ID for each sensor data entry."
-            }
-          ]
-        }
-      },
-      {
-        "path": "/sensor_configurations/{sensorConfigurationId}",
+        "path": "/users/{userId}/sensorConfigurations/{sensorConfigurationId}",
         "definition": {
           "entityName": "SensorConfiguration",
           "schema": {
             "$ref": "#/backend/entities/SensorConfiguration"
           },
-          "description": "Stores sensor configuration settings.",
+          "description": "Stores sensor configurations specific to each user.",
           "params": [
             {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
               "name": "sensorConfigurationId",
-              "description": "Unique ID for each sensor configuration."
+              "description": "The unique identifier for the sensor configuration."
             }
           ]
         }
       },
       {
-        "path": "/leak_analyses/{leakAnalysisId}",
+        "path": "/users/{userId}/leakAnalyses/{leakAnalysisId}",
         "definition": {
           "entityName": "LeakAnalysis",
           "schema": {
             "$ref": "#/backend/entities/LeakAnalysis"
           },
-          "description": "Stores results from leak analyses. All authenticated users can delete.",
+          "description": "Stores leak analysis results specific to each user.",
           "params": [
             {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            },
+            {
               "name": "leakAnalysisId",
-              "description": "Unique ID for each leak analysis result."
+              "description": "The unique identifier for the leak analysis."
             }
           ]
         }
       },
-       {
-        "path": "/products/{productId}",
+      {
+        "path": "/sensorReadings/{sensorReadingId}",
         "definition": {
-          "entityName": "Product",
+          "entityName": "SensorReading",
           "schema": {
-            "$ref": "#/backend/entities/Product"
+            "$ref": "#/backend/entities/SensorReading"
           },
-          "description": "Stores product information. All authenticated users can read, create, and delete products.",
+          "description": "Stores sensor readings.  No ownership is assumed as the data is considered ephemeral and primarily for real-time visualization.",
           "params": [
             {
-              "name": "productId",
-              "description": "Unique ID for each product."
+              "name": "sensorReadingId",
+              "description": "The unique identifier for the sensor reading."
             }
           ]
         }
       }
     ],
-    "reasoning": "Based on the requirements, the primary data storage needs are for sensor data, sensor configurations, and leak analysis results. All data is related, but segregating them into separate collections allows for better querying and security rule management. The user request to allow anyone to delete products can be generalized to say that all authenticated users should be able to delete sensor data and analyses, this can be acheived by removing any user-specific access controls on these items.\n\n**Authorization Independence:**\n*   No authorization fields need to be denormalized, as there are no user-specific restrictions on data access as requested. All authenticated users can delete sensor data and leak analyses.\n\n**QAPs (Query and Presentation Support):**\n*   The structure allows for efficient querying of sensor data, configurations, and analysis results.\n*   Segregation allows listing of all sensor data, configurations, and analysis results (subject to volume limits), as needed.\n\n"
+    "reasoning": "The Firestore structure is designed to store sensor readings, configurations, and leak analyses for the BioThrust dashboard. It prioritizes authorization independence and supports secure list operations. User-specific sensor configurations and leak analysis results are stored under the user's document to ensure private data isolation.\n\n*   **/users/{userId}/sensorConfigurations/{sensorConfigurationId}**: Each user has their sensor configurations. This ensures that configurations are private to the user and avoids mixing different access needs.\n*   **/users/{userId}/leakAnalyses/{leakAnalysisId}**: Leak analysis results are stored under the user's document, keeping them private.\n*   **/sensorReadings/{sensorReadingId}**: All sensor readings are stored in a single collection. No ownership is assumed as the data is considered ephemeral and primarily for real-time visualization."
   }
 }
-
-    
