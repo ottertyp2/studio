@@ -192,9 +192,11 @@ function TestingComponent() {
   const [trimRange, setTrimRange] = useState([0, 100]);
 
   // Zoom and Pan states
+  const chartContainerRef = useRef<HTMLDivElement>(null);
   const [zoomDomain, setZoomDomain] = useState<{ startIndex: number; endIndex: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<{ x: number; domain: { startIndex: number; endIndex: number } } | null>(null);
+  const [liveUpdateEnabled, setLiveUpdateEnabled] = useState(true);
 
   const [newProductName, setNewProductName] = useState('');
 
@@ -425,11 +427,18 @@ const disconnectSerial = useCallback(async () => {
   const sensorDataCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user || !sensorConfig?.id || selectedSessionIds.length === 0) return null;
     
+    const relevantSessionIds = selectedSessionIds.filter(id => {
+        const session = testSessions?.find(s => s.id === id);
+        return session?.sensorConfigurationId === sensorConfig.id;
+    });
+
+    if (relevantSessionIds.length === 0) return null;
+
     return query(
         collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`),
-        where('testSessionId', 'in', selectedSessionIds.slice(0, 10))
+        where('testSessionId', 'in', relevantSessionIds.slice(0, 10))
     );
-  }, [firestore, user, sensorConfig?.id, selectedSessionIds]);
+  }, [firestore, user, sensorConfig?.id, selectedSessionIds, testSessions]);
 
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
   
@@ -1064,9 +1073,21 @@ const disconnectSerial = useCallback(async () => {
   
       if (maxTime > currentInterval) {
         const intervalOptions = [10, 30, 60, 300, 900];
-        const nextInterval = intervalOptions.find(i => i > currentInterval);
-        if (nextInterval) {
-          setChartInterval(String(nextInterval));
+        const nextIntervalIndex = intervalOptions.findIndex(i => i > currentInterval);
+        
+        if (nextIntervalIndex !== -1) {
+            const nextInterval = intervalOptions[nextIntervalIndex];
+            if (maxTime > nextInterval) {
+                 const evenNextInterval = intervalOptions[nextIntervalIndex + 1];
+                 if(evenNextInterval) {
+                    setChartInterval(String(evenNextInterval));
+                 } else {
+                    setChartInterval('all');
+                 }
+            } else {
+                setChartInterval(String(nextInterval));
+            }
+
         } else {
           setChartInterval('all');
         }
@@ -1082,46 +1103,64 @@ const disconnectSerial = useCallback(async () => {
   }, [fullChartData, zoomDomain]);
 
   useEffect(() => {
-    if (Array.isArray(fullChartData)) {
-      setZoomDomain(null); // Reset zoom when data changes
+    if (liveUpdateEnabled && Array.isArray(fullChartData)) {
+      setZoomDomain(null);
     }
-  }, [fullChartData]);
+  }, [fullChartData, liveUpdateEnabled]);
 
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (Array.isArray(fullChartData) && fullChartData.length > 0) {
-      e.preventDefault();
-      const zoomIntensity = 0.1;
-      const { deltaY } = e;
+  useEffect(() => {
+    const container = chartContainerRef.current;
+    if (!container) return;
 
-      setZoomDomain(prevDomain => {
-        const currentDomain = prevDomain ?? { startIndex: 0, endIndex: fullChartData.length };
-        const range = currentDomain.endIndex - currentDomain.startIndex;
-        const change = Math.ceil(range * zoomIntensity * (deltaY > 0 ? 1 : -1));
-        
-        let newStartIndex = currentDomain.startIndex + change;
-        let newEndIndex = currentDomain.endIndex - change;
+    const handleWheelCapture = (e: WheelEvent) => {
+      if (Array.isArray(fullChartData) && fullChartData.length > 0) {
+        e.preventDefault();
+        const zoomIntensity = 0.1;
+        const { deltaY } = e;
 
-        if (newEndIndex - newStartIndex < 20) { // Minimum zoom window
-          return prevDomain;
-        }
+        setZoomDomain(prevDomain => {
+          const currentDomain = prevDomain ?? { startIndex: 0, endIndex: fullChartData.length };
+          const range = currentDomain.endIndex - currentDomain.startIndex;
+          const change = Math.ceil(range * zoomIntensity * (deltaY > 0 ? 1 : -1));
+          
+          let newStartIndex = currentDomain.startIndex + change;
+          let newEndIndex = currentDomain.endIndex - change;
 
-        newStartIndex = Math.max(0, newStartIndex);
-        newEndIndex = Math.min(fullChartData.length, newEndIndex);
+          if (newEndIndex - newStartIndex < 20) { // Minimum zoom window
+            return prevDomain;
+          }
 
-        if(newStartIndex >= newEndIndex){
-          return prevDomain;
-        }
+          newStartIndex = Math.max(0, newStartIndex);
+          newEndIndex = Math.min(fullChartData.length, newEndIndex);
 
-        return { startIndex: newStartIndex, endIndex: newEndIndex };
-      });
-    }
-  };
+          if(newStartIndex >= newEndIndex){
+            return prevDomain;
+          }
+          if (liveUpdateEnabled) {
+            setLiveUpdateEnabled(false);
+          }
+          return { startIndex: newStartIndex, endIndex: newEndIndex };
+        });
+      }
+    };
+
+    container.addEventListener('wheel', handleWheelCapture, { passive: false });
+    return () => {
+      if (container) {
+        container.removeEventListener('wheel', handleWheelCapture);
+      }
+    };
+  }, [fullChartData, zoomDomain, liveUpdateEnabled]);
+
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (Array.isArray(fullChartData) && zoomDomain) {
       e.preventDefault();
       setIsPanning(true);
       setPanStart({ x: e.clientX, domain: zoomDomain });
+       if (liveUpdateEnabled) {
+        setLiveUpdateEnabled(false);
+      }
     }
   };
 
@@ -1131,6 +1170,9 @@ const disconnectSerial = useCallback(async () => {
       const dx = e.clientX - panStart.x;
       const currentRange = panStart.domain.endIndex - panStart.domain.startIndex;
       const totalRange = e.currentTarget.clientWidth;
+      
+      if (totalRange === 0) return;
+
       const pointsPerPixel = currentRange / totalRange;
       const panAmount = Math.round(dx * pointsPerPixel);
 
@@ -1577,8 +1619,9 @@ const disconnectSerial = useCallback(async () => {
                                 value={newProductName}
                                 onChange={(e) => setNewProductName(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && newProductName.trim() && handleAddProduct()}
+                                disabled={!user}
                             />
-                            <Button onClick={handleAddProduct} disabled={!newProductName.trim()}>
+                            <Button onClick={handleAddProduct} disabled={!newProductName.trim() || !user}>
                                 <PackagePlus className="h-4 w-4 mr-2" />
                                 Add
                             </Button>
@@ -1757,6 +1800,9 @@ const disconnectSerial = useCallback(async () => {
                       <SelectItem value="all">All Data</SelectItem>
                     </SelectContent>
                   </Select>
+                <Button onClick={() => setLiveUpdateEnabled(!liveUpdateEnabled)} variant={liveUpdateEnabled ? 'default': 'secondary'} size="sm" className="transition-all">
+                  {liveUpdateEnabled ? 'Live: ON' : 'Live: OFF'}
+                </Button>
                 <Button onClick={handleResetZoom} variant="outline" size="sm" className="transition-transform transform hover:-translate-y-0.5">
                     Reset Zoom
                 </Button>
@@ -1782,8 +1828,8 @@ const disconnectSerial = useCallback(async () => {
           </CardHeader>
           <CardContent>
             <div 
+              ref={chartContainerRef}
               className="h-80"
-              onWheel={handleWheel}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
