@@ -1068,6 +1068,23 @@ function TestingComponent() {
 
   }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, activeTestSession, runningTestSession, editingSessionId, localDataLog, isConnected]);
 
+  useEffect(() => {
+    if ((runningTestSession || isConnected) && Array.isArray(fullChartData) && chartInterval !== 'all') {
+      const maxTime = fullChartData.length > 0 ? Math.max(...fullChartData.map(d => d.name)) : 0;
+      const currentInterval = parseInt(chartInterval, 10);
+  
+      if (maxTime > currentInterval) {
+        const intervalOptions = [10, 30, 60, 300, 900];
+        const nextInterval = intervalOptions.find(i => i > currentInterval);
+        if (nextInterval) {
+          setChartInterval(String(nextInterval));
+        } else {
+          setChartInterval('all');
+        }
+      }
+    }
+  }, [fullChartData, chartInterval, runningTestSession, isConnected]);
+
   const chartData = useMemo(() => {
     if (Array.isArray(fullChartData) && zoomDomain) {
       return fullChartData.slice(zoomDomain.startIndex, zoomDomain.endIndex);
@@ -1640,7 +1657,7 @@ function TestingComponent() {
                 <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
                   {displayValue !== null ? displayValue.toFixed(displayDecimals) : (isConnected ? '...' : 'N/A')}
                 </p>
-                <p className="text-lg text-muted-foreground">{displayValue !== null && sensorConfig?.unit || 'N/A'}</p>
+                <p className="text-lg text-muted-foreground">{displayValue !== null && sensorConfig?.unit ? sensorConfig.unit : 'N/A'}</p>
                  <div className="mt-2 text-xs text-muted-foreground space-y-1">
                     <p>
                         Sensor: <span className="font-semibold text-foreground">{sensorConfig?.name ?? 'N/A'}</span>
@@ -1791,11 +1808,11 @@ function TestingComponent() {
                       borderColor: 'hsl(var(--border))',
                       backdropFilter: 'blur(4px)',
                     }}
-                    formatter={(value: number, name: string, props) => [`${Number(value).toFixed(sensorConfig?.decimalPlaces ?? 2)} ${sensorConfig?.unit}`, props.payload.name.toFixed(2) + 's']}
+                    formatter={(value: number, name: string, props) => [`${Number(value).toFixed(sensorConfig?.decimalPlaces ?? 2)} ${sensorConfig?.unit || ''}`, props.payload.name.toFixed(2) + 's']}
                   />
                   <Legend verticalAlign="top" height={36} />
                   {Array.isArray(chartData) ? (
-                     <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig?.name} (${sensorConfig?.unit})`} dot={false} strokeWidth={2} isAnimationActive={!runningTestSession && !isConnected} />
+                     <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig?.name || 'Value'} (${sensorConfig?.unit || 'N/A'})`} dot={false} strokeWidth={2} isAnimationActive={!runningTestSession && !isConnected} />
                   ) : (
                     Object.entries(chartData).map(([sessionId, data], index) => {
                        const session = testSessions?.find(s => s.id === sessionId);
@@ -1850,5 +1867,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
