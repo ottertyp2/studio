@@ -227,6 +227,26 @@
         "version"
       ]
     },
+    "TrainDataSet": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "TrainDataSet",
+      "type": "object",
+      "description": "Represents a training data set for machine learning models.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the training data set."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the training data set."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
     "TestSession": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "TestSession",
@@ -323,5 +343,3 @@
     "reasoning": "The security rules are structured to provide a balance between development flexibility and basic security. A top-level rule grants authenticated users read access to user profiles, which is necessary for UI elements like user dropdowns. Global collections like products, test benches, and configurations are fully accessible to any authenticated user to facilitate easy management during development. A single, universal wildcard rule `match /{document=**}` is NOT used, in favor of specific rules for each collection to provide more granular control and prevent accidental overly-permissive access as the application evolves. For a production environment, these rules would need to be refined with more restrictive logic based on user roles and data ownership."
   }
 }
-
-    
