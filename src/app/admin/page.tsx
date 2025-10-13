@@ -132,6 +132,7 @@ type TestSession = {
     demoType?: 'LEAK' | 'DIFFUSION';
     userId: string;
     username: string;
+    demoOwnerInstanceId?: string;
 };
 
 type AutomatedTrainingStatus = {
@@ -990,10 +991,10 @@ export default function AdminPage() {
             <CardHeader>
                 <CardTitle>{tempSensorConfig.id ? 'Edit Configuration' : 'Create New Configuration'}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 pt-6">
                  <div>
                     <Label htmlFor="configName">Name</Label>
-                    <Input id="configName" value={tempSensorConfig.name || ''} onChange={(e) => handleConfigChange('name', e.target.value)} />
+                    <Input id="configName" value={tempSensorConfig.name || ''} onChange={(e) => handleConfigChange('name', e.target.value)} placeholder="e.g. Primary Pressure Sensor" />
                 </div>
                 <div>
                   <Label htmlFor="testBenchSelect">Test Bench</Label>
@@ -1024,15 +1025,15 @@ export default function AdminPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                             <Label htmlFor="sensorUnitInput">Unit</Label>
-                            <Input id="sensorUnitInput" value={tempSensorConfig.unit || ''} onChange={(e) => handleConfigChange('unit', e.target.value)} />
+                            <Input id="sensorUnitInput" value={tempSensorConfig.unit || ''} onChange={(e) => handleConfigChange('unit', e.target.value)} placeholder="e.g. 'bar' or 'psi'"/>
                         </div>
                         <div>
                             <Label htmlFor="minValueInput">Minimum Value</Label>
-                            <Input id="minValueInput" type="number" value={tempSensorConfig.min ?? ''} onChange={(e) => handleConfigChange('min', e.target.value)} />
+                            <Input id="minValueInput" type="number" value={tempSensorConfig.min ?? ''} onChange={(e) => handleConfigChange('min', e.target.value)} placeholder="e.g. 0"/>
                         </div>
                         <div>
                             <Label htmlFor="maxValueInput">Maximum Value</Label>
-                            <Input id="maxValueInput" type="number" value={tempSensorConfig.max ?? ''} onChange={(e) => handleConfigChange('max', e.target.value)} />
+                            <Input id="maxValueInput" type="number" value={tempSensorConfig.max ?? ''} onChange={(e) => handleConfigChange('max', e.target.value)} placeholder="e.g. 10"/>
                         </div>
                     </div>
                  )}
@@ -1041,7 +1042,7 @@ export default function AdminPage() {
                         {tempSensorConfig.mode === 'VOLTAGE' && (
                             <div>
                                 <Label htmlFor="arduinoVoltageInput">Reference Voltage (V)</Label>
-                                <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage ?? ''} onChange={(e) => handleConfigChange('arduinoVoltage', e.target.value)} />
+                                <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage ?? ''} onChange={(e) => handleConfigChange('arduinoVoltage', e.target.value)} placeholder="e.g. 5 or 3.3"/>
                             </div>
                         )}
                         <div>
@@ -1050,7 +1051,7 @@ export default function AdminPage() {
                         </div>
                     </div>
                  )}
-                 <div className="flex justify-center gap-4">
+                 <div className="flex justify-center gap-4 pt-4">
                     <Button onClick={handleSaveSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Save</Button>
                     <Button onClick={() => setTempSensorConfig(null)} variant="ghost">Cancel</Button>
                  </div>
@@ -1067,12 +1068,12 @@ export default function AdminPage() {
         <CardHeader>
           <CardTitle>Test Sessions</CardTitle>
           <CardDescription>
-            Manage test sessions for all products.
+            Manage and review all product test sessions.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {!tempTestSession && !runningSession && (
-            <div className="flex justify-center">
+            <div className="flex justify-center mb-6">
               <Button onClick={() => setTempTestSession({})} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!activeSensorConfigId || !products || products.length === 0}>
                 Start New Demo Session
               </Button>
@@ -1080,8 +1081,8 @@ export default function AdminPage() {
           )}
 
           {tempTestSession && !runningSession && (
-            <div className="space-y-4">
-              <CardTitle className="text-lg">New Demo Session</CardTitle>
+            <div className="space-y-4 p-4 mb-6 border rounded-lg bg-background/50">
+              <h3 className="text-lg font-semibold text-center mb-2">New Demo Session</h3>
               <div>
                 <Label htmlFor="productIdentifier">Product</Label>
                 <Select onValueChange={value => handleTestSessionFieldChange('productId', value)}>
@@ -1117,15 +1118,15 @@ export default function AdminPage() {
                 <Label htmlFor="description">Description</Label>
                 <Input id="description" placeholder="Internal R&D..." value={tempTestSession.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
               </div>
-              <div className="flex justify-center gap-4">
+              <div className="flex justify-center gap-4 pt-2">
                 <Button onClick={handleStartNewTestSession} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Start Session</Button>
                 <Button variant="ghost" onClick={() => setTempTestSession(null)}>Cancel</Button>
               </div>
             </div>
           )}
 
-          <div className="space-y-4 mt-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 items-center">
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 items-center">
                 <Input 
                     placeholder="Search sessions..."
                     value={sessionSearchTerm}
@@ -1172,20 +1173,20 @@ export default function AdminPage() {
                     </SelectContent>
                 </Select>
             </div>
-             <ScrollArea className="h-[40rem]">
-              {isTestSessionsLoading ? <p>Loading sessions...</p> : filteredAndSortedSessions.length > 0 ? (
+             <ScrollArea className="h-[40rem] p-1">
+              {isTestSessionsLoading ? <p className="text-center text-muted-foreground">Loading sessions...</p> : filteredAndSortedSessions.length > 0 ? (
                 filteredAndSortedSessions.map(session => {
                   const bench = testBenches?.find(b => b.id === session.testBenchId);
                   const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
                   return (
-                    <Card key={session.id} className={`p-3 mb-2 ${session.status === 'RUNNING' ? 'border-primary' : ''}`}>
+                    <Card key={session.id} className={`p-4 mb-2 ${session.status === 'RUNNING' ? 'border-primary' : ''} hover:bg-muted/50`}>
                         <div className="flex justify-between items-start gap-4">
-                            <div>
+                            <div className='flex-grow'>
                                 <p className="font-semibold">{session.productName} <span className="text-sm text-muted-foreground">({session.serialNumber || 'N/A'})</span></p>
                                 <p className="text-sm text-muted-foreground">
-                                    {new Date(session.startTime).toLocaleString('en-US')} - {session.status}
+                                    {new Date(session.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short'})} - {session.status}
                                 </p>
-                                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-2">
                                   <User className="h-3 w-3" />
                                   <span>{session.username}</span>
                                 </div>
@@ -1193,7 +1194,7 @@ export default function AdminPage() {
                                   <Server className="h-3 w-3" />
                                   <span>{bench?.name || 'N/A'} / {config?.name || 'N/A'}</span>
                                 </div>
-                                <p className="text-xs text-muted-foreground">
+                                <p className="text-xs text-muted-foreground mt-1">
                                     Data Points: {sessionDataCounts[session.id] ?? '...'}
                                 </p>
                             </div>
@@ -1223,7 +1224,7 @@ export default function AdminPage() {
                     </Card>
                 )})
               ) : (
-                 <p className="text-sm text-muted-foreground text-center">No test sessions found.</p>
+                 <p className="text-sm text-muted-foreground text-center pt-10">No test sessions found.</p>
               )}
             </ScrollArea>
           </div>
@@ -1239,24 +1240,24 @@ export default function AdminPage() {
             <Accordion type="single" collapsible className="w-full" defaultValue='item-1'>
                 <AccordionItem value="item-1">
                     <AccordionTrigger className="p-6">
-                        <CardHeader className="p-0 text-left">
+                        <div className="text-left">
                             <CardTitle>User Management</CardTitle>
                             <CardDescription>Create users, manage roles, and access.</CardDescription>
-                        </CardHeader>
+                        </div>
                     </AccordionTrigger>
                     <AccordionContent className="p-6 pt-0">
-                        <div className="mb-6 p-4 border rounded-lg">
-                            <h3 className="text-lg font-semibold mb-2">Create New User</h3>
+                        <div className="mb-6 p-4 border rounded-lg bg-background/50">
+                            <h3 className="text-lg font-semibold mb-4">Create New User</h3>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <div>
+                                <div className="space-y-1">
                                     <Label htmlFor="new-username">Username</Label>
-                                    <Input id="new-username" value={newUser.username} onChange={(e) => setNewUser(p => ({ ...p, username: e.target.value }))} />
+                                    <Input id="new-username" placeholder="e.g. test_operator" value={newUser.username} onChange={(e) => setNewUser(p => ({ ...p, username: e.target.value }))} />
                                 </div>
-                                <div>
+                                <div className="space-y-1">
                                     <Label htmlFor="new-password">Password</Label>
-                                    <Input id="new-password" type="password" value={newUser.password} onChange={(e) => setNewUser(p => ({ ...p, password: e.target.value }))} />
+                                    <Input id="new-password" type="password" placeholder="••••••••" value={newUser.password} onChange={(e) => setNewUser(p => ({ ...p, password: e.target.value }))} />
                                 </div>
-                                <div>
+                                <div className="space-y-1">
                                     <Label htmlFor="new-role">Role</Label>
                                     <Select value={newUser.role} onValueChange={(value) => setNewUser(p => ({ ...p, role: value }))}>
                                         <SelectTrigger id="new-role"><SelectValue /></SelectTrigger>
@@ -1281,11 +1282,11 @@ export default function AdminPage() {
                                 </TableHeader>
                                 <TableBody>
                                     {isUsersLoading ? (
-                                        <TableRow><TableCell colSpan={4}>Loading users...</TableCell></TableRow>
+                                        <TableRow><TableCell colSpan={4} className="text-center">Loading users...</TableCell></TableRow>
                                     ) : (
                                         users?.map((u) => (
                                             <TableRow key={u.id}>
-                                                <TableCell>{u.username}</TableCell>
+                                                <TableCell className="font-medium">{u.username}</TableCell>
                                                 <TableCell>{u.email}</TableCell>
                                                 <TableCell>
                                                     <Select
@@ -1348,52 +1349,51 @@ export default function AdminPage() {
       <CardContent className="space-y-6">
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Model Catalog Management */}
             <div>
-                <CardTitle className="text-lg mb-2">Model Catalog</CardTitle>
+                <h3 className="font-semibold text-lg mb-2">Model Catalog</h3>
                 <div className="flex gap-2 mb-4">
                     <Input placeholder="New model name..." value={newMlModel.name || ''} onChange={(e) => setNewMlModel(p => ({...p, name: e.target.value}))} />
                     <Input placeholder="Version (e.g., 1.0)" value={newMlModel.version || ''} onChange={(e) => setNewMlModel(p => ({...p, version: e.target.value}))} />
                     <Button onClick={handleAddMlModel}><PackagePlus className="h-4 w-4" /></Button>
                 </div>
-                <ScrollArea className="h-48 border rounded-md p-2">
-                    {isMlModelsLoading ? <p>Loading...</p> : mlModels?.map(m => (
+                <ScrollArea className="h-48 border rounded-md p-2 bg-background/50">
+                    {isMlModelsLoading ? <p className="text-center p-4">Loading...</p> : mlModels && mlModels.length > 0 ? mlModels.map(m => (
                         <div key={m.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted">
                             <div>
-                                <p>{m.name} <span className="text-xs text-muted-foreground">v{m.version}</span></p>
+                                <p className="font-medium">{m.name} <span className="text-xs text-muted-foreground">v{m.version}</span></p>
                                 {m.description && <p className="text-xs text-muted-foreground">{m.description}</p>}
                             </div>
                             <Button variant="ghost" size="icon" onClick={() => handleDeleteMlModel(m.id)}>
                                 <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
                         </div>
-                    ))}
+                    )) : <p className="text-center p-4 text-muted-foreground">No models in catalog.</p>}
                 </ScrollArea>
             </div>
-            {/* Training Data Management */}
+
             <div>
-                <CardTitle className="text-lg mb-2">Training Datasets</CardTitle>
+                <h3 className="font-semibold text-lg mb-2">Training Datasets</h3>
                 <div className="flex gap-2 mb-4">
                     <Input placeholder="New dataset name..." value={newTrainDataSet.name || ''} onChange={(e) => setNewTrainDataSet(p => ({...p, name: e.target.value}))} />
                     <Button onClick={handleAddTrainDataSet}><PackagePlus className="h-4 w-4" /></Button>
                 </div>
-                 <ScrollArea className="h-48 border rounded-md p-2">
-                    {isTrainDataSetsLoading ? <p>Loading...</p> : trainDataSets?.map(d => (
+                 <ScrollArea className="h-48 border rounded-md p-2 bg-background/50">
+                    {isTrainDataSetsLoading ? <p className="text-center p-4">Loading...</p> : trainDataSets && trainDataSets.length > 0 ? trainDataSets.map(d => (
                         <div key={d.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted">
-                            <p>{d.name}</p>
+                            <p className="font-medium">{d.name}</p>
                             <Button variant="ghost" size="icon" onClick={() => handleDeleteTrainDataSet(d.id)}>
                                 <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
                         </div>
-                    ))}
+                    )): <p className="text-center p-4 text-muted-foreground">No datasets in catalog.</p>}
                 </ScrollArea>
             </div>
         </div>
 
         <div className="border-t pt-6 space-y-4">
-            <CardTitle className="text-lg">Manual Model Training</CardTitle>
+            <h3 className="font-semibold text-lg">Manual Model Training</h3>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
+              <div className='space-y-1'>
                 <Label htmlFor="model-select">Select Model to Update</Label>
                 <Select onValueChange={setSelectedModelId} value={selectedModelId || ''}>
                   <SelectTrigger id="model-select">
@@ -1405,11 +1405,11 @@ export default function AdminPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
+              <div className='space-y-1'>
                 <Label>Select Training Datasets</Label>
-                <ScrollArea className="h-40 border rounded-md p-2">
+                <ScrollArea className="h-40 border rounded-md p-2 bg-background/50">
                     <div className="space-y-2">
-                    {isTestSessionsLoading ? <p>Loading...</p> :
+                    {isTestSessionsLoading ? <p className="p-4 text-center">Loading...</p> :
                      testSessions?.filter(s => s.demoType).map(d => (
                          <div key={d.id} className="flex items-center space-x-2">
                              <Checkbox
@@ -1422,14 +1422,14 @@ export default function AdminPage() {
                                 }}
                              />
                              <label htmlFor={d.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                 {d.productName} ({d.demoType})
+                                 {d.productName} ({d.demoType}) - <span className="text-xs text-muted-foreground">{new Date(d.startTime).toLocaleDateString()}</span>
                              </label>
                          </div>
                      ))}
                     </div>
                 </ScrollArea>
                  <p className="text-xs text-muted-foreground mt-1">
-                  Generate training data sets on the <a href="/testing" className="underline text-primary">Testing</a> page via the "Start Demo" button.
+                  Generate demo sessions on the <a href="/testing" className="underline text-primary">Testing</a> page to create training data.
                 </p>
               </div>
             </div>
@@ -1439,15 +1439,17 @@ export default function AdminPage() {
                 {isTraining ? 'Training...' : 'Train & Update Selected Model'}
               </Button>
             </div>
-            <div className="space-y-2">
-              <Label>Training Progress</Label>
-              <Progress value={trainingProgress} />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Epoch: {trainingStatus.epoch}</span>
-                <span>Loss: {trainingStatus.loss.toFixed(4)} | Acc: {trainingStatus.accuracy.toFixed(2)}%</span>
-                <span>Val_Loss: {trainingStatus.val_loss.toFixed(4)} | Val_Acc: {trainingStatus.val_acc.toFixed(2)}%</span>
-              </div>
-            </div>
+            {isTraining && (
+                <div className="space-y-2">
+                <Label>Training Progress</Label>
+                <Progress value={trainingProgress} />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Epoch: {trainingStatus.epoch}</span>
+                    <span>Loss: {trainingStatus.loss.toFixed(4)} | Acc: {trainingStatus.accuracy.toFixed(2)}%</span>
+                    <span>Val_Loss: {trainingStatus.val_loss.toFixed(4)} | Val_Acc: {trainingStatus.val_acc.toFixed(2)}%</span>
+                </div>
+                </div>
+            )}
         </div>
 
       </CardContent>
@@ -1462,7 +1464,7 @@ export default function AdminPage() {
             Automated Training Pipeline
           </CardTitle>
           <CardDescription>
-            Click the button to automatically generate new data, train a model from scratch, and save it to the catalog.
+            Automatically generate new data, train a model from scratch, and save it to the catalog.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1496,7 +1498,10 @@ export default function AdminPage() {
   if (isUserLoading || !user) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
-        <p className="text-lg">Loading...</p>
+        <div className="text-center">
+            <p className="text-lg font-semibold">Loading Management Panel...</p>
+            <p className="text-sm text-muted-foreground">Please wait a moment.</p>
+        </div>
       </div>
     );
   }
@@ -1537,24 +1542,24 @@ export default function AdminPage() {
                   <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
                       <AccordionItem value="item-1">
                           <AccordionTrigger className="p-6">
-                            <CardHeader className="p-0 text-left">
+                            <div className="text-left">
                                 <CardTitle>Test Bench Management</CardTitle>
                                 <CardDescription>Manage physical test benches.</CardDescription>
-                            </CardHeader>
+                            </div>
                           </AccordionTrigger>
                           <AccordionContent className="p-6 pt-0">
-                              <div className="flex flex-col gap-2 mb-4 p-4 border rounded-lg">
-                                  <h3 className="font-semibold">New Test Bench</h3>
+                              <div className="flex flex-col gap-2 mb-4 p-4 border rounded-lg bg-background/50">
+                                  <h3 className="font-semibold mb-2">New Test Bench</h3>
                                   <Input placeholder="Name..." value={newTestBench.name || ''} onChange={(e) => setNewTestBench(p => ({...p, name: e.target.value}))} />
                                   <Input placeholder="Location..." value={newTestBench.location || ''} onChange={(e) => setNewTestBench(p => ({...p, location: e.target.value}))} />
                                   <Input placeholder="Description..." value={newTestBench.description || ''} onChange={(e) => setNewTestBench(p => ({...p, description: e.target.value}))} />
-                                  <Button onClick={handleAddTestBench} size="sm">Add Bench</Button>
+                                  <Button onClick={handleAddTestBench} size="sm" className="mt-2">Add Bench</Button>
                               </div>
-                              {isTestBenchesLoading ? <p>Loading test benches...</p> :
-                              <ScrollArea className="h-64">
+                              {isTestBenchesLoading ? <p className="text-center">Loading test benches...</p> :
+                              <ScrollArea className="h-64 p-1">
                                   <div className="space-y-4">
                                       {testBenches?.map(b => (
-                                          <Card key={b.id} className='p-4'>
+                                          <Card key={b.id} className='p-4 hover:bg-muted/50'>
                                               <div className='flex justify-between items-center'>
                                                   <div>
                                                       <p className='font-semibold'>{b.name}</p>
@@ -1588,25 +1593,25 @@ export default function AdminPage() {
                   </Accordion>
               </Card>
               <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-                  <Accordion type="single" collapsible className="w-full">
+                  <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
                       <AccordionItem value="item-1">
                           <AccordionTrigger className="p-6">
-                            <CardHeader className="p-0 text-left">
+                            <div className="text-left">
                                 <CardTitle>Sensor Management</CardTitle>
                                 <CardDescription>
                                     Manage all sensor configurations.
                                 </CardDescription>
-                            </CardHeader>
+                            </div>
                           </AccordionTrigger>
                           <AccordionContent className="p-6 pt-0">
                               <div className="flex justify-center mb-4">
                                   <Button onClick={handleNewSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">New Configuration</Button>
                               </div>
-                              {isSensorConfigsLoading ? <p>Loading sensors...</p> :
-                              <ScrollArea className="h-96">
+                              {isSensorConfigsLoading ? <p className="text-center">Loading sensors...</p> :
+                              <ScrollArea className="h-96 p-1">
                                   <div className="space-y-4">
                                       {sensorConfigs?.map(c => (
-                                          <Card key={c.id} className='p-4'>
+                                          <Card key={c.id} className='p-4 hover:bg-muted/50'>
                                               <div className='flex justify-between items-center'>
                                                   <div>
                                                       <p className='font-semibold'>{c.name}</p>
@@ -1664,3 +1669,4 @@ export default function AdminPage() {
     </div>
   );
 }
+

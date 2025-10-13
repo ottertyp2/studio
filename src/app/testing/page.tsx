@@ -1,3 +1,4 @@
+
 'use client';
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -671,11 +672,11 @@ function TestingComponent() {
 
   useEffect(() => {
     if (
-      runningTestSession &&
-      runningTestSession.measurementType === 'DEMO' &&
-      !demoIntervalRef.current &&
-      runningTestSession.demoOwnerInstanceId === instanceId
-    ) {
+        runningTestSession &&
+        runningTestSession.measurementType === 'DEMO' &&
+        !demoIntervalRef.current &&
+        runningTestSession.demoOwnerInstanceId === instanceId
+      ) {
         let step = 0;
         const totalSteps = 240; // ~2 minutes of data
         lastValuesRef.current = [];
@@ -1225,7 +1226,7 @@ function TestingComponent() {
           <Input id="description" placeholder="e.g., Initial R&D Test" value={tempTestSession.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 pt-2">
         {isConnected ? (
           <Button 
               onClick={async () => {
@@ -1268,10 +1269,10 @@ function TestingComponent() {
         <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
             <AccordionItem value="item-1">
                 <AccordionTrigger className="p-6">
-                    <CardHeader className="p-0 text-left">
+                    <div className="text-left">
                         <CardTitle>Product Management</CardTitle>
                         <CardDescription>Add, view, and remove your products.</CardDescription>
-                    </CardHeader>
+                    </div>
                 </AccordionTrigger>
                 <AccordionContent className="p-6 pt-0">
                     <div className="flex gap-2 mb-4">
@@ -1300,7 +1301,7 @@ function TestingComponent() {
                                 ) : products && products.length > 0 ? (
                                     products.map(p => (
                                         <TableRow key={p.id}>
-                                            <TableCell className="truncate max-w-[200px]">{p.name}</TableCell>
+                                            <TableCell className="truncate max-w-[200px] font-medium">{p.name}</TableCell>
                                             <TableCell className="text-right">
                                                 <AlertDialog>
                                                     <AlertDialogTrigger asChild>
@@ -1325,7 +1326,7 @@ function TestingComponent() {
                                         </TableRow>
                                     ))
                                 ) : (
-                                    <TableRow><TableCell colSpan={2} className="text-center">No products found.</TableCell></TableRow>
+                                    <TableRow><TableCell colSpan={2} className="text-center text-muted-foreground">No products found.</TableCell></TableRow>
                                 )}
                             </TableBody>
                         </Table>
@@ -1338,7 +1339,7 @@ function TestingComponent() {
 
   const renderLiveTab = () => (
     <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-        <CardHeader className="pb-4">
+        <CardHeader>
           <CardTitle className="text-2xl text-center">
               Live Control
           </CardTitle>
@@ -1456,9 +1457,9 @@ function TestingComponent() {
           {editingSessionId && (
             <>
               <div className="border-t pt-6">
-                  <CardTitle className="text-lg mb-2">AI-Powered Analysis</CardTitle>
+                  <h3 className="font-semibold text-lg mb-4">AI-Powered Analysis</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
+                      <div className="space-y-1">
                           <Label htmlFor="analysis-model-select">Select Model</Label>
                           <Select onValueChange={setSelectedAnalysisModelName} value={selectedAnalysisModelName || ''}>
                               <SelectTrigger id="analysis-model-select">
@@ -1472,7 +1473,7 @@ function TestingComponent() {
                       </div>
                       <div className='space-y-2'>
                           <Label>Select Data Range for Analysis</Label>
-                          <div className="p-2 border rounded-md">
+                          <div className="p-2 border rounded-md bg-background/50">
                               <Slider
                                   value={analysisRange}
                                   onValueChange={setAnalysisRange}
@@ -1505,12 +1506,12 @@ function TestingComponent() {
                   )}
               </div>
                 <div className="border-t pt-6">
-                <CardTitle className="text-lg">Trim Session Data</CardTitle>
-                <CardDescription className="mb-4">
+                <h3 className="font-semibold text-lg">Trim Session Data</h3>
+                <p className="text-sm text-muted-foreground mb-4">
                     Select the percentage range of the session you want to keep. Data outside this range will be permanently deleted.
-                </CardDescription>
+                </p>
                 <div className="space-y-4">
-                    <div className="p-2 border rounded-md">
+                    <div className="p-2 border rounded-md bg-background/50">
                         <Slider
                             value={trimRange}
                             onValueChange={setTrimRange}
@@ -1555,7 +1556,10 @@ function TestingComponent() {
   if (isUserLoading || !user) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
-        <p className="text-lg">Loading...</p>
+        <div className="text-center">
+            <p className="text-lg font-semibold">Loading Dashboard...</p>
+            <p className="text-sm text-muted-foreground">Please wait a moment.</p>
+        </div>
       </div>
     );
   }
@@ -1584,7 +1588,7 @@ function TestingComponent() {
             </div>
 
             <CardDescription>
-              Real-time sensor data analysis with Arduino, CSV, and Cloud integration.
+              Real-time sensor data analysis with Test Bench, CSV, and Cloud integration.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -1607,19 +1611,24 @@ function TestingComponent() {
              </CardContent>
            </Card>
         </div>
-        <div className="lg:col-span-1 grid grid-rows-2 gap-6">
+        <div className="lg:col-span-1 grid grid-rows-1 md:grid-rows-2 gap-6">
           {runningTestSession ? (
-            <Card className='p-3 border-primary bg-white/70 backdrop-blur-sm shadow-lg row-span-1 h-full'>
-                <div className="flex justify-between items-center">
-                    <div>
-                        <p className="font-semibold">{runningTestSession.productName}</p>
-                        <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US')} - {runningTestSession.status}</p>
-                          <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.demoType ? `(${runningTestSession.demoType})` : ''}</p>
+            <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg row-span-1 h-full'>
+                <CardHeader className='p-2'>
+                    <CardTitle>Session in Progress</CardTitle>
+                </CardHeader>
+                <CardContent className='p-2'>
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <p className="font-semibold">{runningTestSession.productName}</p>
+                            <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US')} - {runningTestSession.status}</p>
+                            <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.demoType ? `(${runningTestSession.demoType})` : ''}</p>
+                        </div>
+                        <div className="flex gap-2">
+                            <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
+                        </div>
                     </div>
-                    <div className="flex gap-2">
-                        <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
-                    </div>
-                </div>
+                </CardContent>
             </Card>
           ) : (
             renderProductManagement()
@@ -1634,7 +1643,7 @@ function TestingComponent() {
                   {displayValue !== null ? displayValue.toFixed(displayDecimals) : (isConnected ? '...' : 'N/A')}
                 </p>
                 <p className="text-lg text-muted-foreground">{sensorConfig?.unit || 'N/A'}</p>
-                 <div className="mt-2 text-xs text-muted-foreground">
+                 <div className="mt-2 text-xs text-muted-foreground space-y-1">
                     <p>
                         Sensor: <span className="font-semibold text-foreground">{sensorConfig?.name ?? 'N/A'}</span>
                     </p>
@@ -1670,7 +1679,7 @@ function TestingComponent() {
                 <div className='flex items-center gap-2'>
                     <Label htmlFor="testBenchSelect" className="whitespace-nowrap">Test Bench:</Label>
                     <Select value={activeTestBenchId || ''} onValueChange={setActiveTestBenchId} disabled={!!runningTestSession}>
-                        <SelectTrigger id="testBenchSelect" className="w-[200px] bg-white/80">
+                        <SelectTrigger id="testBenchSelect" className="w-auto md:w-[200px] bg-white/80">
                             <SelectValue placeholder="Select a test bench" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1683,7 +1692,7 @@ function TestingComponent() {
                 <div className='flex items-center gap-2'>
                     <Label htmlFor="sensorConfigSelect" className="whitespace-nowrap">Sensor Config:</Label>
                     <Select value={activeSensorConfigId || ''} onValueChange={setActiveSensorConfigId} disabled={!!runningTestSession}>
-                        <SelectTrigger id="sensorConfigSelect" className="w-[200px] bg-white/80">
+                        <SelectTrigger id="sensorConfigSelect" className="w-auto md:w-[200px] bg-white/80">
                         <SelectValue placeholder="Select a sensor" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1696,7 +1705,7 @@ function TestingComponent() {
                  <div className='flex items-center gap-2'>
                     <Label htmlFor="sessionFilter" className="whitespace-nowrap">Session(s):</Label>
                     <Select onValueChange={(val) => setSelectedSessionIds(prev => prev.includes(val) ? prev : [...prev, val])}>
-                        <SelectTrigger id="sessionFilter" className="w-[300px] bg-white/80">
+                        <SelectTrigger id="sessionFilter" className="w-auto md:w-[300px] bg-white/80">
                             <SelectValue placeholder="Select sessions to compare..." />
                         </SelectTrigger>
                         <SelectContent>
@@ -1755,7 +1764,7 @@ function TestingComponent() {
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseUp}
-              style={{ cursor: isPanning ? 'grabbing' : 'grab' }}
+              style={{ cursor: isPanning ? 'grabbing' : (Array.isArray(fullChartData) && zoomDomain ? 'grab' : 'default') }}
             >
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={Array.isArray(chartData) ? chartData : undefined} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
@@ -1807,6 +1816,7 @@ function TestingComponent() {
             <Card>
                 <CardHeader>
                     <CardTitle>Data Log</CardTitle>
+                     <CardDescription>A log of the most recent raw data points being visualized in the chart above.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <ScrollArea className="h-64">
