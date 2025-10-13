@@ -168,6 +168,31 @@
         "id",
         "name"
       ]
+    },
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user profile.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The user's unique ID, matching their Firebase Auth UID."
+        },
+        "username": {
+          "type": "string",
+          "description": "The user's chosen username."
+        },
+        "email": {
+          "type": "string",
+          "description": "The user's email address."
+        },
+        "role": {
+          "type": "string",
+          "description": "The user's role (e.g., 'user', 'superadmin')."
+        }
+      },
+      "required": ["id", "username", "email", "role"]
     }
   },
   "auth": {
@@ -178,6 +203,22 @@
   },
   "firestore": {
     "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Allows authenticated users to read user profiles for UI elements like dropdowns and lists. Client-side writes are disallowed.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            }
+          ]
+        }
+      },
       {
         "path": "/users/{userId}/sensorConfigurations/{sensorConfigurationId}",
         "definition": {
