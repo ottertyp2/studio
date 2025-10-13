@@ -1016,9 +1016,10 @@ const disconnectSerial = useCallback(async () => {
                     };
                 });
             
-            if (chartInterval !== 'all') {
+            if (chartInterval !== 'all' && liveUpdateEnabled) {
                 const intervalSeconds = parseInt(chartInterval, 10);
-                sessionData = sessionData.filter(d => d.name <= intervalSeconds);
+                const maxTime = sessionData.length > 0 ? sessionData[sessionData.length - 1].name : 0;
+                sessionData = sessionData.filter(d => d.name >= (maxTime - intervalSeconds));
             }
             
             dataBySession[id] = sessionData;
@@ -1045,7 +1046,7 @@ const disconnectSerial = useCallback(async () => {
         value: convertRawValue(d.value, sensorConfig)
     }));
 
-    if (chartInterval !== 'all' && !editingSessionId) {
+    if (chartInterval !== 'all' && !editingSessionId && liveUpdateEnabled) {
         const intervalSeconds = parseInt(chartInterval, 10);
         if (runningTestSession || isConnected) {
              const maxTime = mappedData.length > 0 ? mappedData[mappedData.length - 1].name : 0;
@@ -1057,7 +1058,7 @@ const disconnectSerial = useCallback(async () => {
     
     return mappedData;
 
-  }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, activeTestSession, runningTestSession, editingSessionId, localDataLog, isConnected]);
+  }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, activeTestSession, runningTestSession, editingSessionId, localDataLog, isConnected, liveUpdateEnabled]);
 
   useEffect(() => {
     if ((runningTestSession || isConnected) && Array.isArray(chartData) && liveUpdateEnabled) {
@@ -1118,11 +1119,24 @@ const disconnectSerial = useCallback(async () => {
     if (!container) return;
 
     const handleWheelCapture = (e: WheelEvent) => {
-        if (Array.isArray(chartData) && chartData.length > 0) {
+        if (chartData && (Array.isArray(chartData) ? chartData.length > 0 : Object.keys(chartData).length > 0)) {
             e.preventDefault();
             const { deltaY } = e;
             const zoomFactor = 1.1;
-            const [currentMin, currentMax] = zoomDomain || [chartData[0].name, chartData[chartData.length - 1].name];
+
+            const getChartBounds = () => {
+                if (Array.isArray(chartData) && chartData.length > 0) {
+                    return [chartData[0].name, chartData[chartData.length - 1].name];
+                }
+                if (typeof chartData === 'object' && Object.keys(chartData).length > 0) {
+                    const allNames = Object.values(chartData).flat().map(d => d.name);
+                    if (allNames.length === 0) return [0,1];
+                    return [Math.min(...allNames), Math.max(...allNames)];
+                }
+                return [0,1];
+            };
+            
+            const [currentMin, currentMax] = zoomDomain || getChartBounds();
 
             let newMin = currentMin;
             let newMax = currentMax;
@@ -1135,8 +1149,7 @@ const disconnectSerial = useCallback(async () => {
                 newMax = currentMax * zoomFactor;
             }
             
-            const dataMin = chartData[0].name;
-            const dataMax = chartData[chartData.length - 1].name;
+            const [dataMin, dataMax] = getChartBounds();
             
             newMin = Math.max(dataMin, newMin);
             newMax = Math.min(dataMax, newMax);
@@ -1720,6 +1733,7 @@ const disconnectSerial = useCallback(async () => {
                     domain={zoomDomain || (Array.isArray(chartData) && chartData.length > 0 ? ['dataMin', 'dataMax'] : [0, 1])}
                     label={{ value: "Time (seconds)", position: 'insideBottom', offset: -5 }}
                     tickFormatter={(tick) => (tick as number).toFixed(0)}
+                    allowDuplicatedCategory={false}
                   />
                   <YAxis
                     stroke="hsl(var(--muted-foreground))"
@@ -1792,3 +1806,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
