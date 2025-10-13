@@ -1678,12 +1678,12 @@ function TestingComponent() {
                   />
                   <Legend verticalAlign="top" height={36} />
                   {Array.isArray(chartData) ? (
-                     <Line type="monotone" data={chartData} dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig?.name} (${sensorConfig?.unit})`} dot={false} strokeWidth={2} />
+                     <Line type="monotone" data={chartData} dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig?.name} (${sensorConfig?.unit})`} dot={false} strokeWidth={2} isAnimationActive={false} />
                   ) : (
                     Object.entries(chartData).map(([sessionId, data], index) => {
                        const session = testSessions?.find(s => s.id === sessionId);
                        return (
-                         <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={session?.productName || sessionId} dot={false} strokeWidth={2} />
+                         <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={session?.productName || sessionId} dot={false} strokeWidth={2} isAnimationActive={false} />
                        )
                     })
                   )}
@@ -1732,3 +1732,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
