@@ -69,7 +69,7 @@ import Papa from 'papaparse';
 import * as tf from '@tensorflow/tfjs';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc, useUser } from '@/firebase';
 import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc, orderBy, deleteDoc } from 'firebase/firestore';
-import { signOut } from '@/firebase/non-blocking-login';
+import { signOut } from '@/firebase';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { convertRawValue } from '@/lib/utils';
 
@@ -1806,3 +1806,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    

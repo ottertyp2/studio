@@ -120,6 +120,26 @@
         "sensitivity",
         "result"
       ]
+    },
+    "Product": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Product",
+      "type": "object",
+      "description": "Represents a product that can be tested.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the product."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the product."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
     }
   },
   "auth": {
@@ -137,7 +157,7 @@
           "schema": {
             "$ref": "#/backend/entities/SensorConfiguration"
           },
-          "description": "Stores sensor configurations specific to each user.",
+          "description": "Stores sensor configurations specific to each user. For development, all authenticated users can read/write.",
           "params": [
             {
               "name": "userId",
@@ -157,7 +177,7 @@
           "schema": {
             "$ref": "#/backend/entities/LeakAnalysis"
           },
-          "description": "Stores leak analysis results specific to each user.",
+          "description": "Stores leak analysis results specific to each user. For development, all authenticated users can read/write.",
           "params": [
             {
               "name": "userId",
@@ -177,7 +197,7 @@
           "schema": {
             "$ref": "#/backend/entities/SensorReading"
           },
-          "description": "Stores sensor readings.  No ownership is assumed as the data is considered ephemeral and primarily for real-time visualization.",
+          "description": "Stores sensor readings. For development, all authenticated users can read/write.",
           "params": [
             {
               "name": "sensorReadingId",
@@ -185,8 +205,24 @@
             }
           ]
         }
+      },
+      {
+        "path": "/products/{productId}",
+        "definition": {
+          "entityName": "Product",
+          "schema": {
+            "$ref": "#/backend/entities/Product"
+          },
+          "description": "Stores product information. For development, all authenticated users can read, create, and delete products.",
+          "params": [
+            {
+              "name": "productId",
+              "description": "The unique identifier for the product."
+            }
+          ]
+        }
       }
     ],
-    "reasoning": "The Firestore structure is designed to store sensor readings, configurations, and leak analyses for the BioThrust dashboard. It prioritizes authorization independence and supports secure list operations. User-specific sensor configurations and leak analysis results are stored under the user's document to ensure private data isolation.\n\n*   **/users/{userId}/sensorConfigurations/{sensorConfigurationId}**: Each user has their sensor configurations. This ensures that configurations are private to the user and avoids mixing different access needs.\n*   **/users/{userId}/leakAnalyses/{leakAnalysisId}**: Leak analysis results are stored under the user's document, keeping them private.\n*   **/sensorReadings/{sensorReadingId}**: All sensor readings are stored in a single collection. No ownership is assumed as the data is considered ephemeral and primarily for real-time visualization."
+    "reasoning": "The Firestore structure is designed for open development and demonstration. To prevent permission errors during this phase, all collections are configured to allow read and write access for any authenticated user. This simplifies development by removing security rule complexities, with the understanding that these rules would need to be properly secured for a production environment.\n\n- **/users/{userId}/**: User-specific data is nested under the user's ID, but remains accessible to any logged-in user during development.\n- **/sensorReadings/{sensorReadingId}**: Open access for real-time data visualization.\n- **/products/{productId}**: Open access for product management."
   }
 }
