@@ -343,23 +343,16 @@ const disconnectSerial = useCallback(async () => {
         } catch (error) {
             console.warn("Serial reader cancel error:", error);
         }
-        try {
-            readerRef.current.releaseLock();
-        } catch (error) {
-            console.warn("Serial reader release lock error:", error);
-        }
     }
-    readerRef.current = null;
-
-
+    
+    // This ReadableStream is now locked, we must unlock it before closing the port.
     if (readableStreamClosedRef.current) {
         try {
-            await readableStreamClosedRef.current.catch(() => {});
-        } catch (error) {
-            console.warn("Stream close error:", error);
+            await readableStreamClosedRef.current.catch(() => {}); // Catch any error
+        } catch(e) {
+            // Ignore
         }
     }
-    readableStreamClosedRef.current = null;
     
     if (portRef.current) {
         try {
@@ -368,8 +361,10 @@ const disconnectSerial = useCallback(async () => {
             console.warn("Error closing serial port:", e);
         }
     }
-    portRef.current = null;
 
+    portRef.current = null;
+    readerRef.current = null;
+    readableStreamClosedRef.current = null;
     setIsConnected(false);
     setLocalDataLog([]);
     toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
@@ -1723,6 +1718,7 @@ const disconnectSerial = useCallback(async () => {
                     type="number"
                     domain={zoomDomain || (Array.isArray(chartData) && chartData.length > 0 ? [chartData[0].name, chartData[chartData.length - 1].name] : [0, 1])}
                     label={{ value: "Time (seconds)", position: 'insideBottom', offset: -5 }}
+                    tickFormatter={(tick) => Math.round(tick as number).toString()}
                   />
                   <YAxis
                     stroke="hsl(var(--muted-foreground))"
@@ -1795,5 +1791,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
