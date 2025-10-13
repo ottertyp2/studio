@@ -286,32 +286,7 @@
     ]
   },
   "firestore": {
-    "structure": [
-      {
-        "collection": "/products/{productId}",
-        "description": "Allows any authenticated user to read and write (create, update, delete) products. This is suitable for a development environment where all users need to manage the product catalog."
-      },
-      {
-        "collection": "/testbenches/{testbenchId}",
-        "description": "Allows any authenticated user to read and write (create, update, delete) test benches. This is suitable for a development environment."
-      },
-      {
-        "collection": "/users/{userId}",
-        "description": "Allows any authenticated user to read user profiles, which is necessary for UI elements like dropdowns. Client-side writes are disallowed to prevent users from modifying roles or other sensitive information."
-      },
-      {
-        "collection": "/mlModels/{mlModelId}",
-        "description": "Allows any authenticated user to read and write (create, update, delete) machine learning models. This is suitable for a development environment where users manage AI models."
-      },
-      {
-        "collection": "/sensor_configurations/{sensorConfigurationId}",
-        "description": "Allows any authenticated user to read and write (create, update, delete) sensor configurations. In a production environment, this would likely be restricted to admins or owners, but it is open for development."
-      },
-      {
-        "collection": "/test_sessions/{testSessionId}",
-        "description": "Allows any authenticated user to read and write (create, update, delete) test sessions. This is suitable for a development environment."
-      }
-    ],
-    "reasoning": "To ensure an unblocked and seamless development experience, the security rules are configured to be open for authenticated users. A single, universal wildcard rule `match /{document=**}` grants full read and write access (`get`, `list`, `create`, `update`, `delete`) to every collection and document in the database for any authenticated user (`if request.auth != null`). This approach eliminates all permission-related errors during development. For a production environment, these rules would need to be replaced with more granular, restrictive rules that enforce data ownership and roles."
+    "structure": [],
+    "reasoning": "To ensure an unblocked and seamless development experience, the security rules are configured to be completely open for any authenticated user. A single, universal wildcard rule `match /{document=**}` grants full read and write access (`get`, `list`, `create`, `update`, `delete`) to every collection and document in the database for any user that is signed in (`if request.auth != null`). This approach eliminates all permission-related errors during development and is suitable for a rapid prototyping environment. For a production environment, these rules would need to be replaced with more granular, restrictive rules that enforce data ownership and roles."
   }
 }
