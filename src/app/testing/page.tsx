@@ -1046,7 +1046,7 @@ const disconnectSerial = useCallback(async () => {
     if (chartInterval !== 'all' && !editingSessionId) {
         const intervalSeconds = parseInt(chartInterval, 10);
         if (runningTestSession || isConnected) {
-             const maxTime = mappedData.length > 0 ? Math.max(...mappedData.map(d => d.name)) : 0;
+             const maxTime = mappedData.length > 0 ? mappedData[mappedData.length - 1].name : 0;
              mappedData = mappedData.filter(dp => dp.name >= (maxTime - intervalSeconds));
         } else {
             mappedData = mappedData.filter(dp => dp.name >= 0 && dp.name <= intervalSeconds);
@@ -1716,7 +1716,7 @@ const disconnectSerial = useCallback(async () => {
                     stroke="hsl(var(--muted-foreground))" 
                     allowDuplicatedCategory={false}
                     type="number"
-                    domain={zoomDomain || (Array.isArray(chartData) && chartData.length > 0 ? [chartData[0].name, chartData[chartData.length - 1].name] : [0, 1])}
+                    domain={zoomDomain || (Array.isArray(chartData) && chartData.length > 0 ? ['dataMin', 'dataMax'] : [0, 1])}
                     label={{ value: "Time (seconds)", position: 'insideBottom', offset: -5 }}
                     tickFormatter={(tick) => Math.round(tick as number).toString()}
                   />
