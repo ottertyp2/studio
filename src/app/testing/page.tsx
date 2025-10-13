@@ -1634,6 +1634,19 @@ function TestingComponent() {
                   {displayValue !== null ? displayValue.toFixed(displayDecimals) : (isConnected ? '...' : 'N/A')}
                 </p>
                 <p className="text-lg text-muted-foreground">{sensorConfig?.unit || 'N/A'}</p>
+                 <div className="mt-2 text-xs text-muted-foreground">
+                    <p>
+                        Sensor: <span className="font-semibold text-foreground">{sensorConfig?.name ?? 'N/A'}</span>
+                    </p>
+                    {runningTestSession && (
+                        <p>
+                            Source: <span className="font-semibold text-foreground">
+                                {runningTestSession.measurementType === 'DEMO' ? 'Virtual Sensor' : 'Live Sensor'}
+                            </span>
+                        </p>
+                    )}
+                 </div>
+
                   {(isConnected || runningTestSession) && (
                   <div className="text-xs text-green-600 mt-1 flex items-center justify-center gap-1">
                     <span className="relative flex h-2 w-2">
