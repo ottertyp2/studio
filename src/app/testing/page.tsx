@@ -339,44 +339,31 @@ const disconnectSerial = useCallback(async () => {
 
     if (readerRef.current) {
         try {
-            console.log('Attempting to cancel reader...');
             await readerRef.current.cancel();
-            console.log('Reader cancelled.');
         } catch (error) {
             console.warn("Serial reader cancel error:", error);
         }
-        try {
-            console.log('Attempting to release reader lock...');
-            readerRef.current.releaseLock();
-            console.log('Reader lock released.');
-        } catch(e) {
-            console.warn("Error releasing reader lock (might be already released):", e);
-        }
-        readerRef.current = null;
     }
     
     if (readableStreamClosedRef.current) {
         try {
-            console.log('Waiting for readable stream to close...');
             await readableStreamClosedRef.current.catch(() => {}); // Catch any error
-            console.log('Readable stream closed.');
         } catch(e) {
             console.warn("Error awaiting stream close promise:", e);
         }
-        readableStreamClosedRef.current = null;
     }
     
     if (portRef.current) {
         try {
-            console.log('Attempting to close port...');
             await portRef.current.close();
-            console.log('Port closed.');
         } catch (e) {
             console.warn("Error closing serial port:", e);
         }
-        portRef.current = null;
     }
 
+    portRef.current = null;
+    readerRef.current = null;
+    readableStreamClosedRef.current = null;
     setIsConnected(false);
     setLocalDataLog([]);
     toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
@@ -527,12 +514,13 @@ const disconnectSerial = useCallback(async () => {
         while (port.readable && portRef.current === port) {
             const textDecoder = new TextDecoderStream();
             readableStreamClosedRef.current = port.readable.pipeTo(textDecoder.writable);
-            readerRef.current = textDecoder.readable.getReader();
+            const streamReader = textDecoder.readable.getReader();
+            readerRef.current = streamReader;
 
             try {
                 let partialLine = '';
                 while (true) {
-                    const { value, done } = await readerRef.current.read();
+                    const { value, done } = await streamReader.read();
                     if (done) {
                         break;
                     }
@@ -561,13 +549,7 @@ const disconnectSerial = useCallback(async () => {
                     }
                 }
             } finally {
-                if(readerRef.current) {
-                    try {
-                        readerRef.current.releaseLock();
-                    } catch (lockError) {
-                        // Ignore if already unlocked
-                    }
-                }
+                streamReader.releaseLock();
             }
         }
 
@@ -1726,7 +1708,6 @@ const disconnectSerial = useCallback(async () => {
                   <XAxis 
                     dataKey="name" 
                     stroke="hsl(var(--muted-foreground))" 
-                    allowDuplicatedCategory={false}
                     type="number"
                     domain={zoomDomain || (Array.isArray(chartData) && chartData.length > 0 ? ['dataMin', 'dataMax'] : [0, 1])}
                     label={{ value: "Time (seconds)", position: 'insideBottom', offset: -5 }}
