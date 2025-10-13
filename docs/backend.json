@@ -140,6 +140,34 @@
         "id",
         "name"
       ]
+    },
+    "TestBench": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "TestBench",
+      "type": "object",
+      "description": "Represents a physical test bench where tests are conducted.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the test bench."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the test bench."
+        },
+        "location": {
+          "type": "string",
+          "description": "The physical location of the test bench (e.g., Lab A, Room 101)."
+        },
+        "description": {
+          "type": "string",
+          "description": "A brief description of the test bench's capabilities."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
     }
   },
   "auth": {
@@ -221,8 +249,24 @@
             }
           ]
         }
+      },
+      {
+        "path": "/testbenches/{testBenchId}",
+        "definition": {
+          "entityName": "TestBench",
+          "schema": {
+            "$ref": "#/backend/entities/TestBench"
+          },
+          "description": "Stores test bench information. For development, all authenticated users can read, create, and delete test benches.",
+          "params": [
+            {
+              "name": "testBenchId",
+              "description": "The unique identifier for the test bench."
+            }
+          ]
+        }
       }
     ],
-    "reasoning": "The Firestore structure is designed for open development and demonstration. To prevent permission errors during this phase, all collections are configured to allow read and write access for any authenticated user. This simplifies development by removing security rule complexities, with the understanding that these rules would need to be properly secured for a production environment.\n\n- **/users/{userId}/**: User-specific data is nested under the user's ID, but remains accessible to any logged-in user during development.\n- **/sensorReadings/{sensorReadingId}**: Open access for real-time data visualization.\n- **/products/{productId}**: Open access for product management."
+    "reasoning": "The Firestore structure is designed for open development and demonstration. To prevent permission errors during this phase, all collections are configured to allow read and write access for any authenticated user. This simplifies development by removing security rule complexities, with the understanding that these rules would need to be properly secured for a production environment.\n\n- **/users/{userId}/**: User-specific data is nested under the user's ID, but remains accessible to any logged-in user during development.\n- **/sensorReadings/{sensorReadingId}**: Open access for real-time data visualization.\n- **/products/{productId}**: Open access for product management.\n- **/testbenches/{testBenchId}**: Open access for managing test benches."
   }
 }
