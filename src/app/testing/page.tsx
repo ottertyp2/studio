@@ -232,15 +232,10 @@ function TestingComponent() {
   }, [user, isUserLoading, router]);
 
  useEffect(() => {
-    // Check for Permission-Error in all Collections
-    const hasPermissionError =
-      (testSessionsError as any)?.message.includes('permission-denied') ||
-      (usersError as any)?.message.includes('permission-denied') ||
-      (sensorConfigsError as any)?.message.includes('permission-denied') ||
-      (productsError as any)?.message.includes('permission-denied') ||
-      (testBenchesError as any)?.message.includes('permission-denied');
+    const errorSources = [testSessionsError, usersError, sensorConfigsError, productsError, testBenchesError];
+    const permissionError = errorSources.find(e => e && (e as any).message.includes('permission-denied'));
 
-    if (hasPermissionError) {
+    if (permissionError) {
       toast({
         title: 'Zugriff verweigert',
         description: 'Du hast keine Berechtigung für diese Aktion. Bitte neu einloggen.',
