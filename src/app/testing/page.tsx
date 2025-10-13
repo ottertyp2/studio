@@ -245,8 +245,8 @@ function TestingComponent() {
 
     if (permissionError) {
       toast({
-        title: 'Zugriff verweigert',
-        description: 'Du hast keine Berechtigung für diese Aktion. Bitte neu einloggen.',
+        title: 'Access Denied',
+        description: 'You do not have permission for this action. Please log in again.',
         variant: 'destructive',
       });
       if(auth) signOut(auth);
@@ -329,7 +329,7 @@ function TestingComponent() {
     return testSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
   }, [testSessions]);
 
-  const disconnectSerial = useCallback(async () => {
+const disconnectSerial = useCallback(async () => {
     stopDemoMode();
 
     if (runningArduinoSession) {
@@ -342,15 +342,23 @@ function TestingComponent() {
         } catch (error) {
             console.warn("Serial reader cancel error:", error);
         }
+        try {
+            readerRef.current.releaseLock();
+        } catch (error) {
+            console.warn("Serial reader release lock error:", error);
+        }
     }
+    readerRef.current = null;
+
 
     if (readableStreamClosedRef.current) {
         try {
-            await readableStreamClosedRef.current;
+            await readableStreamClosedRef.current.catch(() => {});
         } catch (error) {
             console.warn("Stream close error:", error);
         }
     }
+    readableStreamClosedRef.current = null;
     
     if (portRef.current) {
         try {
@@ -359,10 +367,8 @@ function TestingComponent() {
             console.warn("Error closing serial port:", e);
         }
     }
-    
     portRef.current = null;
-    readerRef.current = null;
-    readableStreamClosedRef.current = null;
+
     setIsConnected(false);
     setLocalDataLog([]);
     toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
@@ -1263,7 +1269,7 @@ function TestingComponent() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Start Demo Simulation</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Choose a scenario to simulate. This will use the product and session details you've entered above.
+                    Choose a scenario to simulate. This will use the product and session details you'veentered above.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -1657,7 +1663,7 @@ function TestingComponent() {
                 <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
                   {displayValue !== null ? displayValue.toFixed(displayDecimals) : (isConnected ? '...' : 'N/A')}
                 </p>
-                <p className="text-lg text-muted-foreground">{displayValue !== null && sensorConfig?.unit ? sensorConfig.unit : 'N/A'}</p>
+                <p className="text-lg text-muted-foreground">{displayValue !== null && sensorConfig?.unit ? sensorConfig.unit : ''}</p>
                  <div className="mt-2 text-xs text-muted-foreground space-y-1">
                     <p>
                         Sensor: <span className="font-semibold text-foreground">{sensorConfig?.name ?? 'N/A'}</span>
@@ -1867,3 +1873,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
