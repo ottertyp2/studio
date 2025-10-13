@@ -196,6 +196,8 @@ function TestingComponent() {
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<{ x: number; domain: { startIndex: number; endIndex: number } } | null>(null);
 
+  const [newProductName, setNewProductName] = useState('');
+
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -1177,6 +1179,24 @@ const disconnectSerial = useCallback(async () => {
     return null;
   }, [isConnected, runningTestSession, instanceId]);
 
+    const handleAddProduct = () => {
+    if (!newProductName.trim()) {
+        toast({ variant: 'destructive', title: 'Invalid Input', description: 'Product name cannot be empty.' });
+        return;
+    }
+    if (!firestore || !productsCollectionRef) return;
+    const newProductId = doc(collection(firestore, '_')).id;
+    addDocumentNonBlocking(productsCollectionRef, { id: newProductId, name: newProductName.trim() });
+    setNewProductName('');
+    toast({ title: 'Product Added', description: `"${newProductName.trim()}" has been added.`});
+  };
+
+  const handleDeleteProduct = (productId: string) => {
+    if (!firestore) return;
+    deleteDocumentNonBlocking(doc(firestore, 'products', productId));
+    toast({ title: 'Product Deleted'});
+  };
+
   const renderNewSessionForm = () => (
     <div className="mt-4 p-4 border rounded-lg bg-background/50 w-full max-w-lg space-y-4">
       <h3 className="text-lg font-semibold text-center">Start New Session</h3>
@@ -1540,7 +1560,78 @@ const disconnectSerial = useCallback(async () => {
              </CardContent>
            </Card>
         </div>
-        <div className="lg:col-span-1 grid grid-rows-1 md:grid-rows-2 gap-6">
+        <div className="lg:col-span-1 grid grid-rows-1 md:grid-rows-3 gap-6">
+           <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+              <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
+                <AccordionItem value="item-1">
+                  <AccordionTrigger className="p-4">
+                    <div className="text-left">
+                      <CardTitle>Product Management</CardTitle>
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="p-4 pt-0">
+                    <div className="space-y-4">
+                        <div className="flex gap-2">
+                            <Input
+                                placeholder="New product name..."
+                                value={newProductName}
+                                onChange={(e) => setNewProductName(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && newProductName.trim() && handleAddProduct()}
+                            />
+                            <Button onClick={handleAddProduct} disabled={!newProductName.trim()}>
+                                <PackagePlus className="h-4 w-4 mr-2" />
+                                Add
+                            </Button>
+                        </div>
+                        <ScrollArea className="h-40 border rounded-md p-2 bg-background/50">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Product Name</TableHead>
+                                        <TableHead className="text-right">Action</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {isProductsLoading ? (
+                                        <TableRow><TableCell colSpan={2} className="text-center">Loading products...</TableCell></TableRow>
+                                    ) : products && products.length > 0 ? (
+                                        products.map(p => (
+                                            <TableRow key={p.id}>
+                                                <TableCell className="truncate max-w-[200px] font-medium">{p.name}</TableCell>
+                                                <TableCell className="text-right">
+                                                    <AlertDialog>
+                                                        <AlertDialogTrigger asChild>
+                                                            <Button variant="ghost" size="icon" disabled={!user}>
+                                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                                            </Button>
+                                                        </AlertDialogTrigger>
+                                                        <AlertDialogContent>
+                                                            <AlertDialogHeader>
+                                                                <AlertDialogTitle>Delete Product?</AlertDialogTitle>
+                                                                <AlertDialogDescription>
+                                                                    Are you sure you want to delete "{p.name}"? This cannot be undone. Associated test sessions will not be deleted but will reference a missing product.
+                                                                </AlertDialogDescription>
+                                                            </AlertDialogHeader>
+                                                            <AlertDialogFooter>
+                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                <AlertDialogAction variant="destructive" onClick={() => handleDeleteProduct(p.id)}>Confirm Delete</AlertDialogAction>
+                                                            </AlertDialogFooter>
+                                                        </AlertDialogContent>
+                                                    </AlertDialog>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))
+                                    ) : (
+                                        <TableRow><TableCell colSpan={2} className="text-center text-muted-foreground">No products found.</TableCell></TableRow>
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </ScrollArea>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+          </Card>
           {runningTestSession ? (
             <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg row-span-1 h-full'>
                 <CardHeader className='p-2'>
@@ -1561,7 +1652,9 @@ const disconnectSerial = useCallback(async () => {
             </Card>
           ) : (
             <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-              {/* This space is intentionally left blank for now, can be filled with other info panels */}
+               <CardContent className="p-4 flex items-center justify-center h-full">
+                 <p className="text-sm text-muted-foreground">No active session.</p>
+               </CardContent>
             </Card>
           )}
           <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
