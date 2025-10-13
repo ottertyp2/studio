@@ -194,6 +194,39 @@
         }
       },
       "required": ["id", "username", "email", "role"]
+    },
+    "MLModel": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "MLModel",
+      "type": "object",
+      "description": "Represents a machine learning model.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the ML model."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the model."
+        },
+        "version": {
+          "type": "string",
+          "description": "The version of the model."
+        },
+        "description": {
+          "type": "string",
+          "description": "A brief description of the model."
+        },
+        "fileSize": {
+          "type": "number",
+          "description": "The size of the model file in bytes."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "version"
+      ]
     }
   },
   "auth": {
@@ -307,10 +340,24 @@
             }
           ]
         }
+      },
+      {
+        "path": "/mlModels/{mlModelId}",
+        "definition": {
+          "entityName": "MLModel",
+          "schema": {
+            "$ref": "#/backend/entities/MLModel"
+          },
+          "description": "Stores machine learning models. For development, all authenticated users can read and write.",
+          "params": [
+            {
+              "name": "mlModelId",
+              "description": "The unique identifier for the machine learning model."
+            }
+          ]
+        }
       }
     ],
-    "reasoning": "The Firestore structure is designed for open development and demonstration. To prevent permission errors during this phase, all collections are configured to allow read and write access for any authenticated user. This simplifies development by removing security rule complexities, with the understanding that these rules would need to be properly secured for a production environment.\n\n- **/users/{userId}/**: User-specific data is nested under the user's ID, but remains accessible to any logged-in user during development.\n- **/sensorReadings/{sensorReadingId}**: Open access for real-time data visualization.\n- **/products/{productId}**: Open access for product management.\n- **/testbenches/{testBenchId}**: Open access for managing test benches."
+    "reasoning": "The Firestore structure is designed for open development and demonstration. To prevent permission errors during this phase, all collections are configured to allow read and write access for any authenticated user. This simplifies development by removing security rule complexities, with the understanding that these rules would need to be properly secured for a production environment.\n\n- **/users/{userId}/**: User-specific data is nested under the user's ID, but remains accessible to any logged-in user during development.\n- **/sensorReadings/{sensorReadingId}**: Open access for real-time data visualization.\n- **/products/{productId}**: Open access for product management.\n- **/testbenches/{testBenchId}**: Open access for managing test benches.\n- **/mlModels/{mlModelId}**: Open access for managing ML models."
   }
 }
-
-    
