@@ -190,7 +190,6 @@ function TestingComponent() {
   // States for session editing
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [trimRange, setTrimRange] = useState([0, 100]);
-  const [newProductName, setNewProductName] = useState('');
 
   // Zoom and Pan states
   const [zoomDomain, setZoomDomain] = useState<{ startIndex: number; endIndex: number } | null>(null);
@@ -200,7 +199,8 @@ function TestingComponent() {
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
-    return collection(firestore, `test_sessions`);
+    const q = query(collection(firestore, `test_sessions`), orderBy('startTime', 'desc'));
+    return q;
   }, [firestore, user]);
   
   const { data: testSessions, isLoading: isTestSessionsLoading, error: testSessionsError } = useCollection<TestSession>(testSessionsCollectionRef);
@@ -992,25 +992,6 @@ const disconnectSerial = useCallback(async () => {
     }
   };
 
-  const handleAddProduct = () => {
-    if (!newProductName.trim()) {
-        toast({ variant: 'destructive', title: 'Invalid Input', description: 'Product name cannot be empty.' });
-        return;
-    }
-    if (!firestore || !productsCollectionRef) return;
-    const newProductId = doc(collection(firestore, '_')).id;
-    addDocumentNonBlocking(productsCollectionRef, { id: newProductId, name: newProductName.trim() });
-    setNewProductName('');
-    toast({ title: 'Product Added', description: `"${newProductName.trim()}" has been added.`});
-  };
-
-  const handleDeleteProduct = (productId: string) => {
-    if (!firestore) return;
-    deleteDocumentNonBlocking(doc(firestore, 'products', productId));
-    toast({ title: 'Product Deleted'});
-  };
-
-
   const fullChartData = useMemo(() => {
     if (!sensorConfig) return [];
     let allChronologicalData = [...dataLog].reverse();
@@ -1284,79 +1265,6 @@ const disconnectSerial = useCallback(async () => {
        <Button variant="ghost" onClick={() => setShowNewSessionForm(false)}>Cancel</Button>
     </div>
   );
-
-  const renderProductManagement = () => (
-    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-        <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
-            <AccordionItem value="item-1">
-                <AccordionTrigger className="p-6">
-                    <div className="text-left">
-                        <CardTitle>Product Management</CardTitle>
-                        <CardDescription>Add, view, and remove your products.</CardDescription>
-                    </div>
-                </AccordionTrigger>
-                <AccordionContent className="p-6 pt-0">
-                    <div className="flex gap-2 mb-4">
-                        <Input
-                            placeholder="New product name..."
-                            value={newProductName}
-                            onChange={(e) => setNewProductName(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && newProductName.trim() && handleAddProduct()}
-                        />
-                        <Button onClick={handleAddProduct} disabled={!newProductName.trim()}>
-                            <PackagePlus className="h-4 w-4 mr-2" />
-                            Add
-                        </Button>
-                    </div>
-                    <ScrollArea className="h-40">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Product Name</TableHead>
-                                    <TableHead className="text-right">Action</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {isProductsLoading ? (
-                                    <TableRow><TableCell colSpan={2} className="text-center">Loading products...</TableCell></TableRow>
-                                ) : products && products.length > 0 ? (
-                                    products.map(p => (
-                                        <TableRow key={p.id}>
-                                            <TableCell className="truncate max-w-[200px] font-medium">{p.name}</TableCell>
-                                            <TableCell className="text-right">
-                                                <AlertDialog>
-                                                    <AlertDialogTrigger asChild>
-                                                        <Button variant="ghost" size="icon" disabled={!user}>
-                                                            <Trash2 className="h-4 w-4 text-destructive" />
-                                                        </Button>
-                                                    </AlertDialogTrigger>
-                                                    <AlertDialogContent>
-                                                        <AlertDialogHeader>
-                                                            <AlertDialogTitle>Delete Product?</AlertDialogTitle>
-                                                            <AlertDialogDescription>
-                                                                Are you sure you want to delete "{p.name}"? This cannot be undone. Associated test sessions will not be deleted but will reference a missing product.
-                                                            </AlertDialogDescription>
-                                                        </AlertDialogHeader>
-                                                        <AlertDialogFooter>
-                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteProduct(p.id)}>Confirm Delete</AlertDialogAction>
-                                                        </AlertDialogFooter>
-                                                    </AlertDialogContent>
-                                                </AlertDialog>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))
-                                ) : (
-                                    <TableRow><TableCell colSpan={2} className="text-center text-muted-foreground">No products found.</TableCell></TableRow>
-                                )}
-                            </TableBody>
-                        </Table>
-                    </ScrollArea>
-                </AccordionContent>
-            </AccordionItem>
-        </Accordion>
-    </Card>
-);
 
   const renderLiveTab = () => (
     <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
@@ -1652,7 +1560,9 @@ const disconnectSerial = useCallback(async () => {
                 </CardContent>
             </Card>
           ) : (
-            renderProductManagement()
+            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+              {/* This space is intentionally left blank for now, can be filled with other info panels */}
+            </Card>
           )}
           <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
             <CardHeader>
