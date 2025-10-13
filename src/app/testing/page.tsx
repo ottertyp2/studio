@@ -1485,7 +1485,7 @@ function TestingComponent() {
                 BioThrust Live Dashboard
                 </CardTitle>
                  <div className="flex items-center gap-2">
-                    {user && userRole === 'superadmin' && (
+                    {user && (
                         <Button onClick={() => router.push('/admin')} variant="outline">
                             <Cog className="h-4 w-4 mr-2" />
                             Manage
