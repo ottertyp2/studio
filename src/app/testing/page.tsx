@@ -129,6 +129,7 @@ type TestSession = {
     demoType?: 'LEAK' | 'DIFFUSION';
     userId: string;
     username: string;
+    demoOwnerInstanceId?: string;
 };
 
 type MLModel = {
@@ -175,6 +176,7 @@ function TestingComponent() {
   const readerRef = useRef<any>(null);
   const readableStreamClosedRef = useRef<Promise<void> | null>(null);
   const runningTestSessionRef = useRef<TestSession | null>(null);
+  const instanceId = useRef(crypto.randomUUID()).current;
 
   const importFileRef = useRef<HTMLInputElement>(null);
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -620,7 +622,10 @@ function TestingComponent() {
       measurementType: options.measurementType,
       userId: currentUser.id,
       username: currentUser.username,
-      ...(options.measurementType === 'DEMO' && { demoType: options.demoType }),
+      ...(options.measurementType === 'DEMO' && { 
+        demoType: options.demoType,
+        demoOwnerInstanceId: instanceId 
+      }),
     };
     
     try {
@@ -661,7 +666,12 @@ function TestingComponent() {
 
 
   useEffect(() => {
-    if (runningTestSession && runningTestSession.measurementType === 'DEMO' && !demoIntervalRef.current && runningTestSession.userId === user?.uid) {
+    if (
+        runningTestSession &&
+        runningTestSession.measurementType === 'DEMO' &&
+        !demoIntervalRef.current &&
+        runningTestSession.demoOwnerInstanceId === instanceId
+    ) {
         let step = 0;
         const totalSteps = 240; // ~2 minutes of data
         lastValuesRef.current = [];
@@ -708,7 +718,7 @@ function TestingComponent() {
        lastValuesRef.current = [];
        setIsDemoRunning(false);
     };
-  }, [runningTestSession, handleNewDataPoint, handleStopTestSession, user?.uid]);
+  }, [runningTestSession, handleNewDataPoint, handleStopTestSession, user?.uid, instanceId]);
   
   const handleAiAnalysis = async () => {
       if (!selectedAnalysisModelName) {
@@ -1706,4 +1716,3 @@ export default function TestingPage() {
     )
 }
 
-    

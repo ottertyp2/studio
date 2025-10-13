@@ -181,7 +181,8 @@
             "sensorConfigurationId": { "type": "string", "description": "The sensor configuration used for this test." },
             "measurementType": { "type": "string", "enum": ["DEMO", "ARDUINO"], "description": "The source of the measurement data." },
             "userId": { "type": "string", "description": "The ID of the user who started the session." },
-            "username": { "type": "string", "description": "The username of the user who started the session." }
+            "username": { "type": "string", "description": "The username of the user who started the session." },
+            "demoOwnerInstanceId": { "type": "string", "description": "A unique ID for the client instance that started a demo session." }
         },
         "required": ["id", "productId", "productName", "startTime", "status", "testBenchId", "sensorConfigurationId", "measurementType", "userId", "username"]
     },
