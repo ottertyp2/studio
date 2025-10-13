@@ -1074,6 +1074,22 @@ function TestingComponent() {
     "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1"
   ];
 
+  const dataSourceStatus = useMemo(() => {
+    if (isDemoRunning) {
+      return 'Generating Demo Data';
+    }
+    if (runningTestSession?.measurementType === 'DEMO') {
+      return 'Watching Live Demo';
+    }
+    if (runningTestSession?.measurementType === 'ARDUINO') {
+      return 'Streaming from Test Bench';
+    }
+    if (isConnected) {
+        return 'Waiting for data...';
+    }
+    return null;
+  }, [isConnected, isDemoRunning, runningTestSession]);
+
   const renderNewSessionForm = () => (
     <div className="mt-4 p-4 border rounded-lg bg-background/50 w-full max-w-lg space-y-4">
       <h3 className="text-lg font-semibold text-center">Start New Session</h3>
@@ -1534,15 +1550,16 @@ function TestingComponent() {
                   {displayValue !== null ? displayValue.toFixed(displayDecimals) : (isConnected ? '...' : 'N/A')}
                 </p>
                 <p className="text-lg text-muted-foreground">{sensorConfig?.unit || 'N/A'}</p>
-                  {isConnected && (
+                  {(isConnected || runningTestSession) && (
                   <div className="text-xs text-green-600 mt-1 flex items-center justify-center gap-1">
                     <span className="relative flex h-2 w-2">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
                     </span>
-                    {currentValue !== null ? "Live" : "Waiting for data..."}
+                    <span>Live</span>
                   </div>
                 )}
+                 {dataSourceStatus && <p className="text-xs text-muted-foreground mt-1">{dataSourceStatus}</p>}
               </div>
             </CardContent>
           </Card>
