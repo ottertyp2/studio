@@ -1565,7 +1565,7 @@ const disconnectSerial = useCallback(async () => {
                 BioThrust Live Dashboard
                 </CardTitle>
                  <div className="flex items-center gap-2">
-                    {user && (
+                    {user && userRole === 'superadmin' && (
                         <Button onClick={() => router.push('/admin')} variant="outline">
                             <Cog className="h-4 w-4 mr-2" />
                             Manage
@@ -1603,78 +1603,6 @@ const disconnectSerial = useCallback(async () => {
            </Card>
         </div>
         <div className="lg:col-span-1 grid grid-rows-1 md:grid-rows-3 gap-6">
-           <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-              <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
-                <AccordionItem value="item-1">
-                  <AccordionTrigger className="p-4">
-                    <div className="text-left">
-                      <CardTitle>Product Management</CardTitle>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="p-4 pt-0">
-                    <div className="space-y-4">
-                        <div className="flex gap-2">
-                            <Input
-                                placeholder="New product name..."
-                                value={newProductName}
-                                onChange={(e) => setNewProductName(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && newProductName.trim() && handleAddProduct()}
-                                disabled={!user}
-                            />
-                            <Button onClick={handleAddProduct} disabled={!newProductName.trim() || !user}>
-                                <PackagePlus className="h-4 w-4 mr-2" />
-                                Add
-                            </Button>
-                        </div>
-                        <ScrollArea className="h-40 border rounded-md p-2 bg-background/50">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Product Name</TableHead>
-                                        <TableHead className="text-right">Action</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {isProductsLoading ? (
-                                        <TableRow><TableCell colSpan={2} className="text-center">Loading products...</TableCell></TableRow>
-                                    ) : products && products.length > 0 ? (
-                                        products.map(p => (
-                                            <TableRow key={p.id}>
-                                                <TableCell className="truncate max-w-[200px] font-medium">{p.name}</TableCell>
-                                                <TableCell className="text-right">
-                                                    <AlertDialog>
-                                                        <AlertDialogTrigger asChild>
-                                                            <Button variant="ghost" size="icon" disabled={!user}>
-                                                                <Trash2 className="h-4 w-4 text-destructive" />
-                                                            </Button>
-                                                        </AlertDialogTrigger>
-                                                        <AlertDialogContent>
-                                                            <AlertDialogHeader>
-                                                                <AlertDialogTitle>Delete Product?</AlertDialogTitle>
-                                                                <AlertDialogDescription>
-                                                                    Are you sure you want to delete "{p.name}"? This cannot be undone. Associated test sessions will not be deleted but will reference a missing product.
-                                                                </AlertDialogDescription>
-                                                            </AlertDialogHeader>
-                                                            <AlertDialogFooter>
-                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                <AlertDialogAction variant="destructive" onClick={() => handleDeleteProduct(p.id)}>Confirm Delete</AlertDialogAction>
-                                                            </AlertDialogFooter>
-                                                        </AlertDialogContent>
-                                                    </AlertDialog>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))
-                                    ) : (
-                                        <TableRow><TableCell colSpan={2} className="text-center text-muted-foreground">No products found.</TableCell></TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </ScrollArea>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-          </Card>
           {runningTestSession ? (
             <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg row-span-1 h-full'>
                 <CardHeader className='p-2'>
@@ -1922,3 +1850,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
