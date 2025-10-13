@@ -50,7 +50,7 @@ import {
   DialogClose
 } from "@/components/ui/dialog";
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Slider } from '@/componentsui/slider';
+import { Slider } from '@/components/ui/slider';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   LineChart,
@@ -1508,7 +1508,7 @@ const disconnectSerial = useCallback(async () => {
                 BioThrust Live Dashboard
                 </CardTitle>
                  <div className="flex items-center gap-2">
-                    {user && userRole === 'superadmin' && (
+                    {user && (
                         <Button onClick={() => router.push('/admin')} variant="outline">
                             <Cog className="h-4 w-4 mr-2" />
                             Manage
