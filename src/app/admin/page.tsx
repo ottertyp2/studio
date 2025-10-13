@@ -992,11 +992,11 @@ export default function AdminPage() {
                 <CardTitle>{tempSensorConfig.id ? 'Edit Configuration' : 'Create New Configuration'}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
-                 <div>
+                 <div className="space-y-2">
                     <Label htmlFor="configName">Name</Label>
                     <Input id="configName" value={tempSensorConfig.name || ''} onChange={(e) => handleConfigChange('name', e.target.value)} placeholder="e.g. Primary Pressure Sensor" />
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="testBenchSelect">Test Bench</Label>
                   <Select value={tempSensorConfig.testBenchId} onValueChange={(value) => handleConfigChange('testBenchId', value)}>
                     <SelectTrigger id="testBenchSelect">
@@ -1008,7 +1008,7 @@ export default function AdminPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="conversionMode">Display Mode</Label>
                   <Select value={tempSensorConfig.mode} onValueChange={(value) => handleConfigChange('mode', value)}>
                     <SelectTrigger id="conversionMode">
@@ -1023,15 +1023,15 @@ export default function AdminPage() {
                 </div>
                  {tempSensorConfig.mode === 'CUSTOM' && (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div>
+                        <div className="space-y-2">
                             <Label htmlFor="sensorUnitInput">Unit</Label>
                             <Input id="sensorUnitInput" value={tempSensorConfig.unit || ''} onChange={(e) => handleConfigChange('unit', e.target.value)} placeholder="e.g. 'bar' or 'psi'"/>
                         </div>
-                        <div>
+                        <div className="space-y-2">
                             <Label htmlFor="minValueInput">Minimum Value</Label>
                             <Input id="minValueInput" type="number" value={tempSensorConfig.min ?? ''} onChange={(e) => handleConfigChange('min', e.target.value)} placeholder="e.g. 0"/>
                         </div>
-                        <div>
+                        <div className="space-y-2">
                             <Label htmlFor="maxValueInput">Maximum Value</Label>
                             <Input id="maxValueInput" type="number" value={tempSensorConfig.max ?? ''} onChange={(e) => handleConfigChange('max', e.target.value)} placeholder="e.g. 10"/>
                         </div>
@@ -1040,12 +1040,12 @@ export default function AdminPage() {
                  {tempSensorConfig.mode !== 'RAW' && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {tempSensorConfig.mode === 'VOLTAGE' && (
-                            <div>
+                            <div className="space-y-2">
                                 <Label htmlFor="arduinoVoltageInput">Reference Voltage (V)</Label>
                                 <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage ?? ''} onChange={(e) => handleConfigChange('arduinoVoltage', e.target.value)} placeholder="e.g. 5 or 3.3"/>
                             </div>
                         )}
-                        <div>
+                        <div className="space-y-2">
                             <Label htmlFor="decimalPlacesInput">Decimal Places</Label>
                             <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces || 0} onChange={(e) => handleConfigChange('decimalPlaces', parseInt(e.target.value))} />
                         </div>
@@ -1082,8 +1082,8 @@ export default function AdminPage() {
 
           {tempTestSession && !runningSession && (
             <div className="space-y-4 p-4 mb-6 border rounded-lg bg-background/50">
-              <h3 className="text-lg font-semibold text-center mb-2">New Demo Session</h3>
-              <div>
+              <h3 className="text-lg font-semibold text-center mb-4">New Demo Session</h3>
+              <div className="space-y-2">
                 <Label htmlFor="productIdentifier">Product</Label>
                 <Select onValueChange={value => handleTestSessionFieldChange('productId', value)}>
                     <SelectTrigger id="productIdentifier">
@@ -1096,7 +1096,7 @@ export default function AdminPage() {
                     </SelectContent>
                 </Select>
               </div>
-               <div>
+               <div className="space-y-2">
                 <Label htmlFor="demoType">Simulation Type</Label>
                 <Select onValueChange={value => handleTestSessionFieldChange('demoType', value as 'LEAK' | 'DIFFUSION')}>
                     <SelectTrigger id="demoType">
@@ -1109,12 +1109,12 @@ export default function AdminPage() {
                 </Select>
               </div>
               <div className="grid grid-cols-1 gap-4">
-                 <div>
+                 <div className="space-y-2">
                     <Label htmlFor="serialNumber">Serial Number</Label>
                     <Input id="serialNumber" placeholder="e.g., 187" value={tempTestSession.serialNumber || ''} onChange={e => handleTestSessionFieldChange('serialNumber', e.target.value)} />
                 </div>
               </div>
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
                 <Input id="description" placeholder="Internal R&D..." value={tempTestSession.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
               </div>
@@ -1126,7 +1126,7 @@ export default function AdminPage() {
           )}
 
           <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 items-center">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-center">
                 <Input 
                     placeholder="Search sessions..."
                     value={sessionSearchTerm}
@@ -1173,28 +1173,29 @@ export default function AdminPage() {
                     </SelectContent>
                 </Select>
             </div>
-             <ScrollArea className="h-[40rem] p-1">
-              {isTestSessionsLoading ? <p className="text-center text-muted-foreground">Loading sessions...</p> : filteredAndSortedSessions.length > 0 ? (
-                filteredAndSortedSessions.map(session => {
+             <ScrollArea className="h-[40rem] p-1 mt-4">
+              {isTestSessionsLoading ? <p className="text-center text-muted-foreground pt-10">Loading sessions...</p> : filteredAndSortedSessions.length > 0 ? (
+                <div className="space-y-2">
+                {filteredAndSortedSessions.map(session => {
                   const bench = testBenches?.find(b => b.id === session.testBenchId);
                   const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
                   return (
-                    <Card key={session.id} className={`p-4 mb-2 ${session.status === 'RUNNING' ? 'border-primary' : ''} hover:bg-muted/50`}>
+                    <Card key={session.id} className={`p-4 ${session.status === 'RUNNING' ? 'border-primary' : ''} hover:bg-muted/50`}>
                         <div className="flex justify-between items-start gap-4">
-                            <div className='flex-grow'>
+                            <div className='flex-grow space-y-1'>
                                 <p className="font-semibold">{session.productName} <span className="text-sm text-muted-foreground">({session.serialNumber || 'N/A'})</span></p>
                                 <p className="text-sm text-muted-foreground">
                                     {new Date(session.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short'})} - {session.status}
                                 </p>
-                                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-2">
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
                                   <User className="h-3 w-3" />
                                   <span>{session.username}</span>
                                 </div>
-                                 <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                   <Server className="h-3 w-3" />
                                   <span>{bench?.name || 'N/A'} / {config?.name || 'N/A'}</span>
                                 </div>
-                                <p className="text-xs text-muted-foreground mt-1">
+                                <p className="text-xs text-muted-foreground">
                                     Data Points: {sessionDataCounts[session.id] ?? '...'}
                                 </p>
                             </div>
@@ -1222,7 +1223,8 @@ export default function AdminPage() {
                             </div>
                         </div>
                     </Card>
-                )})
+                )})}
+                </div>
               ) : (
                  <p className="text-sm text-muted-foreground text-center pt-10">No test sessions found.</p>
               )}
@@ -1249,15 +1251,15 @@ export default function AdminPage() {
                         <div className="mb-6 p-4 border rounded-lg bg-background/50">
                             <h3 className="text-lg font-semibold mb-4">Create New User</h3>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <div className="space-y-1">
+                                <div className="space-y-2">
                                     <Label htmlFor="new-username">Username</Label>
                                     <Input id="new-username" placeholder="e.g. test_operator" value={newUser.username} onChange={(e) => setNewUser(p => ({ ...p, username: e.target.value }))} />
                                 </div>
-                                <div className="space-y-1">
+                                <div className="space-y-2">
                                     <Label htmlFor="new-password">Password</Label>
                                     <Input id="new-password" type="password" placeholder="••••••••" value={newUser.password} onChange={(e) => setNewUser(p => ({ ...p, password: e.target.value }))} />
                                 </div>
-                                <div className="space-y-1">
+                                <div className="space-y-2">
                                     <Label htmlFor="new-role">Role</Label>
                                     <Select value={newUser.role} onValueChange={(value) => setNewUser(p => ({ ...p, role: value }))}>
                                         <SelectTrigger id="new-role"><SelectValue /></SelectTrigger>
@@ -1349,43 +1351,51 @@ export default function AdminPage() {
       <CardContent className="space-y-6">
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-                <h3 className="font-semibold text-lg mb-2">Model Catalog</h3>
-                <div className="flex gap-2 mb-4">
+            <div className="space-y-4">
+                <h3 className="font-semibold text-lg">Model Catalog</h3>
+                <div className="flex gap-2">
                     <Input placeholder="New model name..." value={newMlModel.name || ''} onChange={(e) => setNewMlModel(p => ({...p, name: e.target.value}))} />
                     <Input placeholder="Version (e.g., 1.0)" value={newMlModel.version || ''} onChange={(e) => setNewMlModel(p => ({...p, version: e.target.value}))} />
                     <Button onClick={handleAddMlModel}><PackagePlus className="h-4 w-4" /></Button>
                 </div>
                 <ScrollArea className="h-48 border rounded-md p-2 bg-background/50">
-                    {isMlModelsLoading ? <p className="text-center p-4">Loading...</p> : mlModels && mlModels.length > 0 ? mlModels.map(m => (
-                        <div key={m.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted">
-                            <div>
-                                <p className="font-medium">{m.name} <span className="text-xs text-muted-foreground">v{m.version}</span></p>
-                                {m.description && <p className="text-xs text-muted-foreground">{m.description}</p>}
-                            </div>
-                            <Button variant="ghost" size="icon" onClick={() => handleDeleteMlModel(m.id)}>
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
+                    {isMlModelsLoading ? <p className="text-center p-4">Loading...</p> : mlModels && mlModels.length > 0 ? (
+                        <div className="space-y-2">
+                        {mlModels.map(m => (
+                          <div key={m.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted">
+                              <div>
+                                  <p className="font-medium">{m.name} <span className="text-xs text-muted-foreground">v{m.version}</span></p>
+                                  {m.description && <p className="text-xs text-muted-foreground">{m.description}</p>}
+                              </div>
+                              <Button variant="ghost" size="icon" onClick={() => handleDeleteMlModel(m.id)}>
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                          </div>
+                        ))}
                         </div>
-                    )) : <p className="text-center p-4 text-muted-foreground">No models in catalog.</p>}
+                    ) : <p className="text-center p-4 text-muted-foreground">No models in catalog.</p>}
                 </ScrollArea>
             </div>
 
-            <div>
-                <h3 className="font-semibold text-lg mb-2">Training Datasets</h3>
-                <div className="flex gap-2 mb-4">
+            <div className="space-y-4">
+                <h3 className="font-semibold text-lg">Training Datasets</h3>
+                <div className="flex gap-2">
                     <Input placeholder="New dataset name..." value={newTrainDataSet.name || ''} onChange={(e) => setNewTrainDataSet(p => ({...p, name: e.target.value}))} />
                     <Button onClick={handleAddTrainDataSet}><PackagePlus className="h-4 w-4" /></Button>
                 </div>
                  <ScrollArea className="h-48 border rounded-md p-2 bg-background/50">
-                    {isTrainDataSetsLoading ? <p className="text-center p-4">Loading...</p> : trainDataSets && trainDataSets.length > 0 ? trainDataSets.map(d => (
+                    {isTrainDataSetsLoading ? <p className="text-center p-4">Loading...</p> : trainDataSets && trainDataSets.length > 0 ? (
+                      <div className="space-y-2">
+                      {trainDataSets.map(d => (
                         <div key={d.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted">
                             <p className="font-medium">{d.name}</p>
                             <Button variant="ghost" size="icon" onClick={() => handleDeleteTrainDataSet(d.id)}>
                                 <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
                         </div>
-                    )): <p className="text-center p-4 text-muted-foreground">No datasets in catalog.</p>}
+                      ))}
+                      </div>
+                    ): <p className="text-center p-4 text-muted-foreground">No datasets in catalog.</p>}
                 </ScrollArea>
             </div>
         </div>
@@ -1393,7 +1403,7 @@ export default function AdminPage() {
         <div className="border-t pt-6 space-y-4">
             <h3 className="font-semibold text-lg">Manual Model Training</h3>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className='space-y-1'>
+              <div className='space-y-2'>
                 <Label htmlFor="model-select">Select Model to Update</Label>
                 <Select onValueChange={setSelectedModelId} value={selectedModelId || ''}>
                   <SelectTrigger id="model-select">
@@ -1405,7 +1415,7 @@ export default function AdminPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className='space-y-1'>
+              <div className='space-y-2'>
                 <Label>Select Training Datasets</Label>
                 <ScrollArea className="h-40 border rounded-md p-2 bg-background/50">
                     <div className="space-y-2">
@@ -1468,7 +1478,7 @@ export default function AdminPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-           <div>
+           <div className="space-y-2">
               <Label htmlFor="auto-model-size">Model Size</Label>
               <Select onValueChange={(value) => setAutoModelSize(value as 'small' | 'medium' | 'large')} defaultValue="medium" disabled={isAutoTraining}>
                 <SelectTrigger id="auto-model-size">
@@ -1548,16 +1558,25 @@ export default function AdminPage() {
                             </div>
                           </AccordionTrigger>
                           <AccordionContent className="p-6 pt-0">
-                              <div className="flex flex-col gap-2 mb-4 p-4 border rounded-lg bg-background/50">
-                                  <h3 className="font-semibold mb-2">New Test Bench</h3>
-                                  <Input placeholder="Name..." value={newTestBench.name || ''} onChange={(e) => setNewTestBench(p => ({...p, name: e.target.value}))} />
-                                  <Input placeholder="Location..." value={newTestBench.location || ''} onChange={(e) => setNewTestBench(p => ({...p, location: e.target.value}))} />
-                                  <Input placeholder="Description..." value={newTestBench.description || ''} onChange={(e) => setNewTestBench(p => ({...p, description: e.target.value}))} />
-                                  <Button onClick={handleAddTestBench} size="sm" className="mt-2">Add Bench</Button>
+                              <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
+                                  <h3 className="font-semibold text-center">New Test Bench</h3>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="new-bench-name">Name</Label>
+                                    <Input id="new-bench-name" placeholder="e.g. Bench 01" value={newTestBench.name || ''} onChange={(e) => setNewTestBench(p => ({...p, name: e.target.value}))} />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="new-bench-location">Location</Label>
+                                    <Input id="new-bench-location" placeholder="e.g. Lab A" value={newTestBench.location || ''} onChange={(e) => setNewTestBench(p => ({...p, location: e.target.value}))} />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="new-bench-desc">Description</Label>
+                                    <Input id="new-bench-desc" placeholder="e.g. High-pressure testing" value={newTestBench.description || ''} onChange={(e) => setNewTestBench(p => ({...p, description: e.target.value}))} />
+                                  </div>
+                                  <Button onClick={handleAddTestBench} size="sm" className="w-full mt-2">Add Bench</Button>
                               </div>
-                              {isTestBenchesLoading ? <p className="text-center">Loading test benches...</p> :
+                              {isTestBenchesLoading ? <p className="text-center pt-10">Loading test benches...</p> :
                               <ScrollArea className="h-64 p-1">
-                                  <div className="space-y-4">
+                                  <div className="space-y-2">
                                       {testBenches?.map(b => (
                                           <Card key={b.id} className='p-4 hover:bg-muted/50'>
                                               <div className='flex justify-between items-center'>
@@ -1607,9 +1626,9 @@ export default function AdminPage() {
                               <div className="flex justify-center mb-4">
                                   <Button onClick={handleNewSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">New Configuration</Button>
                               </div>
-                              {isSensorConfigsLoading ? <p className="text-center">Loading sensors...</p> :
+                              {isSensorConfigsLoading ? <p className="text-center pt-10">Loading sensors...</p> :
                               <ScrollArea className="h-96 p-1">
-                                  <div className="space-y-4">
+                                  <div className="space-y-2">
                                       {sensorConfigs?.map(c => (
                                           <Card key={c.id} className='p-4 hover:bg-muted/50'>
                                               <div className='flex justify-between items-center'>
@@ -1670,3 +1689,6 @@ export default function AdminPage() {
   );
 }
 
+
+
+    
