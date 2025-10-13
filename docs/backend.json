@@ -226,6 +226,57 @@
         "name",
         "version"
       ]
+    },
+    "TestSession": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "TestSession",
+      "type": "object",
+      "description": "Represents a single test session for a product.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the test session."
+        },
+        "productId": {
+          "type": "string",
+          "description": "The ID of the product being tested."
+        },
+        "testBenchId": {
+          "type": "string",
+          "description": "The ID of the test bench where the session occurred."
+        },
+        "sensorConfigurationId": {
+          "type": "string",
+          "description": "The ID of the sensor configuration used for the session."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The ID of the user who initiated the session."
+        },
+        "startTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The start time of the test session."
+        },
+        "endTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The end time of the test session."
+        },
+        "status": {
+          "type": "string",
+          "description": "The status of the session (e.g., RUNNING, COMPLETED, SCRAPPED)."
+        }
+      },
+      "required": [
+        "id",
+        "productId",
+        "testBenchId",
+        "sensorConfigurationId",
+        "userId",
+        "startTime",
+        "status"
+      ]
     }
   },
   "auth": {
@@ -255,6 +306,10 @@
       {
         "collection": "/sensor_configurations/{sensorConfigurationId}",
         "description": "Allows any authenticated user to read and write (create, update, delete) sensor configurations. In a production environment, this would likely be restricted to admins or owners, but it is open for development."
+      },
+      {
+        "collection": "/test_sessions/{testSessionId}",
+        "description": "Allows any authenticated user to read and write (create, update, delete) test sessions. This is suitable for a development environment."
       }
     ],
     "reasoning": "To ensure an unblocked and seamless development experience, the security rules are configured to be open for authenticated users. A single, universal wildcard rule `match /{document=**}` grants full read and write access (`get`, `list`, `create`, `update`, `delete`) to every collection and document in the database for any authenticated user (`if request.auth != null`). This approach eliminates all permission-related errors during development. For a production environment, these rules would need to be replaced with more granular, restrictive rules that enforce data ownership and roles."
