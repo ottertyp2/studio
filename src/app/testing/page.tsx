@@ -1733,6 +1733,7 @@ const disconnectSerial = useCallback(async () => {
                     domain={zoomDomain || (Array.isArray(chartData) && chartData.length > 0 ? ['dataMin', 'dataMax'] : [0, 1])}
                     label={{ value: "Time (seconds)", position: 'insideBottom', offset: -5 }}
                     tickFormatter={(tick) => (tick as number).toFixed(0)}
+                    allowDuplicatedCategory={false}
                   />
                   <YAxis
                     stroke="hsl(var(--muted-foreground))"
@@ -1805,5 +1806,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    

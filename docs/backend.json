@@ -111,6 +111,26 @@
         "result",
         "analyzedRange"
       ]
+    },
+    "Product": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Product",
+      "type": "object",
+      "description": "Represents a product that can be tested.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the product."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the product."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
     }
   },
   "auth": {
@@ -168,8 +188,26 @@
             }
           ]
         }
+      },
+       {
+        "path": "/products/{productId}",
+        "definition": {
+          "entityName": "Product",
+          "schema": {
+            "$ref": "#/backend/entities/Product"
+          },
+          "description": "Stores product information. All authenticated users can read, create, and delete products.",
+          "params": [
+            {
+              "name": "productId",
+              "description": "Unique ID for each product."
+            }
+          ]
+        }
       }
     ],
     "reasoning": "Based on the requirements, the primary data storage needs are for sensor data, sensor configurations, and leak analysis results. All data is related, but segregating them into separate collections allows for better querying and security rule management. The user request to allow anyone to delete products can be generalized to say that all authenticated users should be able to delete sensor data and analyses, this can be acheived by removing any user-specific access controls on these items.\n\n**Authorization Independence:**\n*   No authorization fields need to be denormalized, as there are no user-specific restrictions on data access as requested. All authenticated users can delete sensor data and leak analyses.\n\n**QAPs (Query and Presentation Support):**\n*   The structure allows for efficient querying of sensor data, configurations, and analysis results.\n*   Segregation allows listing of all sensor data, configurations, and analysis results (subject to volume limits), as needed.\n\n"
   }
 }
+
+    
