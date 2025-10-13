@@ -667,10 +667,10 @@ function TestingComponent() {
 
   useEffect(() => {
     if (
-        runningTestSession &&
-        runningTestSession.measurementType === 'DEMO' &&
-        !demoIntervalRef.current &&
-        runningTestSession.demoOwnerInstanceId === instanceId
+      runningTestSession &&
+      runningTestSession.measurementType === 'DEMO' &&
+      !demoIntervalRef.current &&
+      runningTestSession.demoOwnerInstanceId === instanceId
     ) {
         let step = 0;
         const totalSteps = 240; // ~2 minutes of data
@@ -718,7 +718,7 @@ function TestingComponent() {
        lastValuesRef.current = [];
        setIsDemoRunning(false);
     };
-  }, [runningTestSession, handleNewDataPoint, handleStopTestSession, user?.uid, instanceId]);
+  }, [runningTestSession, handleNewDataPoint, handleStopTestSession, instanceId]);
   
   const handleAiAnalysis = async () => {
       if (!selectedAnalysisModelName) {
@@ -1669,6 +1669,8 @@ function TestingComponent() {
                     domain={['dataMin', 'dataMax']}
                     tickFormatter={(tick) => typeof tick === 'number' && sensorConfig ? tick.toFixed(sensorConfig.decimalPlaces) : tick}
                     label={{ value: sensorConfig?.unit, angle: -90, position: 'insideLeft' }}
+                    animationDuration={300}
+                    animationEasing="ease-out"
                   />
                   <Tooltip
                     contentStyle={{
@@ -1734,5 +1736,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
