@@ -1075,10 +1075,10 @@ function TestingComponent() {
   ];
 
   const dataSourceStatus = useMemo(() => {
-    if (isDemoRunning) {
-      return 'Generating Demo Data';
-    }
     if (runningTestSession?.measurementType === 'DEMO') {
+      if (runningTestSession.demoOwnerInstanceId === instanceId) {
+        return 'Generating Demo Data';
+      }
       return 'Watching Live Demo';
     }
     if (runningTestSession?.measurementType === 'ARDUINO') {
@@ -1088,7 +1088,7 @@ function TestingComponent() {
         return 'Waiting for data...';
     }
     return null;
-  }, [isConnected, isDemoRunning, runningTestSession]);
+  }, [isConnected, runningTestSession, instanceId]);
 
   const renderNewSessionForm = () => (
     <div className="mt-4 p-4 border rounded-lg bg-background/50 w-full max-w-lg space-y-4">
