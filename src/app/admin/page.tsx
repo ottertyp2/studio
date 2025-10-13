@@ -749,7 +749,6 @@ export default function AdminPage() {
           metrics: ['accuracy'],
         });
 
-        let finalAccuracy = 0;
         await model.fit(normalizedInput, labelTensor, {
           epochs: 100,
           batchSize: 32,
@@ -759,12 +758,11 @@ export default function AdminPage() {
             {
               onEpochEnd: (epoch, logs) => {
                 if (logs) {
-                  finalAccuracy = (logs.acc || 0) * 100;
                   setTrainingProgress(((epoch + 1) / 100) * 100);
                   setTrainingStatus({ 
                       epoch: epoch + 1, 
                       loss: logs.loss || 0, 
-                      accuracy: finalAccuracy,
+                      accuracy: (logs.acc || 0) * 100,
                       val_loss: logs.val_loss || 0,
                       val_acc: (logs.val_acc || 0) * 100
                   });
@@ -780,7 +778,7 @@ export default function AdminPage() {
         
         const modelRef = doc(firestore, 'mlModels', selectedModelId);
         await updateDoc(modelRef, {
-            description: `Manually trained on ${new Date().toLocaleDateString()}. Final Val Accuracy: ${finalAccuracy.toFixed(2)}%`,
+            description: `Manually trained on ${new Date().toLocaleDateString()}. Final Val Acc: ${(trainingStatus.val_acc).toFixed(2)}%`,
             version: `${selectedModel.version.split('-')[0]}-trained`,
         });
 
@@ -1783,3 +1781,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    
