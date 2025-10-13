@@ -1,80 +1,68 @@
+/**
+ * @fileoverview Firestore Security Rules for Sensor Data App
+ *
+ * Core Philosophy:
+ * This ruleset prioritizes ease of use for prototyping. Data shape validation is minimal, focusing instead on authorization. Authenticated users have broad access, particularly for data deletion.
+ *
+ * Data Structure:
+ * The Firestore database consists of three top-level collections: `sensor_data`, `sensor_configurations`, and `leak_analyses`.
+ *
+ * Key Security Decisions:
+ * - **Open Reads**: All `get` and `list` operations are open to all users, including unauthenticated users. This simplifies initial development and data exploration.
+ * - **Authenticated Deletion**: All authenticated users are permitted to delete `sensor_data` and `leak_analyses` documents, as requested by the user.
+ * - **No Ownership Checks**: In this prototype, no ownership checks are enforced for data modification.
+ */
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    /**
+     * @description Allows read and delete access to sensor data for all users.
+     * @path /sensor_data/{sensorDataId}
+     * @allow (get, list): Any user can read sensor data.
+     * @allow (delete): Any authenticated user can delete sensor data.
+     * @deny (create, update): Creation and updates are disallowed.
+     * @principle Allows public read and authenticated deletion of sensor data.
+     */
+    match /sensor_data/{sensorDataId} {
+      allow get, list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if isSignedIn();
+    }
+
+    /**
+     * @description Allows read access to sensor configurations for all users, but disallows all write operations.
+     * @path /sensor_configurations/{sensorConfigurationId}
+     * @allow (get, list): Any user can read sensor configurations.
+     * @deny (create, update, delete): No one can modify sensor configurations.
+     * @principle Provides public read-only access to sensor configurations.
+     */
+    match /sensor_configurations/{sensorConfigurationId} {
+      allow get, list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    /**
+     * @description Allows read and delete access to leak analysis results for all users.
+     * @path /leak_analyses/{leakAnalysisId}
+     * @allow (get, list): Any user can read leak analysis results.
+     * @allow (delete): Any authenticated user can delete leak analysis results.
+     * @deny (create, update): Creation and updates are disallowed.
+     * @principle Allows public read and authenticated deletion of leak analysis results.
+     */
+    match /leak_analyses/{leakAnalysisId} {
+      allow get, list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if isSignedIn();
+    }
+
+    // Helper function to check if a user is signed in.
     function isSignedIn() {
       return request.auth != null;
-    }
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function isSuperAdmin() {
-      // Use exists() to check for document existence to prevent errors on non-existent paths.
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
-    }
-
-    match /users/{userId} {
-      // Publicly readable for username lookups and filtering.
-      allow get, list: if true;
-      // Allow users to create their own profile upon signup.
-      allow create: if isOwner(userId);
-      // Users can update their own profile, admins can update any.
-      allow update: if isOwner(userId) || isSuperAdmin();
-      // Only admins can delete user profiles, and not themselves.
-      allow delete: if isSuperAdmin() && request.auth.uid != userId;
-    }
-
-    match /sensor_configurations/{sensorConfigurationId} {
-      // Configurations are publicly viewable.
-      allow get, list: if true;
-      // Any authenticated user can create configurations.
-      allow create: if isSignedIn();
-      // Only the owner or an admin can modify/delete.
-      allow update, delete: if (isSignedIn() && request.auth.uid == resource.data.ownerId) || isSuperAdmin();
-    }
-
-    match /sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId} {
-      // Sensor data is linked to its configuration, allow writes for logged-in users.
-      // This is permissive for the demo app; in production, this could be tightened.
-      allow read, write: if isSignedIn();
-    }
-    
-    match /analysis_results/{analysisResultId} {
-       allow read, write: if true;
-    }
-
-    match /test_sessions/{testSessionId} {
-      // Test session metadata is publicly viewable.
-      allow get, list: if true;
-      // Any authenticated user can create, update, or delete sessions.
-      allow create, update, delete: if isSignedIn();
-    }
-
-    match /products/{productId} {
-      // Product list is publicly viewable.
-      allow get, list: if true;
-      // Any authenticated user can add new products.
-      allow create: if isSignedIn();
-      // Only admins can modify the product catalog.
-      allow update, delete: if isSuperAdmin();
-    }
-
-    match /testbenches/{testbenchId} {
-      // Test benches are publicly viewable.
-      allow get, list: if true;
-      // Any authenticated user can manage test benches.
-      allow create, update, delete: if isSignedIn();
-    }
-
-    match /mlModels/{mlModelId} {
-      allow read, write: if true;
-    }
-
-    match /trainDataSets/{trainDataSetId} {
-      allow read, write: if true;
     }
   }
 }

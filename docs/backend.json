@@ -1,268 +1,140 @@
-
 {
   "entities": {
-    "User": {
-      "title": "User",
-      "type": "object",
-      "description": "Represents a user in the system.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "The user's unique ID."
-        },
-        "username": {
-            "type": "string",
-            "description": "The user's unique username."
-        },
-        "email": {
-          "type": "string",
-          "format": "email",
-          "description": "The user's email address."
-        },
-        "role": {
-          "type": "string",
-          "enum": ["user", "superadmin"],
-          "description": "The user's role in the system."
-        }
-      },
-      "required": ["id", "username", "email", "role"]
-    },
     "SensorData": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "SensorData",
       "type": "object",
-      "description": "Represents a single sensor data point.",
+      "description": "Represents a single sensor reading at a specific point in time.",
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique identifier for the sensor data point."
+          "description": "Unique identifier for the sensor data entry."
         },
         "timestamp": {
           "type": "string",
-          "description": "Timestamp of when the sensor data was recorded.",
+          "description": "Timestamp of when the sensor data was recorded, in ISO 8601 format.",
           "format": "date-time"
         },
         "value": {
           "type": "number",
-          "description": "The raw sensor value."
-        },
-        "convertedValue": {
-          "type": "number",
-          "description": "The sensor value after conversion (e.g., voltage, custom unit)."
-        },
-        "unit": {
-          "type": "string",
-          "description": "The unit of measurement for the sensor data (e.g., RAW, V, bar)."
-        },
-        "sensorConfigId": {
-          "type": "string",
-          "description": "Reference to SensorConfiguration."
-        },
-        "testSessionId": {
-            "type": "string",
-            "description": "Reference to the test session this data point belongs to."
-        },
-        "testBenchId": {
-            "type": "string",
-            "description": "Reference to the test bench this data point was recorded on."
+          "description": "The raw value recorded by the sensor."
         }
       },
       "required": [
         "id",
         "timestamp",
-        "value",
-        "convertedValue",
-        "unit",
-        "sensorConfigId",
-        "testBenchId"
+        "value"
       ]
     },
     "SensorConfiguration": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "SensorConfiguration",
       "type": "object",
-      "description": "Represents the configuration settings for a sensor.",
+      "description": "Represents the configuration settings applied to the sensor.",
       "properties": {
         "id": {
           "type": "string",
           "description": "Unique identifier for the sensor configuration."
         },
-        "name": {
-            "type": "string"
-        },
         "mode": {
           "type": "string",
-          "description": "The display mode of the sensor (RAW, VOLTAGE, CUSTOM)."
+          "description": "The display mode of the sensor (RAW, VOLTAGE, CUSTOM).",
+          "format": "string"
         },
         "unit": {
-            "type": "string"
+          "type": "string",
+          "description": "The unit of measurement for the sensor data."
         },
         "min": {
-            "type": "number"
+          "type": "number",
+          "description": "The minimum value for custom sensor scaling."
         },
         "max": {
-            "type": "number"
+          "type": "number",
+          "description": "The maximum value for custom sensor scaling."
         },
         "arduinoVoltage": {
           "type": "number",
-          "description": "The reference voltage of the Arduino (used for voltage conversion)."
-        },
-        "decimalPlaces": {
-            "type": "number"
-        },
-        "testBenchId": {
-            "type": "string",
-            "description": "Reference to the TestBench this configuration belongs to."
+          "description": "The reference voltage of the Arduino."
         }
       },
       "required": [
         "id",
         "mode",
-        "testBenchId"
+        "unit",
+        "min",
+        "max",
+        "arduinoVoltage"
       ]
     },
-    "AnalysisResult": {
+    "LeakAnalysis": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "AnalysisResult",
+      "title": "LeakAnalysis",
       "type": "object",
-      "description": "Represents the result of a leak analysis.",
+      "description": "Represents the results of a leak analysis performed on sensor data.",
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique identifier for the analysis result."
+          "description": "Unique identifier for the leak analysis result."
         },
         "analysisModel": {
           "type": "string",
-          "description": "The analysis model used (linear_leak, nonlinear_leak)."
+          "description": "The type of analysis model used (linear_leak, nonlinear_leak)."
         },
-        "rSquared": {
+        "startThreshold": {
           "type": "number",
-          "description": "The R-squared value of the analysis."
+          "description": "The starting threshold value for the analysis."
         },
-        "analyzedRangeStart": {
+        "endThreshold": {
+          "type": "number",
+          "description": "The ending threshold value for the analysis."
+        },
+        "sensitivity": {
+          "type": "number",
+          "description": "The sensitivity setting for the analysis (R² value)."
+        },
+        "result": {
           "type": "string",
-          "description": "Timestamp of the start of the analyzed data range.",
-          "format": "date-time"
+          "description": "The result of the leak analysis (Leak probable, Diffusion probable)."
         },
-        "analyzedRangeEnd": {
+        "analyzedRange": {
           "type": "string",
-          "description": "Timestamp of the end of the analyzed data range.",
-          "format": "date-time"
-        },
-        "isLeak": {
-          "type": "boolean",
-          "description": "Indicates whether a leak was detected."
+          "description": "The range of data points analyzed."
         }
       },
       "required": [
         "id",
         "analysisModel",
-        "rSquared",
-        "analyzedRangeStart",
-        "analyzedRangeEnd",
-        "isLeak"
+        "startThreshold",
+        "endThreshold",
+        "sensitivity",
+        "result",
+        "analyzedRange"
       ]
-    },
-    "TestSession": {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "TestSession",
-        "type": "object",
-        "description": "Represents a single test session for a specific product.",
-        "properties": {
-            "id": { "type": "string", "description": "Unique identifier for the test session." },
-            "productId": { "type": "string", "description": "Reference to the product being tested." },
-            "productName": { "type": "string", "description": "The name of the product being tested." },
-            "serialNumber": { "type": "string", "description": "The serial number of the product instance." },
-            "description": { "type": "string", "description": "A description of the test session." },
-            "startTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test started." },
-            "endTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test ended." },
-            "status": { "type": "string", "enum": ["RUNNING", "COMPLETED", "SCRAPPED"], "description": "The status of the test session." },
-            "testBenchId": { "type": "string", "description": "The test bench used for this test." },
-            "sensorConfigurationId": { "type": "string", "description": "The sensor configuration used for this test." },
-            "measurementType": { "type": "string", "enum": ["DEMO", "ARDUINO"], "description": "The source of the measurement data." },
-            "userId": { "type": "string", "description": "The ID of the user who started the session." },
-            "username": { "type": "string", "description": "The username of the user who started the session." },
-            "demoOwnerInstanceId": { "type": "string", "description": "A unique ID for the client instance that started a demo session." }
-        },
-        "required": ["id", "productId", "productName", "startTime", "status", "testBenchId", "sensorConfigurationId", "measurementType", "userId", "username"]
-    },
-    "Product": {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "Product",
-        "type": "object",
-        "description": "Represents a product that can be tested.",
-        "properties": {
-            "id": { "type": "string", "description": "Unique identifier for the product." },
-            "name": { "type": "string", "description": "The name of the product." }
-        },
-        "required": ["id", "name"]
-    },
-    "TestBench": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "TestBench",
-      "type": "object",
-      "description": "Represents a physical test bench or sensor unit.",
-      "properties": {
-          "id": { "type": "string", "description": "Unique identifier for the test bench." },
-          "name": { "type": "string", "description": "The name of the test bench." },
-          "location": { "type": "string", "description": "The physical location of the test bench." },
-          "description": { "type": "string", "description": "A description of the test bench." }
-      },
-      "required": ["id", "name"]
-    },
-    "MLModel": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "MLModel",
-      "type": "object",
-      "description": "Represents metadata for a machine learning model.",
-      "properties": {
-        "id": { "type": "string", "description": "Unique identifier for the model." },
-        "name": { "type": "string", "description": "The name of the model." },
-        "version": { "type": "string", "description": "Model version string." },
-        "description": { "type": "string", "description": "A brief description of the model." },
-        "fileSize": { "type": "number", "description": "The size of the model file in bytes." }
-      },
-      "required": ["id", "name", "version"]
-    },
-    "TrainDataSet": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "TrainDataSet",
-      "type": "object",
-      "description": "Represents a training dataset, which could be a reference or stored data.",
-      "properties": {
-        "id": { "type": "string", "description": "Unique identifier for the dataset." },
-        "name": { "type": "string", "description": "The name of the dataset." },
-        "description": { "type": "string", "description": "A brief description of the dataset." },
-        "storagePath": { "type": "string", "description": "Path to the dataset file in Firebase Storage, or a reference URL." }
-      },
-      "required": ["id", "name", "storagePath"]
     }
   },
   "auth": {
     "providers": [
-      "email"
+      "password",
+      "anonymous"
     ]
   },
   "firestore": {
     "structure": [
       {
-        "path": "/users/{userId}",
-        "definition": {
-            "entityName": "User",
-            "schema": {
-                "$ref": "#/entities/User"
-            },
-            "description": "Stores user profile information and role."
-        }
-      },
-      {
-        "path": "/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}",
+        "path": "/sensor_data/{sensorDataId}",
         "definition": {
           "entityName": "SensorData",
           "schema": {
-            "$ref": "#/entities/SensorData"
+            "$ref": "#/backend/entities/SensorData"
           },
-          "description": "Stores sensor data points associated with a specific sensor configuration."
+          "description": "Stores individual sensor readings. All authenticated users can delete.",
+          "params": [
+            {
+              "name": "sensorDataId",
+              "description": "Unique ID for each sensor data entry."
+            }
+          ]
         }
       },
       {
@@ -270,62 +142,34 @@
         "definition": {
           "entityName": "SensorConfiguration",
           "schema": {
-            "$ref": "#/entities/SensorConfiguration"
+            "$ref": "#/backend/entities/SensorConfiguration"
           },
-          "description": "Stores all sensor configurations globally."
+          "description": "Stores sensor configuration settings.",
+          "params": [
+            {
+              "name": "sensorConfigurationId",
+              "description": "Unique ID for each sensor configuration."
+            }
+          ]
         }
       },
       {
-        "path": "/testbenches/{testBenchId}",
+        "path": "/leak_analyses/{leakAnalysisId}",
         "definition": {
-          "entityName": "TestBench",
-          "schema": { "$ref": "#/entities/TestBench" },
-          "description": "Stores all available test benches."
-        }
-      },
-      {
-        "path": "/analysis_results/{analysisResultId}",
-        "definition": {
-          "entityName": "AnalysisResult",
+          "entityName": "LeakAnalysis",
           "schema": {
-            "$ref": "#/entities/AnalysisResult"
+            "$ref": "#/backend/entities/LeakAnalysis"
           },
-          "description": "Stores leak analysis results generated from sensor data."
-        }
-      },
-       {
-        "path": "/test_sessions/{testSessionId}",
-        "definition": {
-          "entityName": "TestSession",
-          "schema": { "$ref": "#/entities/TestSession" },
-          "description": "Stores all test sessions globally."
-        }
-      },
-      {
-        "path": "/products/{productId}",
-        "definition": {
-            "entityName": "Product",
-            "schema": { "$ref": "#/entities/Product" },
-            "description": "Stores all available products."
-        }
-      },
-      {
-        "path": "/mlModels/{mlModelId}",
-        "definition": {
-            "entityName": "MLModel",
-            "schema": { "$ref": "#/entities/MLModel" },
-            "description": "Stores metadata for machine learning models."
-        }
-      },
-      {
-        "path": "/trainDataSets/{trainDataSetId}",
-        "definition": {
-            "entityName": "TrainDataSet",
-            "schema": { "$ref": "#/entities/TrainDataSet" },
-            "description": "Stores metadata for training datasets."
+          "description": "Stores results from leak analyses. All authenticated users can delete.",
+          "params": [
+            {
+              "name": "leakAnalysisId",
+              "description": "Unique ID for each leak analysis result."
+            }
+          ]
         }
       }
     ],
-    "reasoning": "This Firestore data structure is designed for a single-user or public-access model. All data is stored in global collections, removing any user-specific paths or ownership. This simplifies data access as there is no user authentication or authorization layer to manage. It's suitable for local testing or a fully public dashboard."
+    "reasoning": "Based on the requirements, the primary data storage needs are for sensor data, sensor configurations, and leak analysis results. All data is related, but segregating them into separate collections allows for better querying and security rule management. The user request to allow anyone to delete products can be generalized to say that all authenticated users should be able to delete sensor data and analyses, this can be acheived by removing any user-specific access controls on these items.\n\n**Authorization Independence:**\n*   No authorization fields need to be denormalized, as there are no user-specific restrictions on data access as requested. All authenticated users can delete sensor data and leak analyses.\n\n**QAPs (Query and Presentation Support):**\n*   The structure allows for efficient querying of sensor data, configurations, and analysis results.\n*   Segregation allows listing of all sensor data, configurations, and analysis results (subject to volume limits), as needed.\n\n"
   }
 }
