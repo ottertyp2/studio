@@ -1661,6 +1661,8 @@ function TestingComponent() {
                     allowDuplicatedCategory={false}
                     type="number"
                     label={{ value: "Time (seconds)", position: 'insideBottom', offset: -5 }}
+                    animationDuration={300}
+                    animationEasing="ease-out"
                   />
                   <YAxis
                     stroke="hsl(var(--muted-foreground))"
@@ -1678,12 +1680,12 @@ function TestingComponent() {
                   />
                   <Legend verticalAlign="top" height={36} />
                   {Array.isArray(chartData) ? (
-                     <Line type="monotone" data={chartData} dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig?.name} (${sensorConfig?.unit})`} dot={false} strokeWidth={2} isAnimationActive={false} />
+                     <Line type="monotone" data={chartData} dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig?.name} (${sensorConfig?.unit})`} dot={false} strokeWidth={2} isAnimationActive={!runningTestSession && !isConnected} />
                   ) : (
                     Object.entries(chartData).map(([sessionId, data], index) => {
                        const session = testSessions?.find(s => s.id === sessionId);
                        return (
-                         <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={session?.productName || sessionId} dot={false} strokeWidth={2} isAnimationActive={false} />
+                         <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={session?.productName || sessionId} dot={false} strokeWidth={2} isAnimationActive={!runningTestSession && !isConnected} />
                        )
                     })
                   )}
