@@ -342,13 +342,13 @@ export default function AdminPage() {
     
     if (field === 'min' || field === 'max' || field === 'arduinoVoltage') {
         if (value === '') {
-            newConfig = { ...newConfig, [field]: '' }; // Allow empty input in the view
+            (newConfig as any)[field] = ''; // Allow empty input in the view
         } else {
             const num = parseFloat(value);
             if (!isNaN(num)) {
                 newConfig[field] = num;
             } else {
-                 newConfig = { ...newConfig, [field]: '' };
+                 (newConfig as any)[field] = '';
             }
         }
     }
