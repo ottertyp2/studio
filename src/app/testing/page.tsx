@@ -993,16 +993,14 @@ function TestingComponent() {
     }
     if (!firestore || !productsCollectionRef) return;
     const newProductId = doc(collection(firestore, '_')).id;
-    const productRef = doc(productsCollectionRef, newProductId);
-    setDoc(productRef, { id: newProductId, name: newProductName.trim() });
+    addDocumentNonBlocking(productsCollectionRef, { id: newProductId, name: newProductName.trim() });
     setNewProductName('');
     toast({ title: 'Product Added', description: `"${newProductName.trim()}" has been added.`});
   };
 
   const handleDeleteProduct = (productId: string) => {
     if (!firestore) return;
-    const productRef = doc(firestore, 'products', productId);
-    deleteDoc(productRef);
+    deleteDocumentNonBlocking(doc(firestore, 'products', productId));
     toast({ title: 'Product Deleted'});
   };
 
@@ -1642,7 +1640,7 @@ function TestingComponent() {
                 <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
                   {displayValue !== null ? displayValue.toFixed(displayDecimals) : (isConnected ? '...' : 'N/A')}
                 </p>
-                <p className="text-lg text-muted-foreground">{sensorConfig?.unit || 'N/A'}</p>
+                <p className="text-lg text-muted-foreground">{displayValue !== null && sensorConfig?.unit || 'N/A'}</p>
                  <div className="mt-2 text-xs text-muted-foreground space-y-1">
                     <p>
                         Sensor: <span className="font-semibold text-foreground">{sensorConfig?.name ?? 'N/A'}</span>
@@ -1852,3 +1850,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
