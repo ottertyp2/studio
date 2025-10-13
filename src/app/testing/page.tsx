@@ -339,32 +339,44 @@ const disconnectSerial = useCallback(async () => {
 
     if (readerRef.current) {
         try {
+            console.log('Attempting to cancel reader...');
             await readerRef.current.cancel();
+            console.log('Reader cancelled.');
         } catch (error) {
             console.warn("Serial reader cancel error:", error);
         }
+        try {
+            console.log('Attempting to release reader lock...');
+            readerRef.current.releaseLock();
+            console.log('Reader lock released.');
+        } catch(e) {
+            console.warn("Error releasing reader lock (might be already released):", e);
+        }
+        readerRef.current = null;
     }
     
-    // This ReadableStream is now locked, we must unlock it before closing the port.
     if (readableStreamClosedRef.current) {
         try {
+            console.log('Waiting for readable stream to close...');
             await readableStreamClosedRef.current.catch(() => {}); // Catch any error
+            console.log('Readable stream closed.');
         } catch(e) {
-            // Ignore
+            console.warn("Error awaiting stream close promise:", e);
         }
+        readableStreamClosedRef.current = null;
     }
     
     if (portRef.current) {
         try {
+            console.log('Attempting to close port...');
             await portRef.current.close();
+            console.log('Port closed.');
         } catch (e) {
             console.warn("Error closing serial port:", e);
         }
+        portRef.current = null;
     }
 
-    portRef.current = null;
-    readerRef.current = null;
-    readableStreamClosedRef.current = null;
     setIsConnected(false);
     setLocalDataLog([]);
     toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
@@ -1718,7 +1730,7 @@ const disconnectSerial = useCallback(async () => {
                     type="number"
                     domain={zoomDomain || (Array.isArray(chartData) && chartData.length > 0 ? ['dataMin', 'dataMax'] : [0, 1])}
                     label={{ value: "Time (seconds)", position: 'insideBottom', offset: -5 }}
-                    tickFormatter={(tick) => Math.round(tick as number).toString()}
+                    tickFormatter={(tick) => (tick as number).toFixed(0)}
                   />
                   <YAxis
                     stroke="hsl(var(--muted-foreground))"
@@ -1791,3 +1803,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
