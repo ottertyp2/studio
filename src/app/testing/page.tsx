@@ -190,6 +190,8 @@ function TestingComponent() {
   // States for session editing
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [trimRange, setTrimRange] = useState([0, 100]);
+  
+  const [liveUpdateEnabled, setLiveUpdateEnabled] = useState(true);
 
   // Pan states for horizontal scroll
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -1058,6 +1060,19 @@ const disconnectSerial = useCallback(async () => {
 
   }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, activeTestSession, runningTestSession, editingSessionId, localDataLog, isConnected]);
 
+  useEffect(() => {
+    if ((runningTestSession || isConnected) && Array.isArray(chartData)) {
+      const maxTime = chartData.length > 0 ? Math.max(...chartData.map(d => d.name)) : 0;
+      const intervalOptions = [10, 30, 60, 300, 900];
+      const currentInterval = parseInt(chartInterval, 10);
+
+      if (chartInterval !== 'all' && maxTime > currentInterval) {
+        const nextInterval = intervalOptions.find(i => maxTime < i) || 'all';
+        setChartInterval(String(nextInterval));
+      }
+    }
+  }, [chartData, chartInterval, runningTestSession, isConnected]);
+
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (scrollContainerRef.current) {
@@ -1085,6 +1100,62 @@ const disconnectSerial = useCallback(async () => {
   const handleMouseLeave = () => {
     setIsDragging(false);
   };
+
+  const chartContainerWheelRef = useRef<HTMLDivElement>(null);
+  const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
+
+  const handleResetZoom = () => {
+    setZoomDomain(null);
+  }
+
+  useEffect(() => {
+    if (liveUpdateEnabled && Array.isArray(chartData)) {
+        setZoomDomain(null);
+    }
+  }, [chartData, liveUpdateEnabled]);
+
+  useEffect(() => {
+    const container = chartContainerWheelRef.current;
+    if (!container) return;
+
+    const handleWheelCapture = (e: WheelEvent) => {
+        if (Array.isArray(chartData) && chartData.length > 0) {
+            e.preventDefault();
+            const { deltaY } = e;
+            const zoomFactor = 1.1;
+            const [currentMin, currentMax] = zoomDomain || [chartData[0].name, chartData[chartData.length - 1].name];
+
+            let newMin = currentMin;
+            let newMax = currentMax;
+
+            if (deltaY < 0) { // Zoom in
+                newMin = currentMin / zoomFactor;
+                newMax = currentMax / zoomFactor;
+            } else { // Zoom out
+                newMin = currentMin * zoomFactor;
+                newMax = currentMax * zoomFactor;
+            }
+            
+            const dataMin = chartData[0].name;
+            const dataMax = chartData[chartData.length - 1].name;
+            
+            newMin = Math.max(dataMin, newMin);
+            newMax = Math.min(dataMax, newMax);
+
+            if(newMax > newMin) {
+                setLiveUpdateEnabled(false);
+                setZoomDomain([newMin, newMax]);
+            }
+        }
+    };
+    container.addEventListener('wheel', handleWheelCapture, { passive: false });
+    return () => {
+        if(container) {
+          container.removeEventListener('wheel', handleWheelCapture);
+        }
+    };
+}, [chartData, zoomDomain]);
+
   
   const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
   const displayDecimals = sensorConfig?.decimalPlaces ?? 0;
@@ -1509,7 +1580,7 @@ const disconnectSerial = useCallback(async () => {
                 <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
                   {displayValue !== null ? displayValue.toFixed(displayDecimals) : (isConnected ? '...' : 'N/A')}
                 </p>
-                <p className="text-lg text-muted-foreground">{displayValue !== null && sensorConfig?.unit ? sensorConfig.unit : ''}</p>
+                 <p className="text-lg text-muted-foreground">{displayValue !== null ? sensorConfig?.unit : ''}</p>
                  <div className="mt-2 text-xs text-muted-foreground space-y-1">
                     <p>
                         Sensor: <span className="font-semibold text-foreground">{sensorConfig?.name ?? 'N/A'}</span>
@@ -1600,9 +1671,16 @@ const disconnectSerial = useCallback(async () => {
                       <SelectItem value="all">All Data</SelectItem>
                     </SelectContent>
                   </Select>
-                <Button onClick={() => {}} variant={'secondary'} size="sm" className="transition-transform transform hover:-translate-y-0.5">
-                    Reset Zoom
-                </Button>
+                  <Button onClick={handleResetZoom} variant={'secondary'} size="sm" className="transition-transform transform hover:-translate-y-0.5">
+                      Reset Zoom
+                  </Button>
+                  <Button
+                      onClick={() => setLiveUpdateEnabled(!liveUpdateEnabled)}
+                      variant={liveUpdateEnabled ? 'default' : 'secondary'}
+                      size="sm"
+                  >
+                      {liveUpdateEnabled ? "Live: ON" : "Live: OFF"}
+                  </Button>
               </div>
             </div>
             {selectedSessionIds.length > 0 && (
@@ -1625,7 +1703,7 @@ const disconnectSerial = useCallback(async () => {
           </CardHeader>
           <CardContent>
             <div 
-              ref={scrollContainerRef}
+              ref={chartContainerWheelRef}
               className="h-80 w-full min-w-full overflow-x-auto"
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
@@ -1641,7 +1719,7 @@ const disconnectSerial = useCallback(async () => {
                     stroke="hsl(var(--muted-foreground))" 
                     allowDuplicatedCategory={false}
                     type="number"
-                    domain={Array.isArray(chartData) && chartData.length > 0 ? [chartData[0].name, chartData[chartData.length - 1].name] : [0, 1]}
+                    domain={zoomDomain || (Array.isArray(chartData) && chartData.length > 0 ? [chartData[0].name, chartData[chartData.length - 1].name] : [0, 1])}
                     label={{ value: "Time (seconds)", position: 'insideBottom', offset: -5 }}
                   />
                   <YAxis
@@ -1715,3 +1793,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
