@@ -307,7 +307,79 @@
     ]
   },
   "firestore": {
-    "structure": [],
-    "reasoning": "The security rules are structured for a development environment where rapid iteration is prioritized. A single, universal wildcard rule `match /{document=**}` is used to grant full read and write access to any authenticated user across the entire database. This eliminates the need to define rules for each new collection, preventing permission-denied errors during development. For a production environment, this permissive rule would be replaced with granular, more restrictive rules based on user roles and data ownership to ensure data integrity and security."
+    "structure": [
+      {
+        "collection": "/users/{userId}",
+        "schema": "User",
+        "description": "Allows public read access to user profiles for UI elements, but restricts writes to authenticated users. This is necessary for features like the admin promotion check on the login page.",
+        "permissions": {
+          "read": "if true;",
+          "write": "if request.auth != null;"
+        }
+      },
+      {
+        "collection": "/products/{productId}",
+        "schema": "Product",
+        "description": "Allows authenticated users to read and write to the products collection.",
+        "permissions": {
+          "read": "if request.auth != null;",
+          "write": "if request.auth != null;"
+        }
+      },
+      {
+        "collection": "/testbenches/{testBenchId}",
+        "schema": "TestBench",
+        "description": "Allows authenticated users to read and write to the testbenches collection.",
+        "permissions": {
+          "read": "if request.auth != null;",
+          "write": "if request.auth != null;"
+        }
+      },
+      {
+        "collection": "/sensor_configurations/{sensorConfigurationId}",
+        "schema": "SensorConfiguration",
+        "description": "Allows authenticated users to read and write to the sensor_configurations collection.",
+        "permissions": {
+          "read": "if request.auth != null;",
+          "write": "if request.auth != null;"
+        }
+      },
+      {
+        "collection": "/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}",
+        "schema": "SensorReading",
+        "description": "Allows authenticated users to read and write sensor data within a specific configuration.",
+        "permissions": {
+          "read": "if request.auth != null;",
+          "write": "if request.auth != null;"
+        }
+      },
+      {
+        "collection": "/test_sessions/{testSessionId}",
+        "schema": "TestSession",
+        "description": "Allows authenticated users to read and write to the test_sessions collection.",
+        "permissions": {
+          "read": "if request.auth != null;",
+          "write": "if request.auth != null;"
+        }
+      },
+      {
+        "collection": "/mlModels/{mlModelId}",
+        "schema": "MLModel",
+        "description": "Allows authenticated users to read and write to the mlModels collection.",
+        "permissions": {
+          "read": "if request.auth != null;",
+          "write": "if request.auth != null;"
+        }
+      },
+      {
+        "collection": "/trainDataSets/{trainDataSetId}",
+        "schema": "TrainDataSet",
+        "description": "Allows authenticated users to read and write to the trainDataSets collection.",
+        "permissions": {
+          "read": "if request.auth != null;",
+          "write": "if request.auth != null;"
+        }
+      }
+    ]
   }
 }
