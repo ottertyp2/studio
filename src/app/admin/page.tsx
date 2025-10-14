@@ -194,6 +194,7 @@ export default function AdminPage() {
   const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
   const [newProductName, setNewProductName] = useState('');
   const [bulkClassifyModelId, setBulkClassifyModelId] = useState<string | null>(null);
+  const [trainingProgress, setTrainingProgress] = useState(0);
 
 
   useEffect(() => {
@@ -618,6 +619,7 @@ export default function AdminPage() {
 
     } catch (e: any) {
         toast({ variant: 'destructive', title: `AI Classification Failed for ${session.productName}`, description: e.message.includes('No model found in IndexedDB') ? `A trained model named "${modelToUse.name}" was not found in your browser.` : e.message});
+        throw e; // re-throw for bulk handler
     }
   };
 
@@ -637,9 +639,13 @@ export default function AdminPage() {
     toast({ title: `Starting Bulk Classification`, description: `Attempting to classify ${unclassifiedSessions.length} sessions...` });
 
     for (const session of unclassifiedSessions) {
-      await handleClassifyWithAI(session, bulkClassifyModelId);
-      // Small delay to prevent overwhelming the UI thread and allow toasts to appear
-      await new Promise(resolve => setTimeout(resolve, 300));
+      try {
+        await handleClassifyWithAI(session, bulkClassifyModelId);
+        // Small delay to prevent overwhelming the UI thread and allow toasts to appear
+        await new Promise(resolve => setTimeout(resolve, 300));
+      } catch (error) {
+        console.error(`Failed to classify session ${session.id} (${session.productName}):`, error);
+      }
     }
     
     toast({ title: 'Bulk Classification Finished' });
@@ -844,7 +850,7 @@ export default function AdminPage() {
           batchSize: 32,
           validationSplit: 0.2,
           callbacks: [{
-            onEpochEnd: (epoch: any, logs: any) => {
+            onEpochEnd: (epoch, logs) => {
               if (logs) {
                 setTrainingProgress(((epoch + 1) / 100) * 100);
                 const currentValAcc = (logs.val_acc || 0) * 100;
@@ -1756,7 +1762,7 @@ export default function AdminPage() {
                                 onCheckedChange={(checked) => {
                                     return checked
                                         ? setSelectedDataSetIds([...selectedDataSetIds, d.id])
-                                        : setSelectedDataSetIds(selectedDataSetIds.filter(id => id !== id))
+                                        : setSelectedDataSetIds(selectedDataSetIds.filter(id => id !== d.id))
                                 }}
                              />
                              <label htmlFor={d.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
@@ -2022,3 +2028,4 @@ export default function AdminPage() {
     
 
     
+
