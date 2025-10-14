@@ -81,7 +81,6 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
 /** Initiate email/password or username/password sign-in (non-blocking). */
 export async function initiateEmailSignIn(authInstance: Auth, firestore: Firestore, emailOrUsername: string, password: string): Promise<User> {
   let email = emailOrUsername;
-  console.log("SIGNIN CALLED", email, password);
 
   if (!emailOrUsername.includes('@')) {
     const username = emailOrUsername;
