@@ -1644,6 +1644,22 @@ const disconnectSerial = useCallback(async () => {
               </div>
             </CardContent>
           </Card>
+          <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+            <CardHeader>
+              <CardTitle className="text-xl">Settings</CardTitle>
+              <CardDescription>
+                Configure sensors and devices on the management page.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                onClick={() => router.push('/admin')}
+                className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
+              >
+                <Cog className="mr-2 h-4 w-4" /> Go to Management
+              </Button>
+            </CardContent>
+          </Card>
         </div>
 
         <Card className="lg:col-span-3 bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
