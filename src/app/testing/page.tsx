@@ -199,8 +199,6 @@ function TestingComponent() {
   const [dragStart, setDragStart] = useState({ x: 0, scrollLeft: 0 });
   
   const frozenDataRef = useRef<SensorData[]>();
-  const frozenChartDataRef = useRef<any>();
-  const frozenDomainRef = useRef<[number, number] | null>(null);
   
   const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
 
@@ -1108,37 +1106,64 @@ const disconnectSerial = useCallback(async () => {
     setIsDragging(false);
   };
 
-  const handleWheel = (event: WheelEvent) => {
+  const handleWheel = useCallback((event: WheelEvent) => {
     if (liveUpdateEnabled) return;
     event.preventDefault();
 
-    const [currentMin, currentMax] = zoomDomain || chartDomain;
-    
-    const range = currentMax - currentMin;
-    const zoomFactor = event.deltaY < 0 ? 0.9 : 1.1; // zoom in or out
-    const newRange = range * zoomFactor;
-    
-    if (scrollContainerRef.current) {
-        const chartWidth = scrollContainerRef.current.clientWidth;
-        const cursorX = event.offsetX;
-        const cursorRatio = cursorX / chartWidth;
+    setZoomDomain(prevDomain => {
+        const [currentMin, currentMax] = prevDomain || chartDomain;
+        const range = currentMax - currentMin;
 
-        const cursorValue = currentMin + range * cursorRatio;
+        // Handle panning (horizontal scroll)
+        if (event.deltaX !== 0) {
+            const panFactor = 0.001;
+            const panAmount = event.deltaX * range * panFactor;
+            
+            let newMin = currentMin + panAmount;
+            let newMax = currentMax + panAmount;
 
-        let newMin = cursorValue - newRange * cursorRatio;
-        let newMax = cursorValue + newRange * (1 - cursorRatio);
+            const [dataMin, dataMax] = chartDomain;
+            if (newMin < dataMin) {
+                newMin = dataMin;
+                newMax = dataMin + range;
+            }
+            if (newMax > dataMax) {
+                newMax = dataMax;
+                newMin = dataMax - range;
+            }
 
-        if (newMax - newMin < 1) return;
-        
-        const [dataMin, dataMax] = chartDomain;
-        newMin = Math.max(dataMin, newMin);
-        newMax = Math.min(dataMax, newMax);
-
-        if (newMax > newMin) {
-            setZoomDomain([newMin, newMax]);
+            if (newMax > newMin) {
+                return [newMin, newMax];
+            }
+            return prevDomain;
         }
-    }
-  };
+
+        // Handle zooming (vertical scroll)
+        const zoomFactor = event.deltaY < 0 ? 0.9 : 1.1;
+        const newRange = range * zoomFactor;
+        
+        if (scrollContainerRef.current) {
+            const chartWidth = scrollContainerRef.current.clientWidth;
+            const cursorX = event.offsetX;
+            const cursorRatio = cursorX / chartWidth;
+            const cursorValue = currentMin + range * cursorRatio;
+
+            let newMin = cursorValue - newRange * cursorRatio;
+            let newMax = cursorValue + newRange * (1 - cursorRatio);
+
+            if (newMax - newMin < 1) return prevDomain; // Prevent zooming in too far
+            
+            const [dataMin, dataMax] = chartDomain;
+            newMin = Math.max(dataMin, newMin);
+            newMax = Math.min(dataMax, newMax);
+
+            if (newMax > newMin) {
+                return [newMin, newMax];
+            }
+        }
+        return prevDomain;
+    });
+}, [liveUpdateEnabled, chartDomain]);
 
   const handleResetZoom = () => {
     setZoomDomain(null);
@@ -1158,15 +1183,14 @@ const disconnectSerial = useCallback(async () => {
 
   useEffect(() => {
     if (liveUpdateEnabled) {
-        setZoomDomain(null);
-        frozenChartDataRef.current = undefined;
-        frozenDomainRef.current = null;
-    } else if (!frozenDataRef.current) {
+      setZoomDomain(null);
+      frozenDataRef.current = undefined;
+    } else {
+      if (!frozenDataRef.current) {
         frozenDataRef.current = dataLog;
-        frozenChartDataRef.current = chartData;
-        frozenDomainRef.current = zoomDomain || chartDomain;
+      }
     }
-  }, [liveUpdateEnabled, dataLog, chartData, chartDomain, zoomDomain]);
+  }, [liveUpdateEnabled, dataLog]);
   
   const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
   const displayDecimals = sensorConfig?.decimalPlaces ?? 0;
@@ -1715,7 +1739,7 @@ const disconnectSerial = useCallback(async () => {
           <CardContent>
             <div 
               ref={scrollContainerRef}
-              className="h-80 w-full min-w-full overflow-x-auto"
+              className="h-80 w-full min-w-full"
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
