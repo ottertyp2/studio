@@ -468,18 +468,22 @@ const disconnectSerial = useCallback(async () => {
   const isLiveSessionActive = !!runningTestSession || isConnected;
 
   const dataLog = useMemo(() => {
+    // If a live session is active (demo or real), the source of truth is always localDataLog.
     if (isLiveSessionActive) {
       return localDataLog;
     }
+    
+    // For historical data, use the data fetched from the cloud.
     if (cloudDataLog && !isCloudDataLoading) {
       const log = [...cloudDataLog];
+      // Sort chronologically for historical display.
       return log.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     }
-    if (selectedSessionIds.length === 0) {
-        return [];
-    }
+
+    // If no sessions are selected or data is loading, return an empty array.
     return [];
-  }, [cloudDataLog, isCloudDataLoading, localDataLog, isLiveSessionActive, selectedSessionIds]);
+  }, [cloudDataLog, isCloudDataLoading, localDataLog, isLiveSessionActive]);
+
 
   const currentValue = useMemo(() => {
     if (localDataLog && localDataLog.length > 0) {
@@ -1085,7 +1089,7 @@ const disconnectSerial = useCallback(async () => {
 
 
   const handleWheel = useCallback((event: WheelEvent) => {
-    if (isLiveSessionActive && liveUpdateEnabled) return;
+    if (liveUpdateEnabled) return;
     event.preventDefault();
     setLiveUpdateEnabled(false); // Any interaction pauses live updates.
 
@@ -1704,7 +1708,7 @@ const disconnectSerial = useCallback(async () => {
                       <SelectItem value="all">All Data</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button onClick={handleResetZoom} variant={'secondary'} size="sm" className="transition-transform transform hover:-translate-y-0.5" disabled={isLiveSessionActive && liveUpdateEnabled}>
+                  <Button onClick={handleResetZoom} variant={'secondary'} size="sm" className="transition-transform transform hover:-translate-y-0.5" disabled={liveUpdateEnabled}>
                       Reset Zoom
                   </Button>
                   <Button
@@ -1738,7 +1742,7 @@ const disconnectSerial = useCallback(async () => {
             <div 
               ref={scrollContainerRef}
               className="h-80 w-full min-w-full"
-              style={{ cursor: (isLiveSessionActive && liveUpdateEnabled) ? 'default' : (isDragging ? 'grabbing' : 'grab') }}
+              style={{ cursor: (liveUpdateEnabled) ? 'default' : (isDragging ? 'grabbing' : 'grab') }}
             >
               <ResponsiveContainer width="100%" height="100%" minWidth={800}>
                 <LineChart data={Array.isArray(chartData) ? chartData : undefined} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
