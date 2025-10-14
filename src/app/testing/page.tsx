@@ -126,7 +126,7 @@ type TestSession = {
     testBenchId: string;
     sensorConfigurationId: string;
     measurementType: 'DEMO' | 'ARDUINO';
-    demoType?: 'LEAK' | 'DIFFUSION';
+    classification?: 'LEAK' | 'DIFFUSION';
     userId: string;
     username: string;
     demoOwnerInstanceId?: string;
@@ -643,7 +643,7 @@ const disconnectSerial = useCallback(async () => {
       userId: currentUser.id,
       username: currentUser.username,
       ...(options.measurementType === 'DEMO' && { 
-        demoType: options.demoType,
+        classification: options.demoType,
         demoOwnerInstanceId: instanceId 
       }),
     };
@@ -699,7 +699,7 @@ const disconnectSerial = useCallback(async () => {
         
         demoIntervalRef.current = setInterval(() => {
             let rawValue;
-            if (runningTestSession.demoType === 'LEAK') {
+            if (runningTestSession.classification === 'LEAK') {
                 const startValue = 900;
                 const endValue = 200;
                 const baseValue = startValue - ((startValue - endValue) * step / totalSteps);
@@ -1005,7 +1005,7 @@ const disconnectSerial = useCallback(async () => {
     let allChronologicalData = [...dataToProcess].reverse();
 
     const processData = (data: SensorData[], startTimeOverride?: number) => {
-        const startTime = startTimeOverride ?? (activeTestSession ? new Date(activeTestSession.startTime).getTime() : (data.length > 0 ? new Date(data[0].timestamp).getTime() : Date.now()));
+        const startTime = startTimeOverride ?? (data.length > 0 ? new Date(data[0].timestamp).getTime() : Date.now());
         return data.map(d => ({
             name: (new Date(d.timestamp).getTime() - startTime) / 1000,
             value: convertRawValue(d.value, sensorConfig),
@@ -1109,6 +1109,7 @@ const disconnectSerial = useCallback(async () => {
   const handleWheel = useCallback((event: WheelEvent) => {
     if (liveUpdateEnabled) return;
     event.preventDefault();
+    setLiveUpdateEnabled(false);
 
     setZoomDomain(prevDomain => {
         const [currentMin, currentMax] = prevDomain || chartDomain;
@@ -1173,10 +1174,11 @@ const disconnectSerial = useCallback(async () => {
   useEffect(() => {
     const chartContainer = scrollContainerRef.current;
     if (chartContainer) {
-      chartContainer.addEventListener('wheel', handleWheel, { passive: false });
+      const wheelHandler = (e: WheelEvent) => handleWheel(e);
+      chartContainer.addEventListener('wheel', wheelHandler, { passive: false });
 
       return () => {
-        chartContainer.removeEventListener('wheel', handleWheel);
+        chartContainer.removeEventListener('wheel', wheelHandler);
       };
     }
   }, [handleWheel]);
@@ -1591,7 +1593,7 @@ const disconnectSerial = useCallback(async () => {
                         <div>
                             <p className="font-semibold">{runningTestSession.productName}</p>
                             <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US')} - {runningTestSession.status}</p>
-                            <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.demoType ? `(${runningTestSession.demoType})` : ''}</p>
+                            <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.classification ? `(${runningTestSession.classification})` : ''}</p>
                         </div>
                         <div className="flex gap-2">
                             <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>

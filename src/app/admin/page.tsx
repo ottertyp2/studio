@@ -50,12 +50,16 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
@@ -130,7 +134,7 @@ type TestSession = {
     testBenchId: string;
     sensorConfigurationId: string;
     measurementType: 'DEMO' | 'ARDUINO';
-    demoType?: 'LEAK' | 'DIFFUSION';
+    classification?: 'LEAK' | 'DIFFUSION';
     userId: string;
     username: string;
     demoOwnerInstanceId?: string;
@@ -472,7 +476,7 @@ export default function AdminPage() {
         return;
     }
 
-    if (tempTestSession.demoType && !['LEAK', 'DIFFUSION'].includes(tempTestSession.demoType)) {
+    if (tempTestSession.classification && !['LEAK', 'DIFFUSION'].includes(tempTestSession.classification)) {
       toast({ variant:'destructive', title:'Error', description:'Please select a simulation type.' });
       return;
     }
@@ -489,13 +493,13 @@ export default function AdminPage() {
       productId: selectedProduct.id,
       productName: selectedProduct.name,
       serialNumber: tempTestSession.serialNumber || '',
-      description: tempTestSession.description || `Admin Demo - ${tempTestSession.demoType}`,
+      description: tempTestSession.description || `Admin Demo - ${tempTestSession.classification}`,
       startTime: new Date().toISOString(),
       status: 'RUNNING',
       testBenchId: activeConfig.testBenchId,
       sensorConfigurationId: activeSensorConfigId,
       measurementType: 'DEMO',
-      demoType: tempTestSession.demoType,
+      classification: tempTestSession.classification,
       userId: currentUser.id,
       username: currentUser.username,
     };
@@ -553,6 +557,57 @@ export default function AdminPage() {
             title: 'Error Deleting Session',
             description: (serverError as Error).message
         });
+    }
+  };
+
+  const handleSetSessionClassification = (sessionId: string, classification: 'LEAK' | 'DIFFUSION' | null) => {
+    if (!firestore) return;
+    const sessionRef = doc(firestore, 'test_sessions', sessionId);
+    updateDoc(sessionRef, { classification: classification || null })
+      .then(() => toast({ title: 'Classification Updated' }))
+      .catch(e => toast({ variant: 'destructive', title: 'Update Failed', description: e.message }));
+  };
+
+  const handleClassifyWithAI = async (session: TestSession) => {
+    if (!firestore) return;
+    if (!mlModels || mlModels.length === 0) {
+      toast({ variant: 'destructive', title: 'AI Classification Failed', description: 'No ML models are available.' });
+      return;
+    }
+    const modelToUse = mlModels.find(m => m.name.includes('auto-model')) || mlModels[0];
+
+    try {
+        const model = await tf.loadLayersModel(`indexeddb://${modelToUse.name}`);
+
+        const sensorDataRef = collection(firestore, `sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
+        const q = query(sensorDataRef, where('testSessionId', '==', session.id));
+        const snapshot = await getDocs(q);
+        const sensorData = snapshot.docs.map(doc => doc.data() as SensorData).sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+        if (sensorData.length < 20) {
+          toast({ variant: 'destructive', title: 'Not Enough Data', description: `Need at least 20 data points to classify.` });
+          return;
+        }
+
+        const values = sensorData.map(d => d.value);
+
+        // Simple single-point prediction for now, could be expanded to windowed prediction
+        const lastValue = values[values.length -1];
+        const inputTensor = tf.tensor2d([[lastValue]], [1,1]);
+        const { mean, variance } = tf.moments(inputTensor);
+        const normalizedInput = inputTensor.sub(mean).div(tf.sqrt(variance));
+
+        const prediction = model.predict(normalizedInput) as tf.Tensor;
+        const predictionValue = (await prediction.data())[0];
+        
+        tf.dispose([inputTensor, normalizedInput, prediction]);
+
+        const classification = predictionValue > 0.5 ? 'LEAK' : 'DIFFUSION';
+        handleSetSessionClassification(session.id, classification);
+        toast({ title: 'AI Classification Complete', description: `Session classified as: ${classification}`});
+
+    } catch (e: any) {
+        toast({ variant: 'destructive', title: 'AI Classification Failed', description: e.message.includes('No model found') ? 'A trained model was not found in your browser. Please train one first.' : e.message});
     }
   };
   
@@ -696,8 +751,8 @@ export default function AdminPage() {
 
         for (const sessionId of selectedDataSetIds) {
             const trainingSession = testSessions?.find(s => s.id === sessionId);
-            if (!trainingSession || !trainingSession.sensorConfigurationId || !trainingSession.demoType) {
-                toast({variant: 'warning', title: 'Skipping Session', description: `Session ${sessionId} is invalid or has no demo type.`});
+            if (!trainingSession || !trainingSession.sensorConfigurationId || !trainingSession.classification) {
+                toast({variant: 'warning', title: 'Skipping Session', description: `Session ${sessionId} is invalid or has no classification.`});
                 continue;
             }
 
@@ -710,7 +765,7 @@ export default function AdminPage() {
 
             if (sensorData.length < windowSize) continue;
 
-            const isLeak = trainingSession.demoType === 'LEAK';
+            const isLeak = trainingSession.classification === 'LEAK';
             const label = isLeak ? 1 : 0;
             const values = sensorData.map(d => d.value);
 
@@ -750,27 +805,29 @@ export default function AdminPage() {
           metrics: ['accuracy'],
         });
 
+        const callbacks = [
+          tf.callbacks.earlyStopping({ monitor: 'val_loss', patience: 10 }),
+          {
+            onEpochEnd: (epoch: any, logs: any) => {
+              if (logs) {
+                setTrainingProgress(((epoch + 1) / 100) * 100);
+                setTrainingStatus({ 
+                    epoch: epoch + 1, 
+                    loss: logs.loss || 0, 
+                    accuracy: (logs.acc || 0) * 100,
+                    val_loss: logs.val_loss || 0,
+                    val_acc: (logs.val_acc || 0) * 100
+                });
+              }
+            }
+          }
+        ];
+
         await model.fit(normalizedInput, labelTensor, {
           epochs: 100,
           batchSize: 32,
           validationSplit: 0.2,
-          callbacks: [
-            tf.callbacks.earlyStopping({ monitor: 'val_loss', patience: 10 }),
-            {
-              onEpochEnd: (epoch, logs) => {
-                if (logs) {
-                  setTrainingProgress(((epoch + 1) / 100) * 100);
-                  setTrainingStatus({ 
-                      epoch: epoch + 1, 
-                      loss: logs.loss || 0, 
-                      accuracy: (logs.acc || 0) * 100,
-                      val_loss: logs.val_loss || 0,
-                      val_acc: (logs.val_acc || 0) * 100
-                  });
-                }
-              }
-            }
-          ]
+          callbacks: callbacks,
         });
 
         toast({ title: 'Training Complete!', description: 'Model has been trained in the browser.' });
@@ -1116,7 +1173,7 @@ export default function AdminPage() {
               </div>
                <div className="space-y-2">
                 <Label htmlFor="demoType">Simulation Type</Label>
-                <Select onValueChange={value => handleTestSessionFieldChange('demoType', value as 'LEAK' | 'DIFFUSION')}>
+                <Select onValueChange={value => handleTestSessionFieldChange('classification', value as 'LEAK' | 'DIFFUSION')}>
                     <SelectTrigger id="demoType">
                         <SelectValue placeholder="Select simulation type" />
                     </SelectTrigger>
@@ -1213,6 +1270,10 @@ export default function AdminPage() {
                                   <Server className="h-3 w-3" />
                                   <span>{bench?.name || 'N/A'} / {config?.name || 'N/A'}</span>
                                 </div>
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                  <Tag className="h-3 w-3" />
+                                  <span>{session.classification || 'Unclassified'}</span>
+                                </div>
                                 <p className="text-xs text-muted-foreground">
                                     Data Points: {sessionDataCounts[session.id] ?? '...'}
                                 </p>
@@ -1221,23 +1282,52 @@ export default function AdminPage() {
                                 {session.status === 'RUNNING' && (
                                     <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session.id)}>Stop</Button>
                                 )}
-                                 <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                        <Button size="sm" variant="destructive">Delete</Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                        <AlertDialogHeader>
-                                            <AlertDialogTitle className="text-destructive">Permanently Delete Session?</AlertDialogTitle>
-                                            <AlertDialogDescription>
-                                                This will permanently delete the session for "{session.productName}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
-                                            </AlertDialogDescription>
-                                        </AlertDialogHeader>
-                                        <AlertDialogFooter>
-                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteTestSession(session)}>Confirm Delete</AlertDialogAction>
-                                        </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                </AlertDialog>
+                                <div className="flex gap-2">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button size="sm" variant="outline" disabled={session.status === 'RUNNING'}>Actions</Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuSub>
+                                      <DropdownMenuSubTrigger>
+                                        <Tag className="mr-2 h-4 w-4" />
+                                        <span>Classify As</span>
+                                      </DropdownMenuSubTrigger>
+                                      <DropdownMenuSubContent>
+                                        <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'LEAK')}>Leak</DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'DIFFUSION')}>Diffusion</DropdownMenuItem>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, null)}>Clear Classification</DropdownMenuItem>
+                                      </DropdownMenuSubContent>
+                                    </DropdownMenuSub>
+                                    <DropdownMenuItem onClick={() => handleClassifyWithAI(session)}>
+                                      <Sparkles className="mr-2 h-4 w-4" />
+                                      <span>Classify with AI</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                     <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                            <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                                                <Trash2 className="mr-2 h-4 w-4 text-destructive" />
+                                                <span className="text-destructive">Delete Session</span>
+                                            </DropdownMenuItem>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                                <AlertDialogTitle className="text-destructive">Permanently Delete Session?</AlertDialogTitle>
+                                                <AlertDialogDescription>
+                                                    This will permanently delete the session for "{session.productName}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
+                                                </AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                <AlertDialogAction variant="destructive" onClick={() => handleDeleteTestSession(session)}>Confirm Delete</AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                                </div>
                             </div>
                         </div>
                     </Card>
@@ -1513,7 +1603,7 @@ export default function AdminPage() {
                 <ScrollArea className="h-40 border rounded-md p-2 bg-background/50">
                     <div className="space-y-2">
                     {isTestSessionsLoading ? <p className="p-4 text-center">Loading...</p> :
-                     testSessions?.filter(s => s.demoType).map(d => (
+                     testSessions?.filter(s => s.classification).map(d => (
                          <div key={d.id} className="flex items-center space-x-2">
                              <Checkbox
                                 id={d.id}
@@ -1525,14 +1615,14 @@ export default function AdminPage() {
                                 }}
                              />
                              <label htmlFor={d.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                 {d.productName} ({d.demoType}) - <span className="text-xs text-muted-foreground">{new Date(d.startTime).toLocaleDateString()}</span>
+                                 {d.productName} ({d.classification}) - <span className="text-xs text-muted-foreground">{new Date(d.startTime).toLocaleDateString()}</span>
                              </label>
                          </div>
                      ))}
                     </div>
                 </ScrollArea>
                  <p className="text-xs text-muted-foreground mt-1">
-                  Generate demo sessions on the <a href="/testing" className="underline text-primary">Testing</a> page to create training data.
+                  Generate demo sessions or classify real sessions to create training data.
                 </p>
               </div>
             </div>
@@ -1782,3 +1872,4 @@ export default function AdminPage() {
     </div>
   );
 }
+
