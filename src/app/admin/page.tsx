@@ -192,6 +192,7 @@ export default function AdminPage() {
   const [sessionUserFilter, setSessionUserFilter] = useState('all');
   const [sessionProductFilter, setSessionProductFilter] = useState('all');
   const [sessionTestBenchFilter, setSessionTestBenchFilter] = useState('all');
+  const [sessionClassificationFilter, setSessionClassificationFilter] = useState('all');
 
   const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
   const [newProductName, setNewProductName] = useState('');
@@ -1039,6 +1040,14 @@ export default function AdminPage() {
         filtered = filtered.filter(session => session.testBenchId === sessionTestBenchFilter);
     }
 
+    if (sessionClassificationFilter !== 'all') {
+        if (sessionClassificationFilter === 'classified') {
+            filtered = filtered.filter(session => !!session.classification);
+        } else if (sessionClassificationFilter === 'unclassified') {
+            filtered = filtered.filter(session => !session.classification);
+        }
+    }
+
     filtered = filtered.filter(session => {
         const searchTerm = sessionSearchTerm.toLowerCase();
         if (!searchTerm) return true;
@@ -1070,7 +1079,7 @@ export default function AdminPage() {
         }
     });
 
-  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionProductFilter, sessionTestBenchFilter, testBenches]);
+  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionProductFilter, sessionTestBenchFilter, sessionClassificationFilter, testBenches]);
 
     const handleAddProduct = () => {
     if (!newProductName.trim()) {
@@ -1237,7 +1246,7 @@ export default function AdminPage() {
                     placeholder="Search sessions..."
                     value={sessionSearchTerm}
                     onChange={(e) => setSessionSearchTerm(e.target.value)}
-                    className="sm:col-span-2 lg:col-span-4"
+                    className="col-span-1 sm:col-span-2 lg:col-span-4"
                 />
                 <Select value={sessionUserFilter} onValueChange={setSessionUserFilter}>
                     <SelectTrigger>
@@ -1266,8 +1275,18 @@ export default function AdminPage() {
                         {testBenches?.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
                     </SelectContent>
                 </Select>
-                <Select value={sessionSortOrder} onValueChange={setSessionSortOrder}>
+                <Select value={sessionClassificationFilter} onValueChange={setSessionClassificationFilter}>
                     <SelectTrigger>
+                        <SelectValue placeholder="Filter by classification" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Statuses</SelectItem>
+                        <SelectItem value="classified">Classified</SelectItem>
+                        <SelectItem value="unclassified">Unclassified</SelectItem>
+                    </SelectContent>
+                </Select>
+                <Select value={sessionSortOrder} onValueChange={setSessionSortOrder}>
+                    <SelectTrigger className="lg:col-start-1">
                         <SelectValue placeholder="Sort by" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1278,13 +1297,11 @@ export default function AdminPage() {
                         <SelectItem value="testBenchName-asc">Test Bench</SelectItem>
                     </SelectContent>
                 </Select>
-            </div>
-             <div className="flex justify-end mt-4">
                  <Dialog>
                     <DialogTrigger asChild>
-                       <Button variant="outline" disabled={mlModels?.length === 0 || testSessions?.every(s => s.classification)}>
+                       <Button variant="outline" disabled={mlModels?.length === 0 || testSessions?.every(s => s.classification)} className="sm:col-span-2 lg:col-span-3 justify-center">
                             <Sparkles className="mr-2 h-4 w-4" />
-                            Bulk Classify
+                            Bulk Classify Unclassified
                         </Button>
                     </DialogTrigger>
                     <DialogContent>
