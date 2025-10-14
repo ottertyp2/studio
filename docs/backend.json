@@ -346,7 +346,7 @@
         "description": "Sensor configurations are publicly viewable. Authenticated users can create them. Only the owner or a superadmin can modify or delete them.",
         "permissions": {
           "read": "if true;",
-          "write": "if request.auth != null && (request.method == 'create' || (request.method == 'update' || request.method == 'delete') && (request.auth.uid == resource.data.ownerId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin'));"
+          "write": "if request.auth != null && (request.method == 'create' || (request.method == 'update' || request.method == 'delete') && (request.resource.data.ownerId == request.auth.uid || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin'));"
         }
       },
       {
@@ -373,7 +373,7 @@
         "description": "ML Models are publicly readable and writable by any user.",
         "permissions": {
           "read": "if true;",
-          "write": "if true;"
+          "write": "if request.auth != null;"
         }
       },
       {
@@ -382,7 +382,7 @@
         "description": "Training datasets are publicly readable and writable by any user.",
         "permissions": {
           "read": "if true;",
-          "write": "if true;"
+          "write": "if request.auth != null;"
         }
       }
     ]
