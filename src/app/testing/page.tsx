@@ -198,6 +198,8 @@ function TestingComponent() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, scrollLeft: 0 });
 
+  const frozenDataRef = useRef<SensorData[]>();
+  
   const testSessionsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     const q = query(collection(firestore, `test_sessions`), orderBy('startTime', 'desc'));
@@ -999,10 +1001,6 @@ const disconnectSerial = useCallback(async () => {
     
     // This is the full dataset, always sorted newest to oldest.
     const fullData = dataLog;
-    
-    // When live updates are disabled, we want to freeze the data set.
-    // We use a ref to store the "frozen" data set.
-    const frozenDataRef = useRef<SensorData[]>();
     
     if (!liveUpdateEnabled) {
       if (!frozenDataRef.current) {
