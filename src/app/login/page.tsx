@@ -68,6 +68,7 @@ export default function LoginPage() {
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setIsLoading(true);
+    console.log("LOGIN INPUT", values);
     if (!auth || !firestore) {
       toast({
         variant: 'destructive',
