@@ -69,7 +69,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
@@ -1241,113 +1241,137 @@ export default function AdminPage() {
           )}
 
           <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-center">
-                <Input 
-                    placeholder="Search sessions..."
-                    value={sessionSearchTerm}
-                    onChange={(e) => setSessionSearchTerm(e.target.value)}
-                    className="col-span-1 sm:col-span-2 lg:col-span-4"
-                />
-                <Select value={sessionUserFilter} onValueChange={setSessionUserFilter}>
-                    <SelectTrigger>
-                        <SelectValue placeholder="Filter by user" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All Users</SelectItem>
-                        {users?.map(u => <SelectItem key={u.id} value={u.id}>{u.username}</SelectItem>)}
-                    </SelectContent>
-                </Select>
-                <Select value={sessionProductFilter} onValueChange={setSessionProductFilter}>
-                    <SelectTrigger>
-                        <SelectValue placeholder="Filter by product" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All Products</SelectItem>
-                        {products?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                    </SelectContent>
-                </Select>
-                <Select value={sessionTestBenchFilter} onValueChange={setSessionTestBenchFilter}>
-                    <SelectTrigger>
-                        <SelectValue placeholder="Filter by bench" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All Benches</SelectItem>
-                        {testBenches?.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-                    </SelectContent>
-                </Select>
-                <Select value={sessionClassificationFilter} onValueChange={setSessionClassificationFilter}>
-                    <SelectTrigger>
-                        <SelectValue placeholder="Filter by classification" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All Statuses</SelectItem>
-                        <SelectItem value="classified">Classified</SelectItem>
-                        <SelectItem value="unclassified">Unclassified</SelectItem>
-                    </SelectContent>
-                </Select>
-                <Select value={sessionSortOrder} onValueChange={setSessionSortOrder}>
-                    <SelectTrigger className="lg:col-start-1">
-                        <SelectValue placeholder="Sort by" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="startTime-desc">Newest</SelectItem>
-                        <SelectItem value="startTime-asc">Oldest</SelectItem>
-                        <SelectItem value="productName-asc">Product Name</SelectItem>
-                        <SelectItem value="username-asc">Username</SelectItem>
-                        <SelectItem value="testBenchName-asc">Test Bench</SelectItem>
-                    </SelectContent>
-                </Select>
-                 <Dialog>
-                    <DialogTrigger asChild>
-                       <Button variant="outline" disabled={mlModels?.length === 0 || testSessions?.every(s => s.classification)} className="sm:col-span-2 lg:col-span-3 justify-center">
-                            <Sparkles className="mr-2 h-4 w-4" />
-                            Bulk Classify Unclassified
+            <div className="flex flex-col sm:flex-row gap-4">
+              <Input
+                placeholder="Search sessions..."
+                value={sessionSearchTerm}
+                onChange={(e) => setSessionSearchTerm(e.target.value)}
+                className="flex-grow"
+              />
+              <div className="flex gap-2">
+                 <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="w-full sm:w-auto">
+                      <ListTree className="mr-2 h-4 w-4" />
+                      Sort by
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => setSessionSortOrder('startTime-desc')}>Newest</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setSessionSortOrder('startTime-asc')}>Oldest</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setSessionSortOrder('productName-asc')}>Product Name</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setSessionSortOrder('username-asc')}>Username</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setSessionSortOrder('testBenchName-asc')}>Test Bench</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="w-full sm:w-auto">
+                            <Filter className="mr-2 h-4 w-4" />
+                            Filters
                         </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Bulk Classify Unclassified Sessions</DialogTitle>
-                            <DialogDescription>
-                                Select a model to classify all completed sessions that do not yet have a classification. This action cannot be undone.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-2 py-4">
-                          <Label htmlFor="bulk-model-select">Model for Classification</Label>
-                          <Select onValueChange={setBulkClassifyModelId}>
-                            <SelectTrigger id="bulk-model-select">
-                              <SelectValue placeholder="Select a model" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {mlModels?.map(m => (
-                                <SelectItem key={m.id} value={m.id}>{m.name} v{m.version}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-[250px]">
+                        <div className="p-2 space-y-4">
+                            <div className="space-y-2">
+                                <Label>User</Label>
+                                <Select value={sessionUserFilter} onValueChange={setSessionUserFilter}>
+                                    <SelectTrigger><SelectValue/></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All Users</SelectItem>
+                                        {users?.map(u => <SelectItem key={u.id} value={u.id}>{u.username}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Product</Label>
+                                <Select value={sessionProductFilter} onValueChange={setSessionProductFilter}>
+                                    <SelectTrigger><SelectValue/></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All Products</SelectItem>
+                                        {products?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                             <div className="space-y-2">
+                                <Label>Test Bench</Label>
+                                <Select value={sessionTestBenchFilter} onValueChange={setSessionTestBenchFilter}>
+                                    <SelectTrigger><SelectValue/></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All Benches</SelectItem>
+                                        {testBenches?.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                             <div className="space-y-2">
+                                <Label>Classification</Label>
+                                <Select value={sessionClassificationFilter} onValueChange={setSessionClassificationFilter}>
+                                    <SelectTrigger><SelectValue/></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All Statuses</SelectItem>
+                                        <SelectItem value="classified">Classified</SelectItem>
+                                        <SelectItem value="unclassified">Unclassified</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
                         </div>
-                        <DialogFooter>
-                            <AlertDialog>
-                               <AlertDialogTrigger asChild>
-                                    <Button variant="default" disabled={!bulkClassifyModelId}>
-                                        Run Bulk Classification
-                                    </Button>
-                               </AlertDialogTrigger>
-                               <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                        <AlertDialogTitle>Confirm Bulk Classification</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                            This will attempt to classify all unclassified, completed sessions. This may take some time. Are you sure you want to continue?
-                                        </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={handleBulkClassify}>Confirm</AlertDialogAction>
-                                    </AlertDialogFooter>
-                               </AlertDialogContent>
-                            </AlertDialog>
-                        </DialogFooter>
-                    </DialogContent>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" disabled={mlModels?.length === 0 || testSessions?.every(s => s.classification)} className="w-full sm:w-auto">
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Bulk Classify
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Bulk Classify Unclassified Sessions</DialogTitle>
+                      <DialogDescription>
+                        Select a model to classify all completed sessions that do not yet have a classification. This action cannot be undone.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-2 py-4">
+                      <Label htmlFor="bulk-model-select">Model for Classification</Label>
+                      <Select onValueChange={setBulkClassifyModelId}>
+                        <SelectTrigger id="bulk-model-select">
+                          <SelectValue placeholder="Select a model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {mlModels?.map(m => (
+                            <SelectItem key={m.id} value={m.id}>{m.name} v{m.version}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <DialogFooter>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="default" disabled={!bulkClassifyModelId}>
+                            Run Bulk Classification
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Confirm Bulk Classification</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will attempt to classify all unclassified, completed sessions. This may take some time. Are you sure you want to continue?
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={handleBulkClassify}>Confirm</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </DialogFooter>
+                  </DialogContent>
                 </Dialog>
+              </div>
             </div>
+
              <ScrollArea className="h-[40rem] p-1 mt-4">
               {isTestSessionsLoading ? <p className="text-center text-muted-foreground pt-10">Loading sessions...</p> : filteredAndSortedSessions.length > 0 ? (
                 <div className="space-y-2">
@@ -1988,5 +2012,7 @@ export default function AdminPage() {
   );
 }
 
+
+    
 
     
