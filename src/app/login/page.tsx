@@ -45,13 +45,13 @@ export default function LoginPage() {
   const { data: users, isLoading: isUsersLoading, error: usersError } = useCollection<AppUser>(usersCollectionRef);
 
   useEffect(() => {
-    // If there is no firestore instance, do not attempt to check for users.
     if (!firestore || isUsersLoading) {
       return;
     }
-    // If the user list is successfully fetched and empty, we should show the promotion link.
-    const hasSuperAdmin = users?.some(u => u.role === 'superadmin') ?? false;
-    if (!hasSuperAdmin) {
+    
+    // Only show promotion if there are no users at all, or no superadmin.
+    // The `users === null` check handles the case where the unauthenticated read fails, which is expected.
+    if (users === null || users.length === 0 || !users.some(u => u.role === 'superadmin')) {
         setShowAdminPromotion(true);
     } else {
         setShowAdminPromotion(false);
