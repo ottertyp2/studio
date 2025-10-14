@@ -42,14 +42,22 @@ export default function LoginPage() {
     return collection(firestore, 'users');
   }, [firestore]);
 
-  const { data: users, isLoading: isUsersLoading } = useCollection<AppUser>(usersCollectionRef);
+  const { data: users, isLoading: isUsersLoading, error: usersError } = useCollection<AppUser>(usersCollectionRef);
 
   useEffect(() => {
-    if (!isUsersLoading && users) {
-        const hasSuperAdmin = users.some(u => u.role === 'superadmin');
-        setShowAdminPromotion(!hasSuperAdmin);
+    // If loading is finished, check the user data.
+    if (!isUsersLoading) {
+        // If there's an error (like permission denied for unauthenticated users)
+        // OR if the user list is successfully fetched and empty, we should show the promotion link.
+        // This makes the check resilient.
+        const hasSuperAdmin = users?.some(u => u.role === 'superadmin') ?? false;
+        if (usersError || !hasSuperAdmin) {
+            setShowAdminPromotion(true);
+        } else {
+            setShowAdminPromotion(false);
+        }
     }
-  }, [users, isUsersLoading]);
+  }, [users, isUsersLoading, usersError]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
