@@ -78,6 +78,7 @@ export default function LoginPage() {
       return;
     }
     try {
+      console.log("LOGIN INPUT", values);
       await initiateEmailSignIn(auth, firestore, values.emailOrUsername, values.password);
       toast({
         title: 'Sign In Successful',
