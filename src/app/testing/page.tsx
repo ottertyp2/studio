@@ -1,3 +1,4 @@
+
 'use client';
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -178,7 +179,7 @@ function TestingComponent() {
 
   const importFileRef = useRef<HTMLInputElement>(null);
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const [isSyncing, setIsSyncing] = useState(isSyncing);
+  const [isSyncing, setIsSyncing] = useState(false);
   
   const [selectedAnalysisModelName, setSelectedAnalysisModelName] = useState<string | null>(null);
   const [aiAnalysisResult, setAiAnalysisResult] = useState<AiAnalysisResult | null>(null);
@@ -1833,5 +1834,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
