@@ -996,7 +996,33 @@ const disconnectSerial = useCallback(async () => {
 
   const chartData = useMemo(() => {
     if (!sensorConfig) return [];
-    let allChronologicalData = [...dataLog].reverse();
+    
+    // This is the full dataset, always sorted newest to oldest.
+    const fullData = dataLog;
+    
+    // When live updates are disabled, we want to freeze the data set.
+    // We use a ref to store the "frozen" data set.
+    const frozenDataRef = useRef<SensorData[]>();
+    
+    if (!liveUpdateEnabled) {
+      if (!frozenDataRef.current) {
+        // On the first render after live is disabled, freeze the current dataLog.
+        frozenDataRef.current = fullData;
+      }
+      // Use the frozen data as long as live is disabled.
+      return frozenDataRef.current
+        .map(d => ({
+          name: (new Date(d.timestamp).getTime() - new Date(d.timestamp).getTime()) / 1000,
+          value: convertRawValue(d.value, sensorConfig)
+        }))
+        .reverse();
+    } else {
+      // When live is enabled, clear the frozen data.
+      frozenDataRef.current = undefined;
+    }
+
+    // From here, we are in "live" mode.
+    let allChronologicalData = [...fullData].reverse();
 
     if (selectedSessionIds.length > 1) {
         const dataBySession: { [sessionId: string]: {name: number, value: number | null}[] } = {};
@@ -1016,7 +1042,7 @@ const disconnectSerial = useCallback(async () => {
                     };
                 });
             
-            if (chartInterval !== 'all' && liveUpdateEnabled) {
+            if (chartInterval !== 'all') {
                 const intervalSeconds = parseInt(chartInterval, 10);
                 const maxTime = sessionData.length > 0 ? sessionData[sessionData.length - 1].name : 0;
                 sessionData = sessionData.filter(d => d.name >= (maxTime - intervalSeconds));
@@ -1046,7 +1072,7 @@ const disconnectSerial = useCallback(async () => {
         value: convertRawValue(d.value, sensorConfig)
     }));
 
-    if (chartInterval !== 'all' && !editingSessionId && liveUpdateEnabled) {
+    if (chartInterval !== 'all' && !editingSessionId) {
         const intervalSeconds = parseInt(chartInterval, 10);
         if (runningTestSession || isConnected) {
              const maxTime = mappedData.length > 0 ? mappedData[mappedData.length - 1].name : 0;
@@ -1703,7 +1729,7 @@ const disconnectSerial = useCallback(async () => {
             {selectedSessionIds.length > 0 && (
                 <div className="pt-2 flex flex-wrap gap-2 items-center">
                     <p className="text-sm text-muted-foreground">Comparing:</p>
-                    {selectedSessionIds.map((id, index) => {
+                    {selectedSessionIds.map((index, id) => {
                         const session = testSessions?.find(s => s.id === id);
                         return (
                              <div key={id} className="flex items-center gap-2 bg-muted text-muted-foreground px-2 py-1 rounded-md text-xs">
