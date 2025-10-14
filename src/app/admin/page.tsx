@@ -437,19 +437,35 @@ export default function AdminPage() {
   const handleDeleteSensorConfig = async (configId: string) => {
     if (!firestore || !configId) return;
 
+    const batch = writeBatch(firestore);
+
+    // 1. Find sessions associated with this sensor config
+    const sessionsQuery = query(collection(firestore, 'test_sessions'), where('sensorConfigurationId', '==', configId));
+    const sessionsSnapshot = await getDocs(sessionsQuery);
+    const sessionsToDelete = sessionsSnapshot.docs;
+    
+    // 2. Delete all sensor data for the config
     const sensorDataRef = collection(firestore, `sensor_configurations/${configId}/sensor_data`);
     const dataSnapshot = await getDocs(sensorDataRef);
-    const batch = writeBatch(firestore);
     dataSnapshot.forEach(doc => {
         batch.delete(doc.ref);
     });
 
+    // 3. Delete the sensor config itself
     const configRef = doc(firestore, `sensor_configurations`, configId);
     batch.delete(configRef);
     
+    // 4. Delete the associated sessions
+    sessionsToDelete.forEach(sessionDoc => {
+      batch.delete(sessionDoc.ref);
+    });
+
     try {
         await batch.commit();
-        toast({ title: "Configuration Deleted", description: `Configuration and its ${dataSnapshot.size} data points were deleted.` });
+        toast({ 
+          title: "Cleanup Complete", 
+          description: `Configuration, ${dataSnapshot.size} data points, and ${sessionsToDelete.length} associated sessions were deleted.` 
+        });
         if (activeSensorConfigId === configId) {
             setActiveSensorConfigId(sensorConfigs?.[0]?.id || null);
         }
@@ -457,7 +473,7 @@ export default function AdminPage() {
     } catch (e) {
         toast({
             variant: 'destructive',
-            title: 'Error Deleting Configuration',
+            title: 'Error During Deletion',
             description: (e as Error).message
         });
     }
@@ -1981,7 +1997,7 @@ export default function AdminPage() {
                                                           <AlertDialogHeader>
                                                               <AlertDialogTitle className="text-destructive">Permanently Delete Configuration?</AlertDialogTitle>
                                                               <AlertDialogDescription>
-                                                               Are you sure you want to delete the configuration "{c.name}"? This will also delete all associated sensor data. This action cannot be undone.
+                                                               Are you sure you want to delete the configuration "{c.name}"? This will also delete all associated sensor data and test sessions. This action cannot be undone.
                                                               </AlertDialogDescription>
                                                           </AlertDialogHeader>
                                                           <AlertDialogFooter>
@@ -2028,4 +2044,5 @@ export default function AdminPage() {
     
 
     
+
 
