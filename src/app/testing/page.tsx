@@ -379,6 +379,7 @@ const disconnectSerial = useCallback(async () => {
     setIsConnected(false);
     setLocalDataLog([]);
     toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
+    window.location.reload();
 }, [handleStopTestSession, toast, runningArduinoSession, stopDemoMode]);
 
   useEffect(() => {
