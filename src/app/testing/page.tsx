@@ -1070,7 +1070,7 @@ const disconnectSerial = useCallback(async () => {
   
     return { chartData: mappedData, chartDomain: domain };
   
-  }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, editingSessionId, isLiveSessionActive, liveUpdateEnabled]);
+  }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, editingSessionId, isLiveSessionActive, liveUpdateEnabled, frozenDataRef.current]);
 
   useEffect(() => {
     if (isLiveSessionActive && Array.isArray(chartData) && liveUpdateEnabled) {
@@ -1090,8 +1090,8 @@ const disconnectSerial = useCallback(async () => {
 
   const handleWheel = useCallback((event: WheelEvent) => {
     if (liveUpdateEnabled) return;
+    
     event.preventDefault();
-    setLiveUpdateEnabled(false); // Any interaction pauses live updates.
 
     setZoomDomain(prevDomain => {
         const [currentMin, currentMax] = prevDomain || (Array.isArray(chartDomain) ? chartDomain : [0,1]);
@@ -1148,7 +1148,7 @@ const disconnectSerial = useCallback(async () => {
         }
         return prevDomain;
     });
-}, [chartDomain, isLiveSessionActive, liveUpdateEnabled]);
+}, [chartDomain, liveUpdateEnabled]);
 
   const handleResetZoom = () => {
     setZoomDomain(null);
