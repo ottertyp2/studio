@@ -805,9 +805,11 @@ export default function AdminPage() {
           metrics: ['accuracy'],
         });
 
-        const callbacks = [
-          tf.callbacks.earlyStopping({ monitor: 'val_loss', patience: 10 }),
-          {
+        await model.fit(normalizedInput, labelTensor, {
+          epochs: 100,
+          batchSize: 32,
+          validationSplit: 0.2,
+          callbacks: [{
             onEpochEnd: (epoch: any, logs: any) => {
               if (logs) {
                 setTrainingProgress(((epoch + 1) / 100) * 100);
@@ -816,18 +818,11 @@ export default function AdminPage() {
                     loss: logs.loss || 0, 
                     accuracy: (logs.acc || 0) * 100,
                     val_loss: logs.val_loss || 0,
-                    val_acc: (logs.val_acc || 0) * 100
+                    val_acc: logs.val_acc || 0
                 });
               }
             }
-          }
-        ];
-
-        await model.fit(normalizedInput, labelTensor, {
-          epochs: 100,
-          batchSize: 32,
-          validationSplit: 0.2,
-          callbacks: callbacks,
+          }]
         });
 
         toast({ title: 'Training Complete!', description: 'Model has been trained in the browser.' });
@@ -1873,3 +1868,5 @@ export default function AdminPage() {
   );
 }
 
+
+    
