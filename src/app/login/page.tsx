@@ -78,11 +78,6 @@ export default function LoginPage() {
       return;
     }
     try {
-      // --- DEBUGGING START ---
-      console.log("--- WIRD AN FIREBASE GESENDET ---");
-      console.log("Typ von 'emailOrUsername':", typeof values.emailOrUsername, "| Wert:", values.emailOrUsername);
-      console.log("Typ von 'password':", typeof values.password, "| Wert:", values.password);
-      // --- DEBUGGING ENDE ---
       await initiateEmailSignIn(auth, firestore, values.emailOrUsername, values.password);
       toast({
         title: 'Sign In Successful',
