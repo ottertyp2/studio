@@ -1004,7 +1004,7 @@ const disconnectSerial = useCallback(async () => {
     }
   };
 
-  const isLiveSessionActive = !!runningTestSession;
+  const isLiveSessionActive = !!runningTestSession || isConnected;
 
   const { chartData, chartDomain } = useMemo(() => {
     if (!sensorConfig) return { chartData: [], chartDomain: [0, 1] as [number, number] };
