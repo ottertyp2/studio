@@ -465,38 +465,37 @@ const disconnectSerial = useCallback(async () => {
     }
   }, [firestore, activeSensorConfigId, activeTestBenchId]);
 
+  const isLiveSessionActive = !!runningTestSession || isConnected;
 
   const dataLog = useMemo(() => {
-    let log: SensorData[] = [];
-
-    // If there's a live session, the local log is the primary source.
-    if (runningTestSession || isConnected) {
-        log = [...localDataLog];
+    // If a live session is active, localDataLog is the most up-to-date source.
+    if (isLiveSessionActive) {
+      return localDataLog;
     }
-    
-    // For historical data or to supplement the view, add cloud data.
+  
+    // For historical views, use cloud data.
     if (cloudDataLog && !isCloudDataLoading) {
-        // Create a set of timestamps from the current log to avoid duplicates.
-        const localTimestamps = new Set(log.map(d => d.timestamp));
-        const uniqueCloudData = cloudDataLog.filter(d => !localTimestamps.has(d.timestamp));
-        log.push(...uniqueCloudData);
+      const log = [...cloudDataLog];
+      // Sorting is crucial for historical data as Firestore doesn't guarantee order on its own
+      return log.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     }
     
     // If no sessions are selected and not connected, the log should be empty.
-    if (!runningTestSession && !isConnected && selectedSessionIds.length === 0) {
+    if (selectedSessionIds.length === 0) {
         return [];
     }
 
-    // Always return sorted data.
-    return log.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-}, [cloudDataLog, isCloudDataLoading, localDataLog, isConnected, selectedSessionIds, runningTestSession]);
-  
+    // Return an empty array while loading or if no data is available
+    return [];
+  }, [cloudDataLog, isCloudDataLoading, localDataLog, isLiveSessionActive, selectedSessionIds]);
+
   const currentValue = useMemo(() => {
     if (localDataLog && localDataLog.length > 0) {
         return localDataLog[0].value;
     }
     if (dataLog && dataLog.length > 0) {
-        return dataLog[0].value;
+        // For historical data, the latest point is at the end of the sorted array
+        return dataLog[dataLog.length - 1].value;
     }
     return null;
   }, [localDataLog, dataLog]);
@@ -1004,29 +1003,28 @@ const disconnectSerial = useCallback(async () => {
     }
   };
 
-  const isLiveSessionActive = !!runningTestSession || isConnected;
-
   const { chartData, chartDomain } = useMemo(() => {
     if (!sensorConfig) return { chartData: [], chartDomain: [0, 1] as [number, number] };
-    
+  
     const dataToProcess = liveUpdateEnabled ? dataLog : frozenDataRef.current || dataLog;
-    let allChronologicalData = [...dataToProcess].reverse();
-
+    const allChronologicalData = isLiveSessionActive ? [...dataToProcess].reverse() : dataToProcess;
+  
     const processData = (data: SensorData[], startTimeOverride?: number) => {
-        const startTime = startTimeOverride ?? (data.length > 0 ? new Date(data[0].timestamp).getTime() : Date.now());
-        return data.map(d => ({
-            name: (new Date(d.timestamp).getTime() - startTime) / 1000,
-            value: convertRawValue(d.value, sensorConfig),
-        }));
+      const startTime = startTimeOverride ?? (data.length > 0 ? new Date(data[0].timestamp).getTime() : Date.now());
+      return data.map(d => ({
+        name: (new Date(d.timestamp).getTime() - startTime) / 1000,
+        value: convertRawValue(d.value, sensorConfig),
+      }));
     };
-
+  
     if (selectedSessionIds.length > 1) {
         const dataBySession: { [sessionId: string]: { name: number; value: number | null }[] } = {};
-        const allNames: number[] = [];
+        let allNames: number[] = [];
 
         selectedSessionIds.forEach(id => {
             const session = testSessions?.find(s => s.id === id);
             if (!session) return;
+            
             const sessionStartTime = new Date(session.startTime).getTime();
             let sessionData = processData(allChronologicalData.filter(d => d.testSessionId === id), sessionStartTime);
 
@@ -1035,55 +1033,49 @@ const disconnectSerial = useCallback(async () => {
                 const maxTime = sessionData.length > 0 ? sessionData[sessionData.length - 1].name : 0;
                 sessionData = sessionData.filter(d => d.name >= maxTime - intervalSeconds);
             }
+
             dataBySession[id] = sessionData;
             allNames.push(...sessionData.map(d => d.name));
         });
         const domain: [number, number] = allNames.length > 0 ? [Math.min(...allNames), Math.max(...allNames)] : [0, 1];
         return { chartData: dataBySession, chartDomain: domain };
     }
-
-    let visibleData = allChronologicalData;
-    if (selectedSessionIds.length === 1 && !isLiveSessionActive) {
-        visibleData = allChronologicalData.filter(d => d.testSessionId === selectedSessionIds[0]);
-    } else if (isLiveSessionActive) {
-        visibleData = allChronologicalData.filter(d => d.testSessionId === runningTestSession?.id);
-    } else if (isConnected) { // legacy local data before session start
-        visibleData = [...localDataLog].reverse();
-    }
-    
-    let mappedData = processData(visibleData);
-
-    let domain: [number, number] | ['dataMin', 'dataMax'] = ['dataMin', 'dataMax'];
-
-    if (mappedData.length > 0) {
-      const firstTime = mappedData[0].name;
-      const lastTime = mappedData[mappedData.length - 1].name;
-      
-      if (chartInterval !== 'all' && isLiveSessionActive) {
-          const intervalSeconds = parseInt(chartInterval, 10);
-          const newMin = Math.max(firstTime, lastTime - intervalSeconds);
-          // mappedData is already filtered for live session, so we just set the domain
-          domain = [newMin, lastTime];
-      } else if (chartInterval !== 'all' && !editingSessionId) {
-          const intervalSeconds = parseInt(chartInterval, 10);
-          const newMax = Math.min(lastTime, firstTime + intervalSeconds);
-          mappedData = mappedData.filter(dp => dp.name <= newMax);
-          domain = [firstTime, newMax];
-      } else {
-        domain = [firstTime, lastTime];
-      }
-      
-      if (domain[0] === domain[1] && typeof domain[0] === 'number') {
-        domain = [domain[0] - 1, domain[0] + 1];
-      }
+  
+    let visibleData: SensorData[];
+    if (isLiveSessionActive) {
+      visibleData = allChronologicalData;
     } else {
-      domain = [0,1];
+      if (selectedSessionIds.length === 1) {
+        visibleData = allChronologicalData.filter(d => d.testSessionId === selectedSessionIds[0]);
+      } else {
+        visibleData = [];
+      }
     }
-    
+  
+    let mappedData = processData(visibleData);
+  
+    if (isLiveSessionActive && chartInterval !== 'all') {
+      const intervalSeconds = parseInt(chartInterval, 10);
+      if (mappedData.length > 0) {
+        const maxTime = mappedData[mappedData.length - 1].name;
+        mappedData = mappedData.filter(d => d.name >= maxTime - intervalSeconds);
+      }
+    } else if (!isLiveSessionActive && chartInterval !== 'all' && !editingSessionId) {
+        const intervalSeconds = parseInt(chartInterval, 10);
+        if (mappedData.length > 0) {
+            const firstTime = mappedData[0].name;
+            const newMax = Math.min(mappedData[mappedData.length - 1].name, firstTime + intervalSeconds);
+            mappedData = mappedData.filter(dp => dp.name <= newMax);
+        }
+    }
+  
+    const domain: [number, number] | ['dataMin', 'dataMax'] = isLiveSessionActive ? ['dataMin', 'dataMax'] : (
+      mappedData.length > 1 ? [mappedData[0].name, mappedData[mappedData.length-1].name] : [0, 1]
+    );
+  
     return { chartData: mappedData, chartDomain: domain };
-
-}, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, editingSessionId, localDataLog, isConnected, liveUpdateEnabled, isLiveSessionActive, runningTestSession]);
-
+  
+  }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, editingSessionId, isLiveSessionActive, liveUpdateEnabled]);
 
   useEffect(() => {
     if (isLiveSessionActive && Array.isArray(chartData) && liveUpdateEnabled) {
@@ -1102,8 +1094,9 @@ const disconnectSerial = useCallback(async () => {
 
 
   const handleWheel = useCallback((event: WheelEvent) => {
-    if (liveUpdateEnabled || isLiveSessionActive) return;
+    if (isLiveSessionActive) return; // Disable zoom/pan during live sessions.
     event.preventDefault();
+    setLiveUpdateEnabled(false); // Any interaction pauses live updates.
 
     setZoomDomain(prevDomain => {
         const [currentMin, currentMax] = prevDomain || (Array.isArray(chartDomain) ? chartDomain : [0,1]);
@@ -1160,7 +1153,7 @@ const disconnectSerial = useCallback(async () => {
         }
         return prevDomain;
     });
-}, [liveUpdateEnabled, chartDomain, isLiveSessionActive]);
+}, [chartDomain, isLiveSessionActive]);
 
   const handleResetZoom = () => {
     setZoomDomain(null);
@@ -1727,7 +1720,6 @@ const disconnectSerial = useCallback(async () => {
                       onClick={() => setLiveUpdateEnabled(!liveUpdateEnabled)}
                       variant={liveUpdateEnabled ? 'default' : 'secondary'}
                       size="sm"
-                      disabled={isLiveSessionActive}
                   >
                       {liveUpdateEnabled ? "Live: ON" : "Live: OFF"}
                   </Button>
@@ -1755,7 +1747,7 @@ const disconnectSerial = useCallback(async () => {
             <div 
               ref={scrollContainerRef}
               className="h-80 w-full min-w-full"
-              style={{ cursor: liveUpdateEnabled || isLiveSessionActive ? 'default' : (isDragging ? 'grabbing' : 'grab') }}
+              style={{ cursor: isLiveSessionActive || liveUpdateEnabled ? 'default' : (isDragging ? 'grabbing' : 'grab') }}
             >
               <ResponsiveContainer width="100%" height="100%" minWidth={800}>
                 <LineChart data={Array.isArray(chartData) ? chartData : undefined} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
@@ -1817,12 +1809,21 @@ const disconnectSerial = useCallback(async () => {
                         </TableRow>
                         </TableHeader>
                         <TableBody>
-                        {dataLog.map((entry: any, index: number) => (
+                        {isLiveSessionActive ? 
+                          [...dataLog].reverse().map((entry: any, index: number) => (
                             <TableRow key={entry.id || index}>
                             <TableCell>{new Date(entry.timestamp).toLocaleTimeString('en-US')}</TableCell>
                             <TableCell className="text-right">{sensorConfig ? convertRawValue(entry.value, sensorConfig).toFixed(sensorConfig.decimalPlaces) : entry.value}</TableCell>
                             </TableRow>
-                        ))}
+                          ))
+                          :
+                          [...dataLog].reverse().map((entry: any, index: number) => (
+                            <TableRow key={entry.id || index}>
+                            <TableCell>{new Date(entry.timestamp).toLocaleTimeString('en-US')}</TableCell>
+                            <TableCell className="text-right">{sensorConfig ? convertRawValue(entry.value, sensorConfig).toFixed(sensorConfig.decimalPlaces) : entry.value}</TableCell>
+                            </TableRow>
+                          ))
+                        }
                         </TableBody>
                     </Table>
                     </ScrollArea>
