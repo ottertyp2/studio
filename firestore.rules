@@ -1,99 +1,25 @@
-/**
- * @fileoverview Firestore Security Rules for BioThrust Dashboard
- *
- * Core Philosophy:
- * This ruleset enforces a user-ownership model for sensor configurations and leak analyses,
- * ensuring that only the authenticated user can access their own data. Sensor readings are considered
- * public and accessible to everyone.
- *
- * Data Structure:
- * - Sensor configurations are nested under `/users/{userId}/sensorConfigurations/{sensorConfigurationId}`.
- * - Leak analyses are nested under `/users/{userId}/leakAnalyses/{leakAnalysisId}`.
- * - Sensor readings are stored in a top-level collection `/sensorReadings/{sensorReadingId}`.
- *
- * Key Security Decisions:
- * - User listing is implicitly disallowed via the path structure.
- * - Sensor readings are considered public for real-time visualization.
- *
- * Denormalization for Authorization:
- *  Not used: The path-based structure inherently provides ownership.
- */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    /**
-     * @description Allows users to manage their own sensor configurations.
-     * @path /users/{userId}/sensorConfigurations/{sensorConfigurationId}
-     * @allow (create) User A can create a sensor configuration under their own user ID.
-     * @deny (create) User A cannot create a sensor configuration under User B's ID.
-     * @principle Enforces document ownership for writes.
-     */
-    match /users/{userId}/sensorConfigurations/{sensorConfigurationId} {
-      // Helper function to check if the request is made by the owner of the document.
-      function isOwner(userId) {
-        return request.auth != null && request.auth.uid == userId;
-      }
-
-      // Helper function to check if the document exists and the request is made by the owner.
-      function isExistingOwner(userId) {
-        return isOwner(userId) && resource != null;
-      }
-
-      // Read permissions: Only the owner can get or list their sensor configurations.
-      allow get, list: if isOwner(userId);
-
-      // Write permissions: Only the owner can create, update, or delete their sensor configurations.
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
-      allow delete: if isExistingOwner(userId);
+    match /products/{productId} {
+      allow get, list, create, update, delete: if true;
     }
-
-    /**
-     * @description Allows users to manage their own leak analyses.
-     * @path /users/{userId}/leakAnalyses/{leakAnalysisId}
-     * @allow (create) User A can create a leak analysis under their own user ID.
-     * @deny (create) User A cannot create a leak analysis under User B's ID.
-     * @principle Enforces document ownership for writes.
-     */
-    match /users/{userId}/leakAnalyses/{leakAnalysisId} {
-      // Helper function to check if the request is made by the owner of the document.
-      function isOwner(userId) {
-        return request.auth != null && request.auth.uid == userId;
-      }
-
-      // Helper function to check if the document exists and the request is made by the owner.
-      function isExistingOwner(userId) {
-        return isOwner(userId) && resource != null;
-      }
-
-      // Read permissions: Only the owner can get or list their leak analyses.
-      allow get, list: if isOwner(userId);
-
-      // Write permissions: Only the owner can create, update, or delete their leak analyses.
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
-      allow delete: if isExistingOwner(userId);
+    match /users/{userId} {
+      allow get, list, create, update, delete: if true;
     }
-
-    /**
-     * @description Allows anyone to read sensor readings, but no one can create, update, or delete them.
-     * @path /sensorReadings/{sensorReadingId}
-     * @allow (get) Any user can read a sensor reading.
-     * @allow (list) Any user can list sensor readings.
-     * @deny (create) No user can create a sensor reading.
-     * @deny (update) No user can update a sensor reading.
-     * @deny (delete) No user can delete a sensor reading.
-     * @principle Allows public read access to sensor readings.
-     */
-    match /sensorReadings/{sensorReadingId} {
-      // Read permissions: Anyone can get or list sensor readings.
-      allow get, list: if true;
-
-      // Write permissions: No one can create, update, or delete sensor readings.
-      allow create: if false;
-      allow update: if false;
-      allow delete: if false;
+    match /sensorReadings/{readingId} {
+      allow get, list, create, update, delete: if true;
+    }
+    match /users/{userId}/sensorConfigurations/{configId} {
+      allow get, list, create, update, delete: if true;
+    }
+    match /users/{userId}/leakAnalyses/{analysisId} {
+      allow get, list, create, update, delete: if true;
+    }
+    // fallback, falls noch andere Collections existieren:
+    match /{document=**} {
+      allow read, write: if true;
     }
   }
 }
