@@ -468,19 +468,15 @@ const disconnectSerial = useCallback(async () => {
   const isLiveSessionActive = !!runningTestSession || isConnected;
 
   const dataLog = useMemo(() => {
-    // If a live session is active (demo or real), the source of truth is always localDataLog.
     if (isLiveSessionActive) {
       return localDataLog;
     }
     
-    // For historical data, use the data fetched from the cloud.
     if (cloudDataLog && !isCloudDataLoading) {
       const log = [...cloudDataLog];
-      // Sort chronologically for historical display.
       return log.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     }
 
-    // If no sessions are selected or data is loading, return an empty array.
     return [];
   }, [cloudDataLog, isCloudDataLoading, localDataLog, isLiveSessionActive]);
 
@@ -1148,7 +1144,7 @@ const disconnectSerial = useCallback(async () => {
         }
         return prevDomain;
     });
-}, [chartDomain, liveUpdateEnabled]);
+  }, [chartDomain, liveUpdateEnabled]);
 
   const handleResetZoom = () => {
     setZoomDomain(null);
