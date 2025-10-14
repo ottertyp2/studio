@@ -619,7 +619,7 @@ export default function AdminPage() {
         toast({ title: 'AI Classification Complete', description: `Session for ${session.productName} classified as: ${classification}`});
 
     } catch (e: any) {
-        toast({ variant: 'destructive', title: `AI Classification Failed for ${session.productName}`, description: e.message.includes('No model found') ? `A trained model named "${modelToUse.name}" was not found in your browser.` : e.message});
+        toast({ variant: 'destructive', title: `AI Classification Failed for ${session.productName}`, description: e.message.includes('No model found in IndexedDB') ? `A trained model named "${modelToUse.name}" was not found in your browser.` : e.message});
     }
   };
 
