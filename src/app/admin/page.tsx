@@ -172,12 +172,9 @@ export default function AdminPage() {
   // ML State
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [selectedDataSetIds, setSelectedDataSetIds] = useState<string[]>([]);
-  const [trainingProgress, setTrainingProgress] = useState(0);
   const [isTraining, setIsTraining] = useState(false);
   const [trainingStatus, setTrainingStatus] = useState({ epoch: 0, loss: 0, accuracy: 0, val_loss: 0, val_acc: 0 });
-  const [trainingDataFile, setTrainingDataFile] = useState<File | null>(null);
-  const trainingDataUploaderRef = useRef<HTMLInputElement>(null);
-
+  
   const [newMlModel, setNewMlModel] = useState<Partial<MLModel>>({name: '', version: '1.0', description: '', fileSize: 0});
   const [newTrainDataSet, setNewTrainDataSet] = useState<Partial<TrainDataSet>>({name: '', description: '', storagePath: ''});
   
@@ -778,7 +775,6 @@ export default function AdminPage() {
     }
 
     setIsTraining(true);
-    setTrainingProgress(0);
     setTrainingStatus({ epoch: 0, loss: 0, accuracy: 0, val_loss: 0, val_acc: 0 });
 
     try {
@@ -842,6 +838,7 @@ export default function AdminPage() {
           metrics: ['accuracy'],
         });
 
+        let finalValAcc = 0;
         await model.fit(normalizedInput, labelTensor, {
           epochs: 100,
           batchSize: 32,
@@ -850,12 +847,14 @@ export default function AdminPage() {
             onEpochEnd: (epoch: any, logs: any) => {
               if (logs) {
                 setTrainingProgress(((epoch + 1) / 100) * 100);
+                const currentValAcc = (logs.val_acc || 0) * 100;
+                finalValAcc = currentValAcc;
                 setTrainingStatus({ 
                     epoch: epoch + 1, 
                     loss: logs.loss || 0, 
                     accuracy: (logs.acc || 0) * 100,
                     val_loss: logs.val_loss || 0,
-                    val_acc: logs.val_acc || 0
+                    val_acc: currentValAcc,
                 });
               }
             }
@@ -868,7 +867,7 @@ export default function AdminPage() {
         
         const modelRef = doc(firestore, 'mlModels', selectedModelId);
         await updateDoc(modelRef, {
-            description: `Manually trained on ${new Date().toLocaleDateString()}. Final Val Acc: ${(trainingStatus.val_acc).toFixed(2)}%`,
+            description: `Manually trained on ${new Date().toLocaleDateString()}. Final Val Acc: ${finalValAcc.toFixed(2)}%`,
             version: `${selectedModel.version.split('-')[0]}-trained`,
         });
 
@@ -1099,6 +1098,13 @@ export default function AdminPage() {
     toast({ title: 'Product Deleted'});
   };
 
+  const isFilterActive = useMemo(() => {
+    return sessionUserFilter !== 'all' || 
+           sessionProductFilter !== 'all' || 
+           sessionTestBenchFilter !== 'all' || 
+           sessionClassificationFilter !== 'all';
+  }, [sessionUserFilter, sessionProductFilter, sessionTestBenchFilter, sessionClassificationFilter]);
+
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
     return (
@@ -1267,7 +1273,7 @@ export default function AdminPage() {
 
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="outline" className="w-full sm:w-auto">
+                        <Button variant={isFilterActive ? "default" : "outline"} className="w-full sm:w-auto">
                             <Filter className="mr-2 h-4 w-4" />
                             Filters
                         </Button>
@@ -1738,11 +1744,11 @@ export default function AdminPage() {
                 </Select>
               </div>
               <div className='space-y-2'>
-                <Label>Select Training Datasets</Label>
+                <Label>Select Training Datasets (Classified Test Sessions)</Label>
                 <ScrollArea className="h-40 border rounded-md p-2 bg-background/50">
                     <div className="space-y-2">
                     {isTestSessionsLoading ? <p className="p-4 text-center">Loading...</p> :
-                     testSessions?.filter(s => s.classification).map(d => (
+                     testSessions?.filter(s => s.classification && s.status === 'COMPLETED').map(d => (
                          <div key={d.id} className="flex items-center space-x-2">
                              <Checkbox
                                 id={d.id}
@@ -1750,7 +1756,7 @@ export default function AdminPage() {
                                 onCheckedChange={(checked) => {
                                     return checked
                                         ? setSelectedDataSetIds([...selectedDataSetIds, d.id])
-                                        : setSelectedDataSetIds(selectedDataSetIds.filter(id => id !== d.id))
+                                        : setSelectedDataSetIds(selectedDataSetIds.filter(id => id !== id))
                                 }}
                              />
                              <label htmlFor={d.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
