@@ -195,8 +195,6 @@ function TestingComponent() {
 
   // Pan states for horizontal scroll
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, scrollLeft: 0 });
   
   const frozenDataRef = useRef<SensorData[]>();
   
@@ -1000,7 +998,7 @@ const disconnectSerial = useCallback(async () => {
   };
 
   const { chartData, chartDomain } = useMemo(() => {
-    if (!sensorConfig) return { chartData: [], chartDomain: [0, 1] };
+    if (!sensorConfig) return { chartData: [], chartDomain: [0, 1] as [number, number] };
     
     const dataToProcess = liveUpdateEnabled ? dataLog : frozenDataRef.current || dataLog;
     let allChronologicalData = [...dataToProcess].reverse();
@@ -1044,20 +1042,31 @@ const disconnectSerial = useCallback(async () => {
     
     let mappedData = processData(visibleData);
 
-    let domain: [number, number] = mappedData.length > 0 ? [mappedData[0].name, mappedData[mappedData.length - 1].name] : [0, 1];
+    let domain: [number, number] | ['dataMin', 'dataMax'] = ['dataMin', 'dataMax'];
 
-    if (chartInterval !== 'all' && !editingSessionId) {
-        const intervalSeconds = parseInt(chartInterval, 10);
-        if (runningTestSession || isConnected) {
-            domain[0] = Math.max(domain[0], domain[1] - intervalSeconds);
-            mappedData = mappedData.filter(dp => dp.name >= domain[0]);
-        } else {
-            domain[1] = Math.min(domain[1], domain[0] + intervalSeconds);
-             mappedData = mappedData.filter(dp => dp.name <= domain[1]);
-        }
-    }
-     if (domain[0] === domain[1]) {
-        domain = [domain[0] - 1, domain[1] + 1];
+    if (mappedData.length > 0) {
+      const firstTime = mappedData[0].name;
+      const lastTime = mappedData[mappedData.length - 1].name;
+      
+      if (chartInterval !== 'all' && !editingSessionId && (runningTestSession || isConnected)) {
+          const intervalSeconds = parseInt(chartInterval, 10);
+          const newMin = Math.max(firstTime, lastTime - intervalSeconds);
+          mappedData = mappedData.filter(dp => dp.name >= newMin);
+          domain = [newMin, lastTime];
+      } else if (chartInterval !== 'all' && !editingSessionId) {
+          const intervalSeconds = parseInt(chartInterval, 10);
+          const newMax = Math.min(lastTime, firstTime + intervalSeconds);
+          mappedData = mappedData.filter(dp => dp.name <= newMax);
+          domain = [firstTime, newMax];
+      } else {
+        domain = [firstTime, lastTime];
+      }
+      
+      if (domain[0] === domain[1] && typeof domain[0] === 'number') {
+        domain = [domain[0] - 1, domain[0] + 1];
+      }
+    } else {
+      domain = [0,1];
     }
     
     return { chartData: mappedData, chartDomain: domain };
@@ -1067,45 +1076,19 @@ const disconnectSerial = useCallback(async () => {
 
   useEffect(() => {
     if ((runningTestSession || isConnected) && Array.isArray(chartData) && liveUpdateEnabled) {
-      const maxTime = chartData.length > 0 ? Math.max(...chartData.map(d => d.name)) : 0;
-      const currentInterval = parseInt(chartInterval, 10);
+      if (chartData.length > 0) {
+        const maxTime = chartData[chartData.length - 1].name;
+        const currentInterval = parseInt(chartInterval, 10);
 
-      if (chartInterval !== 'all' && maxTime > currentInterval) {
-        const intervalOptions = [10, 30, 60, 300, 900];
-        const nextInterval = intervalOptions.find(i => maxTime < i) || 'all';
-        setChartInterval(String(nextInterval));
+        if (chartInterval !== 'all' && maxTime > currentInterval) {
+            const intervalOptions = [10, 30, 60, 300, 900];
+            const nextInterval = intervalOptions.find(i => maxTime < i) || 'all';
+            setChartInterval(String(nextInterval));
+        }
       }
     }
   }, [chartData, chartInterval, runningTestSession, isConnected, liveUpdateEnabled]);
 
-
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (scrollContainerRef.current) {
-        setLiveUpdateEnabled(false);
-        e.preventDefault();
-        setIsDragging(true);
-        setDragStart({
-            x: e.pageX - scrollContainerRef.current.offsetLeft,
-            scrollLeft: scrollContainerRef.current.scrollLeft,
-        });
-    }
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!isDragging || !scrollContainerRef.current) return;
-      e.preventDefault();
-      const x = e.pageX - scrollContainerRef.current.offsetLeft;
-      const walk = (x - dragStart.x) * 1.5; // multiplier for scroll speed
-      scrollContainerRef.current.scrollLeft = dragStart.scrollLeft - walk;
-  };
-
-  const handleMouseUp = () => {
-      setIsDragging(false);
-  };
-  
-  const handleMouseLeave = () => {
-    setIsDragging(false);
-  };
 
   const handleWheel = useCallback((event: WheelEvent) => {
     if (liveUpdateEnabled) return;
@@ -1113,7 +1096,9 @@ const disconnectSerial = useCallback(async () => {
     setLiveUpdateEnabled(false);
 
     setZoomDomain(prevDomain => {
-        const [currentMin, currentMax] = prevDomain || chartDomain;
+        const [currentMin, currentMax] = prevDomain || (Array.isArray(chartDomain) ? chartDomain : [0,1]);
+        const dataMin = Array.isArray(chartDomain) ? chartDomain[0] : 0;
+        const dataMax = Array.isArray(chartDomain) ? chartDomain[1] : 1;
         const range = currentMax - currentMin;
 
         // Handle panning (horizontal scroll)
@@ -1124,7 +1109,6 @@ const disconnectSerial = useCallback(async () => {
             let newMin = currentMin + panAmount;
             let newMax = currentMax + panAmount;
 
-            const [dataMin, dataMax] = chartDomain;
             if (newMin < dataMin) {
                 newMin = dataMin;
                 newMax = dataMin + range;
@@ -1141,27 +1125,28 @@ const disconnectSerial = useCallback(async () => {
         }
 
         // Handle zooming (vertical scroll)
-        const zoomFactor = event.deltaY < 0 ? 0.9 : 1.1;
-        const newRange = range * zoomFactor;
-        
-        if (scrollContainerRef.current) {
-            const chartWidth = scrollContainerRef.current.clientWidth;
-            const cursorX = event.offsetX;
-            const cursorRatio = cursorX / chartWidth;
-            const cursorValue = currentMin + range * cursorRatio;
+        if (event.deltaY !== 0) {
+          const zoomFactor = event.deltaY < 0 ? 0.9 : 1.1;
+          const newRange = range * zoomFactor;
+          
+          if (scrollContainerRef.current) {
+              const chartWidth = scrollContainerRef.current.clientWidth;
+              const cursorX = event.offsetX;
+              const cursorRatio = cursorX / chartWidth;
+              const cursorValue = currentMin + range * cursorRatio;
 
-            let newMin = cursorValue - newRange * cursorRatio;
-            let newMax = cursorValue + newRange * (1 - cursorRatio);
+              let newMin = cursorValue - newRange * cursorRatio;
+              let newMax = cursorValue + newRange * (1 - cursorRatio);
 
-            if (newMax - newMin < 1) return prevDomain; // Prevent zooming in too far
-            
-            const [dataMin, dataMax] = chartDomain;
-            newMin = Math.max(dataMin, newMin);
-            newMax = Math.min(dataMax, newMax);
+              if (newMax - newMin < 1) return prevDomain; // Prevent zooming in too far
+              
+              newMin = Math.max(dataMin, newMin);
+              newMax = Math.min(dataMax, newMax);
 
-            if (newMax > newMin) {
-                return [newMin, newMax];
-            }
+              if (newMax > newMin) {
+                  return [newMin, newMax];
+              }
+          }
         }
         return prevDomain;
     });
@@ -1759,11 +1744,7 @@ const disconnectSerial = useCallback(async () => {
             <div 
               ref={scrollContainerRef}
               className="h-80 w-full min-w-full"
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseLeave}
-              style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+              style={{ cursor: liveUpdateEnabled ? 'default' : (isDragging ? 'grabbing' : 'grab') }}
             >
               <ResponsiveContainer width="100%" height="100%" minWidth={800}>
                 <LineChart data={Array.isArray(chartData) ? chartData : undefined} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
