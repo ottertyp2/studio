@@ -1002,21 +1002,8 @@ const disconnectSerial = useCallback(async () => {
 
   const { chartData, chartDomain } = useMemo(() => {
     if (!sensorConfig) return { chartData: [], chartDomain: [0, 1] };
-
-    // When live updates are disabled, we want to freeze the data set.
-    // We use a ref to store the "frozen" data set.
-    if (!liveUpdateEnabled) {
-      if (!frozenDataRef.current) {
-        // On the first render after disabling live updates, freeze the current data.
-        frozenDataRef.current = dataLog;
-      }
-    } else {
-      // If live updates are re-enabled, clear the frozen data.
-      frozenDataRef.current = undefined;
-    }
     
-    // Use frozen data if it exists, otherwise use live data.
-    const dataToProcess = frozenDataRef.current || dataLog;
+    const dataToProcess = liveUpdateEnabled ? dataLog : frozenDataRef.current || dataLog;
     let allChronologicalData = [...dataToProcess].reverse();
 
     const processData = (data: SensorData[], startTimeOverride?: number) => {
@@ -1121,54 +1108,65 @@ const disconnectSerial = useCallback(async () => {
     setIsDragging(false);
   };
 
-  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-      if (liveUpdateEnabled) return;
-      event.preventDefault();
-      setLiveUpdateEnabled(false);
+  const handleWheel = (event: WheelEvent) => {
+    if (liveUpdateEnabled) return;
+    event.preventDefault();
 
-      const [currentMin, currentMax] = zoomDomain || chartDomain;
-      
-      const range = currentMax - currentMin;
-      const zoomFactor = event.deltaY < 0 ? 0.9 : 1.1; // zoom in or out
-      const newRange = range * zoomFactor;
-      
-      // Get cursor position as a percentage of chart width
-      const chartWidth = event.currentTarget.clientWidth;
-      const cursorX = event.nativeEvent.offsetX;
-      const cursorRatio = cursorX / chartWidth;
+    const [currentMin, currentMax] = zoomDomain || chartDomain;
+    
+    const range = currentMax - currentMin;
+    const zoomFactor = event.deltaY < 0 ? 0.9 : 1.1; // zoom in or out
+    const newRange = range * zoomFactor;
+    
+    if (scrollContainerRef.current) {
+        const chartWidth = scrollContainerRef.current.clientWidth;
+        const cursorX = event.offsetX;
+        const cursorRatio = cursorX / chartWidth;
 
-      const cursorValue = currentMin + range * cursorRatio;
+        const cursorValue = currentMin + range * cursorRatio;
 
-      const newMin = cursorValue - newRange * cursorRatio;
-      const newMax = cursorValue + newRange * (1 - cursorRatio);
+        let newMin = cursorValue - newRange * cursorRatio;
+        let newMax = cursorValue + newRange * (1 - cursorRatio);
 
-      // Clamp zoom to reasonable limits to avoid issues
-      if (newMax - newMin < 1) return;
-      
-      const [dataMin, dataMax] = chartDomain;
-      const finalMin = Math.max(dataMin, newMin);
-      const finalMax = Math.min(dataMax, newMax);
+        if (newMax - newMin < 1) return;
+        
+        const [dataMin, dataMax] = chartDomain;
+        newMin = Math.max(dataMin, newMin);
+        newMax = Math.min(dataMax, newMax);
 
-      if (finalMax > finalMin) {
-          setZoomDomain([finalMin, finalMax]);
-      }
+        if (newMax > newMin) {
+            setZoomDomain([newMin, newMax]);
+        }
+    }
   };
 
   const handleResetZoom = () => {
     setZoomDomain(null);
     setLiveUpdateEnabled(true);
   }
+  
+  useEffect(() => {
+    const chartContainer = scrollContainerRef.current;
+    if (chartContainer) {
+      chartContainer.addEventListener('wheel', handleWheel, { passive: false });
+
+      return () => {
+        chartContainer.removeEventListener('wheel', handleWheel);
+      };
+    }
+  }, [handleWheel]);
 
   useEffect(() => {
     if (liveUpdateEnabled) {
         setZoomDomain(null);
         frozenChartDataRef.current = undefined;
         frozenDomainRef.current = null;
-    } else {
+    } else if (!frozenDataRef.current) {
+        frozenDataRef.current = dataLog;
         frozenChartDataRef.current = chartData;
         frozenDomainRef.current = zoomDomain || chartDomain;
     }
-  }, [liveUpdateEnabled, chartData, chartDomain, zoomDomain]);
+  }, [liveUpdateEnabled, dataLog, chartData, chartDomain, zoomDomain]);
   
   const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
   const displayDecimals = sensorConfig?.decimalPlaces ?? 0;
@@ -1722,7 +1720,6 @@ const disconnectSerial = useCallback(async () => {
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseLeave}
-              onWheel={handleWheel}
               style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
             >
               <ResponsiveContainer width="100%" height="100%" minWidth={800}>
