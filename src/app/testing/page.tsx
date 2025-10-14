@@ -198,10 +198,12 @@ function TestingComponent() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, scrollLeft: 0 });
   
-  // When live updates are disabled, we want to freeze the data set.
-  // We use a ref to store the "frozen" data set.
-  const frozenDataRef = useRef<SensorData[]>();
+  const frozenDataRef = useRef<SensorData[] | undefined>();
+  const frozenChartDataRef = useRef<any>();
+  const frozenDomainRef = useRef<[number, number] | null>(null);
   
+  const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
+
   const testSessionsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     const q = query(collection(firestore, `test_sessions`), orderBy('startTime', 'desc'));
@@ -998,90 +1000,75 @@ const disconnectSerial = useCallback(async () => {
     }
   };
 
-  const chartData = useMemo(() => {
-    if (!sensorConfig) return [];
-  
-    const sourceData = liveUpdateEnabled ? dataLog : frozenDataRef.current || dataLog;
-  
-    // Freeze the data when live updates are disabled
-    if (!liveUpdateEnabled && !frozenDataRef.current) {
-      frozenDataRef.current = dataLog;
-    } else if (liveUpdateEnabled) {
-      frozenDataRef.current = undefined;
+  const { chartData, chartDomain } = useMemo(() => {
+    if (!sensorConfig) return { chartData: [], chartDomain: [0, 1] };
+
+    if (!liveUpdateEnabled && frozenChartDataRef.current) {
+        return { chartData: frozenChartDataRef.current, chartDomain: frozenDomainRef.current || [0, 1] };
     }
-  
-    const dataToProcess = sourceData;
+
+    const dataToProcess = dataLog;
     let allChronologicalData = [...dataToProcess].reverse();
-  
-    if (selectedSessionIds.length > 1) {
-      const dataBySession: { [sessionId: string]: { name: number; value: number | null }[] } = {};
-  
-      selectedSessionIds.forEach(id => {
-        const session = testSessions?.find(s => s.id === id);
-        if (!session) return;
-  
-        const sessionStartTime = new Date(session.startTime).getTime();
-        let sessionData = allChronologicalData
-          .filter(d => d.testSessionId === id)
-          .map(d => ({
-            name: (new Date(d.timestamp).getTime() - sessionStartTime) / 1000,
+
+    const processData = (data: SensorData[], startTimeOverride?: number) => {
+        const startTime = startTimeOverride ?? (activeTestSession ? new Date(activeTestSession.startTime).getTime() : (data.length > 0 ? new Date(data[0].timestamp).getTime() : Date.now()));
+        return data.map(d => ({
+            name: (new Date(d.timestamp).getTime() - startTime) / 1000,
             value: convertRawValue(d.value, sensorConfig),
-          }));
-  
-        if (chartInterval !== 'all') {
-          const intervalSeconds = parseInt(chartInterval, 10);
-          const maxTime = sessionData.length > 0 ? sessionData[sessionData.length - 1].name : 0;
-          sessionData = sessionData.filter(d => d.name >= maxTime - intervalSeconds);
-        }
-  
-        dataBySession[id] = sessionData;
-      });
-  
-      return dataBySession;
+        }));
+    };
+
+    if (selectedSessionIds.length > 1) {
+        const dataBySession: { [sessionId: string]: { name: number; value: number | null }[] } = {};
+        const allNames: number[] = [];
+
+        selectedSessionIds.forEach(id => {
+            const session = testSessions?.find(s => s.id === id);
+            if (!session) return;
+            const sessionStartTime = new Date(session.startTime).getTime();
+            let sessionData = processData(allChronologicalData.filter(d => d.testSessionId === id), sessionStartTime);
+
+            if (chartInterval !== 'all') {
+                const intervalSeconds = parseInt(chartInterval, 10);
+                const maxTime = sessionData.length > 0 ? sessionData[sessionData.length - 1].name : 0;
+                sessionData = sessionData.filter(d => d.name >= maxTime - intervalSeconds);
+            }
+            dataBySession[id] = sessionData;
+            allNames.push(...sessionData.map(d => d.name));
+        });
+        const domain: [number, number] = allNames.length > 0 ? [Math.min(...allNames), Math.max(...allNames)] : [0, 1];
+        return { chartData: dataBySession, chartDomain: domain };
     }
-  
+
     let visibleData = allChronologicalData;
     if (selectedSessionIds.length === 1) {
-      visibleData = allChronologicalData.filter(d => d.testSessionId === selectedSessionIds[0]);
+        visibleData = allChronol_ogicalData.filter(d => d.testSessionId === selectedSessionIds[0]);
     } else if (isConnected) {
-      visibleData = [...localDataLog].reverse();
+        visibleData = [...localDataLog].reverse();
     }
-  
-    const startTime = activeTestSession
-      ? new Date(activeTestSession.startTime).getTime()
-      : (visibleData.length > 0
-          ? new Date(visibleData[0].timestamp).getTime()
-          : Date.now());
-  
-    let mappedData = visibleData.map(d => ({
-      name: (new Date(d.timestamp).getTime() - startTime) / 1000,
-      value: convertRawValue(d.value, sensorConfig),
-    }));
-  
+    
+    let mappedData = processData(visibleData);
+
+    let domain: [number, number] = mappedData.length > 0 ? [mappedData[0].name, mappedData[mappedData.length - 1].name] : [0, 1];
+
     if (chartInterval !== 'all' && !editingSessionId) {
-      const intervalSeconds = parseInt(chartInterval, 10);
-      if (runningTestSession || isConnected) {
-        const maxTime = mappedData.length > 0 ? mappedData[mappedData.length - 1].name : 0;
-        mappedData = mappedData.filter(dp => dp.name >= maxTime - intervalSeconds);
-      } else {
-        mappedData = mappedData.filter(dp => dp.name >= 0 && dp.name <= intervalSeconds);
-      }
+        const intervalSeconds = parseInt(chartInterval, 10);
+        if (runningTestSession || isConnected) {
+            domain[0] = Math.max(domain[0], domain[1] - intervalSeconds);
+            mappedData = mappedData.filter(dp => dp.name >= domain[0]);
+        } else {
+            domain[1] = Math.min(domain[1], domain[0] + intervalSeconds);
+             mappedData = mappedData.filter(dp => dp.name <= domain[1]);
+        }
     }
-  
-    return mappedData;
-  }, [
-    dataLog,
-    chartInterval,
-    sensorConfig,
-    selectedSessionIds,
-    testSessions,
-    activeTestSession,
-    runningTestSession,
-    editingSessionId,
-    localDataLog,
-    isConnected,
-    liveUpdateEnabled,
-  ]);
+     if (domain[0] === domain[1]) {
+        domain = [domain[0] - 1, domain[1] + 1];
+    }
+    
+    return { chartData: mappedData, chartDomain: domain };
+
+}, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, activeTestSession, runningTestSession, editingSessionId, localDataLog, isConnected, liveUpdateEnabled]);
+
 
   useEffect(() => {
     if ((runningTestSession || isConnected) && Array.isArray(chartData) && liveUpdateEnabled) {
@@ -1099,9 +1086,9 @@ const disconnectSerial = useCallback(async () => {
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (scrollContainerRef.current) {
+        setLiveUpdateEnabled(false);
         e.preventDefault();
         setIsDragging(true);
-        setLiveUpdateEnabled(false); // Disable live updates when user starts dragging
         setDragStart({
             x: e.pageX - scrollContainerRef.current.offsetLeft,
             scrollLeft: scrollContainerRef.current.scrollLeft,
@@ -1125,8 +1112,37 @@ const disconnectSerial = useCallback(async () => {
     setIsDragging(false);
   };
 
-  const chartContainerWheelRef = useRef<HTMLDivElement>(null);
-  const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
+  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setLiveUpdateEnabled(false);
+
+      const [currentMin, currentMax] = zoomDomain || chartDomain;
+      
+      const range = currentMax - currentMin;
+      const zoomFactor = event.deltaY < 0 ? 0.9 : 1.1; // zoom in or out
+      const newRange = range * zoomFactor;
+      
+      // Get cursor position as a percentage of chart width
+      const chartWidth = event.currentTarget.clientWidth;
+      const cursorX = event.nativeEvent.offsetX;
+      const cursorRatio = cursorX / chartWidth;
+
+      const cursorValue = currentMin + range * cursorRatio;
+
+      const newMin = cursorValue - newRange * cursorRatio;
+      const newMax = cursorValue + newRange * (1 - cursorRatio);
+
+      // Clamp zoom to reasonable limits to avoid issues
+      if (newMax - newMin < 1) return;
+      
+      const [dataMin, dataMax] = chartDomain;
+      const finalMin = Math.max(dataMin, newMin);
+      const finalMax = Math.min(dataMax, newMax);
+
+      if (finalMax > finalMin) {
+          setZoomDomain([finalMin, finalMax]);
+      }
+  };
 
   const handleResetZoom = () => {
     setZoomDomain(null);
@@ -1136,66 +1152,13 @@ const disconnectSerial = useCallback(async () => {
   useEffect(() => {
     if (liveUpdateEnabled) {
         setZoomDomain(null);
+        frozenChartDataRef.current = undefined;
+        frozenDomainRef.current = null;
+    } else {
+        frozenChartDataRef.current = chartData;
+        frozenDomainRef.current = zoomDomain || chartDomain;
     }
-  }, [liveUpdateEnabled]);
-
-  useEffect(() => {
-    const container = chartContainerWheelRef.current;
-    if (!container) return;
-
-    const handleWheelCapture = (e: WheelEvent) => {
-        if (chartData && (Array.isArray(chartData) ? chartData.length > 0 : Object.keys(chartData).length > 0)) {
-            e.preventDefault();
-            setLiveUpdateEnabled(false); // Disable live updates when user starts zooming
-
-            const { deltaY } = e;
-            const zoomFactor = 1.1;
-
-            const getChartBounds = () => {
-                if (Array.isArray(chartData) && chartData.length > 0) {
-                    if (chartData.length === 1) return [chartData[0].name - 1, chartData[0].name + 1];
-                    const names = chartData.map(d => d.name);
-                    return [Math.min(...names), Math.max(...names)];
-                }
-                if (typeof chartData === 'object' && Object.keys(chartData).length > 0) {
-                    const allNames = Object.values(chartData).flat().map(d => d.name);
-                    if (allNames.length === 0) return [0,1];
-                    return [Math.min(...allNames), Math.max(...allNames)];
-                }
-                return [0,1];
-            };
-            
-            const [currentMin, currentMax] = zoomDomain || getChartBounds();
-
-            let newMin = currentMin;
-            let newMax = currentMax;
-
-            if (deltaY < 0) { // Zoom in
-                newMin = currentMin / zoomFactor;
-                newMax = currentMax / zoomFactor;
-            } else { // Zoom out
-                newMin = currentMin * zoomFactor;
-                newMax = currentMax * zoomFactor;
-            }
-            
-            const [dataMin, dataMax] = getChartBounds();
-            
-            newMin = Math.max(dataMin, newMin);
-            newMax = Math.min(dataMax, newMax);
-
-            if(newMax > newMin) {
-                setZoomDomain([newMin, newMax]);
-            }
-        }
-    };
-    container.addEventListener('wheel', handleWheelCapture, { passive: false });
-    return () => {
-        if(container) {
-          container.removeEventListener('wheel', handleWheelCapture);
-        }
-    };
-}, [chartData, zoomDomain]);
-
+  }, [liveUpdateEnabled, chartData, chartDomain, zoomDomain]);
   
   const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
   const displayDecimals = sensorConfig?.decimalPlaces ?? 0;
@@ -1726,7 +1689,7 @@ const disconnectSerial = useCallback(async () => {
             {selectedSessionIds.length > 0 && (
                 <div className="pt-2 flex flex-wrap gap-2 items-center">
                     <p className="text-sm text-muted-foreground">Comparing:</p>
-                    {selectedSessionIds.map((index, id) => {
+                    {selectedSessionIds.map((id, index) => {
                         const session = testSessions?.find(s => s.id === id);
                         return (
                              <div key={id} className="flex items-center gap-2 bg-muted text-muted-foreground px-2 py-1 rounded-md text-xs">
@@ -1743,12 +1706,13 @@ const disconnectSerial = useCallback(async () => {
           </CardHeader>
           <CardContent>
             <div 
-              ref={chartContainerWheelRef}
+              ref={scrollContainerRef}
               className="h-80 w-full min-w-full overflow-x-auto"
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseLeave}
+              onWheel={handleWheel}
               style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
             >
               <ResponsiveContainer width="100%" height="100%" minWidth={800}>
@@ -1758,7 +1722,8 @@ const disconnectSerial = useCallback(async () => {
                     dataKey="name" 
                     stroke="hsl(var(--muted-foreground))" 
                     type="number"
-                    domain={zoomDomain || (Array.isArray(chartData) && chartData.length > 0 ? ['dataMin', 'dataMax'] : [0, 1])}
+                    domain={zoomDomain || chartDomain}
+                    allowDataOverflow={true}
                     label={{ value: "Time (seconds)", position: 'insideBottom', offset: -5 }}
                     tickFormatter={(tick) => (tick as number).toFixed(0)}
                     allowDuplicatedCategory={false}
@@ -1779,12 +1744,12 @@ const disconnectSerial = useCallback(async () => {
                   />
                   <Legend verticalAlign="top" height={36} />
                   {Array.isArray(chartData) ? (
-                     <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig?.name || 'Value'} (${sensorConfig?.unit || 'N/A'})`} dot={false} strokeWidth={2} isAnimationActive={!runningTestSession && !isConnected} />
+                     <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig?.name || 'Value'} (${sensorConfig?.unit || 'N/A'})`} dot={false} strokeWidth={2} isAnimationActive={false} />
                   ) : (
                     Object.entries(chartData).map(([sessionId, data], index) => {
                        const session = testSessions?.find(s => s.id === sessionId);
                        return (
-                         <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={session?.productName || sessionId} dot={false} strokeWidth={2} isAnimationActive={!runningTestSession && !isConnected} />
+                         <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={session?.productName || sessionId} dot={false} strokeWidth={2} isAnimationActive={false} />
                        )
                     })
                   )}
