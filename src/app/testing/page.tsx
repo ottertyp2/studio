@@ -468,24 +468,16 @@ const disconnectSerial = useCallback(async () => {
   const isLiveSessionActive = !!runningTestSession || isConnected;
 
   const dataLog = useMemo(() => {
-    // If a live session is active, localDataLog is the most up-to-date source.
     if (isLiveSessionActive) {
       return localDataLog;
     }
-  
-    // For historical views, use cloud data.
     if (cloudDataLog && !isCloudDataLoading) {
       const log = [...cloudDataLog];
-      // Sorting is crucial for historical data as Firestore doesn't guarantee order on its own
       return log.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     }
-    
-    // If no sessions are selected and not connected, the log should be empty.
     if (selectedSessionIds.length === 0) {
         return [];
     }
-
-    // Return an empty array while loading or if no data is available
     return [];
   }, [cloudDataLog, isCloudDataLoading, localDataLog, isLiveSessionActive, selectedSessionIds]);
 
@@ -494,7 +486,6 @@ const disconnectSerial = useCallback(async () => {
         return localDataLog[0].value;
     }
     if (dataLog && dataLog.length > 0) {
-        // For historical data, the latest point is at the end of the sorted array
         return dataLog[dataLog.length - 1].value;
     }
     return null;
@@ -1006,7 +997,7 @@ const disconnectSerial = useCallback(async () => {
   const { chartData, chartDomain } = useMemo(() => {
     if (!sensorConfig) return { chartData: [], chartDomain: [0, 1] as [number, number] };
   
-    const dataToProcess = liveUpdateEnabled ? dataLog : frozenDataRef.current || dataLog;
+    const dataToProcess = (isLiveSessionActive && !liveUpdateEnabled) ? frozenDataRef.current || dataLog : dataLog;
     const allChronologicalData = isLiveSessionActive ? [...dataToProcess].reverse() : dataToProcess;
   
     const processData = (data: SensorData[], startTimeOverride?: number) => {
@@ -1094,7 +1085,7 @@ const disconnectSerial = useCallback(async () => {
 
 
   const handleWheel = useCallback((event: WheelEvent) => {
-    if (isLiveSessionActive) return; // Disable zoom/pan during live sessions.
+    if (isLiveSessionActive && liveUpdateEnabled) return;
     event.preventDefault();
     setLiveUpdateEnabled(false); // Any interaction pauses live updates.
 
@@ -1153,7 +1144,7 @@ const disconnectSerial = useCallback(async () => {
         }
         return prevDomain;
     });
-}, [chartDomain, isLiveSessionActive]);
+}, [chartDomain, isLiveSessionActive, liveUpdateEnabled]);
 
   const handleResetZoom = () => {
     setZoomDomain(null);
@@ -1713,7 +1704,7 @@ const disconnectSerial = useCallback(async () => {
                       <SelectItem value="all">All Data</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button onClick={handleResetZoom} variant={'secondary'} size="sm" className="transition-transform transform hover:-translate-y-0.5" disabled={isLiveSessionActive}>
+                  <Button onClick={handleResetZoom} variant={'secondary'} size="sm" className="transition-transform transform hover:-translate-y-0.5" disabled={isLiveSessionActive && liveUpdateEnabled}>
                       Reset Zoom
                   </Button>
                   <Button
@@ -1747,7 +1738,7 @@ const disconnectSerial = useCallback(async () => {
             <div 
               ref={scrollContainerRef}
               className="h-80 w-full min-w-full"
-              style={{ cursor: isLiveSessionActive || liveUpdateEnabled ? 'default' : (isDragging ? 'grabbing' : 'grab') }}
+              style={{ cursor: (isLiveSessionActive && liveUpdateEnabled) ? 'default' : (isDragging ? 'grabbing' : 'grab') }}
             >
               <ResponsiveContainer width="100%" height="100%" minWidth={800}>
                 <LineChart data={Array.isArray(chartData) ? chartData : undefined} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
