@@ -1078,7 +1078,7 @@ const disconnectSerial = useCallback(async () => {
     if (scrollContainerRef.current) {
         e.preventDefault();
         setIsDragging(true);
-        setLiveUpdateEnabled(false);
+        setLiveUpdateEnabled(false); // Disable live updates when user starts dragging
         setDragStart({
             x: e.pageX - scrollContainerRef.current.offsetLeft,
             scrollLeft: scrollContainerRef.current.scrollLeft,
@@ -1123,13 +1123,16 @@ const disconnectSerial = useCallback(async () => {
     const handleWheelCapture = (e: WheelEvent) => {
         if (chartData && (Array.isArray(chartData) ? chartData.length > 0 : Object.keys(chartData).length > 0)) {
             e.preventDefault();
+            setLiveUpdateEnabled(false); // Disable live updates when user starts zooming
+
             const { deltaY } = e;
             const zoomFactor = 1.1;
 
             const getChartBounds = () => {
                 if (Array.isArray(chartData) && chartData.length > 0) {
                     if (chartData.length === 1) return [chartData[0].name - 1, chartData[0].name + 1];
-                    return [chartData[0].name, chartData[chartData.length - 1].name];
+                    const names = chartData.map(d => d.name);
+                    return [Math.min(...names), Math.max(...names)];
                 }
                 if (typeof chartData === 'object' && Object.keys(chartData).length > 0) {
                     const allNames = Object.values(chartData).flat().map(d => d.name);
@@ -1158,7 +1161,6 @@ const disconnectSerial = useCallback(async () => {
             newMax = Math.min(dataMax, newMax);
 
             if(newMax > newMin) {
-                setLiveUpdateEnabled(false);
                 setZoomDomain([newMin, newMax]);
             }
         }
