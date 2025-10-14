@@ -198,7 +198,7 @@ function TestingComponent() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, scrollLeft: 0 });
   
-  const frozenDataRef = useRef<SensorData[] | undefined>();
+  const frozenDataRef = useRef<SensorData[]>();
   const frozenChartDataRef = useRef<any>();
   const frozenDomainRef = useRef<[number, number] | null>(null);
   
@@ -1003,11 +1003,20 @@ const disconnectSerial = useCallback(async () => {
   const { chartData, chartDomain } = useMemo(() => {
     if (!sensorConfig) return { chartData: [], chartDomain: [0, 1] };
 
-    if (!liveUpdateEnabled && frozenChartDataRef.current) {
-        return { chartData: frozenChartDataRef.current, chartDomain: frozenDomainRef.current || [0, 1] };
+    // When live updates are disabled, we want to freeze the data set.
+    // We use a ref to store the "frozen" data set.
+    if (!liveUpdateEnabled) {
+      if (!frozenDataRef.current) {
+        // On the first render after disabling live updates, freeze the current data.
+        frozenDataRef.current = dataLog;
+      }
+    } else {
+      // If live updates are re-enabled, clear the frozen data.
+      frozenDataRef.current = undefined;
     }
-
-    const dataToProcess = dataLog;
+    
+    // Use frozen data if it exists, otherwise use live data.
+    const dataToProcess = frozenDataRef.current || dataLog;
     let allChronologicalData = [...dataToProcess].reverse();
 
     const processData = (data: SensorData[], startTimeOverride?: number) => {
@@ -1042,7 +1051,7 @@ const disconnectSerial = useCallback(async () => {
 
     let visibleData = allChronologicalData;
     if (selectedSessionIds.length === 1) {
-        visibleData = allChronol_ogicalData.filter(d => d.testSessionId === selectedSessionIds[0]);
+        visibleData = allChronologicalData.filter(d => d.testSessionId === selectedSessionIds[0]);
     } else if (isConnected) {
         visibleData = [...localDataLog].reverse();
     }
@@ -1113,6 +1122,7 @@ const disconnectSerial = useCallback(async () => {
   };
 
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+      if (liveUpdateEnabled) return;
       event.preventDefault();
       setLiveUpdateEnabled(false);
 
