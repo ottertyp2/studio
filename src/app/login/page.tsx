@@ -88,7 +88,7 @@ export default function LoginPage() {
     } catch (error: any) {
       console.error(error);
       let errorMessage = error.message;
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.message.includes('User not found')) {
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.message.includes('User not found') || error.code?.includes('auth/invalid-value')) {
           errorMessage = 'Invalid credentials. Please check your email/username and password.';
       }
       toast({

@@ -56,10 +56,14 @@ export default function SignupPage() {
       router.push('/');
     } catch (error: any) {
       console.error(error); // Keep for debugging
+      let errorMessage = error.message;
+      if (error.code === 'auth/email-already-in-use' || error.code?.includes('auth/invalid-value')) {
+        errorMessage = 'This username or email is already taken. Please choose another one.';
+      }
       toast({
         variant: 'destructive',
         title: 'Sign Up Failed',
-        description: error.message, // Display the direct, correct error message
+        description: errorMessage, // Display the direct, correct error message
       });
     } finally {
         setIsLoading(false);
