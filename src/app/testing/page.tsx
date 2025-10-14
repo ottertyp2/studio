@@ -199,6 +199,8 @@ function TestingComponent() {
   const frozenDataRef = useRef<SensorData[]>();
   
   const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -467,22 +469,27 @@ const disconnectSerial = useCallback(async () => {
   const dataLog = useMemo(() => {
     let log: SensorData[] = [];
 
-    if (isConnected) {
-      log = [...localDataLog];
+    // If there's a live session, the local log is the primary source.
+    if (runningTestSession || isConnected) {
+        log = [...localDataLog];
     }
     
+    // For historical data or to supplement the view, add cloud data.
     if (cloudDataLog && !isCloudDataLoading) {
-      const localTimestamps = new Set(log.map(d => d.timestamp));
-      const uniqueCloudData = cloudDataLog.filter(d => !localTimestamps.has(d.timestamp));
-      log.push(...uniqueCloudData);
+        // Create a set of timestamps from the current log to avoid duplicates.
+        const localTimestamps = new Set(log.map(d => d.timestamp));
+        const uniqueCloudData = cloudDataLog.filter(d => !localTimestamps.has(d.timestamp));
+        log.push(...uniqueCloudData);
     }
     
-    if (!isConnected && selectedSessionIds.length === 0) {
+    // If no sessions are selected and not connected, the log should be empty.
+    if (!runningTestSession && !isConnected && selectedSessionIds.length === 0) {
         return [];
     }
 
+    // Always return sorted data.
     return log.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [cloudDataLog, isCloudDataLoading, localDataLog, isConnected, selectedSessionIds]);
+}, [cloudDataLog, isCloudDataLoading, localDataLog, isConnected, selectedSessionIds, runningTestSession]);
   
   const currentValue = useMemo(() => {
     if (localDataLog && localDataLog.length > 0) {
@@ -997,6 +1004,8 @@ const disconnectSerial = useCallback(async () => {
     }
   };
 
+  const isLiveSessionActive = !!runningTestSession;
+
   const { chartData, chartDomain } = useMemo(() => {
     if (!sensorConfig) return { chartData: [], chartDomain: [0, 1] as [number, number] };
     
@@ -1034,9 +1043,11 @@ const disconnectSerial = useCallback(async () => {
     }
 
     let visibleData = allChronologicalData;
-    if (selectedSessionIds.length === 1) {
+    if (selectedSessionIds.length === 1 && !isLiveSessionActive) {
         visibleData = allChronologicalData.filter(d => d.testSessionId === selectedSessionIds[0]);
-    } else if (isConnected) {
+    } else if (isLiveSessionActive) {
+        visibleData = allChronologicalData.filter(d => d.testSessionId === runningTestSession?.id);
+    } else if (isConnected) { // legacy local data before session start
         visibleData = [...localDataLog].reverse();
     }
     
@@ -1048,10 +1059,10 @@ const disconnectSerial = useCallback(async () => {
       const firstTime = mappedData[0].name;
       const lastTime = mappedData[mappedData.length - 1].name;
       
-      if (chartInterval !== 'all' && !editingSessionId && (runningTestSession || isConnected)) {
+      if (chartInterval !== 'all' && isLiveSessionActive) {
           const intervalSeconds = parseInt(chartInterval, 10);
           const newMin = Math.max(firstTime, lastTime - intervalSeconds);
-          mappedData = mappedData.filter(dp => dp.name >= newMin);
+          // mappedData is already filtered for live session, so we just set the domain
           domain = [newMin, lastTime];
       } else if (chartInterval !== 'all' && !editingSessionId) {
           const intervalSeconds = parseInt(chartInterval, 10);
@@ -1071,11 +1082,11 @@ const disconnectSerial = useCallback(async () => {
     
     return { chartData: mappedData, chartDomain: domain };
 
-}, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, activeTestSession, runningTestSession, editingSessionId, localDataLog, isConnected, liveUpdateEnabled]);
+}, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, editingSessionId, localDataLog, isConnected, liveUpdateEnabled, isLiveSessionActive, runningTestSession]);
 
 
   useEffect(() => {
-    if ((runningTestSession || isConnected) && Array.isArray(chartData) && liveUpdateEnabled) {
+    if (isLiveSessionActive && Array.isArray(chartData) && liveUpdateEnabled) {
       if (chartData.length > 0) {
         const maxTime = chartData[chartData.length - 1].name;
         const currentInterval = parseInt(chartInterval, 10);
@@ -1087,13 +1098,12 @@ const disconnectSerial = useCallback(async () => {
         }
       }
     }
-  }, [chartData, chartInterval, runningTestSession, isConnected, liveUpdateEnabled]);
+  }, [chartData, chartInterval, isLiveSessionActive, liveUpdateEnabled]);
 
 
   const handleWheel = useCallback((event: WheelEvent) => {
-    if (liveUpdateEnabled) return;
+    if (liveUpdateEnabled || isLiveSessionActive) return;
     event.preventDefault();
-    setLiveUpdateEnabled(false);
 
     setZoomDomain(prevDomain => {
         const [currentMin, currentMax] = prevDomain || (Array.isArray(chartDomain) ? chartDomain : [0,1]);
@@ -1150,7 +1160,7 @@ const disconnectSerial = useCallback(async () => {
         }
         return prevDomain;
     });
-}, [liveUpdateEnabled, chartDomain]);
+}, [liveUpdateEnabled, chartDomain, isLiveSessionActive]);
 
   const handleResetZoom = () => {
     setZoomDomain(null);
@@ -1710,13 +1720,14 @@ const disconnectSerial = useCallback(async () => {
                       <SelectItem value="all">All Data</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button onClick={handleResetZoom} variant={'secondary'} size="sm" className="transition-transform transform hover:-translate-y-0.5">
+                  <Button onClick={handleResetZoom} variant={'secondary'} size="sm" className="transition-transform transform hover:-translate-y-0.5" disabled={isLiveSessionActive}>
                       Reset Zoom
                   </Button>
                   <Button
                       onClick={() => setLiveUpdateEnabled(!liveUpdateEnabled)}
                       variant={liveUpdateEnabled ? 'default' : 'secondary'}
                       size="sm"
+                      disabled={isLiveSessionActive}
                   >
                       {liveUpdateEnabled ? "Live: ON" : "Live: OFF"}
                   </Button>
@@ -1744,7 +1755,7 @@ const disconnectSerial = useCallback(async () => {
             <div 
               ref={scrollContainerRef}
               className="h-80 w-full min-w-full"
-              style={{ cursor: liveUpdateEnabled ? 'default' : (isDragging ? 'grabbing' : 'grab') }}
+              style={{ cursor: liveUpdateEnabled || isLiveSessionActive ? 'default' : (isDragging ? 'grabbing' : 'grab') }}
             >
               <ResponsiveContainer width="100%" height="100%" minWidth={800}>
                 <LineChart data={Array.isArray(chartData) ? chartData : undefined} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
