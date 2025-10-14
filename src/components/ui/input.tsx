@@ -1,11 +1,16 @@
+
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
-  ({ className, type, onChange, ...props }, ref) => {
+  ({ className, type, onChange, name, ...props }, ref) => {
     const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+      // --- DEBUGGING START ---
+      console.log(`Input-Feld '${name}' geändert. Neuer Wert:`, event.target.value);
+      // --- DEBUGGING ENDE ---
       if (onChange) {
+        // This ensures that react-hook-form's onChange is called correctly
         onChange(event);
       }
     };
@@ -18,6 +23,7 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
           className
         )}
         ref={ref}
+        name={name}
         onChange={handleChange}
         {...props}
       />

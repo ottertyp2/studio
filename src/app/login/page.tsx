@@ -78,7 +78,11 @@ export default function LoginPage() {
       return;
     }
     try {
-      console.log("LOGIN INPUT", values);
+      // --- DEBUGGING START ---
+      console.log("--- WIRD AN FIREBASE GESENDET ---");
+      console.log("Typ von 'emailOrUsername':", typeof values.emailOrUsername, "| Wert:", values.emailOrUsername);
+      console.log("Typ von 'password':", typeof values.password, "| Wert:", values.password);
+      // --- DEBUGGING ENDE ---
       await initiateEmailSignIn(auth, firestore, values.emailOrUsername, values.password);
       toast({
         title: 'Sign In Successful',
@@ -87,7 +91,6 @@ export default function LoginPage() {
       // The onAuthStateChanged listener in useUser will handle the redirect
       router.push('/');
     } catch (error: any) {
-      console.error(error);
       let errorMessage = error.message;
       if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.message.includes('User not found') || error.code?.includes('auth/invalid-value')) {
           errorMessage = 'Invalid credentials. Please check your email/username and password.';
@@ -97,6 +100,7 @@ export default function LoginPage() {
         title: 'Sign In Failed',
         description: errorMessage,
       });
+       console.error(error);
     } finally {
         setIsLoading(false);
     }
