@@ -17,6 +17,15 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import {
   Accordion,
   AccordionContent,
   AccordionItem,
@@ -53,7 +62,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
-  DropdownMenuSubTrigger
+  DropdownMenuSubTrigger,
+  DropdownMenuPortal
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -185,6 +195,7 @@ export default function AdminPage() {
 
   const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
   const [newProductName, setNewProductName] = useState('');
+  const [bulkClassifyModelId, setBulkClassifyModelId] = useState<string | null>(null);
 
 
   useEffect(() => {
@@ -568,13 +579,14 @@ export default function AdminPage() {
       .catch(e => toast({ variant: 'destructive', title: 'Update Failed', description: e.message }));
   };
 
-  const handleClassifyWithAI = async (session: TestSession) => {
-    if (!firestore) return;
-    if (!mlModels || mlModels.length === 0) {
-      toast({ variant: 'destructive', title: 'AI Classification Failed', description: 'No ML models are available.' });
+  const handleClassifyWithAI = async (session: TestSession, modelId: string) => {
+    if (!firestore || !mlModels) return;
+
+    const modelToUse = mlModels.find(m => m.id === modelId);
+    if (!modelToUse) {
+      toast({ variant: 'destructive', title: 'AI Classification Failed', description: `Model with ID ${modelId} not found.` });
       return;
     }
-    const modelToUse = mlModels.find(m => m.name.includes('auto-model')) || mlModels[0];
 
     try {
         const model = await tf.loadLayersModel(`indexeddb://${modelToUse.name}`);
@@ -585,7 +597,7 @@ export default function AdminPage() {
         const sensorData = snapshot.docs.map(doc => doc.data() as SensorData).sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
         if (sensorData.length < 20) {
-          toast({ variant: 'destructive', title: 'Not Enough Data', description: `Need at least 20 data points to classify.` });
+          toast({ variant: 'destructive', title: 'Not Enough Data', description: `Session for ${session.productName} has less than 20 data points.` });
           return;
         }
 
@@ -604,11 +616,35 @@ export default function AdminPage() {
 
         const classification = predictionValue > 0.5 ? 'LEAK' : 'DIFFUSION';
         handleSetSessionClassification(session.id, classification);
-        toast({ title: 'AI Classification Complete', description: `Session classified as: ${classification}`});
+        toast({ title: 'AI Classification Complete', description: `Session for ${session.productName} classified as: ${classification}`});
 
     } catch (e: any) {
-        toast({ variant: 'destructive', title: 'AI Classification Failed', description: e.message.includes('No model found') ? 'A trained model was not found in your browser. Please train one first.' : e.message});
+        toast({ variant: 'destructive', title: `AI Classification Failed for ${session.productName}`, description: e.message.includes('No model found') ? `A trained model named "${modelToUse.name}" was not found in your browser.` : e.message});
     }
+  };
+
+  const handleBulkClassify = async () => {
+    if (!bulkClassifyModelId) {
+      toast({ variant: 'destructive', title: 'No Model Selected', description: 'Please choose a model to use for bulk classification.' });
+      return;
+    }
+    if (!testSessions) return;
+
+    const unclassifiedSessions = testSessions.filter(s => !s.classification && s.status === 'COMPLETED');
+    if (unclassifiedSessions.length === 0) {
+        toast({ title: 'No Sessions to Classify', description: 'All completed sessions have already been classified.' });
+        return;
+    }
+
+    toast({ title: `Starting Bulk Classification`, description: `Attempting to classify ${unclassifiedSessions.length} sessions...` });
+
+    for (const session of unclassifiedSessions) {
+      await handleClassifyWithAI(session, bulkClassifyModelId);
+      // Small delay to prevent overwhelming the UI thread and allow toasts to appear
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    
+    toast({ title: 'Bulk Classification Finished' });
   };
   
   const handleCreateUser = async () => {
@@ -1201,7 +1237,7 @@ export default function AdminPage() {
                     placeholder="Search sessions..."
                     value={sessionSearchTerm}
                     onChange={(e) => setSessionSearchTerm(e.target.value)}
-                    className="md:col-span-4"
+                    className="sm:col-span-2 lg:col-span-4"
                 />
                 <Select value={sessionUserFilter} onValueChange={setSessionUserFilter}>
                     <SelectTrigger>
@@ -1242,6 +1278,58 @@ export default function AdminPage() {
                         <SelectItem value="testBenchName-asc">Test Bench</SelectItem>
                     </SelectContent>
                 </Select>
+            </div>
+             <div className="flex justify-end mt-4">
+                 <Dialog>
+                    <DialogTrigger asChild>
+                       <Button variant="outline" disabled={mlModels?.length === 0 || testSessions?.every(s => s.classification)}>
+                            <Sparkles className="mr-2 h-4 w-4" />
+                            Bulk Classify
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Bulk Classify Unclassified Sessions</DialogTitle>
+                            <DialogDescription>
+                                Select a model to classify all completed sessions that do not yet have a classification. This action cannot be undone.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-2 py-4">
+                          <Label htmlFor="bulk-model-select">Model for Classification</Label>
+                          <Select onValueChange={setBulkClassifyModelId}>
+                            <SelectTrigger id="bulk-model-select">
+                              <SelectValue placeholder="Select a model" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {mlModels?.map(m => (
+                                <SelectItem key={m.id} value={m.id}>{m.name} v{m.version}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <DialogFooter>
+                            <AlertDialog>
+                               <AlertDialogTrigger asChild>
+                                    <Button variant="default" disabled={!bulkClassifyModelId}>
+                                        Run Bulk Classification
+                                    </Button>
+                               </AlertDialogTrigger>
+                               <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>Confirm Bulk Classification</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            This will attempt to classify all unclassified, completed sessions. This may take some time. Are you sure you want to continue?
+                                        </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction onClick={handleBulkClassify}>Confirm</AlertDialogAction>
+                                    </AlertDialogFooter>
+                               </AlertDialogContent>
+                            </AlertDialog>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
             </div>
              <ScrollArea className="h-[40rem] p-1 mt-4">
               {isTestSessionsLoading ? <p className="text-center text-muted-foreground pt-10">Loading sessions...</p> : filteredAndSortedSessions.length > 0 ? (
@@ -1288,17 +1376,32 @@ export default function AdminPage() {
                                         <Tag className="mr-2 h-4 w-4" />
                                         <span>Classify As</span>
                                       </DropdownMenuSubTrigger>
-                                      <DropdownMenuSubContent>
-                                        <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'LEAK')}>Leak</DropdownMenuItem>
-                                        <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'DIFFUSION')}>Diffusion</DropdownMenuItem>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, null)}>Clear Classification</DropdownMenuItem>
-                                      </DropdownMenuSubContent>
+                                      <DropdownMenuPortal>
+                                          <DropdownMenuSubContent>
+                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'LEAK')}>Leak</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'DIFFUSION')}>Diffusion</DropdownMenuItem>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, null)}>Clear Classification</DropdownMenuItem>
+                                          </DropdownMenuSubContent>
+                                      </DropdownMenuPortal>
                                     </DropdownMenuSub>
-                                    <DropdownMenuItem onClick={() => handleClassifyWithAI(session)}>
-                                      <Sparkles className="mr-2 h-4 w-4" />
-                                      <span>Classify with AI</span>
-                                    </DropdownMenuItem>
+                                    <DropdownMenuSub>
+                                      <DropdownMenuSubTrigger>
+                                        <Sparkles className="mr-2 h-4 w-4" />
+                                        <span>Classify with AI</span>
+                                      </DropdownMenuSubTrigger>
+                                      <DropdownMenuPortal>
+                                          <DropdownMenuSubContent>
+                                            {isMlModelsLoading ? <DropdownMenuItem disabled>Loading models...</DropdownMenuItem> : 
+                                            mlModels && mlModels.length > 0 ?
+                                            mlModels.map(model => (
+                                                <DropdownMenuItem key={model.id} onClick={() => handleClassifyWithAI(session, model.id)}>
+                                                    {model.name}
+                                                </DropdownMenuItem>
+                                            )) : <DropdownMenuItem disabled>No models available</DropdownMenuItem>}
+                                          </DropdownMenuSubContent>
+                                      </DropdownMenuPortal>
+                                    </DropdownMenuSub>
                                     <DropdownMenuSeparator />
                                      <AlertDialog>
                                         <AlertDialogTrigger asChild>
