@@ -1,4 +1,3 @@
-
 'use client';
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -179,7 +178,7 @@ function TestingComponent() {
 
   const importFileRef = useRef<HTMLInputElement>(null);
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(isSyncing);
   
   const [selectedAnalysisModelName, setSelectedAnalysisModelName] = useState<string | null>(null);
   const [aiAnalysisResult, setAiAnalysisResult] = useState<AiAnalysisResult | null>(null);
@@ -197,7 +196,9 @@ function TestingComponent() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, scrollLeft: 0 });
-
+  
+  // When live updates are disabled, we want to freeze the data set.
+  // We use a ref to store the "frozen" data set.
   const frozenDataRef = useRef<SensorData[]>();
   
   const testSessionsCollectionRef = useMemoFirebase(() => {
@@ -998,91 +999,88 @@ const disconnectSerial = useCallback(async () => {
 
   const chartData = useMemo(() => {
     if (!sensorConfig) return [];
-    
-    // This is the full dataset, always sorted newest to oldest.
-    const fullData = dataLog;
-    
-    if (!liveUpdateEnabled) {
-      if (!frozenDataRef.current) {
-        // On the first render after live is disabled, freeze the current dataLog.
-        frozenDataRef.current = fullData;
-      }
-      // Use the frozen data as long as live is disabled.
-      return frozenDataRef.current
-        .map(d => ({
-          name: (new Date(d.timestamp).getTime() - new Date(d.timestamp).getTime()) / 1000,
-          value: convertRawValue(d.value, sensorConfig)
-        }))
-        .reverse();
-    } else {
-      // When live is enabled, clear the frozen data.
+  
+    const sourceData = liveUpdateEnabled ? dataLog : frozenDataRef.current || dataLog;
+  
+    // Freeze the data when live updates are disabled
+    if (!liveUpdateEnabled && !frozenDataRef.current) {
+      frozenDataRef.current = dataLog;
+    } else if (liveUpdateEnabled) {
       frozenDataRef.current = undefined;
     }
-
-    // From here, we are in "live" mode.
-    let allChronologicalData = [...fullData].reverse();
-
+  
+    const dataToProcess = sourceData;
+    let allChronologicalData = [...dataToProcess].reverse();
+  
     if (selectedSessionIds.length > 1) {
-        const dataBySession: { [sessionId: string]: {name: number, value: number | null}[] } = {};
-        
-        selectedSessionIds.forEach(id => {
-            const session = testSessions?.find(s => s.id === id);
-            if (!session) return;
-
-            const sessionStartTime = new Date(session.startTime).getTime();
-            let sessionData = allChronologicalData
-                .filter(d => d.testSessionId === id)
-                .map(d => {
-                    const elapsedSeconds = (new Date(d.timestamp).getTime() - sessionStartTime) / 1000;
-                    return {
-                        name: elapsedSeconds,
-                        value: convertRawValue(d.value, sensorConfig)
-                    };
-                });
-            
-            if (chartInterval !== 'all') {
-                const intervalSeconds = parseInt(chartInterval, 10);
-                const maxTime = sessionData.length > 0 ? sessionData[sessionData.length - 1].name : 0;
-                sessionData = sessionData.filter(d => d.name >= (maxTime - intervalSeconds));
-            }
-            
-            dataBySession[id] = sessionData;
-        });
-
-        return dataBySession;
+      const dataBySession: { [sessionId: string]: { name: number; value: number | null }[] } = {};
+  
+      selectedSessionIds.forEach(id => {
+        const session = testSessions?.find(s => s.id === id);
+        if (!session) return;
+  
+        const sessionStartTime = new Date(session.startTime).getTime();
+        let sessionData = allChronologicalData
+          .filter(d => d.testSessionId === id)
+          .map(d => ({
+            name: (new Date(d.timestamp).getTime() - sessionStartTime) / 1000,
+            value: convertRawValue(d.value, sensorConfig),
+          }));
+  
+        if (chartInterval !== 'all') {
+          const intervalSeconds = parseInt(chartInterval, 10);
+          const maxTime = sessionData.length > 0 ? sessionData[sessionData.length - 1].name : 0;
+          sessionData = sessionData.filter(d => d.name >= maxTime - intervalSeconds);
+        }
+  
+        dataBySession[id] = sessionData;
+      });
+  
+      return dataBySession;
     }
-    
+  
     let visibleData = allChronologicalData;
     if (selectedSessionIds.length === 1) {
-        visibleData = allChronologicalData.filter(d => d.testSessionId === selectedSessionIds[0]);
+      visibleData = allChronologicalData.filter(d => d.testSessionId === selectedSessionIds[0]);
     } else if (isConnected) {
-        visibleData = [...localDataLog].reverse();
+      visibleData = [...localDataLog].reverse();
     }
-    
+  
     const startTime = activeTestSession
-    ? new Date(activeTestSession.startTime).getTime()
-    : (visibleData.length > 0
-        ? new Date(visibleData[0].timestamp).getTime()
-        : Date.now());
-
+      ? new Date(activeTestSession.startTime).getTime()
+      : (visibleData.length > 0
+          ? new Date(visibleData[0].timestamp).getTime()
+          : Date.now());
+  
     let mappedData = visibleData.map(d => ({
-        name: (new Date(d.timestamp).getTime() - startTime) / 1000,
-        value: convertRawValue(d.value, sensorConfig)
+      name: (new Date(d.timestamp).getTime() - startTime) / 1000,
+      value: convertRawValue(d.value, sensorConfig),
     }));
-
+  
     if (chartInterval !== 'all' && !editingSessionId) {
-        const intervalSeconds = parseInt(chartInterval, 10);
-        if (runningTestSession || isConnected) {
-             const maxTime = mappedData.length > 0 ? mappedData[mappedData.length - 1].name : 0;
-             mappedData = mappedData.filter(dp => dp.name >= (maxTime - intervalSeconds));
-        } else {
-            mappedData = mappedData.filter(dp => dp.name >= 0 && dp.name <= intervalSeconds);
-        }
+      const intervalSeconds = parseInt(chartInterval, 10);
+      if (runningTestSession || isConnected) {
+        const maxTime = mappedData.length > 0 ? mappedData[mappedData.length - 1].name : 0;
+        mappedData = mappedData.filter(dp => dp.name >= maxTime - intervalSeconds);
+      } else {
+        mappedData = mappedData.filter(dp => dp.name >= 0 && dp.name <= intervalSeconds);
+      }
     }
-    
+  
     return mappedData;
-
-  }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, activeTestSession, runningTestSession, editingSessionId, localDataLog, isConnected, liveUpdateEnabled]);
+  }, [
+    dataLog,
+    chartInterval,
+    sensorConfig,
+    selectedSessionIds,
+    testSessions,
+    activeTestSession,
+    runningTestSession,
+    editingSessionId,
+    localDataLog,
+    isConnected,
+    liveUpdateEnabled,
+  ]);
 
   useEffect(() => {
     if ((runningTestSession || isConnected) && Array.isArray(chartData) && liveUpdateEnabled) {
@@ -1835,3 +1833,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
