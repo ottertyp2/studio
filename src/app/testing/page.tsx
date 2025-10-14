@@ -465,7 +465,8 @@ const disconnectSerial = useCallback(async () => {
     }
   }, [firestore, activeSensorConfigId, activeTestBenchId]);
 
-  const isLiveSessionActive = !!runningTestSession || isConnected;
+  const isLiveSessionActive = useMemo(() => !!runningTestSession || isConnected, [runningTestSession, isConnected]);
+
 
   const dataLog = useMemo(() => {
     if (isLiveSessionActive) {
@@ -1066,7 +1067,7 @@ const disconnectSerial = useCallback(async () => {
   
     return { chartData: mappedData, chartDomain: domain };
   
-  }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, editingSessionId, isLiveSessionActive, liveUpdateEnabled, frozenDataRef.current]);
+  }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, editingSessionId, isLiveSessionActive, liveUpdateEnabled]);
 
   useEffect(() => {
     if (isLiveSessionActive && Array.isArray(chartData) && liveUpdateEnabled) {
@@ -1085,17 +1086,29 @@ const disconnectSerial = useCallback(async () => {
 
 
   const handleWheel = useCallback((event: WheelEvent) => {
-    if (liveUpdateEnabled) return;
-    
+    console.log("handleWheel triggered. liveUpdateEnabled:", liveUpdateEnabled);
+    if (liveUpdateEnabled) {
+      console.log("Zoom blocked because liveUpdateEnabled is true.");
+      return;
+    };
     event.preventDefault();
+    console.log("Zoom not blocked. Proceeding with zoom logic.");
 
     setZoomDomain(prevDomain => {
-        const [currentMin, currentMax] = prevDomain || (Array.isArray(chartDomain) ? chartDomain : [0,1]);
-        const dataMin = Array.isArray(chartDomain) ? chartDomain[0] : 0;
-        const dataMax = Array.isArray(chartDomain) ? chartDomain[1] : 1;
+        const dataToUse = frozenDataRef.current || [];
+        const chronologicalData = isLiveSessionActive ? [...dataToUse].reverse() : dataToUse;
+
+        const processData = (data: SensorData[]) => {
+            const startTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : Date.now();
+            return data.map(d => ({ name: (new Date(d.timestamp).getTime() - startTime) / 1000 }));
+        };
+        const mappedData = processData(chronologicalData);
+        const dataMin = mappedData.length > 0 ? mappedData[0].name : 0;
+        const dataMax = mappedData.length > 0 ? mappedData[mappedData.length - 1].name : 1;
+
+        const [currentMin, currentMax] = prevDomain || [dataMin, dataMax];
         const range = currentMax - currentMin;
 
-        // Handle panning (horizontal scroll)
         if (event.deltaX !== 0) {
             const panFactor = 0.001;
             const panAmount = event.deltaX * range * panFactor;
@@ -1118,7 +1131,6 @@ const disconnectSerial = useCallback(async () => {
             return prevDomain;
         }
 
-        // Handle zooming (vertical scroll)
         if (event.deltaY !== 0) {
           const zoomFactor = event.deltaY < 0 ? 0.9 : 1.1;
           const newRange = range * zoomFactor;
@@ -1132,7 +1144,7 @@ const disconnectSerial = useCallback(async () => {
               let newMin = cursorValue - newRange * cursorRatio;
               let newMax = cursorValue + newRange * (1 - cursorRatio);
 
-              if (newMax - newMin < 1) return prevDomain; // Prevent zooming in too far
+              if (newMax - newMin < 1) return prevDomain;
               
               newMin = Math.max(dataMin, newMin);
               newMax = Math.min(dataMax, newMax);
@@ -1144,7 +1156,8 @@ const disconnectSerial = useCallback(async () => {
         }
         return prevDomain;
     });
-  }, [chartDomain, liveUpdateEnabled]);
+  }, [liveUpdateEnabled, isLiveSessionActive]);
+
 
   const handleResetZoom = () => {
     setZoomDomain(null);
@@ -1164,15 +1177,19 @@ const disconnectSerial = useCallback(async () => {
   }, [handleWheel]);
 
   useEffect(() => {
+    console.log("liveUpdateEnabled changed to:", liveUpdateEnabled, "isLiveSessionActive:", isLiveSessionActive);
     if (liveUpdateEnabled) {
       setZoomDomain(null);
       frozenDataRef.current = undefined;
+      console.log("Zoom reset, frozenDataRef cleared.");
     } else {
-      if (!frozenDataRef.current) {
+      if (!frozenDataRef.current || frozenDataRef.current.length === 0) {
         frozenDataRef.current = dataLog;
+        console.log("Data frozen with", dataLog.length, "points.");
       }
     }
-  }, [liveUpdateEnabled, dataLog]);
+  }, [liveUpdateEnabled, dataLog, isLiveSessionActive]);
+
   
   const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
   const displayDecimals = sensorConfig?.decimalPlaces ?? 0;
