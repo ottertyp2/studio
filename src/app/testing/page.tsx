@@ -1078,6 +1078,7 @@ const disconnectSerial = useCallback(async () => {
     if (scrollContainerRef.current) {
         e.preventDefault();
         setIsDragging(true);
+        setLiveUpdateEnabled(false);
         setDragStart({
             x: e.pageX - scrollContainerRef.current.offsetLeft,
             scrollLeft: scrollContainerRef.current.scrollLeft,
@@ -1106,13 +1107,14 @@ const disconnectSerial = useCallback(async () => {
 
   const handleResetZoom = () => {
     setZoomDomain(null);
+    setLiveUpdateEnabled(true);
   }
 
   useEffect(() => {
-    if (liveUpdateEnabled && Array.isArray(chartData)) {
+    if (liveUpdateEnabled) {
         setZoomDomain(null);
     }
-  }, [chartData, liveUpdateEnabled]);
+  }, [liveUpdateEnabled]);
 
   useEffect(() => {
     const container = chartContainerWheelRef.current;
@@ -1126,6 +1128,7 @@ const disconnectSerial = useCallback(async () => {
 
             const getChartBounds = () => {
                 if (Array.isArray(chartData) && chartData.length > 0) {
+                    if (chartData.length === 1) return [chartData[0].name - 1, chartData[0].name + 1];
                     return [chartData[0].name, chartData[chartData.length - 1].name];
                 }
                 if (typeof chartData === 'object' && Object.keys(chartData).length > 0) {
@@ -1806,5 +1809,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
