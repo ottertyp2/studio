@@ -953,6 +953,7 @@ function TestingComponent() {
 
 
   const handleWheel = useCallback((event: WheelEvent) => {
+    console.log("Wheel event. liveUpdateEnabled:", liveUpdateEnabled, "isLiveSessionActive:", isLiveSessionActive);
     if (liveUpdateEnabled) {
       return;
     };
@@ -1280,7 +1281,7 @@ function TestingComponent() {
                 </SelectTrigger>
                 <SelectContent>
                   {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                  testSessions?.filter(s => s.status !== 'RUNNING').map(s => <SelectItem key={s.id} value={s.id}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString()}</SelectItem>)
+                  testSessions?.filter(s => s.status !== 'RUNNING').map(s => <SelectItem key={s.id} value={s.id}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short'})}</SelectItem>)
                   }
                 </SelectContent>
             </Select>
@@ -1443,8 +1444,8 @@ function TestingComponent() {
              </CardContent>
            </Card>
         </div>
-        <div className="lg:col-span-1 grid grid-rows-1 md:grid-rows-3 gap-6">
-          {runningTestSession ? (
+        <div className="lg:col-span-1 grid grid-rows-1 md:grid-rows-2 gap-6">
+          {runningTestSession && (
             <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg row-span-1 h-full'>
                 <CardHeader className='p-2'>
                     <CardTitle>Session in Progress</CardTitle>
@@ -1461,12 +1462,6 @@ function TestingComponent() {
                         </div>
                     </div>
                 </CardContent>
-            </Card>
-          ) : (
-            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-               <CardContent className="p-4 flex items-center justify-center h-full">
-                 <p className="text-sm text-muted-foreground">No active session.</p>
-               </CardContent>
             </Card>
           )}
           <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
@@ -1562,7 +1557,7 @@ function TestingComponent() {
                         </SelectTrigger>
                         <SelectContent>
                             {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString()}</SelectItem>)}
+                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short'})}</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
@@ -1605,7 +1600,7 @@ function TestingComponent() {
                         return (
                              <div key={id} className="flex items-center gap-2 bg-muted text-muted-foreground px-2 py-1 rounded-md text-xs">
                                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }}></div>
-                                <span>{session?.vesselTypeName || id} - {session ? new Date(session.startTime).toLocaleString() : ''}</span>
+                                <span>{session?.vesselTypeName || id} - {session ? new Date(session.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short'}) : ''}</span>
                                 <button onClick={() => setSelectedSessionIds(prev => prev.filter(sid => sid !== id))} className="text-muted-foreground hover:text-foreground">
                                     <XIcon className="h-3 w-3" />
                                 </button>
@@ -1714,4 +1709,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
