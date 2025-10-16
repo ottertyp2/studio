@@ -201,6 +201,9 @@ function TestingComponent() {
   const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
+  const [currentValue, setCurrentValue] = useState<number | null>(null);
+  const [lastDataPointTimestamp, setLastDataPointTimestamp] = useState<number | null>(null);
+
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -448,7 +451,10 @@ const disconnectSerial = useCallback(async () => {
   
   const handleNewDataPoint = useCallback((newDataPoint: Omit<SensorData, 'testBenchId'>) => {
     if (!activeTestBenchId) return;
-    setLocalDataLog(prevLog => [ { ...newDataPoint, testBenchId: activeTestBenchId }, ...prevLog].slice(0, 1000));
+    const pointWithValue = { ...newDataPoint, testBenchId: activeTestBenchId };
+    setLocalDataLog(prevLog => [ pointWithValue, ...prevLog].slice(0, 1000));
+    setCurrentValue(pointWithValue.value);
+    setLastDataPointTimestamp(Date.now());
     
     const currentRunningSession = runningTestSessionRef.current;
 
@@ -465,6 +471,22 @@ const disconnectSerial = useCallback(async () => {
     }
   }, [firestore, activeSensorConfigId, activeTestBenchId]);
 
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null;
+    if (lastDataPointTimestamp) {
+        timeoutId = setTimeout(() => {
+            if (Date.now() - lastDataPointTimestamp >= 1000) {
+                setCurrentValue(null);
+            }
+        }, 1000);
+    }
+    return () => {
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
+    };
+  }, [lastDataPointTimestamp]);
+
   const isLiveSessionActive = useMemo(() => !!runningTestSession || isConnected, [runningTestSession, isConnected]);
 
 
@@ -480,17 +502,6 @@ const disconnectSerial = useCallback(async () => {
 
     return [];
   }, [cloudDataLog, isCloudDataLoading, localDataLog, isLiveSessionActive]);
-
-
-  const currentValue = useMemo(() => {
-    if (localDataLog && localDataLog.length > 0) {
-        return localDataLog[0].value;
-    }
-    if (dataLog && dataLog.length > 0) {
-        return dataLog[dataLog.length - 1].value;
-    }
-    return null;
-  }, [localDataLog, dataLog]);
   
   const handleConnect = useCallback(async () => {
     if (isConnected) {
@@ -1612,7 +1623,7 @@ const disconnectSerial = useCallback(async () => {
             <CardContent className="flex flex-col items-center">
               <div className="text-center">
                 <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                  {displayValue !== null ? displayValue.toFixed(displayDecimals) : (isConnected ? '...' : 'N/A')}
+                  {displayValue !== null ? displayValue.toFixed(displayDecimals) : (isLiveSessionActive ? '...' : 'N/A')}
                 </p>
                  <p className="text-lg text-muted-foreground">{displayValue !== null ? sensorConfig?.unit : ''}</p>
                  <div className="mt-2 text-xs text-muted-foreground space-y-1">
@@ -1628,7 +1639,7 @@ const disconnectSerial = useCallback(async () => {
                     )}
                  </div>
 
-                  {(isConnected || runningTestSession) && (
+                  {(isLiveSessionActive) && (
                   <div className="text-xs text-green-600 mt-1 flex items-center justify-center gap-1">
                     <span className="relative flex h-2 w-2">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
@@ -1698,7 +1709,7 @@ const disconnectSerial = useCallback(async () => {
                         </SelectTrigger>
                         <SelectContent>
                             {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })} ({s.status})</SelectItem>)}
+                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString()}</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
@@ -1850,3 +1861,4 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
