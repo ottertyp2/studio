@@ -64,7 +64,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     isDisconnectingRef.current = false;
     
     if (!options.silent) {
-      toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
+      toast({ title: 'Disconnected', description: 'Successfully disconnected from device. Refreshing page.' });
+      // Adding a small delay to ensure toast is visible before reload
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
     }
   }, [toast]);
 
