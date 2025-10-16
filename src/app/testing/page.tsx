@@ -102,7 +102,7 @@ type AppUser = {
     role: 'user' | 'superadmin';
 };
 
-type Product = {
+type VesselType = {
     id: string;
     name: string;
 };
@@ -116,8 +116,8 @@ type TestBench = {
 
 type TestSession = {
     id: string;
-    productId: string;
-    productName: string;
+    vesselTypeId: string;
+    vesselTypeName: string;
     serialNumber: string;
     description: string;
     startTime: string;
@@ -224,12 +224,12 @@ function TestingComponent() {
   
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading, error: sensorConfigsError } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
 
-  const productsCollectionRef = useMemoFirebase(() => {
+  const vesselTypesCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return collection(firestore, 'products');
   }, [firestore, user]);
 
-  const { data: products, isLoading: isProductsLoading, error: productsError } = useCollection<Product>(productsCollectionRef);
+  const { data: vesselTypes, isLoading: isVesselTypesLoading, error: productsError } = useCollection<VesselType>(vesselTypesCollectionRef);
   
   const testBenchesCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -260,10 +260,10 @@ function TestingComponent() {
   }, [testSessionsError, usersError, sensorConfigsError, productsError, testBenchesError, router, toast, auth]);
 
   useEffect(() => {
-    if (!isProductsLoading && products && products.length > 0 && !tempTestSession.productId) {
-      setTempTestSession(prev => ({ ...prev, productId: products[0].id }));
+    if (!isVesselTypesLoading && vesselTypes && vesselTypes.length > 0 && !tempTestSession.vesselTypeId) {
+      setTempTestSession(prev => ({ ...prev, vesselTypeId: vesselTypes[0].id }));
     }
-  }, [products, isProductsLoading, tempTestSession.productId]);
+  }, [vesselTypes, isVesselTypesLoading, tempTestSession.vesselTypeId]);
 
   useEffect(() => {
     if (!isTestBenchesLoading && testBenches && testBenches.length > 0 && !activeTestBenchId) {
@@ -584,12 +584,12 @@ const disconnectSerial = useCallback(async () => {
       toast({variant: 'destructive', title: 'Initialization Error', description: 'Firestore service is not available.'});
       return;
     }
-     if (!products || products.length === 0) {
-      toast({variant: 'destructive', title: 'Configuration Error', description: 'No products have been created yet. Please add one in the "Product Management" section.'});
+     if (!vesselTypes || vesselTypes.length === 0) {
+      toast({variant: 'destructive', title: 'Configuration Error', description: 'No vessel types have been created yet. Please add one in the "Vessel Type Management" section.'});
       return;
     }
-    if (!tempTestSession.productId) {
-      toast({variant: 'destructive', title: 'Input Error', description: 'Please select a product for the session.'});
+    if (!tempTestSession.vesselTypeId) {
+      toast({variant: 'destructive', title: 'Input Error', description: 'Please select a vessel type for the session.'});
       return;
     }
     if (!tempTestSession.testBenchId) {
@@ -618,9 +618,9 @@ const disconnectSerial = useCallback(async () => {
       return;
     }
     
-    const selectedProduct = products.find(p => p.id === tempTestSession.productId);
-    if (!selectedProduct) {
-        toast({variant: 'destructive', title: 'Error', description: 'Selected product not found.'});
+    const selectedVesselType = vesselTypes.find(p => p.id === tempTestSession.vesselTypeId);
+    if (!selectedVesselType) {
+        toast({variant: 'destructive', title: 'Error', description: 'Selected vessel type not found.'});
         return;
     }
 
@@ -628,8 +628,8 @@ const disconnectSerial = useCallback(async () => {
     const newSessionId = doc(testSessionsCollectionRef).id;
     const newSession: TestSession = {
       id: newSessionId,
-      productId: selectedProduct.id,
-      productName: selectedProduct.name,
+      vesselTypeId: selectedVesselType.id,
+      vesselTypeName: selectedVesselType.name,
       serialNumber: tempTestSession.serialNumber || '',
       description: tempTestSession.description || '',
       startTime: new Date().toISOString(),
@@ -652,7 +652,7 @@ const disconnectSerial = useCallback(async () => {
       setSelectedSessionIds([newSessionId]);
       setShowNewSessionForm(false);
       setTempTestSession({});
-      toast({ title: 'New Test Session Started', description: `Product: ${newSession.productName}`});
+      toast({ title: 'New Test Session Started', description: `Vessel Type: ${newSession.vesselTypeName}`});
     } catch(e: any) {
         console.error("FirebaseError:", e);
         toast({
@@ -1246,14 +1246,14 @@ const disconnectSerial = useCallback(async () => {
           </Select>
       </div>
       <div>
-        <Label htmlFor="productIdentifier">Product</Label>
-        <Select value={tempTestSession?.productId || ''} onValueChange={value => handleTestSessionFieldChange('productId', value)}>
-            <SelectTrigger id="productIdentifier">
-                <SelectValue placeholder="Select a product to test" />
+        <Label htmlFor="vesselTypeIdentifier">Vessel Type</Label>
+        <Select value={tempTestSession?.vesselTypeId || ''} onValueChange={value => handleTestSessionFieldChange('vesselTypeId', value)}>
+            <SelectTrigger id="vesselTypeIdentifier">
+                <SelectValue placeholder="Select a vessel type to test" />
             </SelectTrigger>
             <SelectContent>
-                {isProductsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                products?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
+                {isVesselTypesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                vesselTypes?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
                 }
             </SelectContent>
         </Select>
@@ -1274,7 +1274,7 @@ const disconnectSerial = useCallback(async () => {
                 await handleStartNewTestSession({ measurementType: 'ARDUINO' })
               }} 
               className="w-full btn-shine bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md"
-              disabled={!tempTestSession?.productId || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId || !!runningTestSession}
+              disabled={!tempTestSession?.vesselTypeId || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId || !!runningTestSession}
           >
               Start Test Bench Session
           </Button>
@@ -1289,7 +1289,7 @@ const disconnectSerial = useCallback(async () => {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Start Demo Simulation</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Choose a scenario to simulate. This will use the product and session details you'veentered above.
+                    Choose a scenario to simulate. This will use the vessel type and session details you've entered above.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -1416,7 +1416,7 @@ const disconnectSerial = useCallback(async () => {
                 </SelectTrigger>
                 <SelectContent>
                   {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                  testSessions?.filter(s => s.status !== 'RUNNING').map(s => <SelectItem key={s.id} value={s.id}>{s.productName} - {new Date(s.startTime).toLocaleString('en-US', { timeStyle: 'short', dateStyle: 'short'})}</SelectItem>)
+                  testSessions?.filter(s => s.status !== 'RUNNING').map(s => <SelectItem key={s.id} value={s.id}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString('en-US', { timeStyle: 'short', dateStyle: 'short'})}</SelectItem>)
                   }
                 </SelectContent>
             </Select>
@@ -1588,7 +1588,7 @@ const disconnectSerial = useCallback(async () => {
                 <CardContent className='p-2'>
                     <div className="flex justify-between items-center">
                         <div>
-                            <p className="font-semibold">{runningTestSession.productName}</p>
+                            <p className="font-semibold">{runningTestSession.vesselTypeName}</p>
                             <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })} - {runningTestSession.status}</p>
                             <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.classification ? `(${runningTestSession.classification})` : ''}</p>
                         </div>
@@ -1698,7 +1698,7 @@ const disconnectSerial = useCallback(async () => {
                         </SelectTrigger>
                         <SelectContent>
                             {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productName} - {new Date(s.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })} ({s.status})</SelectItem>)}
+                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })} ({s.status})</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
@@ -1741,7 +1741,7 @@ const disconnectSerial = useCallback(async () => {
                         return (
                              <div key={id} className="flex items-center gap-2 bg-muted text-muted-foreground px-2 py-1 rounded-md text-xs">
                                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }}></div>
-                                <span>{session?.productName || id} - {session ? new Date(session.startTime).toLocaleTimeString() : ''}</span>
+                                <span>{session?.vesselTypeName || id} - {session ? new Date(session.startTime).toLocaleString() : ''}</span>
                                 <button onClick={() => setSelectedSessionIds(prev => prev.filter(sid => sid !== id))} className="text-muted-foreground hover:text-foreground">
                                     <XIcon className="h-3 w-3" />
                                 </button>
@@ -1791,7 +1791,7 @@ const disconnectSerial = useCallback(async () => {
                     Object.entries(chartData).map(([sessionId, data], index) => {
                        const session = testSessions?.find(s => s.id === sessionId);
                        return (
-                         <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={session?.productName || sessionId} dot={false} strokeWidth={2} isAnimationActive={false} />
+                         <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={session?.vesselTypeName || sessionId} dot={false} strokeWidth={2} isAnimationActive={false} />
                        )
                     })
                   )}

@@ -96,7 +96,7 @@ type AppUser = {
     role: 'user' | 'superadmin';
 };
 
-type Product = {
+type VesselType = {
     id: string;
     name: string;
 };
@@ -133,8 +133,8 @@ type SensorData = {
 
 type TestSession = {
     id: string;
-    productId: string;
-    productName: string;
+    vesselTypeId: string;
+    vesselTypeName: string;
     serialNumber: string;
     description: string;
     startTime: string;
@@ -186,12 +186,12 @@ export default function AdminPage() {
   const [sessionSearchTerm, setSessionSearchTerm] = useState('');
   const [sessionSortOrder, setSessionSortOrder] = useState('startTime-desc');
   const [sessionUserFilter, setSessionUserFilter] = useState('all');
-  const [sessionProductFilter, setSessionProductFilter] = useState('all');
+  const [sessionVesselTypeFilter, setSessionVesselTypeFilter] = useState('all');
   const [sessionTestBenchFilter, setSessionTestBenchFilter] = useState('all');
   const [sessionClassificationFilter, setSessionClassificationFilter] = useState('all');
 
   const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
-  const [newProductName, setNewProductName] = useState('');
+  const [newVesselTypeName, setNewVesselTypeName] = useState('');
   const [bulkClassifyModelId, setBulkClassifyModelId] = useState<string | null>(null);
   const [trainingProgress, setTrainingProgress] = useState(0);
 
@@ -225,12 +225,12 @@ export default function AdminPage() {
 
   const { data: users, isLoading: isUsersLoading, error: usersError } = useCollection<AppUser>(usersCollectionRef);
 
-  const productsCollectionRef = useMemoFirebase(() => {
+  const vesselTypesCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return collection(firestore, 'products');
   }, [firestore, user]);
 
-  const { data: products, isLoading: isProductsLoading, error: productsError } = useCollection<Product>(productsCollectionRef);
+  const { data: vesselTypes, isLoading: isVesselTypesLoading, error: productsError } = useCollection<VesselType>(vesselTypesCollectionRef);
 
   const testBenchesCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -485,8 +485,8 @@ export default function AdminPage() {
 
   const handleStartNewTestSession = async () => {
     const currentUser = users?.find(u => u.id === user?.uid);
-    if (!tempTestSession || !tempTestSession.productId || !activeSensorConfigId || !testSessionsCollectionRef || !products || !currentUser) {
-        toast({variant: 'destructive', title: 'Error', description: 'Please select a product and a sensor, and ensure you are logged in.'});
+    if (!tempTestSession || !tempTestSession.vesselTypeId || !activeSensorConfigId || !testSessionsCollectionRef || !vesselTypes || !currentUser) {
+        toast({variant: 'destructive', title: 'Error', description: 'Please select a vessel type and a sensor, and ensure you are logged in.'});
         return;
     }
 
@@ -506,17 +506,17 @@ export default function AdminPage() {
       return;
     }
 
-    const selectedProduct = products.find(p => p.id === tempTestSession.productId);
-    if (!selectedProduct) {
-        toast({variant: 'destructive', title: 'Error', description: 'Selected product not found.'});
+    const selectedVesselType = vesselTypes.find(p => p.id === tempTestSession.vesselTypeId);
+    if (!selectedVesselType) {
+        toast({variant: 'destructive', title: 'Error', description: 'Selected vessel type not found.'});
         return;
     }
 
     const newSessionId = doc(collection(firestore!, '_')).id;
     const newSession: TestSession = {
       id: newSessionId,
-      productId: selectedProduct.id,
-      productName: selectedProduct.name,
+      vesselTypeId: selectedVesselType.id,
+      vesselTypeName: selectedVesselType.name,
       serialNumber: tempTestSession.serialNumber || '',
       description: tempTestSession.description || `Admin Demo - ${tempTestSession.classification}`,
       startTime: new Date().toISOString(),
@@ -532,7 +532,7 @@ export default function AdminPage() {
     await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
     setActiveTestSessionId(newSessionId);
     setTempTestSession(null);
-    toast({ title: 'New Test Session Started', description: `Product: ${newSession.productName}`});
+    toast({ title: 'New Test Session Started', description: `Vessel Type: ${newSession.vesselTypeName}`});
   };
 
   const handleStopTestSession = (sessionId: string) => {
@@ -574,7 +574,7 @@ export default function AdminPage() {
         await batch.commit();
         toast({
             title: 'Session Deleted',
-            description: `Session "${session.productName}" and ${dataDeletedCount} data points deleted.`
+            description: `Session "${session.vesselTypeName}" and ${dataDeletedCount} data points deleted.`
         });
     } catch (serverError) {
         toast({
@@ -611,7 +611,7 @@ export default function AdminPage() {
         const sensorData = snapshot.docs.map(doc => doc.data() as SensorData).sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
         if (sensorData.length < 20) {
-          toast({ variant: 'destructive', title: 'Not Enough Data', description: `Session for ${session.productName} has less than 20 data points.` });
+          toast({ variant: 'destructive', title: 'Not Enough Data', description: `Session for ${session.vesselTypeName} has less than 20 data points.` });
           return;
         }
 
@@ -630,10 +630,10 @@ export default function AdminPage() {
 
         const classification = predictionValue > 0.5 ? 'LEAK' : 'DIFFUSION';
         handleSetSessionClassification(session.id, classification);
-        toast({ title: 'AI Classification Complete', description: `Session for ${session.productName} classified as: ${classification}`});
+        toast({ title: 'AI Classification Complete', description: `Session for ${session.vesselTypeName} classified as: ${classification}`});
 
     } catch (e: any) {
-        toast({ variant: 'destructive', title: `AI Classification Failed for ${session.productName}`, description: e.message.includes('No model found in IndexedDB') ? `A trained model named "${modelToUse.name}" was not found in your browser.` : e.message});
+        toast({ variant: 'destructive', title: `AI Classification Failed for ${session.vesselTypeName}`, description: e.message.includes('No model found in IndexedDB') ? `A trained model named "${modelToUse.name}" was not found in your browser.` : e.message});
         throw e; // re-throw for bulk handler
     }
   };
@@ -659,7 +659,7 @@ export default function AdminPage() {
         // Small delay to prevent overwhelming the UI thread and allow toasts to appear
         await new Promise(resolve => setTimeout(resolve, 300));
       } catch (error) {
-        console.error(`Failed to classify session ${session.id} (${session.productName}):`, error);
+        console.error(`Failed to classify session ${session.id} (${session.vesselTypeName}):`, error);
       }
     }
     
@@ -1052,8 +1052,8 @@ export default function AdminPage() {
         filtered = filtered.filter(session => session.userId === sessionUserFilter);
     }
     
-    if (sessionProductFilter !== 'all') {
-        filtered = filtered.filter(session => session.productId === sessionProductFilter);
+    if (sessionVesselTypeFilter !== 'all') {
+        filtered = filtered.filter(session => session.vesselTypeId === sessionVesselTypeFilter);
     }
     
     if (sessionTestBenchFilter !== 'all') {
@@ -1072,7 +1072,7 @@ export default function AdminPage() {
         const searchTerm = sessionSearchTerm.toLowerCase();
         if (!searchTerm) return true;
         return (
-            session.productName.toLowerCase().includes(searchTerm) ||
+            session.vesselTypeName.toLowerCase().includes(searchTerm) ||
             session.serialNumber.toLowerCase().includes(searchTerm) ||
             session.description.toLowerCase().includes(searchTerm) ||
             session.username.toLowerCase().includes(searchTerm)
@@ -1085,8 +1085,8 @@ export default function AdminPage() {
                 return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
             case 'startTime-asc':
                 return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
-            case 'productName-asc':
-                return a.productName.localeCompare(b.productName);
+            case 'vesselTypeName-asc':
+                return a.vesselTypeName.localeCompare(b.vesselTypeName);
              case 'username-asc':
                 return a.username.localeCompare(b.username);
             case 'testBenchName-asc': {
@@ -1099,32 +1099,32 @@ export default function AdminPage() {
         }
     });
 
-  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionProductFilter, sessionTestBenchFilter, sessionClassificationFilter, testBenches]);
+  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionTestBenchFilter, sessionClassificationFilter, testBenches]);
 
-    const handleAddProduct = () => {
-    if (!newProductName.trim()) {
-        toast({ variant: 'destructive', title: 'Invalid Input', description: 'Product name cannot be empty.' });
+    const handleAddVesselType = () => {
+    if (!newVesselTypeName.trim()) {
+        toast({ variant: 'destructive', title: 'Invalid Input', description: 'Vessel type name cannot be empty.' });
         return;
     }
-    if (!firestore || !productsCollectionRef) return;
-    const newProductId = doc(collection(firestore, '_')).id;
-    addDocumentNonBlocking(productsCollectionRef, { id: newProductId, name: newProductName.trim() });
-    setNewProductName('');
-    toast({ title: 'Product Added', description: `"${newProductName.trim()}" has been added.`});
+    if (!firestore || !vesselTypesCollectionRef) return;
+    const newVesselTypeId = doc(collection(firestore, '_')).id;
+    addDocumentNonBlocking(vesselTypesCollectionRef, { id: newVesselTypeId, name: newVesselTypeName.trim() });
+    setNewVesselTypeName('');
+    toast({ title: 'Vessel Type Added', description: `"${newVesselTypeName.trim()}" has been added.`});
   };
 
-  const handleDeleteProduct = (productId: string) => {
+  const handleDeleteVesselType = (vesselTypeId: string) => {
     if (!firestore) return;
-    deleteDocumentNonBlocking(doc(firestore, 'products', productId));
-    toast({ title: 'Product Deleted'});
+    deleteDocumentNonBlocking(doc(firestore, 'products', vesselTypeId));
+    toast({ title: 'Vessel Type Deleted'});
   };
 
   const isFilterActive = useMemo(() => {
     return sessionUserFilter !== 'all' || 
-           sessionProductFilter !== 'all' || 
+           sessionVesselTypeFilter !== 'all' || 
            sessionTestBenchFilter !== 'all' || 
            sessionClassificationFilter !== 'all';
-  }, [sessionUserFilter, sessionProductFilter, sessionTestBenchFilter, sessionClassificationFilter]);
+  }, [sessionUserFilter, sessionVesselTypeFilter, sessionTestBenchFilter, sessionClassificationFilter]);
 
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
@@ -1210,13 +1210,13 @@ export default function AdminPage() {
         <CardHeader>
           <CardTitle>Test Sessions</CardTitle>
           <CardDescription>
-            Manage and review all product test sessions.
+            Manage and review all test sessions.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {!tempTestSession && !runningSession && (
             <div className="flex justify-center mb-6">
-              <Button onClick={() => setTempTestSession({})} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!activeSensorConfigId || !products || products.length === 0}>
+              <Button onClick={() => setTempTestSession({})} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!activeSensorConfigId || !vesselTypes || vesselTypes.length === 0}>
                 Start New Demo Session
               </Button>
             </div>
@@ -1226,14 +1226,14 @@ export default function AdminPage() {
             <div className="space-y-4 p-4 mb-6 border rounded-lg bg-background/50">
               <h3 className="text-lg font-semibold text-center mb-4">New Demo Session</h3>
               <div className="space-y-2">
-                <Label htmlFor="productIdentifier">Product</Label>
-                <Select onValueChange={value => handleTestSessionFieldChange('productId', value)}>
-                    <SelectTrigger id="productIdentifier">
-                        <SelectValue placeholder="Select a product to test" />
+                <Label htmlFor="vesselTypeIdentifier">Vessel Type</Label>
+                <Select onValueChange={value => handleTestSessionFieldChange('vesselTypeId', value)}>
+                    <SelectTrigger id="vesselTypeIdentifier">
+                        <SelectValue placeholder="Select a vessel type to test" />
                     </SelectTrigger>
                     <SelectContent>
-                        {isProductsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                        products?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
+                        {isVesselTypesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                        vesselTypes?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
                         }
                     </SelectContent>
                 </Select>
@@ -1286,7 +1286,7 @@ export default function AdminPage() {
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('startTime-desc')}>Newest</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('startTime-asc')}>Oldest</DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setSessionSortOrder('productName-asc')}>Product Name</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setSessionSortOrder('vesselTypeName-asc')}>Vessel Type Name</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('username-asc')}>Username</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('testBenchName-asc')}>Test Bench</DropdownMenuItem>
                   </DropdownMenuContent>
@@ -1312,12 +1312,12 @@ export default function AdminPage() {
                                 </Select>
                             </div>
                             <div className="space-y-2">
-                                <Label>Product</Label>
-                                <Select value={sessionProductFilter} onValueChange={setSessionProductFilter}>
+                                <Label>Vessel Type</Label>
+                                <Select value={sessionVesselTypeFilter} onValueChange={setSessionVesselTypeFilter}>
                                     <SelectTrigger><SelectValue/></SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="all">All Products</SelectItem>
-                                        {products?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                                        <SelectItem value="all">All Vessel Types</SelectItem>
+                                        {vesselTypes?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -1409,7 +1409,7 @@ export default function AdminPage() {
                     <Card key={session.id} className={`p-4 ${session.status === 'RUNNING' ? 'border-primary' : ''} hover:bg-muted/50`}>
                         <div className="flex justify-between items-start gap-4">
                             <div className='flex-grow space-y-1'>
-                                <p className="font-semibold">{session.productName} <span className="text-sm text-muted-foreground">({session.serialNumber || 'N/A'})</span></p>
+                                <p className="font-semibold">{session.vesselTypeName} <span className="text-sm text-muted-foreground">({session.serialNumber || 'N/A'})</span></p>
                                 <p className="text-sm text-muted-foreground">
                                     {new Date(session.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short'})} - {session.status}
                                 </p>
@@ -1482,7 +1482,7 @@ export default function AdminPage() {
                                             <AlertDialogHeader>
                                                 <AlertDialogTitle className="text-destructive">Permanently Delete Session?</AlertDialogTitle>
                                                 <AlertDialogDescription>
-                                                    This will permanently delete the session for "{session.productName}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
+                                                    This will permanently delete the session for "{session.vesselTypeName}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
                                                 </AlertDialogDescription>
                                             </AlertDialogHeader>
                                             <AlertDialogFooter>
@@ -1611,26 +1611,26 @@ export default function AdminPage() {
     );
   };
   
-    const renderProductManagement = () => (
+    const renderVesselTypeManagement = () => (
     <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
       <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
         <AccordionItem value="item-1">
           <AccordionTrigger className="p-6">
             <div className="text-left">
-              <CardTitle>Product Management</CardTitle>
-              <CardDescription>Add, view, and remove your products.</CardDescription>
+              <CardTitle>Vessel Type Management</CardTitle>
+              <CardDescription>Add, view, and remove your vessel types.</CardDescription>
             </div>
           </AccordionTrigger>
           <AccordionContent className="p-6 pt-0">
             <div className="space-y-4">
                 <div className="flex gap-2">
                     <Input
-                        placeholder="New product name..."
-                        value={newProductName}
-                        onChange={(e) => setNewProductName(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && newProductName.trim() && handleAddProduct()}
+                        placeholder="New vessel type name..."
+                        value={newVesselTypeName}
+                        onChange={(e) => setNewVesselTypeName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && newVesselTypeName.trim() && handleAddVesselType()}
                     />
-                    <Button onClick={handleAddProduct} disabled={!newProductName.trim()}>
+                    <Button onClick={handleAddVesselType} disabled={!newVesselTypeName.trim()}>
                         <PackagePlus className="h-4 w-4 mr-2" />
                         Add
                     </Button>
@@ -1639,15 +1639,15 @@ export default function AdminPage() {
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>Product Name</TableHead>
+                                <TableHead>Vessel Type Name</TableHead>
                                 <TableHead className="text-right">Action</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {isProductsLoading ? (
-                                <TableRow><TableCell colSpan={2} className="text-center">Loading products...</TableCell></TableRow>
-                            ) : products && products.length > 0 ? (
-                                products.map(p => (
+                            {isVesselTypesLoading ? (
+                                <TableRow><TableCell colSpan={2} className="text-center">Loading vessel types...</TableCell></TableRow>
+                            ) : vesselTypes && vesselTypes.length > 0 ? (
+                                vesselTypes.map(p => (
                                     <TableRow key={p.id}>
                                         <TableCell className="truncate max-w-[200px] font-medium">{p.name}</TableCell>
                                         <TableCell className="text-right">
@@ -1659,14 +1659,14 @@ export default function AdminPage() {
                                                 </AlertDialogTrigger>
                                                 <AlertDialogContent>
                                                     <AlertDialogHeader>
-                                                        <AlertDialogTitle>Delete Product?</AlertDialogTitle>
+                                                        <AlertDialogTitle>Delete Vessel Type?</AlertDialogTitle>
                                                         <AlertDialogDescription>
-                                                            Are you sure you want to delete "{p.name}"? This cannot be undone. Associated test sessions will not be deleted but will reference a missing product.
+                                                            Are you sure you want to delete "{p.name}"? This cannot be undone. Associated test sessions will not be deleted but will reference a missing vessel type.
                                                         </AlertDialogDescription>
                                                     </AlertDialogHeader>
                                                     <AlertDialogFooter>
                                                         <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                        <AlertDialogAction variant="destructive" onClick={() => handleDeleteProduct(p.id)}>Confirm Delete</AlertDialogAction>
+                                                        <AlertDialogAction variant="destructive" onClick={() => handleDeleteVesselType(p.id)}>Confirm Delete</AlertDialogAction>
                                                     </AlertDialogFooter>
                                                 </AlertDialogContent>
                                             </AlertDialog>
@@ -1674,7 +1674,7 @@ export default function AdminPage() {
                                     </TableRow>
                                 ))
                             ) : (
-                                <TableRow><TableCell colSpan={2} className="text-center text-muted-foreground">No products found.</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={2} className="text-center text-muted-foreground">No vessel types found.</TableCell></TableRow>
                             )}
                         </TableBody>
                     </Table>
@@ -1781,7 +1781,7 @@ export default function AdminPage() {
                                 }}
                              />
                              <label htmlFor={d.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                 {d.productName} ({d.classification}) - <span className="text-xs text-muted-foreground">{new Date(d.startTime).toLocaleDateString()}</span>
+                                 {d.vesselTypeName} ({d.classification}) - <span className="text-xs text-muted-foreground">{new Date(d.startTime).toLocaleDateString()}</span>
                              </label>
                          </div>
                      ))}
@@ -1889,7 +1889,7 @@ export default function AdminPage() {
                 </div>
             </div>
             <CardDescription>
-              Manage products, sensor configurations, and test sessions.
+              Manage vessel types, sensor configurations, and test sessions.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -2018,7 +2018,7 @@ export default function AdminPage() {
                       </AccordionItem>
                   </Accordion>
               </Card>
-               {renderProductManagement()}
+               {renderVesselTypeManagement()}
           </div>
           <div className="lg:col-span-2 space-y-6">
               {renderTestSessionManager()}
