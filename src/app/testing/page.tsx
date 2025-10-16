@@ -1533,7 +1533,7 @@ function TestingComponent() {
           </Card>
         </div>
 
-        <div className="w-full lg:col-span-3">
+        <div className="lg:col-span-3">
             <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
             <CardHeader>
                 <div className="flex justify-between items-center flex-wrap gap-4">
@@ -1677,7 +1677,7 @@ function TestingComponent() {
             </Card>
         </div>
 
-        <div className="w-full lg:col-span-3">
+        <div className="lg:col-span-3">
             <Card>
                 <CardHeader>
                     <CardTitle>Data Log</CardTitle>
