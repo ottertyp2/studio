@@ -1296,7 +1296,7 @@ export default function AdminPage() {
                             <div className='flex-grow space-y-1'>
                                 <p className="font-semibold">{session.vesselTypeName} <span className="text-sm text-muted-foreground">({session.serialNumber || 'N/A'})</span></p>
                                 <p className="text-sm text-muted-foreground">
-                                    {new Date(session.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short'})} - {session.status}
+                                    {new Date(session.startTime).toLocaleString()} - {session.status}
                                 </p>
                                 <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
                                   <User className="h-3 w-3" />
@@ -1923,5 +1923,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-    

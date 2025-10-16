@@ -954,16 +954,13 @@ function TestingComponent() {
 
 
   const handleWheel = useCallback((event: WheelEvent) => {
-    console.log(`handleWheel triggered. liveUpdateEnabled: ${liveUpdateEnabled}, isLiveSessionActive: ${isLiveSessionActive}`);
     if (liveUpdateEnabled) {
-        console.log("Wheel event blocked: live updates enabled.");
         return;
     };
     event.preventDefault();
 
     setZoomDomain(prevDomain => {
         const dataToUse = frozenDataRef.current || [];
-        console.log("Using frozen data with length:", dataToUse.length);
         const chronologicalData = isLiveSessionActive ? [...dataToUse].reverse() : dataToUse;
 
         const processData = (data: SensorData[]) => {
@@ -1045,15 +1042,12 @@ function TestingComponent() {
   }, [handleWheel]);
 
   useEffect(() => {
-    console.log("liveUpdateEnabled changed to:", liveUpdateEnabled, "isLiveSessionActive:", isLiveSessionActive);
     if (liveUpdateEnabled) {
       setZoomDomain(null);
       frozenDataRef.current = undefined;
-      console.log("Zoom reset, frozenDataRef cleared.");
     } else {
       if (isLiveSessionActive && (!frozenDataRef.current || frozenDataRef.current.length === 0)) {
         frozenDataRef.current = [...dataLog];
-        console.log("Data frozen with", dataLog.length, "points.");
       }
     }
   }, [liveUpdateEnabled, dataLog, isLiveSessionActive]);
@@ -1300,7 +1294,7 @@ function TestingComponent() {
                 </SelectTrigger>
                 <SelectContent>
                   {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                  testSessions?.filter(s => s.status !== 'RUNNING').map(s => <SelectItem key={s.id} value={s.id}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short'})}</SelectItem>)
+                  testSessions?.filter(s => s.status !== 'RUNNING').map(s => <SelectItem key={s.id} value={s.id}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString()}</SelectItem>)
                   }
                 </SelectContent>
             </Select>
@@ -1448,100 +1442,99 @@ function TestingComponent() {
 
       <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Top Section: Controls and Live Value */}
-        <div className="lg:col-span-2">
-          <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-            <CardContent className="p-4">
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-3 bg-muted/80">
-                  <TabsTrigger value="live">Live Control</TabsTrigger>
-                  <TabsTrigger value="file">File Operations</TabsTrigger>
-                  <TabsTrigger value="analysis">Analyze &amp; Edit</TabsTrigger>
-                </TabsList>
-                <TabsContent value="live" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
-                <TabsContent value="file" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
-                <TabsContent value="analysis" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderAnalysisTab()}</TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </div>
+        <div className="lg:col-span-3 grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+              <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+                <CardContent className="p-4">
+                  <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                    <TabsList className="grid w-full grid-cols-3 bg-muted/80">
+                      <TabsTrigger value="live">Live Control</TabsTrigger>
+                      <TabsTrigger value="file">File Operations</TabsTrigger>
+                      <TabsTrigger value="analysis">Analyze &amp; Edit</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="live" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
+                    <TabsContent value="file" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
+                    <TabsContent value="analysis" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderAnalysisTab()}</TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+            </div>
 
-        <div className="lg:col-span-1 space-y-6">
-          {runningTestSession && (
-            <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg'>
-              <CardHeader className='p-2'>
-                  <CardTitle>Session in Progress</CardTitle>
-              </CardHeader>
-              <CardContent className='p-2'>
-                  <div className="flex justify-between items-center">
-                      <div>
-                          <p className="font-semibold">{runningTestSession.vesselTypeName}</p>
-                          <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })} - {runningTestSession.status}</p>
-                          <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.classification ? `(${runningTestSession.classification})` : ''}</p>
+            <div className="lg:col-span-1 space-y-6">
+              {runningTestSession && (
+                <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg'>
+                  <CardHeader className='p-2'>
+                      <CardTitle>Session in Progress</CardTitle>
+                  </CardHeader>
+                  <CardContent className='p-2'>
+                      <div className="flex justify-between items-center">
+                          <div>
+                              <p className="font-semibold">{runningTestSession.vesselTypeName}</p>
+                              <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString()}</p>
+                              <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.classification ? `(${runningTestSession.classification})` : ''}</p>
+                          </div>
+                          <div className="flex gap-2">
+                              <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
+                          </div>
                       </div>
-                      <div className="flex gap-2">
-                          <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
-                      </div>
-                  </div>
-              </CardContent>
-            </Card>
-          )}
-          <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-            <CardHeader>
-              <CardTitle className="text-lg">Current Value</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col items-center">
-              <div className="text-center">
-                <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                  {displayValue !== null ? displayValue.toFixed(displayDecimals) : 'N/A'}
-                </p>
-                <p className="text-lg text-muted-foreground">{displayValue !== null ? sensorConfig?.unit : ''}</p>
-                <div className="mt-2 text-xs text-muted-foreground space-y-1">
-                    <p>
-                        Sensor: <span className="font-semibold text-foreground">{sensorConfig?.name ?? 'N/A'}</span>
+                  </CardContent>
+                </Card>
+              )}
+              <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+                <CardHeader>
+                  <CardTitle className="text-lg">Current Value</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col items-center">
+                  <div className="text-center">
+                    <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
+                      {displayValue !== null ? displayValue.toFixed(displayDecimals) : 'N/A'}
                     </p>
-                    {runningTestSession && (
+                    <p className="text-lg text-muted-foreground">{displayValue !== null ? sensorConfig?.unit : ''}</p>
+                    <div className="mt-2 text-xs text-muted-foreground space-y-1">
                         <p>
-                            Source: <span className="font-semibold text-foreground">
-                                {runningTestSession.measurementType === 'DEMO' ? 'Virtual Sensor' : 'Live Sensor'}
-                            </span>
+                            Sensor: <span className="font-semibold text-foreground">{sensorConfig?.name ?? 'N/A'}</span>
                         </p>
-                    )}
-                </div>
+                        {runningTestSession && (
+                            <p>
+                                Source: <span className="font-semibold text-foreground">
+                                    {runningTestSession.measurementType === 'DEMO' ? 'Virtual Sensor' : 'Live Sensor'}
+                                </span>
+                            </p>
+                        )}
+                    </div>
 
-                  {(isLiveSessionActive) && (
-                  <div className="text-xs text-green-600 mt-1 flex items-center justify-center gap-1">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
-                    </span>
-                    <span>Live</span>
+                      {(isLiveSessionActive) && (
+                      <div className="text-xs text-green-600 mt-1 flex items-center justify-center gap-1">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
+                        </span>
+                        <span>Live</span>
+                      </div>
+                    )}
+                    {dataSourceStatus && <p className="text-xs text-muted-foreground mt-1">{dataSourceStatus}</p>}
                   </div>
-                )}
-                {dataSourceStatus && <p className="text-xs text-muted-foreground mt-1">{dataSourceStatus}</p>}
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-            <CardHeader>
-              <CardTitle className="text-xl">Settings</CardTitle>
-              <CardDescription>
-                Configure sensors and devices on the management page.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button
-                onClick={() => router.push('/admin')}
-                className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
-              >
-                <Cog className="mr-2 h-4 w-4" /> Go to Management
-              </Button>
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+              <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+                <CardHeader>
+                  <CardTitle className="text-xl">Settings</CardTitle>
+                  <CardDescription>
+                    Configure sensors and devices on the management page.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button
+                    onClick={() => router.push('/admin')}
+                    className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
+                  >
+                    <Cog className="mr-2 h-4 w-4" /> Go to Management
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
         </div>
 
-
-        {/* Data Visualization and Log */}
         <div className="w-full lg:col-span-3">
             <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
             <CardHeader>
@@ -1582,7 +1575,7 @@ function TestingComponent() {
                             </SelectTrigger>
                             <SelectContent>
                                 {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                                testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short'})}</SelectItem>)}
+                                testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString()}</SelectItem>)}
                             </SelectContent>
                         </Select>
                     </div>
@@ -1625,7 +1618,7 @@ function TestingComponent() {
                             return (
                                 <div key={id} className="flex items-center gap-2 bg-muted text-muted-foreground px-2 py-1 rounded-md text-xs">
                                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }}></div>
-                                    <span>{session?.vesselTypeName || id} - {session ? new Date(session.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short'}) : ''}</span>
+                                    <span>{session?.vesselTypeName || id} - {session ? new Date(session.startTime).toLocaleString() : ''}</span>
                                     <button onClick={() => setSelectedSessionIds(prev => prev.filter(sid => sid !== id))} className="text-muted-foreground hover:text-foreground">
                                         <XIcon className="h-3 w-3" />
                                     </button>
