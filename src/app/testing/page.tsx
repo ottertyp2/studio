@@ -1444,28 +1444,27 @@ function TestingComponent() {
         </Card>
       </header>
 
-      <main className="w-full max-w-7xl mx-auto grid grid-cols-1 gap-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
+      <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
             <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-              <CardContent className="p-4">
+            <CardContent className="p-4">
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                  <TabsList className="grid w-full grid-cols-3 bg-muted/80">
+                <TabsList className="grid w-full grid-cols-3 bg-muted/80">
                     <TabsTrigger value="live">Live Control</TabsTrigger>
                     <TabsTrigger value="file">File Operations</TabsTrigger>
                     <TabsTrigger value="analysis">Analyze &amp; Edit</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="live" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
-                  <TabsContent value="file" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
-                  <TabsContent value="analysis" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderAnalysisTab()}</TabsContent>
+                </TabsList>
+                <TabsContent value="live" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
+                <TabsContent value="file" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
+                <TabsContent value="analysis" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderAnalysisTab()}</TabsContent>
                 </Tabs>
-              </CardContent>
+            </CardContent>
             </Card>
-          </div>
+        </div>
             
-          <div className="lg:col-span-1 space-y-6">
+        <div className="lg:col-span-1 space-y-6">
             {runningTestSession && (
-              <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg'>
+            <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg'>
                 <CardHeader className='p-2'>
                     <CardTitle>Session in Progress</CardTitle>
                 </CardHeader>
@@ -1481,9 +1480,9 @@ function TestingComponent() {
                         </div>
                     </div>
                 </CardContent>
-              </Card>
+            </Card>
             )}
-            <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+            <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
                 <CardHeader>
                 <CardTitle className="text-lg">Current Value</CardTitle>
                 </CardHeader>
@@ -1535,7 +1534,6 @@ function TestingComponent() {
                 </Button>
                 </CardContent>
             </Card>
-          </div>
         </div>
 
         <div className="lg:col-span-3">
