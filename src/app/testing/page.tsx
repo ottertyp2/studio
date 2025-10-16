@@ -1444,9 +1444,9 @@ function TestingComponent() {
              </CardContent>
            </Card>
         </div>
-        <div className="lg:col-span-1 grid grid-rows-1 md:grid-rows-2 gap-6">
+        <div className="lg:col-span-1 space-y-6">
           {runningTestSession && (
-            <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg row-span-1 h-full'>
+            <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg'>
                 <CardHeader className='p-2'>
                     <CardTitle>Session in Progress</CardTitle>
                 </CardHeader>
