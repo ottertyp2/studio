@@ -1046,7 +1046,7 @@ const disconnectSerial = useCallback(async () => {
   
     let mappedData = processData(visibleData);
   
-    if (isLiveSessionActive && chartInterval !== 'all') {
+    if (isLiveSessionActive && chartInterval !== 'all' && liveUpdateEnabled) {
       const intervalSeconds = parseInt(chartInterval, 10);
       if (mappedData.length > 0) {
         const maxTime = mappedData[mappedData.length - 1].name;
@@ -1086,7 +1086,7 @@ const disconnectSerial = useCallback(async () => {
 
 
   const handleWheel = useCallback((event: WheelEvent) => {
-    console.log("handleWheel triggered. liveUpdateEnabled:", liveUpdateEnabled);
+    console.log("handleWheel triggered. liveUpdateEnabled:", liveUpdateEnabled, "isLiveSessionActive:", isLiveSessionActive);
     if (liveUpdateEnabled) {
       console.log("Zoom blocked because liveUpdateEnabled is true.");
       return;
@@ -1183,7 +1183,7 @@ const disconnectSerial = useCallback(async () => {
       frozenDataRef.current = undefined;
       console.log("Zoom reset, frozenDataRef cleared.");
     } else {
-      if (!frozenDataRef.current || frozenDataRef.current.length === 0) {
+      if (isLiveSessionActive && (!frozenDataRef.current || frozenDataRef.current.length === 0)) {
         frozenDataRef.current = dataLog;
         console.log("Data frozen with", dataLog.length, "points.");
       }
@@ -1589,7 +1589,7 @@ const disconnectSerial = useCallback(async () => {
                     <div className="flex justify-between items-center">
                         <div>
                             <p className="font-semibold">{runningTestSession.productName}</p>
-                            <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US')} - {runningTestSession.status}</p>
+                            <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })} - {runningTestSession.status}</p>
                             <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.classification ? `(${runningTestSession.classification})` : ''}</p>
                         </div>
                         <div className="flex gap-2">
@@ -1698,7 +1698,7 @@ const disconnectSerial = useCallback(async () => {
                         </SelectTrigger>
                         <SelectContent>
                             {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productName} - {new Date(s.startTime).toLocaleString('en-US', { timeStyle: 'short' })} ({s.status})</SelectItem>)}
+                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.productName} - {new Date(s.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })} ({s.status})</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
