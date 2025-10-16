@@ -72,6 +72,7 @@ import { collection, writeBatch, getDocs, query, doc, where, CollectionReference
 import { signOut } from '@/firebase/non-blocking-login';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { convertRawValue } from '@/lib/utils';
+import { useTestBench } from '@/context/TestBenchContext';
 
 
 type SensorData = {
@@ -153,10 +154,21 @@ function TestingComponent() {
   const { user, userRole, isUserLoading } = useUser();
   const { firestore, auth } = useFirebase();
 
+  const {
+    isConnected,
+    handleConnect,
+    localDataLog,
+    setLocalDataLog,
+    currentValue,
+    lastDataPointTimestamp,
+    handleNewDataPoint,
+    baudRate,
+    setBaudRate,
+  } = useTestBench();
+
   const preselectedSessionId = searchParams.get('sessionId');
 
   const [activeTab, setActiveTab] = useState('live');
-  const [localDataLog, setLocalDataLog] = useState<SensorData[]>([]);
   
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
@@ -168,12 +180,6 @@ function TestingComponent() {
 
   const [chartInterval, setChartInterval] = useState<string>("60");
   
-  const [isConnected, setIsConnected] = useState(false);
-  const [baudRate, setBaudRate] = useState<number>(9600);
-  
-  const portRef = useRef<any>(null);
-  const readerRef = useRef<any>(null);
-  const readableStreamClosedRef = useRef<Promise<void> | null>(null);
   const runningTestSessionRef = useRef<TestSession | null>(null);
   const instanceId = useRef(crypto.randomUUID()).current;
 
@@ -200,9 +206,6 @@ function TestingComponent() {
   const frozenDataRef = useRef<SensorData[]>();
   
   const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
-
-  const [currentValue, setCurrentValue] = useState<number | null>(null);
-  const [lastDataPointTimestamp, setLastDataPointTimestamp] = useState<number | null>(null);
 
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
@@ -341,49 +344,6 @@ function TestingComponent() {
       toast({ title: 'Test Session Ended' });
   }, [firestore, stopDemoMode, testSessions, toast]);
   
-  const runningArduinoSession = useMemo(() => {
-    return testSessions?.find(s => s.status === 'RUNNING' && s.measurementType === 'ARDUINO');
-  }, [testSessions]);
-
-const disconnectSerial = useCallback(async () => {
-    stopDemoMode();
-
-    if (runningArduinoSession) {
-        await handleStopTestSession(runningArduinoSession.id);
-    }
-
-    if (readerRef.current) {
-        try {
-            await readerRef.current.cancel();
-        } catch (error) {
-            console.warn("Serial reader cancel error:", error);
-        }
-    }
-    
-    if (readableStreamClosedRef.current) {
-        try {
-            await readableStreamClosedRef.current.catch(() => {}); // Catch any error
-        } catch(e) {
-            console.warn("Error awaiting stream close promise:", e);
-        }
-    }
-    
-    if (portRef.current) {
-        try {
-            await portRef.current.close();
-        } catch (e) {
-            console.warn("Error closing serial port:", e);
-        }
-    }
-
-    portRef.current = null;
-    readerRef.current = null;
-    readableStreamClosedRef.current = null;
-    setIsConnected(false);
-    setLocalDataLog([]);
-    toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
-    window.location.reload();
-}, [handleStopTestSession, toast, runningArduinoSession, stopDemoMode]);
 
   useEffect(() => {
     if (runningTestSession && !selectedSessionIds.includes(runningTestSession.id)) {
@@ -449,46 +409,23 @@ const disconnectSerial = useCallback(async () => {
 
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
   
-  const handleNewDataPoint = useCallback((newDataPoint: Omit<SensorData, 'testBenchId'>) => {
-    if (!activeTestBenchId) return;
-    const pointWithValue = { ...newDataPoint, testBenchId: activeTestBenchId };
-    setLocalDataLog(prevLog => [ pointWithValue, ...prevLog].slice(0, 1000));
-    setCurrentValue(pointWithValue.value);
-    setLastDataPointTimestamp(Date.now());
-    
+  useEffect(() => {
     const currentRunningSession = runningTestSessionRef.current;
-
-    if (firestore && currentRunningSession && activeSensorConfigId && activeTestBenchId) {
-        if (currentRunningSession.sensorConfigurationId === activeSensorConfigId) {
-            const dataToSave: SensorData = { 
-              ...newDataPoint,
+    if (firestore && currentRunningSession && activeSensorConfigId && activeTestBenchId && localDataLog.length > 0) {
+      const pointToSave = localDataLog[0];
+      if (currentRunningSession.sensorConfigurationId === activeSensorConfigId) {
+          const dataToSave: SensorData = {
+              ...pointToSave,
               testSessionId: currentRunningSession.id,
               testBenchId: activeTestBenchId,
-            };
-            const docRef = doc(collection(firestore, `sensor_configurations/${activeSensorConfigId}/sensor_data`));
-            setDocumentNonBlocking(docRef, dataToSave, {});
-        }
+          };
+          const docRef = doc(collection(firestore, `sensor_configurations/${activeSensorConfigId}/sensor_data`));
+          setDocumentNonBlocking(docRef, dataToSave, {});
+      }
     }
-  }, [firestore, activeSensorConfigId, activeTestBenchId]);
-
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout | null = null;
-    if (lastDataPointTimestamp) {
-        timeoutId = setTimeout(() => {
-            if (Date.now() - lastDataPointTimestamp >= 1000) {
-                setCurrentValue(null);
-            }
-        }, 1000);
-    }
-    return () => {
-        if (timeoutId) {
-            clearTimeout(timeoutId);
-        }
-    };
-  }, [lastDataPointTimestamp]);
+  }, [localDataLog, firestore, activeSensorConfigId, activeTestBenchId]);
 
   const isLiveSessionActive = useMemo(() => !!runningTestSession || isConnected, [runningTestSession, isConnected]);
-
 
   const dataLog = useMemo(() => {
     if (isLiveSessionActive) {
@@ -503,83 +440,6 @@ const disconnectSerial = useCallback(async () => {
     return [];
   }, [cloudDataLog, isCloudDataLoading, localDataLog, isLiveSessionActive]);
   
-  const handleConnect = useCallback(async () => {
-    if (isConnected) {
-      await disconnectSerial();
-      return;
-    }
-
-    if (!('serial' in navigator)) {
-        toast({ variant: 'destructive', title: 'Unsupported Browser', description: 'Web Serial API is not supported here.' });
-        return;
-    }
-
-    if (portRef.current) {
-        try {
-            await portRef.current.close();
-        } catch (e) {
-            /* Ignore */
-        }
-        portRef.current = null;
-    }
-
-    try {
-        const port = await (navigator.serial as any).requestPort();
-        portRef.current = port;
-        await port.open({ baudRate });
-        setIsConnected(true);
-        setLocalDataLog([]);
-        toast({ title: 'Connected', description: 'Device connected. Ready to start measurement.' });
-        
-        while (port.readable && portRef.current === port) {
-            const textDecoder = new TextDecoderStream();
-            readableStreamClosedRef.current = port.readable.pipeTo(textDecoder.writable);
-            const streamReader = textDecoder.readable.getReader();
-            readerRef.current = streamReader;
-
-            try {
-                let partialLine = '';
-                while (true) {
-                    const { value, done } = await streamReader.read();
-                    if (done) {
-                        break;
-                    }
-                    
-                    partialLine += value;
-                    let lines = partialLine.split('\n');
-                    partialLine = lines.pop() || '';
-
-                    lines.forEach(line => {
-                        const trimmedLine = line.trim();
-                        if (trimmedLine === '') return;
-                        const sensorValue = parseInt(trimmedLine, 10);
-                        if (!isNaN(sensorValue)) {
-                            handleNewDataPoint({
-                                timestamp: new Date().toISOString(),
-                                value: sensorValue
-                            });
-                        }
-                    });
-                }
-            } catch(e) {
-                if ((e as Error).name !== 'AbortError') {
-                    console.error("Serial read error:", e);
-                    if (portRef.current && portRef.current.readable) {
-                        toast({ variant: 'destructive', title: 'Connection Lost', description: 'The device may have been unplugged.' });
-                    }
-                }
-            } finally {
-                streamReader.releaseLock();
-            }
-        }
-
-    } catch (error) {
-        if ((error as Error).name !== 'NotFoundError') {
-            toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish connection.' });
-        }
-    }
-  }, [disconnectSerial, toast, baudRate, isConnected, handleNewDataPoint]);
-
   const handleStartNewTestSession = async (options: { measurementType: 'DEMO' | 'ARDUINO', demoType?: 'LEAK' | 'DIFFUSION' }) => {
     const currentUser = users?.find(u => u.id === user?.uid);
 
@@ -1093,13 +953,10 @@ const disconnectSerial = useCallback(async () => {
 
 
   const handleWheel = useCallback((event: WheelEvent) => {
-    console.log("handleWheel triggered. liveUpdateEnabled:", liveUpdateEnabled, "isLiveSessionActive:", isLiveSessionActive);
     if (liveUpdateEnabled) {
-      console.log("Zoom blocked because liveUpdateEnabled is true.");
       return;
     };
     event.preventDefault();
-    console.log("Zoom not blocked. Proceeding with zoom logic.");
 
     setZoomDomain(prevDomain => {
         const dataToUse = frozenDataRef.current || [];
