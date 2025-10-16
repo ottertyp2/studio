@@ -164,8 +164,6 @@ export default function AdminPage() {
 
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
   const [tempSensorConfig, setTempSensorConfig] = useState<Partial<SensorConfig> | null>(null);
-  const [activeTestSessionId, setActiveTestSessionId] = useState<string | null>(null);
-  const [tempTestSession, setTempTestSession] = useState<Partial<TestSession> | null>(null);
   const [sessionDataCounts, setSessionDataCounts] = useState<Record<string, number>>({});
   
   // ML State
@@ -478,70 +476,10 @@ export default function AdminPage() {
     }
   };
   
-  const handleTestSessionFieldChange = (field: keyof TestSession, value: any) => {
-    if (!tempTestSession) return;
-    setTempTestSession(prev => ({...prev, [field]: value}));
-  };
-
-  const handleStartNewTestSession = async () => {
-    const currentUser = users?.find(u => u.id === user?.uid);
-    if (!tempTestSession || !tempTestSession.vesselTypeId || !activeSensorConfigId || !testSessionsCollectionRef || !vesselTypes || !currentUser) {
-        toast({variant: 'destructive', title: 'Error', description: 'Please select a vessel type and a sensor, and ensure you are logged in.'});
-        return;
-    }
-
-    if (testSessions?.find(s => s.status === 'RUNNING')) {
-        toast({variant: 'destructive', title: 'Error', description: 'A test session is already running.'});
-        return;
-    }
-    
-    const activeConfig = sensorConfigs?.find(c => c.id === activeSensorConfigId);
-    if (!activeConfig) {
-        toast({variant: 'destructive', title: 'Error', description: 'Active sensor configuration not found.'});
-        return;
-    }
-
-    if (tempTestSession.classification && !['LEAK', 'DIFFUSION'].includes(tempTestSession.classification)) {
-      toast({ variant:'destructive', title:'Error', description:'Please select a simulation type.' });
-      return;
-    }
-
-    const selectedVesselType = vesselTypes.find(p => p.id === tempTestSession.vesselTypeId);
-    if (!selectedVesselType) {
-        toast({variant: 'destructive', title: 'Error', description: 'Selected vessel type not found.'});
-        return;
-    }
-
-    const newSessionId = doc(collection(firestore!, '_')).id;
-    const newSession: TestSession = {
-      id: newSessionId,
-      vesselTypeId: selectedVesselType.id,
-      vesselTypeName: selectedVesselType.name,
-      serialNumber: tempTestSession.serialNumber || '',
-      description: tempTestSession.description || `Admin Demo - ${tempTestSession.classification}`,
-      startTime: new Date().toISOString(),
-      status: 'RUNNING',
-      testBenchId: activeConfig.testBenchId,
-      sensorConfigurationId: activeSensorConfigId,
-      measurementType: 'DEMO',
-      classification: tempTestSession.classification,
-      userId: currentUser.id,
-      username: currentUser.username,
-    };
-    
-    await setDoc(doc(testSessionsCollectionRef, newSessionId), newSession);
-    setActiveTestSessionId(newSessionId);
-    setTempTestSession(null);
-    toast({ title: 'New Test Session Started', description: `Vessel Type: ${newSession.vesselTypeName}`});
-  };
-
   const handleStopTestSession = (sessionId: string) => {
       if (!firestore) return;
       const sessionRef = doc(firestore, 'test_sessions', sessionId);
       updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
-      if (activeTestSessionId === sessionId) {
-          setActiveTestSessionId(null);
-      }
       toast({title: 'Test Session Ended'});
   };
   
@@ -1214,59 +1152,6 @@ export default function AdminPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {!tempTestSession && !runningSession && (
-            <div className="flex justify-center mb-6">
-              <Button onClick={() => setTempTestSession({})} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={!activeSensorConfigId || !vesselTypes || vesselTypes.length === 0}>
-                Start New Demo Session
-              </Button>
-            </div>
-          )}
-
-          {tempTestSession && !runningSession && (
-            <div className="space-y-4 p-4 mb-6 border rounded-lg bg-background/50">
-              <h3 className="text-lg font-semibold text-center mb-4">New Demo Session</h3>
-              <div className="space-y-2">
-                <Label htmlFor="vesselTypeIdentifier">Vessel Type</Label>
-                <Select onValueChange={value => handleTestSessionFieldChange('vesselTypeId', value)}>
-                    <SelectTrigger id="vesselTypeIdentifier">
-                        <SelectValue placeholder="Select a vessel type to test" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {isVesselTypesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                        vesselTypes?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
-                        }
-                    </SelectContent>
-                </Select>
-              </div>
-               <div className="space-y-2">
-                <Label htmlFor="demoType">Simulation Type</Label>
-                <Select onValueChange={value => handleTestSessionFieldChange('classification', value as 'LEAK' | 'DIFFUSION')}>
-                    <SelectTrigger id="demoType">
-                        <SelectValue placeholder="Select simulation type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="LEAK">Leak Simulation</SelectItem>
-                        <SelectItem value="DIFFUSION">Diffusion Simulation</SelectItem>
-                    </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-1 gap-4">
-                 <div className="space-y-2">
-                    <Label htmlFor="serialNumber">Serial Number</Label>
-                    <Input id="serialNumber" placeholder="e.g., 187" value={tempTestSession.serialNumber || ''} onChange={e => handleTestSessionFieldChange('serialNumber', e.target.value)} />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Input id="description" placeholder="Internal R&D..." value={tempTestSession.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
-              </div>
-              <div className="flex justify-center gap-4 pt-2">
-                <Button onClick={handleStartNewTestSession} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Start Session</Button>
-                <Button variant="ghost" onClick={() => setTempTestSession(null)}>Cancel</Button>
-              </div>
-            </div>
-          )}
-
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row gap-4">
               <Input
