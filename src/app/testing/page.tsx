@@ -1095,92 +1095,96 @@ function TestingComponent() {
 
 
   const renderNewSessionForm = () => (
-    <div className="mt-4 p-4 border rounded-lg bg-background/50 w-full max-w-lg space-y-4">
-      <h3 className="text-lg font-semibold text-center">Start New Session</h3>
-       <div>
-          <Label htmlFor="new-session-bench">Test Bench</Label>
-          <Select value={tempTestSession.testBenchId || ''} onValueChange={value => handleTestSessionFieldChange('testBenchId', value)}>
-              <SelectTrigger id="new-session-bench">
-                  <SelectValue placeholder="Select a Test Bench" />
-              </SelectTrigger>
-              <SelectContent>
-                  {isTestBenchesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                  testBenches?.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)
-                  }
-              </SelectContent>
-          </Select>
-      </div>
-      <div>
-          <Label htmlFor="new-session-sensor">Sensor Configuration</Label>
-          <Select value={tempTestSession.sensorConfigurationId || ''} onValueChange={value => handleTestSessionFieldChange('sensorConfigurationId', value)} disabled={!tempTestSession.testBenchId}>
-              <SelectTrigger id="new-session-sensor">
-                  <SelectValue placeholder="Select a Sensor" />
-              </SelectTrigger>
-              <SelectContent>
-                  {isSensorConfigsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                  sensorConfigs?.filter(c => c.testBenchId === tempTestSession.testBenchId).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)
-                  }
-              </SelectContent>
-          </Select>
-      </div>
-      <div>
-        <Label htmlFor="vesselTypeIdentifier">Vessel Type</Label>
-        <Select value={tempTestSession?.vesselTypeId || ''} onValueChange={value => handleTestSessionFieldChange('vesselTypeId', value)}>
-            <SelectTrigger id="vesselTypeIdentifier">
-                <SelectValue placeholder="Select a vessel type to test" />
-            </SelectTrigger>
-            <SelectContent>
-                {isVesselTypesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                vesselTypes?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
-                }
-            </SelectContent>
-        </Select>
-      </div>
-      <div>
-          <Label htmlFor="serialNumber">Serial Number</Label>
-          <Input id="serialNumber" placeholder="e.g., 187-A" value={tempTestSession.serialNumber || ''} onChange={e => handleTestSessionFieldChange('serialNumber', e.target.value)} />
-      </div>
-      <div>
-          <Label htmlFor="description">Description</Label>
-          <Input id="description" placeholder="e.g., Initial R&D Test" value={tempTestSession.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
-      </div>
+    <Card className="mt-4 bg-white/80 backdrop-blur-sm shadow-lg w-full max-w-lg">
+        <CardHeader>
+            <CardTitle className="text-lg font-semibold text-center">Start New Session</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+            <div>
+              <Label htmlFor="new-session-bench">Test Bench</Label>
+              <Select value={tempTestSession.testBenchId || ''} onValueChange={value => handleTestSessionFieldChange('testBenchId', value)}>
+                  <SelectTrigger id="new-session-bench">
+                      <SelectValue placeholder="Select a Test Bench" />
+                  </SelectTrigger>
+                  <SelectContent>
+                      {isTestBenchesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                      testBenches?.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)
+                      }
+                  </SelectContent>
+              </Select>
+          </div>
+          <div>
+              <Label htmlFor="new-session-sensor">Sensor Configuration</Label>
+              <Select value={tempTestSession.sensorConfigurationId || ''} onValueChange={value => handleTestSessionFieldChange('sensorConfigurationId', value)} disabled={!tempTestSession.testBenchId}>
+                  <SelectTrigger id="new-session-sensor">
+                      <SelectValue placeholder="Select a Sensor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                      {isSensorConfigsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                      sensorConfigs?.filter(c => c.testBenchId === tempTestSession.testBenchId).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)
+                      }
+                  </SelectContent>
+              </Select>
+          </div>
+          <div>
+            <Label htmlFor="vesselTypeIdentifier">Vessel Type</Label>
+            <Select value={tempTestSession?.vesselTypeId || ''} onValueChange={value => handleTestSessionFieldChange('vesselTypeId', value)}>
+                <SelectTrigger id="vesselTypeIdentifier">
+                    <SelectValue placeholder="Select a vessel type to test" />
+                </SelectTrigger>
+                <SelectContent>
+                    {isVesselTypesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                    vesselTypes?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
+                    }
+                </SelectContent>
+            </Select>
+          </div>
+          <div>
+              <Label htmlFor="serialNumber">Serial Number</Label>
+              <Input id="serialNumber" placeholder="e.g., 187-A" value={tempTestSession.serialNumber || ''} onChange={e => handleTestSessionFieldChange('serialNumber', e.target.value)} />
+          </div>
+          <div>
+              <Label htmlFor="description">Description</Label>
+              <Input id="description" placeholder="e.g., Initial R&D Test" value={tempTestSession.description || ''} onChange={e => handleTestSessionFieldChange('description', e.target.value)} />
+          </div>
 
-      <div className="flex flex-col gap-2 pt-2">
-        {isConnected ? (
-          <Button 
-              onClick={async () => {
-                await handleStartNewTestSession({ measurementType: 'ARDUINO' })
-              }} 
-              className="w-full btn-shine bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md"
-              disabled={!tempTestSession?.vesselTypeId || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId || !!runningTestSession}
-          >
-              Start Test Bench Session
-          </Button>
-        ) : (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="secondary" className="w-full btn-shine shadow-md" disabled={!!runningTestSession || isConnected || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId}>
-                  Start Demo Session
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Start Demo Simulation</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Choose a scenario to simulate. This will use the vessel type and session details you've entered above.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={async () => await handleStartNewTestSession({ measurementType: 'DEMO', demoType: 'DIFFUSION' })}>Simulate Diffusion</AlertDialogAction>
-                  <AlertDialogAction onClick={async () => await handleStartNewTestSession({ measurementType: 'DEMO', demoType: 'LEAK' })}>Simulate Leak</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-        )}
-      </div>
-       <Button variant="ghost" onClick={() => setShowNewSessionForm(false)}>Cancel</Button>
-    </div>
+          <div className="flex flex-col gap-2 pt-2">
+            {isConnected ? (
+              <Button 
+                  onClick={async () => {
+                    await handleStartNewTestSession({ measurementType: 'ARDUINO' })
+                  }} 
+                  className="w-full btn-shine bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md"
+                  disabled={!tempTestSession?.vesselTypeId || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId || !!runningTestSession}
+              >
+                  Start Test Bench Session
+              </Button>
+            ) : (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="secondary" className="w-full btn-shine shadow-md" disabled={!!runningTestSession || isConnected || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId}>
+                      Start Demo Session
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Start Demo Simulation</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Choose a scenario to simulate. This will use the vessel type and session details you've entered above.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={async () => await handleStartNewTestSession({ measurementType: 'DEMO', demoType: 'DIFFUSION' })}>Simulate Diffusion</AlertDialogAction>
+                      <AlertDialogAction onClick={async () => await handleStartNewTestSession({ measurementType: 'DEMO', demoType: 'LEAK' })}>Simulate Leak</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+            )}
+          </div>
+           <Button variant="ghost" onClick={() => setShowNewSessionForm(false)}>Cancel</Button>
+        </CardContent>
+    </Card>
   );
 
   const renderLiveTab = () => (
@@ -1442,96 +1446,96 @@ function TestingComponent() {
 
       <main className="w-full max-w-7xl mx-auto grid grid-cols-1 gap-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-                <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-                    <CardContent className="p-4">
-                    <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                        <TabsList className="grid w-full grid-cols-3 bg-muted/80">
-                        <TabsTrigger value="live">Live Control</TabsTrigger>
-                        <TabsTrigger value="file">File Operations</TabsTrigger>
-                        <TabsTrigger value="analysis">Analyze &amp; Edit</TabsTrigger>
-                        </TabsList>
-                        <TabsContent value="live" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
-                        <TabsContent value="file" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
-                        <TabsContent value="analysis" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderAnalysisTab()}</TabsContent>
-                    </Tabs>
-                    </CardContent>
-                </Card>
-            </div>
+          <div className="lg:col-span-2">
+            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+              <CardContent className="p-4">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                  <TabsList className="grid w-full grid-cols-3 bg-muted/80">
+                    <TabsTrigger value="live">Live Control</TabsTrigger>
+                    <TabsTrigger value="file">File Operations</TabsTrigger>
+                    <TabsTrigger value="analysis">Analyze &amp; Edit</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="live" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
+                  <TabsContent value="file" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
+                  <TabsContent value="analysis" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderAnalysisTab()}</TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+          </div>
             
-            <div className="lg:col-span-1 space-y-6">
-                {runningTestSession && (
-                    <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg'>
-                        <CardHeader className='p-2'>
-                            <CardTitle>Session in Progress</CardTitle>
-                        </CardHeader>
-                        <CardContent className='p-2'>
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <p className="font-semibold">{runningTestSession.vesselTypeName}</p>
-                                    <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString()}</p>
-                                    <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.classification ? `(${runningTestSession.classification})` : ''}</p>
-                                </div>
-                                <div className="flex gap-2">
-                                    <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
-                <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-                    <CardHeader>
-                    <CardTitle className="text-lg">Current Value</CardTitle>
-                    </CardHeader>
-                    <CardContent className="flex flex-col items-center">
-                    <div className="text-center">
-                        <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                        {displayValue !== null ? displayValue.toFixed(displayDecimals) : 'N/A'}
-                        </p>
-                        <p className="text-lg text-muted-foreground">{displayValue !== null ? sensorConfig?.unit : ''}</p>
-                        <div className="mt-2 text-xs text-muted-foreground space-y-1">
-                            <p>
-                                Sensor: <span className="font-semibold text-foreground">{sensorConfig?.name ?? 'N/A'}</span>
-                            </p>
-                            {runningTestSession && (
-                                <p>
-                                    Source: <span className="font-semibold text-foreground">
-                                        {runningTestSession.measurementType === 'DEMO' ? 'Virtual Sensor' : 'Live Sensor'}
-                                    </span>
-                                </p>
-                            )}
+          <div className="lg:col-span-1 space-y-6">
+            {runningTestSession && (
+              <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg'>
+                <CardHeader className='p-2'>
+                    <CardTitle>Session in Progress</CardTitle>
+                </CardHeader>
+                <CardContent className='p-2'>
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <p className="font-semibold">{runningTestSession.vesselTypeName}</p>
+                            <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString()}</p>
+                            <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.classification ? `(${runningTestSession.classification})` : ''}</p>
                         </div>
-
-                        {(isLiveSessionActive) && (
-                        <div className="text-xs text-green-600 mt-1 flex items-center justify-center gap-1">
-                            <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
-                            </span>
-                            <span>Live</span>
+                        <div className="flex gap-2">
+                            <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
                         </div>
-                        )}
-                        {dataSourceStatus && <p className="text-xs text-muted-foreground mt-1">{dataSourceStatus}</p>}
                     </div>
-                    </CardContent>
-                </Card>
-                <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-                    <CardHeader>
-                    <CardTitle className="text-xl">Settings</CardTitle>
-                    <CardDescription>
-                        Configure sensors and devices on the management page.
-                    </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                    <Button
-                        onClick={() => router.push('/admin')}
-                        className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
-                    >
-                        <Cog className="mr-2 h-4 w-4" /> Go to Management
-                    </Button>
-                    </CardContent>
-                </Card>
-            </div>
+                </CardContent>
+              </Card>
+            )}
+            <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+                <CardHeader>
+                <CardTitle className="text-lg">Current Value</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col items-center">
+                <div className="text-center">
+                    <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
+                    {displayValue !== null ? displayValue.toFixed(displayDecimals) : 'N/A'}
+                    </p>
+                    <p className="text-lg text-muted-foreground">{displayValue !== null ? sensorConfig?.unit : ''}</p>
+                    <div className="mt-2 text-xs text-muted-foreground space-y-1">
+                        <p>
+                            Sensor: <span className="font-semibold text-foreground">{sensorConfig?.name ?? 'N/A'}</span>
+                        </p>
+                        {runningTestSession && (
+                            <p>
+                                Source: <span className="font-semibold text-foreground">
+                                    {runningTestSession.measurementType === 'DEMO' ? 'Virtual Sensor' : 'Live Sensor'}
+                                </span>
+                            </p>
+                        )}
+                    </div>
+
+                    {(isLiveSessionActive) && (
+                    <div className="text-xs text-green-600 mt-1 flex items-center justify-center gap-1">
+                        <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
+                        </span>
+                        <span>Live</span>
+                    </div>
+                    )}
+                    {dataSourceStatus && <p className="text-xs text-muted-foreground mt-1">{dataSourceStatus}</p>}
+                </div>
+                </CardContent>
+            </Card>
+            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+                <CardHeader>
+                <CardTitle className="text-xl">Settings</CardTitle>
+                <CardDescription>
+                    Configure sensors and devices on the management page.
+                </CardDescription>
+                </CardHeader>
+                <CardContent>
+                <Button
+                    onClick={() => router.push('/admin')}
+                    className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
+                >
+                    <Cog className="mr-2 h-4 w-4" /> Go to Management
+                </Button>
+                </CardContent>
+            </Card>
+          </div>
         </div>
 
         <div className="lg:col-span-3">
