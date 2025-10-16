@@ -160,6 +160,7 @@ function TestingComponent() {
     localDataLog,
     setLocalDataLog,
     currentValue,
+    setCurrentValue,
     lastDataPointTimestamp,
     handleNewDataPoint,
     baudRate,
@@ -1055,6 +1056,22 @@ function TestingComponent() {
     }
   }, [liveUpdateEnabled, dataLog, isLiveSessionActive]);
 
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null;
+    if (lastDataPointTimestamp) {
+        timeoutId = setTimeout(() => {
+            if (Date.now() - lastDataPointTimestamp >= 1000) {
+                setCurrentValue(null);
+            }
+        }, 1000);
+    }
+    return () => {
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
+    };
+  }, [lastDataPointTimestamp, setCurrentValue]);
+
   
   const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
   const displayDecimals = sensorConfig?.decimalPlaces ?? 0;
@@ -1428,40 +1445,43 @@ function TestingComponent() {
       </header>
 
       <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-           <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-             <CardContent className="p-4">
-                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                    <TabsList className="grid w-full grid-cols-3 bg-muted/80">
-                        <TabsTrigger value="live">Live Control</TabsTrigger>
-                        <TabsTrigger value="file">File Operations</TabsTrigger>
-                        <TabsTrigger value="analysis">Analyze &amp; Edit</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="live" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
-                    <TabsContent value="file" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
-                    <TabsContent value="analysis" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderAnalysisTab()}</TabsContent>
-                </Tabs>
-             </CardContent>
-           </Card>
+        
+        {/* Main Content: Left and Right columns */}
+        <div className="lg:col-span-2">
+          <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+            <CardContent className="p-4">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-3 bg-muted/80">
+                  <TabsTrigger value="live">Live Control</TabsTrigger>
+                  <TabsTrigger value="file">File Operations</TabsTrigger>
+                  <TabsTrigger value="analysis">Analyze &amp; Edit</TabsTrigger>
+                </TabsList>
+                <TabsContent value="live" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
+                <TabsContent value="file" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
+                <TabsContent value="analysis" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderAnalysisTab()}</TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
         </div>
+
         <div className="lg:col-span-1 space-y-6">
           {runningTestSession && (
             <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg'>
-                <CardHeader className='p-2'>
-                    <CardTitle>Session in Progress</CardTitle>
-                </CardHeader>
-                <CardContent className='p-2'>
-                    <div className="flex justify-between items-center">
-                        <div>
-                            <p className="font-semibold">{runningTestSession.vesselTypeName}</p>
-                            <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })} - {runningTestSession.status}</p>
-                            <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.classification ? `(${runningTestSession.classification})` : ''}</p>
-                        </div>
-                        <div className="flex gap-2">
-                            <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
-                        </div>
-                    </div>
-                </CardContent>
+              <CardHeader className='p-2'>
+                  <CardTitle>Session in Progress</CardTitle>
+              </CardHeader>
+              <CardContent className='p-2'>
+                  <div className="flex justify-between items-center">
+                      <div>
+                          <p className="font-semibold">{runningTestSession.vesselTypeName}</p>
+                          <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })} - {runningTestSession.status}</p>
+                          <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.classification ? `(${runningTestSession.classification})` : ''}</p>
+                      </div>
+                      <div className="flex gap-2">
+                          <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
+                      </div>
+                  </div>
+              </CardContent>
             </Card>
           )}
           <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
@@ -1471,7 +1491,7 @@ function TestingComponent() {
             <CardContent className="flex flex-col items-center">
               <div className="text-center">
                 <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                  {displayValue !== null ? displayValue.toFixed(displayDecimals) : (isLiveSessionActive ? '...' : 'N/A')}
+                  {displayValue !== null ? displayValue.toFixed(displayDecimals) : 'N/A'}
                 </p>
                  <p className="text-lg text-muted-foreground">{displayValue !== null ? sensorConfig?.unit : ''}</p>
                  <div className="mt-2 text-xs text-muted-foreground space-y-1">
@@ -1518,6 +1538,7 @@ function TestingComponent() {
           </Card>
         </div>
 
+        {/* Data Visualization and Log */}
         <Card className="lg:col-span-3 bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
           <CardHeader>
             <div className="flex justify-between items-center flex-wrap gap-4">
