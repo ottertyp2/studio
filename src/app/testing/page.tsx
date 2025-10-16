@@ -195,11 +195,11 @@ function TestingComponent() {
 
   // Pan states for horizontal scroll
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
   
   const frozenDataRef = useRef<SensorData[]>();
   
   const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
 
   const [currentValue, setCurrentValue] = useState<number | null>(null);
   const [lastDataPointTimestamp, setLastDataPointTimestamp] = useState<number | null>(null);
@@ -576,10 +576,6 @@ const disconnectSerial = useCallback(async () => {
     } catch (error) {
         if ((error as Error).name !== 'NotFoundError') {
             toast({ variant: 'destructive', title: 'Connection Failed', description: (error as Error).message || 'Could not establish connection.' });
-        }
-    } finally {
-        if (isConnected) {
-            await disconnectSerial();
         }
     }
   }, [disconnectSerial, toast, baudRate, isConnected, handleNewDataPoint]);
@@ -1427,7 +1423,7 @@ const disconnectSerial = useCallback(async () => {
                 </SelectTrigger>
                 <SelectContent>
                   {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                  testSessions?.filter(s => s.status !== 'RUNNING').map(s => <SelectItem key={s.id} value={s.id}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString('en-US', { timeStyle: 'short', dateStyle: 'short'})}</SelectItem>)
+                  testSessions?.filter(s => s.status !== 'RUNNING').map(s => <SelectItem key={s.id} value={s.id}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString()}</SelectItem>)
                   }
                 </SelectContent>
             </Select>
