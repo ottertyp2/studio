@@ -954,8 +954,8 @@ function TestingComponent() {
 
 
   const handleWheel = useCallback((event: WheelEvent) => {
-    console.log("Wheel event. liveUpdateEnabled:", liveUpdateEnabled, "isLiveSessionActive:", isLiveSessionActive);
     if (liveUpdateEnabled) {
+      console.log("Wheel event blocked: live updates enabled.");
       return;
     };
     event.preventDefault();
@@ -1050,7 +1050,7 @@ function TestingComponent() {
       console.log("Zoom reset, frozenDataRef cleared.");
     } else {
       if (isLiveSessionActive && (!frozenDataRef.current || frozenDataRef.current.length === 0)) {
-        frozenDataRef.current = dataLog;
+        frozenDataRef.current = [...dataLog];
         console.log("Data frozen with", dataLog.length, "points.");
       }
     }
@@ -1444,244 +1444,249 @@ function TestingComponent() {
         </Card>
       </header>
 
-      <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <main className="w-full max-w-7xl mx-auto flex flex-col gap-6">
         
-        {/* Main Content: Left and Right columns */}
-        <div className="lg:col-span-2">
-          <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-            <CardContent className="p-4">
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-3 bg-muted/80">
-                  <TabsTrigger value="live">Live Control</TabsTrigger>
-                  <TabsTrigger value="file">File Operations</TabsTrigger>
-                  <TabsTrigger value="analysis">Analyze &amp; Edit</TabsTrigger>
-                </TabsList>
-                <TabsContent value="live" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
-                <TabsContent value="file" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
-                <TabsContent value="analysis" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderAnalysisTab()}</TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="lg:col-span-1 space-y-6">
-          {runningTestSession && (
-            <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg'>
-              <CardHeader className='p-2'>
-                  <CardTitle>Session in Progress</CardTitle>
-              </CardHeader>
-              <CardContent className='p-2'>
-                  <div className="flex justify-between items-center">
-                      <div>
-                          <p className="font-semibold">{runningTestSession.vesselTypeName}</p>
-                          <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })} - {runningTestSession.status}</p>
-                          <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.classification ? `(${runningTestSession.classification})` : ''}</p>
-                      </div>
-                      <div className="flex gap-2">
-                          <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
-                      </div>
-                  </div>
+        {/* Top Section: Controls and Live Value */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 h-full">
+            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+              <CardContent className="p-4">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                  <TabsList className="grid w-full grid-cols-3 bg-muted/80">
+                    <TabsTrigger value="live">Live Control</TabsTrigger>
+                    <TabsTrigger value="file">File Operations</TabsTrigger>
+                    <TabsTrigger value="analysis">Analyze &amp; Edit</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="live" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
+                  <TabsContent value="file" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
+                  <TabsContent value="analysis" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderAnalysisTab()}</TabsContent>
+                </Tabs>
               </CardContent>
             </Card>
-          )}
-          <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-            <CardHeader>
-              <CardTitle className="text-lg">Current Value</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col items-center">
-              <div className="text-center">
-                <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                  {displayValue !== null ? displayValue.toFixed(displayDecimals) : 'N/A'}
-                </p>
-                 <p className="text-lg text-muted-foreground">{displayValue !== null ? sensorConfig?.unit : ''}</p>
-                 <div className="mt-2 text-xs text-muted-foreground space-y-1">
-                    <p>
-                        Sensor: <span className="font-semibold text-foreground">{sensorConfig?.name ?? 'N/A'}</span>
-                    </p>
-                    {runningTestSession && (
-                        <p>
-                            Source: <span className="font-semibold text-foreground">
-                                {runningTestSession.measurementType === 'DEMO' ? 'Virtual Sensor' : 'Live Sensor'}
-                            </span>
-                        </p>
-                    )}
-                 </div>
+          </div>
 
-                  {(isLiveSessionActive) && (
-                  <div className="text-xs text-green-600 mt-1 flex items-center justify-center gap-1">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
-                    </span>
-                    <span>Live</span>
+          <div className="lg:col-span-1 space-y-6">
+            {runningTestSession && (
+              <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg'>
+                <CardHeader className='p-2'>
+                    <CardTitle>Session in Progress</CardTitle>
+                </CardHeader>
+                <CardContent className='p-2'>
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <p className="font-semibold">{runningTestSession.vesselTypeName}</p>
+                            <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })} - {runningTestSession.status}</p>
+                            <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.classification ? `(${runningTestSession.classification})` : ''}</p>
+                        </div>
+                        <div className="flex gap-2">
+                            <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
+                        </div>
+                    </div>
+                </CardContent>
+              </Card>
+            )}
+            <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+              <CardHeader>
+                <CardTitle className="text-lg">Current Value</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center">
+                <div className="text-center">
+                  <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
+                    {displayValue !== null ? displayValue.toFixed(displayDecimals) : 'N/A'}
+                  </p>
+                  <p className="text-lg text-muted-foreground">{displayValue !== null ? sensorConfig?.unit : ''}</p>
+                  <div className="mt-2 text-xs text-muted-foreground space-y-1">
+                      <p>
+                          Sensor: <span className="font-semibold text-foreground">{sensorConfig?.name ?? 'N/A'}</span>
+                      </p>
+                      {runningTestSession && (
+                          <p>
+                              Source: <span className="font-semibold text-foreground">
+                                  {runningTestSession.measurementType === 'DEMO' ? 'Virtual Sensor' : 'Live Sensor'}
+                              </span>
+                          </p>
+                      )}
                   </div>
-                )}
-                 {dataSourceStatus && <p className="text-xs text-muted-foreground mt-1">{dataSourceStatus}</p>}
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-            <CardHeader>
-              <CardTitle className="text-xl">Settings</CardTitle>
-              <CardDescription>
-                Configure sensors and devices on the management page.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button
-                onClick={() => router.push('/admin')}
-                className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
-              >
-                <Cog className="mr-2 h-4 w-4" /> Go to Management
-              </Button>
-            </CardContent>
-          </Card>
+
+                    {(isLiveSessionActive) && (
+                    <div className="text-xs text-green-600 mt-1 flex items-center justify-center gap-1">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
+                      </span>
+                      <span>Live</span>
+                    </div>
+                  )}
+                  {dataSourceStatus && <p className="text-xs text-muted-foreground mt-1">{dataSourceStatus}</p>}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+              <CardHeader>
+                <CardTitle className="text-xl">Settings</CardTitle>
+                <CardDescription>
+                  Configure sensors and devices on the management page.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  onClick={() => router.push('/admin')}
+                  className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
+                >
+                  <Cog className="mr-2 h-4 w-4" /> Go to Management
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
-        {/* Data Visualization and Log */}
-        <Card className="lg:col-span-3 bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-          <CardHeader>
-            <div className="flex justify-between items-center flex-wrap gap-4">
-              <div className='flex items-center gap-4 flex-wrap'>
-                <CardTitle>Data Visualization</CardTitle>
-                <div className='flex items-center gap-2'>
-                    <Label htmlFor="testBenchSelect" className="whitespace-nowrap">Test Bench:</Label>
-                    <Select value={activeTestBenchId || ''} onValueChange={setActiveTestBenchId} disabled={!!runningTestSession}>
-                        <SelectTrigger id="testBenchSelect" className="w-auto md:w-[200px] bg-white/80">
-                            <SelectValue placeholder="Select a test bench" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {isTestBenchesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            testBenches?.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)
-                            }
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div className='flex items-center gap-2'>
-                    <Label htmlFor="sensorConfigSelect" className="whitespace-nowrap">Sensor Config:</Label>
-                    <Select value={activeSensorConfigId || ''} onValueChange={setActiveSensorConfigId} disabled={!!runningTestSession}>
-                        <SelectTrigger id="sensorConfigSelect" className="w-auto md:w-[200px] bg-white/80">
-                        <SelectValue placeholder="Select a sensor" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {isSensorConfigsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            sensorConfigs?.filter(c => c.testBenchId === activeTestBenchId).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)
-                            }
-                        </SelectContent>
-                    </Select>
-                </div>
-                 <div className='flex items-center gap-2'>
-                    <Label htmlFor="sessionFilter" className="whitespace-nowrap">Session(s):</Label>
-                    <Select onValueChange={(val) => setSelectedSessionIds(prev => prev.includes(val) ? prev : [...prev, val])}>
-                        <SelectTrigger id="sessionFilter" className="w-auto md:w-[300px] bg-white/80">
-                            <SelectValue placeholder="Select sessions to compare..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                            testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short'})}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                </div>
-                 {selectedSessionIds.length > 0 && (
-                  <Button onClick={() => setSelectedSessionIds([])} variant="secondary" size="sm">Clear Selection</Button>
-                )}
-              </div>
-              <div className='flex items-center gap-2'>
-                 <Label htmlFor="chartInterval" className="whitespace-nowrap">Time Range:</Label>
-                  <Select value={chartInterval} onValueChange={setChartInterval} disabled={!!editingSessionId}>
-                    <SelectTrigger id="chartInterval" className="w-[150px] bg-white/80">
-                      <SelectValue placeholder="Select interval" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="10">10 Seconds</SelectItem>
-                      <SelectItem value="30">30 Seconds</SelectItem>
-                      <SelectItem value="60">1 Minute</SelectItem>
-                      <SelectItem value="300">5 Minutes</SelectItem>
-                      <SelectItem value="900">15 Minutes</SelectItem>
-                      <SelectItem value="all">All Data</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button onClick={handleResetZoom} variant={'secondary'} size="sm" className="transition-transform transform hover:-translate-y-0.5" disabled={liveUpdateEnabled}>
-                      Reset Zoom
-                  </Button>
-                  <Button
-                      onClick={() => setLiveUpdateEnabled(!liveUpdateEnabled)}
-                      variant={liveUpdateEnabled ? 'default' : 'secondary'}
-                      size="sm"
-                  >
-                      {liveUpdateEnabled ? "Live: ON" : "Live: OFF"}
-                  </Button>
-              </div>
-            </div>
-            {selectedSessionIds.length > 0 && (
-                <div className="pt-2 flex flex-wrap gap-2 items-center">
-                    <p className="text-sm text-muted-foreground">Comparing:</p>
-                    {selectedSessionIds.map((id, index) => {
-                        const session = testSessions?.find(s => s.id === id);
-                        return (
-                             <div key={id} className="flex items-center gap-2 bg-muted text-muted-foreground px-2 py-1 rounded-md text-xs">
-                                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }}></div>
-                                <span>{session?.vesselTypeName || id} - {session ? new Date(session.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short'}) : ''}</span>
-                                <button onClick={() => setSelectedSessionIds(prev => prev.filter(sid => sid !== id))} className="text-muted-foreground hover:text-foreground">
-                                    <XIcon className="h-3 w-3" />
-                                </button>
-                            </div>
-                        )
-                    })}
-                </div>
-            )}
-          </CardHeader>
-          <CardContent>
-            <div 
-              ref={scrollContainerRef}
-              className="h-80 w-full min-w-full"
-              style={{ cursor: (liveUpdateEnabled) ? 'default' : (isDragging ? 'grabbing' : 'grab') }}
-            >
-              <ResponsiveContainer width="100%" height="100%" minWidth={800}>
-                <LineChart data={Array.isArray(chartData) ? chartData : undefined} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
-                  <XAxis 
-                    dataKey="name" 
-                    stroke="hsl(var(--muted-foreground))" 
-                    type="number"
-                    domain={zoomDomain || chartDomain}
-                    allowDataOverflow={true}
-                    label={{ value: "Time (seconds)", position: 'insideBottom', offset: -5 }}
-                    tickFormatter={(tick) => (tick as number).toFixed(0)}
-                    allowDuplicatedCategory={false}
-                  />
-                  <YAxis
-                    stroke="hsl(var(--muted-foreground))"
-                    domain={['dataMin', 'dataMax']}
-                    tickFormatter={(tick) => typeof tick === 'number' && sensorConfig ? tick.toFixed(sensorConfig.decimalPlaces) : tick}
-                    label={{ value: sensorConfig?.unit, angle: -90, position: 'insideLeft' }}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--background) / 0.8)',
-                      borderColor: 'hsl(var(--border))',
-                      backdropFilter: 'blur(4px)',
-                    }}
-                    formatter={(value: number, name: string, props) => [`${Number(value).toFixed(sensorConfig?.decimalPlaces ?? 2)} ${sensorConfig?.unit || ''}`, `${props.payload.name.toFixed(2)}s`]}
-                  />
-                  <Legend verticalAlign="top" height={36} />
-                  {Array.isArray(chartData) ? (
-                     <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig?.name || 'Value'} (${sensorConfig?.unit || 'N/A'})`} dot={false} strokeWidth={2} isAnimationActive={false} />
-                  ) : (
-                    Object.entries(chartData).map(([sessionId, data], index) => {
-                       const session = testSessions?.find(s => s.id === sessionId);
-                       return (
-                         <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={session?.vesselTypeName || sessionId} dot={false} strokeWidth={2} isAnimationActive={false} />
-                       )
-                    })
-                  )}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
 
-        <div className="lg:col-span-3">
+        {/* Data Visualization and Log */}
+        <div className="w-full">
+            <Card className="lg:col-span-3 bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+            <CardHeader>
+                <div className="flex justify-between items-center flex-wrap gap-4">
+                <div className='flex items-center gap-4 flex-wrap'>
+                    <CardTitle>Data Visualization</CardTitle>
+                    <div className='flex items-center gap-2'>
+                        <Label htmlFor="testBenchSelect" className="whitespace-nowrap">Test Bench:</Label>
+                        <Select value={activeTestBenchId || ''} onValueChange={setActiveTestBenchId} disabled={!!runningTestSession}>
+                            <SelectTrigger id="testBenchSelect" className="w-auto md:w-[200px] bg-white/80">
+                                <SelectValue placeholder="Select a test bench" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {isTestBenchesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                                testBenches?.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)
+                                }
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className='flex items-center gap-2'>
+                        <Label htmlFor="sensorConfigSelect" className="whitespace-nowrap">Sensor Config:</Label>
+                        <Select value={activeSensorConfigId || ''} onValueChange={setActiveSensorConfigId} disabled={!!runningTestSession}>
+                            <SelectTrigger id="sensorConfigSelect" className="w-auto md:w-[200px] bg-white/80">
+                            <SelectValue placeholder="Select a sensor" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {isSensorConfigsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                                sensorConfigs?.filter(c => c.testBenchId === activeTestBenchId).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)
+                                }
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className='flex items-center gap-2'>
+                        <Label htmlFor="sessionFilter" className="whitespace-nowrap">Session(s):</Label>
+                        <Select onValueChange={(val) => setSelectedSessionIds(prev => prev.includes(val) ? prev : [...prev, val])}>
+                            <SelectTrigger id="sessionFilter" className="w-auto md:w-[300px] bg-white/80">
+                                <SelectValue placeholder="Select sessions to compare..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                                testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short'})}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    {selectedSessionIds.length > 0 && (
+                    <Button onClick={() => setSelectedSessionIds([])} variant="secondary" size="sm">Clear Selection</Button>
+                    )}
+                </div>
+                <div className='flex items-center gap-2'>
+                    <Label htmlFor="chartInterval" className="whitespace-nowrap">Time Range:</Label>
+                    <Select value={chartInterval} onValueChange={setChartInterval} disabled={!!editingSessionId}>
+                        <SelectTrigger id="chartInterval" className="w-[150px] bg-white/80">
+                        <SelectValue placeholder="Select interval" />
+                        </SelectTrigger>
+                        <SelectContent>
+                        <SelectItem value="10">10 Seconds</SelectItem>
+                        <SelectItem value="30">30 Seconds</SelectItem>
+                        <SelectItem value="60">1 Minute</SelectItem>
+                        <SelectItem value="300">5 Minutes</SelectItem>
+                        <SelectItem value="900">15 Minutes</SelectItem>
+                        <SelectItem value="all">All Data</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <Button onClick={handleResetZoom} variant={'secondary'} size="sm" className="transition-transform transform hover:-translate-y-0.5" disabled={liveUpdateEnabled}>
+                        Reset Zoom
+                    </Button>
+                    <Button
+                        onClick={() => setLiveUpdateEnabled(!liveUpdateEnabled)}
+                        variant={liveUpdateEnabled ? 'default' : 'secondary'}
+                        size="sm"
+                    >
+                        {liveUpdateEnabled ? "Live: ON" : "Live: OFF"}
+                    </Button>
+                </div>
+                </div>
+                {selectedSessionIds.length > 0 && (
+                    <div className="pt-2 flex flex-wrap gap-2 items-center">
+                        <p className="text-sm text-muted-foreground">Comparing:</p>
+                        {selectedSessionIds.map((id, index) => {
+                            const session = testSessions?.find(s => s.id === id);
+                            return (
+                                <div key={id} className="flex items-center gap-2 bg-muted text-muted-foreground px-2 py-1 rounded-md text-xs">
+                                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }}></div>
+                                    <span>{session?.vesselTypeName || id} - {session ? new Date(session.startTime).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short'}) : ''}</span>
+                                    <button onClick={() => setSelectedSessionIds(prev => prev.filter(sid => sid !== id))} className="text-muted-foreground hover:text-foreground">
+                                        <XIcon className="h-3 w-3" />
+                                    </button>
+                                </div>
+                            )
+                        })}
+                    </div>
+                )}
+            </CardHeader>
+            <CardContent>
+                <div 
+                ref={scrollContainerRef}
+                className="h-80 w-full min-w-full"
+                style={{ cursor: (liveUpdateEnabled) ? 'default' : (isDragging ? 'grabbing' : 'grab') }}
+                >
+                <ResponsiveContainer width="100%" height="100%" minWidth={800}>
+                    <LineChart data={Array.isArray(chartData) ? chartData : undefined} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
+                    <XAxis 
+                        dataKey="name" 
+                        stroke="hsl(var(--muted-foreground))" 
+                        type="number"
+                        domain={zoomDomain || chartDomain}
+                        allowDataOverflow={true}
+                        label={{ value: "Time (seconds)", position: 'insideBottom', offset: -5 }}
+                        tickFormatter={(tick) => (tick as number).toFixed(0)}
+                        allowDuplicatedCategory={false}
+                    />
+                    <YAxis
+                        stroke="hsl(var(--muted-foreground))"
+                        domain={['dataMin', 'dataMax']}
+                        tickFormatter={(tick) => typeof tick === 'number' && sensorConfig ? tick.toFixed(sensorConfig.decimalPlaces) : tick}
+                        label={{ value: sensorConfig?.unit, angle: -90, position: 'insideLeft' }}
+                    />
+                    <Tooltip
+                        contentStyle={{
+                        backgroundColor: 'hsl(var(--background) / 0.8)',
+                        borderColor: 'hsl(var(--border))',
+                        backdropFilter: 'blur(4px)',
+                        }}
+                        formatter={(value: number, name: string, props) => [`${Number(value).toFixed(sensorConfig?.decimalPlaces ?? 2)} ${sensorConfig?.unit || ''}`, `${props.payload.name.toFixed(2)}s`]}
+                    />
+                    <Legend verticalAlign="top" height={36} />
+                    {Array.isArray(chartData) ? (
+                        <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig?.name || 'Value'} (${sensorConfig?.unit || 'N/A'})`} dot={false} strokeWidth={2} isAnimationActive={false} />
+                    ) : (
+                        Object.entries(chartData).map(([sessionId, data], index) => {
+                        const session = testSessions?.find(s => s.id === sessionId);
+                        return (
+                            <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={session?.vesselTypeName || sessionId} dot={false} strokeWidth={2} isAnimationActive={false} />
+                        )
+                        })
+                    )}
+                    </LineChart>
+                </ResponsiveContainer>
+                </div>
+            </CardContent>
+            </Card>
+        </div>
+
+        <div className="w-full">
             <Card>
                 <CardHeader>
                     <CardTitle>Data Log</CardTitle>
