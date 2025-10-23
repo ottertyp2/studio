@@ -151,6 +151,16 @@ const styles = StyleSheet.create({
   },
   tableCell: {
     fontSize: 9,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  statusPassed: {
+    color: '#16A34A', // green-600
+  },
+  statusNotPassed: {
+    color: '#DC2626', // red-600
   }
 });
 
@@ -166,11 +176,21 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config }) => {
 
     const avg = data.length > 0 ? summaryStats.sum / data.length : 0;
 
+    const getStatus = () => {
+        switch(session.classification) {
+            case 'DIFFUSION':
+                return <Text style={{...styles.statusText, ...styles.statusPassed}}>Passed</Text>;
+            case 'LEAK':
+                return <Text style={{...styles.statusText, ...styles.statusNotPassed}}>Not Passed</Text>;
+            default:
+                return <Text style={styles.statusText}>Undetermined</Text>;
+        }
+    };
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
-            {/* The logo is referenced from the public folder. Ensure `public/logo.png` exists. */}
             <Image style={styles.logo} src="/logo.png" />
             <Text style={styles.headerText}>Test Session Report</Text>
         </View>
@@ -184,9 +204,13 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config }) => {
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>End Time: </Text>{session.endTime ? new Date(session.endTime).toLocaleString() : 'N/A'}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Tested By: </Text>{session.username}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Test Bench: </Text>{session.testBenchId}</Text></View>
-                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Final Classification: </Text>{session.classification || 'Unclassified'}</Text></View>
+                 <View style={styles.gridItem}>
+                    <Text style={styles.text}>
+                        <Text style={styles.label}>Final Status: </Text>
+                        {getStatus()}
+                    </Text>
+                </View>
             </View>
-             <Text style={styles.text}><Text style={styles.label}>Description: </Text>{session.description || 'No description provided.'}</Text>
         </View>
 
         <View style={styles.section}>
@@ -198,7 +222,7 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config }) => {
         </View>
 
         <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Test Summary</Text>
+            <Text style={styles.sectionTitle}>Summary of Results</Text>
              <View style={styles.table}> 
                 <View style={styles.tableRow}> 
                     <View style={styles.tableColHeader}><Text style={styles.tableHeader}>Statistic</Text></View> 
@@ -210,26 +234,30 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config }) => {
                 </View>
                  <View style={styles.tableRow}> 
                     <View style={styles.tableCol}><Text style={styles.tableCell}>Maximum Value</Text></View> 
-                    <View style={styles.tableCol}><Text style={styles.tableCell}>{summaryStats.max.toFixed(config.decimalPlaces)} {config.unit}</Text></View> 
+                    <View style={styles.tableCol}><Text style={styles.tableCell}>{data.length > 0 ? summaryStats.max.toFixed(config.decimalPlaces) : 'N/A'} {config.unit}</Text></View> 
                 </View>
                  <View style={styles.tableRow}> 
                     <View style={styles.tableCol}><Text style={styles.tableCell}>Minimum Value</Text></View> 
-                    <View style={styles.tableCol}><Text style={styles.tableCell}>{summaryStats.min.toFixed(config.decimalPlaces)} {config.unit}</Text></View> 
+                    <View style={styles.tableCol}><Text style={styles.tableCell}>{data.length > 0 ? summaryStats.min.toFixed(config.decimalPlaces) : 'N/A'} {config.unit}</Text></View> 
                 </View>
                 <View style={styles.tableRow}> 
                     <View style={styles.tableCol}><Text style={styles.tableCell}>Average Value</Text></View> 
-                    <View style={styles.tableCol}><Text style={styles.tableCell}>{avg.toFixed(config.decimalPlaces)} {config.unit}</Text></View> 
+                    <View style={styles.tableCol}><Text style={styles.tableCell}>{data.length > 0 ? avg.toFixed(config.decimalPlaces) : 'N/A'} {config.unit}</Text></View> 
                 </View>
             </View>
         </View>
 
         <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Data Chart</Text>
+            <Text style={styles.sectionTitle}>Pressure Curve Graph</Text>
             <Text style={styles.text}>Pressure ({config.unit}) vs. Time (seconds)</Text>
              <View style={styles.chartContainer}>
-                {/* PDF-React currently doesn't support complex SVG rendering like charts. This is a placeholder. */}
                 <Text style={{textAlign: 'center', color: 'grey', paddingTop: 100}}>Chart visualization is not supported in PDF generation.</Text>
             </View>
+        </View>
+
+        <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Notes / Comments</Text>
+            <Text style={styles.text}>{session.description || 'No notes or comments were provided for this test session.'}</Text>
         </View>
 
 
@@ -242,3 +270,5 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config }) => {
 };
 
 export default TestReport;
+
+    
