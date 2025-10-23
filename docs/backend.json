@@ -196,10 +196,34 @@
         "$schema": "http://json-schema.org/draft-07/schema#",
         "title": "VesselType",
         "type": "object",
-        "description": "Represents a vessel type that can be tested.",
+        "description": "Represents a vessel type that can be tested, including its test guidelines.",
         "properties": {
             "id": { "type": "string", "description": "Unique identifier for the vessel type." },
-            "name": { "type": "string", "description": "The name of the vessel type." }
+            "name": { "type": "string", "description": "The name of the vessel type." },
+            "minCurve": {
+                "type": "array",
+                "description": "An array of points defining the minimum pressure curve guideline.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "x": { "type": "number", "description": "Time in seconds." },
+                        "y": { "type": "number", "description": "Pressure value." }
+                    },
+                    "required": ["x", "y"]
+                }
+            },
+            "maxCurve": {
+                "type": "array",
+                "description": "An array of points defining the maximum pressure curve guideline.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "x": { "type": "number", "description": "Time in seconds." },
+                        "y": { "type": "number", "description": "Pressure value." }
+                    },
+                    "required": ["x", "y"]
+                }
+            }
         },
         "required": ["id", "name"]
     },
@@ -359,3 +383,5 @@
     "reasoning": "This Firestore data structure is designed for a single-user or public-access model. All data is stored in global collections, removing any user-specific paths or ownership. This simplifies data access as there is no user authentication or authorization layer to manage. It's suitable for local testing or a fully public dashboard."
   }
 }
+
+    

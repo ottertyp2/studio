@@ -1,4 +1,5 @@
 
+
 'use client';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -62,18 +63,19 @@ import {
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
-  DropdownMenuPortal
+DropdownMenuPortal
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Edit } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
 import { signOut, adminCreateUser } from '@/firebase/non-blocking-login';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Textarea } from '@/components/ui/textarea';
 
 
 type SensorConfig = {
@@ -97,9 +99,13 @@ type AppUser = {
     role: 'user' | 'superadmin';
 };
 
+type GuidelineCurvePoint = { x: number; y: number };
+
 type VesselType = {
     id: string;
     name: string;
+    minCurve?: GuidelineCurvePoint[];
+    maxCurve?: GuidelineCurvePoint[];
 };
 
 type TestBench = {
@@ -207,6 +213,9 @@ export default function AdminPage() {
 
   const [reportSearchTerm, setReportSearchTerm] = useState('');
   const [reportSortOrder, setReportSortOrder] = useState('generatedAt-desc');
+  const [editingVesselType, setEditingVesselType] = useState<VesselType | null>(null);
+  const [minCurveText, setMinCurveText] = useState('');
+  const [maxCurveText, setMaxCurveText] = useState('');
 
   useEffect(() => {
     if (!isUserLoading) {
@@ -1110,6 +1119,48 @@ export default function AdminPage() {
     toast({ title: 'Vessel Type Deleted'});
   };
 
+    const handleEditVesselGuidelines = (vesselType: VesselType) => {
+        setEditingVesselType(vesselType);
+        const formatCurve = (curve: GuidelineCurvePoint[] | undefined) => curve ? curve.map(p => `${p.x},${p.y}`).join('\n') : '';
+        setMinCurveText(formatCurve(vesselType.minCurve));
+        setMaxCurveText(formatCurve(vesselType.maxCurve));
+    };
+
+    const handleSaveVesselGuidelines = async () => {
+        if (!editingVesselType || !firestore) return;
+    
+        const parseCurve = (text: string): GuidelineCurvePoint[] => {
+            return text
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line)
+                .map(line => {
+                    const parts = line.split(',');
+                    const x = parseFloat(parts[0]);
+                    const y = parseFloat(parts[1]);
+                    return (isNaN(x) || isNaN(y)) ? null : { x, y };
+                })
+                .filter((p): p is GuidelineCurvePoint => p !== null)
+                .sort((a, b) => a.x - b.x);
+        };
+    
+        try {
+            const minCurve = parseCurve(minCurveText);
+            const maxCurve = parseCurve(maxCurveText);
+    
+            const vesselDocRef = doc(firestore, 'products', editingVesselType.id);
+            await updateDoc(vesselDocRef, { minCurve, maxCurve });
+    
+            toast({ title: 'Guidelines Saved', description: `Guidelines for "${editingVesselType.name}" have been updated.` });
+            setEditingVesselType(null);
+            setMinCurveText('');
+            setMaxCurveText('');
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Save Failed', description: e.message });
+        }
+    };
+
+
   const isFilterActive = useMemo(() => {
     return sessionUserFilter !== 'all' || 
            sessionVesselTypeFilter !== 'all' || 
@@ -1567,7 +1618,7 @@ export default function AdminPage() {
           <AccordionTrigger className="p-6">
             <div className="text-left">
               <CardTitle>Vessel Type Management</CardTitle>
-              <CardDescription>Add, view, and remove your vessel types.</CardDescription>
+              <CardDescription>Add, remove, and manage guidelines for your vessel types.</CardDescription>
             </div>
           </AccordionTrigger>
           <AccordionContent className="p-6 pt-0">
@@ -1599,7 +1650,11 @@ export default function AdminPage() {
                                 vesselTypes.map(p => (
                                     <TableRow key={p.id}>
                                         <TableCell className="truncate max-w-[200px] font-medium">{p.name}</TableCell>
-                                        <TableCell className="text-right">
+                                        <TableCell className="text-right space-x-2">
+                                            <Button variant="outline" size="sm" onClick={() => handleEditVesselGuidelines(p)}>
+                                                <Edit className="h-3 w-3 mr-1" />
+                                                Guidelines
+                                            </Button>
                                             <AlertDialog>
                                                 <AlertDialogTrigger asChild>
                                                     <Button variant="ghost" size="icon" disabled={!user}>
@@ -1628,6 +1683,42 @@ export default function AdminPage() {
                         </TableBody>
                     </Table>
                 </ScrollArea>
+                 <Dialog open={!!editingVesselType} onOpenChange={(open) => !open && setEditingVesselType(null)}>
+                    <DialogContent className="sm:max-w-[600px]">
+                        <DialogHeader>
+                            <DialogTitle>Edit Guidelines for "{editingVesselType?.name}"</DialogTitle>
+                            <DialogDescription>
+                                Define the minimum and maximum pressure curves. Enter as CSV: time (seconds), pressure value.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="grid grid-cols-2 gap-4 py-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="min-curve">Minimum Curve</Label>
+                                <Textarea
+                                    id="min-curve"
+                                    value={minCurveText}
+                                    onChange={(e) => setMinCurveText(e.target.value)}
+                                    placeholder={"0,900\n10,850\n20,800"}
+                                    className="h-48 font-mono text-xs"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="max-curve">Maximum Curve</Label>
+                                <Textarea
+                                    id="max-curve"
+                                    value={maxCurveText}
+                                    onChange={(e) => setMaxCurveText(e.target.value)}
+                                    placeholder={"0,950\n10,920\n20,900"}
+                                    className="h-48 font-mono text-xs"
+                                />
+                            </div>
+                        </div>
+                        <DialogFooter>
+                            <Button variant="ghost" onClick={() => setEditingVesselType(null)}>Cancel</Button>
+                            <Button onClick={handleSaveVesselGuidelines}>Save Guidelines</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
             </div>
           </AccordionContent>
         </AccordionItem>
@@ -2066,5 +2157,7 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    
 
     

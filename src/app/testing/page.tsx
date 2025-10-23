@@ -1,4 +1,5 @@
 
+
 'use client';
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -51,7 +52,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Slider } from '@/components/ui/slider';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/componentsui/tabs';
 import {
   LineChart,
   Line,
@@ -67,7 +68,7 @@ import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
 import * as tf from '@tensorflow/tfjs';
-import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc, useUser } from '@/firebase';
+import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc, useUser, getDocument } from '@/firebase';
 import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc, orderBy, deleteDoc } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { signOut } from '@/firebase/non-blocking-login';
@@ -107,9 +108,13 @@ type AppUser = {
     role: 'user' | 'superadmin';
 };
 
+type GuidelineCurvePoint = { x: number; y: number };
+
 type VesselType = {
     id: string;
     name: string;
+    minCurve?: GuidelineCurvePoint[];
+    maxCurve?: GuidelineCurvePoint[];
 };
 
 type TestBench = {
@@ -1080,6 +1085,10 @@ function TestingComponent() {
         setGeneratingReportFor(activeTestSession.id);
     
         try {
+            const vesselDocRef = doc(firestore, 'products', activeTestSession.vesselTypeId);
+            const vesselDoc = await getDoc(vesselDocRef);
+            const vesselData = vesselDoc.exists() ? (vesselDoc.data() as VesselType) : null;
+    
             const svgElement = chartRef.current.querySelector('svg');
             if (!svgElement) {
                 throw new Error("Could not find chart SVG element.");
@@ -1089,10 +1098,12 @@ function TestingComponent() {
             const chartImage = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgString)))}`;
     
             const blob = await pdf(
-                <TestReport 
-                    session={activeTestSession} 
-                    data={chartData as any[]} 
-                    config={sensorConfig!} 
+                <TestReport
+                    session={activeTestSession}
+                    data={chartData as any[]}
+                    config={sensorConfig!}
+                    minCurve={vesselData?.minCurve}
+                    maxCurve={vesselData?.maxCurve}
                     chartImage={chartImage}
                 />
             ).toBlob();
@@ -1808,3 +1819,6 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+
+    

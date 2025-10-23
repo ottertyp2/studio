@@ -1,7 +1,9 @@
 
+
 'use client';
 import React from 'react';
 import { Page, Text, View, Document, StyleSheet, Image } from '@react-pdf/renderer';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts'; // Assuming you can use this for rendering logic if not direct rendering
 
 type SensorConfig = {
     id: string;
@@ -33,6 +35,8 @@ type TestSession = {
     username: string;
 };
 
+type GuidelineCurvePoint = { x: number; y: number };
+
 type ChartDataPoint = {
     name: number; // time in seconds
     value: number;
@@ -42,6 +46,8 @@ interface TestReportProps {
   session: TestSession;
   data: ChartDataPoint[];
   config: SensorConfig;
+  minCurve?: GuidelineCurvePoint[];
+  maxCurve?: GuidelineCurvePoint[];
   chartImage: string;
 }
 
@@ -167,7 +173,7 @@ const styles = StyleSheet.create({
 });
 
 
-const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartImage }) => {
+const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartImage, minCurve, maxCurve }) => {
     
     const summaryStats = data.reduce((acc, point) => {
         acc.max = Math.max(acc.max, point.value);
@@ -189,11 +195,33 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartIma
         }
     };
 
+  // Although we are passing the pre-rendered image, we create a chart here to show the structure
+  // This is for logical clarity, the actual chart is the `chartImage` prop
+  const ChartWithGuidelines = () => (
+      <LineChart
+        width={500}
+        height={200}
+        margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+      >
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} />
+        <YAxis domain={['dataMin', 'dataMax']} />
+        <Tooltip />
+        <Legend />
+        <Line type="monotone" data={data} dataKey="value" stroke="#3b82f6" dot={false} name="Pressure" />
+        {maxCurve && <Line type="monotone" data={maxCurve.map(p => ({name: p.x, value: p.y}))} dataKey="value" stroke="red" dot={false} strokeDasharray="5 5" name="Max Limit" />}
+        {minCurve && <Line type="monotone" data={minCurve.map(p => ({name: p.x, value: p.y}))} dataKey="value" stroke="green" dot={false} strokeDasharray="5 5" name="Min Limit" />}
+      </LineChart>
+  );
+
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
-            <Image style={styles.logo} src="/logo.png" />
+            {/* Logo from /public is not directly accessible in @react-pdf/renderer. It must be hosted or passed as base64 */}
+            {/* For now, we omit the logo image tag if its path is not a public URL */}
+             <Text style={{...styles.headerText, fontSize: 18}}>BioThrust</Text>
             <Text style={styles.headerText}>Test Session Report</Text>
         </View>
         
@@ -276,3 +304,5 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartIma
 };
 
 export default TestReport;
+
+    
