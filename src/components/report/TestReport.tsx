@@ -41,6 +41,11 @@ type VesselType = {
     maxCurve: {x: number, y: number}[];
 }
 
+type Batch = {
+    id: string;
+    name: string;
+}
+
 type ChartDataPoint = {
     name: number; // time in seconds
     value: number;
@@ -52,6 +57,7 @@ interface TestReportProps {
   config: SensorConfig;
   chartImage: string;
   vesselType?: VesselType;
+  batch?: Batch;
 }
 
 const styles = StyleSheet.create({
@@ -181,7 +187,7 @@ const styles = StyleSheet.create({
 });
 
 
-const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartImage, vesselType }) => {
+const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartImage, vesselType, batch }) => {
     
     const summaryStats = data.reduce((acc, point) => {
         acc.max = Math.max(acc.max, point.value);
@@ -218,7 +224,7 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartIma
             <Text style={styles.sectionTitle}>Session Details</Text>
             <View style={styles.grid}>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Vessel Type: </Text>{vesselType?.name || session.vesselTypeName}</Text></View>
-                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Batch ID: </Text>{session.batchId}</Text></View>
+                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Batch ID: </Text>{batch?.name || session.batchId}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Serial Number: </Text>{session.serialNumber || 'N/A'}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Start Time: </Text>{new Date(session.startTime).toLocaleString()}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>End Time: </Text>{session.endTime ? new Date(session.endTime).toLocaleString() : 'N/A'}</Text></View>

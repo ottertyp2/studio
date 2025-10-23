@@ -1104,6 +1104,7 @@ function TestingComponent() {
 
         const currentSensorConfig = sensorConfigs?.find(c => c.id === activeTestSession.sensorConfigurationId);
         const currentVesselType = vesselTypes?.find(p => p.id === activeTestSession.vesselTypeId);
+        const currentBatch = batches?.find(b => b.id === activeTestSession.batchId);
         
         if (!currentSensorConfig || !currentVesselType) {
             toast({
@@ -1132,6 +1133,7 @@ function TestingComponent() {
                     config={currentSensorConfig}
                     chartImage={chartImage}
                     vesselType={currentVesselType}
+                    batch={currentBatch}
                 />
             ).toBlob();
     
@@ -1171,7 +1173,7 @@ function TestingComponent() {
         } finally {
             setGeneratingReportFor(null);
         }
-    }, [activeTestSession, firestore, firebaseApp, toast, chartData, sensorConfigs, vesselTypes]);
+    }, [activeTestSession, firestore, firebaseApp, toast, chartData, sensorConfigs, vesselTypes, batches]);
   
   const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
   const displayDecimals = sensorConfig?.decimalPlaces ?? 0;
