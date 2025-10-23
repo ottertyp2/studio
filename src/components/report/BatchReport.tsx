@@ -175,6 +175,16 @@ const getStatus = (classification?: 'LEAK' | 'DIFFUSION') => {
 
 const BatchReport: React.FC<BatchReportProps> = ({ vesselType, sessions, allSensorData, sensorConfigs, batches }) => {
 
+  if (!sessions || !batches || !allSensorData || !sensorConfigs) {
+      return (
+          <Document>
+              <Page size="A4" style={styles.page}>
+                  <Text>Error: Missing required data for report generation.</Text>
+              </Page>
+          </Document>
+      );
+  }
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>

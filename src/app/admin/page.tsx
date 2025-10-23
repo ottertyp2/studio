@@ -132,7 +132,6 @@ type Report = {
     generatedAt: string;
     downloadUrl: string;
     vesselTypeName: string;
-    batchId: string;
     serialNumber: string;
     username: string;
 };
@@ -150,7 +149,6 @@ type TestSession = {
     id: string;
     vesselTypeId: string;
     vesselTypeName: string;
-    batchId: string;
     serialNumber: string;
     description: string;
     startTime: string;
@@ -163,6 +161,7 @@ type TestSession = {
     userId: string;
     username: string;
     demoOwnerInstanceId?: string;
+    batchId: string;
 };
 
 type VesselType = {
@@ -1383,7 +1382,6 @@ export default function AdminPage() {
           generatedAt: new Date().toISOString(),
           downloadUrl: downloadUrl,
           vesselTypeName: vesselType.name,
-          batchId: 'N/A',
           serialNumber: 'N/A',
           username: user?.displayName || 'admin',
       };
