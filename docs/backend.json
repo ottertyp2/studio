@@ -107,6 +107,10 @@
           "type": "number",
           "description": "The reference voltage of the Arduino (used for voltage conversion)."
         },
+        "adcBitResolution": {
+          "type": "number",
+          "description": "The bit resolution of the ADC (e.g., 10 for 0-1023, 12 for 0-4095)."
+        },
         "decimalPlaces": {
             "type": "number"
         },
@@ -330,3 +334,5 @@
     "reasoning": "This Firestore data structure is designed for a single-user or public-access model. All data is stored in global collections, removing any user-specific paths or ownership. This simplifies data access as there is no user authentication or authorization layer to manage. It's suitable for local testing or a fully public dashboard."
   }
 }
+
+    

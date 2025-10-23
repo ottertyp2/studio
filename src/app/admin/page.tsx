@@ -84,6 +84,7 @@ type SensorConfig = {
     min: number;
     max: number;
     arduinoVoltage: number;
+    adcBitResolution: number;
     decimalPlaces: number;
     ownerId?: string;
     testBenchId: string;
@@ -347,10 +348,10 @@ export default function AdminPage() {
       }
     }
 
-    if (field === 'decimalPlaces') {
+    if (['decimalPlaces', 'adcBitResolution'].includes(field)) {
         const num = parseInt(value, 10);
-        if (!isNaN(num) && num >= 0 && num <= 10) {
-            newConfig.decimalPlaces = num;
+        if (!isNaN(num) && num >= 0) {
+            (newConfig as any)[field] = num;
         }
     }
     
@@ -394,6 +395,7 @@ export default function AdminPage() {
       min: typeof tempSensorConfig.min === 'number' ? tempSensorConfig.min : 0,
       max: typeof tempSensorConfig.max === 'number' ? tempSensorConfig.max : 1023,
       arduinoVoltage: typeof tempSensorConfig.arduinoVoltage === 'number' ? tempSensorConfig.arduinoVoltage : 5,
+      adcBitResolution: tempSensorConfig.adcBitResolution || 10,
       decimalPlaces: tempSensorConfig.decimalPlaces || 0,
       ownerId: tempSensorConfig.ownerId || user.uid,
       testBenchId: tempSensorConfig.testBenchId,
@@ -425,6 +427,7 @@ export default function AdminPage() {
       min: 0,
       max: 1023,
       arduinoVoltage: 5,
+      adcBitResolution: 10,
       decimalPlaces: 0,
       ownerId: user.uid,
       testBenchId: testBenches[0].id,
@@ -1095,7 +1098,7 @@ export default function AdminPage() {
                       <SelectValue placeholder="Select mode" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="RAW">RAW (0-1023)</SelectItem>
+                      <SelectItem value="RAW">RAW</SelectItem>
                       <SelectItem value="VOLTAGE">Voltage (V)</SelectItem>
                       <SelectItem value="CUSTOM">Custom</SelectItem>
                     </SelectContent>
@@ -1119,12 +1122,25 @@ export default function AdminPage() {
                  )}
                  {tempSensorConfig.mode !== 'RAW' && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {tempSensorConfig.mode === 'VOLTAGE' && (
-                            <div className="space-y-2">
-                                <Label htmlFor="arduinoVoltageInput">Reference Voltage (V)</Label>
-                                <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage ?? ''} onChange={(e) => handleConfigChange('arduinoVoltage', e.target.value)} placeholder="e.g. 5 or 3.3"/>
-                            </div>
-                        )}
+                        <div className="space-y-2">
+                            <Label htmlFor="adcBitResolution">ADC Bit Resolution</Label>
+                            <Select value={String(tempSensorConfig.adcBitResolution || 10)} onValueChange={(value) => handleConfigChange('adcBitResolution', value)}>
+                                <SelectTrigger id="adcBitResolution">
+                                    <SelectValue/>
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="8">8-bit (0-255)</SelectItem>
+                                    <SelectItem value="10">10-bit (0-1023)</SelectItem>
+                                    <SelectItem value="12">12-bit (0-4095)</SelectItem>
+                                    <SelectItem value="14">14-bit (0-16383)</SelectItem>
+                                    <SelectItem value="16">16-bit (0-65535)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="arduinoVoltageInput">Reference Voltage (V)</Label>
+                            <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage ?? ''} onChange={(e) => handleConfigChange('arduinoVoltage', e.target.value)} placeholder="e.g. 5 or 3.3"/>
+                        </div>
                         <div className="space-y-2">
                             <Label htmlFor="decimalPlacesInput">Decimal Places</Label>
                             <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces || 0} onChange={(e) => handleConfigChange('decimalPlaces', parseInt(e.target.value))} />
@@ -1141,8 +1157,6 @@ export default function AdminPage() {
   }
 
   const renderTestSessionManager = () => {
-    const runningSession = testSessions?.find(s => s.status === 'RUNNING');
-
     return (
       <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg lg:col-span-2">
         <CardHeader>
@@ -1923,3 +1937,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    

@@ -8,6 +8,7 @@ export function cn(...inputs: ClassValue[]) {
 type SensorConfig = {
     mode: 'RAW' | 'VOLTAGE' | 'CUSTOM';
     arduinoVoltage: number;
+    adcBitResolution: number;
     min: number;
     max: number;
 };
@@ -15,13 +16,17 @@ type SensorConfig = {
 export function convertRawValue(rawValue: number, sensorConfig: SensorConfig | null): number {
     if (!sensorConfig) return rawValue;
 
+    const maxAdcValue = Math.pow(2, sensorConfig.adcBitResolution || 10) - 1;
+
     switch (sensorConfig.mode) {
         case 'VOLTAGE':
-            return (rawValue / 1023) * sensorConfig.arduinoVoltage;
+            return (rawValue / maxAdcValue) * sensorConfig.arduinoVoltage;
         case 'CUSTOM':
-            return sensorConfig.min + (rawValue / 1023) * (sensorConfig.max - sensorConfig.min);
+            return sensorConfig.min + (rawValue / maxAdcValue) * (sensorConfig.max - sensorConfig.min);
         case 'RAW':
         default:
             return rawValue;
     }
 }
+
+    
