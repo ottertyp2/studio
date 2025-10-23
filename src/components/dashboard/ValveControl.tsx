@@ -4,7 +4,7 @@ import { useTestBench, ValveStatus } from '@/context/TestBenchContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Separator } from '@/componentsui/separator';
+import { Separator } from '@/components/ui/separator';
 
 const ValveRow = ({ valveName, valveId, status, onToggle, disabled }: { valveName: string, valveId: 'VALVE1' | 'VALVE2', status: ValveStatus, onToggle: (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => void, disabled: boolean}) => {
     const isChecked = status === 'ON';
