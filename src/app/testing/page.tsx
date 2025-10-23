@@ -52,7 +52,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Slider } from '@/components/ui/slider';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/componentsui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   LineChart,
   Line,
@@ -77,6 +77,7 @@ import { convertRawValue } from '@/lib/utils';
 import { useTestBench } from '@/context/TestBenchContext';
 import { PDFDownloadLink, pdf } from '@react-pdf/renderer';
 import TestReport from '@/components/report/TestReport';
+import ValveControl from '@/components/dashboard/ValveControl';
 
 
 type SensorData = {
@@ -1297,6 +1298,8 @@ function TestingComponent() {
                     {isConnected ? 'Disconnect from Test Bench' : 'Connect to Test Bench'}
                 </Button>
             </div>
+
+            <ValveControl />
             
             {!runningTestSession && !showNewSessionForm && (
               <Button onClick={() => setShowNewSessionForm(true)} className="mt-4 btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
@@ -1822,3 +1825,4 @@ export default function TestingPage() {
 
 
     
+

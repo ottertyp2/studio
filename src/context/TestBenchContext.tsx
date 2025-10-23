@@ -10,6 +10,8 @@ type SensorData = {
   testBenchId: string;
 };
 
+export type ValveStatus = 'ON' | 'OFF';
+
 export interface TestBenchContextType {
   isConnected: boolean;
   handleConnect: () => Promise<void>;
@@ -20,6 +22,9 @@ export interface TestBenchContextType {
   handleNewDataPoint: (newDataPoint: Omit<SensorData, 'testBenchId'>) => void;
   baudRate: number;
   setBaudRate: (rate: number) => void;
+  valve1Status: ValveStatus;
+  valve2Status: ValveStatus;
+  sendValveCommand: (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => Promise<void>;
 }
 
 export const TestBenchContext = createContext<TestBenchContextType | undefined>(undefined);
