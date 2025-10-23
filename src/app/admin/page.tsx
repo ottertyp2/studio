@@ -97,7 +97,7 @@ type SensorConfig = {
 type AppUser = {
     id: string;
     username: string;
-    email: string;
+    email: string: string;
     role: 'user' | 'superadmin';
 };
 
@@ -1800,7 +1800,7 @@ export default function AdminPage() {
                         <DialogHeader>
                             <DialogTitle>Edit Guidelines for "{editingVesselType?.name}"</DialogTitle>
                             <DialogDescription>
-                                Click to add a point, drag to move, double-click to delete.
+                                Click to add points to create a curve. Drag points to move them. Double-click to delete a point.
                             </DialogDescription>
                         </DialogHeader>
                         <div className="grid grid-cols-2 gap-4 py-4">
@@ -2267,7 +2267,5 @@ export default function AdminPage() {
     </div>
   );
 }
-
-    
 
     
