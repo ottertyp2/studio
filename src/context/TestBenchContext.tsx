@@ -18,6 +18,7 @@ export interface TestBenchContextType {
   localDataLog: SensorData[];
   setLocalDataLog: React.Dispatch<React.SetStateAction<SensorData[]>>;
   currentValue: number | null;
+  setCurrentValue: React.Dispatch<React.SetStateAction<number | null>>;
   lastDataPointTimestamp: number | null;
   handleNewDataPoint: (newDataPoint: Omit<SensorData, 'testBenchId'>) => void;
   baudRate: number;
