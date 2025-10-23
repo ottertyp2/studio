@@ -109,15 +109,6 @@ type AppUser = {
     role: 'user' | 'superadmin';
 };
 
-type GuidelineCurvePoint = { x: number; y: number };
-
-type VesselType = {
-    id: string;
-    name: string;
-    minCurve?: GuidelineCurvePoint[];
-    maxCurve?: GuidelineCurvePoint[];
-};
-
 type TestBench = {
     id: string;
     name: string;
@@ -127,9 +118,8 @@ type TestBench = {
 
 type TestSession = {
     id: string;
-    vesselTypeId: string;
-    vesselTypeName: string;
-    serialNumber: string;
+    batchId: string;
+    numberInBatch: string;
     description: string;
     startTime: string;
     endTime?: string;
@@ -242,13 +232,6 @@ function TestingComponent() {
   }, [firestore, user]);
   
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading, error: sensorConfigsError } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
-
-  const vesselTypesCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return collection(firestore, 'products');
-  }, [firestore, user]);
-
-  const { data: vesselTypes, isLoading: isVesselTypesLoading, error: productsError } = useCollection<VesselType>(vesselTypesCollectionRef);
   
   const testBenchesCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -264,7 +247,7 @@ function TestingComponent() {
   }, [user, isUserLoading, router]);
 
  useEffect(() => {
-    const errorSources = [testSessionsError, usersError, sensorConfigsError, productsError, testBenchesError];
+    const errorSources = [testSessionsError, usersError, sensorConfigsError, testBenchesError];
     const permissionError = errorSources.find(e => e && (e as any).message.includes('permission-denied'));
 
     if (permissionError) {
@@ -276,13 +259,7 @@ function TestingComponent() {
       if(auth) signOut(auth);
       router.replace('/login');
     }
-  }, [testSessionsError, usersError, sensorConfigsError, productsError, testBenchesError, router, toast, auth]);
-
-  useEffect(() => {
-    if (!isVesselTypesLoading && vesselTypes && vesselTypes.length > 0 && !tempTestSession.vesselTypeId) {
-      setTempTestSession(prev => ({ ...prev, vesselTypeId: vesselTypes[0].id }));
-    }
-  }, [vesselTypes, isVesselTypesLoading, tempTestSession.vesselTypeId]);
+  }, [testSessionsError, usersError, sensorConfigsError, testBenchesError, router, toast, auth]);
 
   useEffect(() => {
     if (!isTestBenchesLoading && testBenches && testBenches.length > 0 && !activeTestBenchId) {
@@ -464,12 +441,8 @@ function TestingComponent() {
       toast({variant: 'destructive', title: 'Initialization Error', description: 'Firestore service is not available.'});
       return;
     }
-     if (!vesselTypes || vesselTypes.length === 0) {
-      toast({variant: 'destructive', title: 'Configuration Error', description: 'No vessel types have been created yet. Please add one in the "Vessel Type Management" section.'});
-      return;
-    }
-    if (!tempTestSession.vesselTypeId) {
-      toast({variant: 'destructive', title: 'Input Error', description: 'Please select a vessel type for the session.'});
+    if (!tempTestSession.batchId) {
+      toast({variant: 'destructive', title: 'Input Error', description: 'Please enter a Batch ID for the session.'});
       return;
     }
     if (!tempTestSession.testBenchId) {
@@ -497,20 +470,13 @@ function TestingComponent() {
       toast({variant: 'destructive', title: 'User Profile Error', description: `Your user profile could not be found. Please ensure it exists in the database.`});
       return;
     }
-    
-    const selectedVesselType = vesselTypes.find(p => p.id === tempTestSession.vesselTypeId);
-    if (!selectedVesselType) {
-        toast({variant: 'destructive', title: 'Error', description: 'Selected vessel type not found.'});
-        return;
-    }
 
     const testSessionsCollectionRef = collection(firestore, 'test_sessions');
     const newSessionId = doc(testSessionsCollectionRef).id;
     const newSession: TestSession = {
       id: newSessionId,
-      vesselTypeId: selectedVesselType.id,
-      vesselTypeName: selectedVesselType.name,
-      serialNumber: tempTestSession.serialNumber || '',
+      batchId: tempTestSession.batchId,
+      numberInBatch: tempTestSession.numberInBatch || '',
       description: tempTestSession.description || '',
       startTime: new Date().toISOString(),
       status: 'RUNNING',
@@ -532,7 +498,7 @@ function TestingComponent() {
       setSelectedSessionIds([newSessionId]);
       setShowNewSessionForm(false);
       setTempTestSession({});
-      toast({ title: 'New Test Session Started', description: `Vessel Type: ${newSession.vesselTypeName}`});
+      toast({ title: 'New Test Session Started', description: `Batch ID: ${newSession.batchId}`});
     } catch(e: any) {
         console.error("FirebaseError:", e);
         toast({
@@ -1086,10 +1052,6 @@ function TestingComponent() {
         setGeneratingReportFor(activeTestSession.id);
     
         try {
-            const vesselDocRef = doc(firestore, 'products', activeTestSession.vesselTypeId);
-            const vesselDoc = await getDoc(vesselDocRef);
-            const vesselData = vesselDoc.exists() ? (vesselDoc.data() as VesselType) : null;
-    
             const svgElement = chartRef.current.querySelector('svg');
             if (!svgElement) {
                 throw new Error("Could not find chart SVG element.");
@@ -1103,8 +1065,6 @@ function TestingComponent() {
                     session={activeTestSession}
                     data={chartData as any[]}
                     config={sensorConfig!}
-                    minCurve={vesselData?.minCurve}
-                    maxCurve={vesselData?.maxCurve}
                     chartImage={chartImage}
                 />
             ).toBlob();
@@ -1122,8 +1082,8 @@ function TestingComponent() {
                 testSessionId: activeTestSession.id,
                 generatedAt: new Date().toISOString(),
                 downloadUrl: downloadUrl,
-                vesselTypeName: activeTestSession.vesselTypeName,
-                serialNumber: activeTestSession.serialNumber,
+                batchId: activeTestSession.batchId,
+                numberInBatch: activeTestSession.numberInBatch,
                 username: activeTestSession.username,
             };
     
@@ -1204,21 +1164,12 @@ function TestingComponent() {
               </Select>
           </div>
           <div>
-            <Label htmlFor="vesselTypeIdentifier">Vessel Type</Label>
-            <Select value={tempTestSession?.vesselTypeId || ''} onValueChange={value => handleTestSessionFieldChange('vesselTypeId', value)}>
-                <SelectTrigger id="vesselTypeIdentifier">
-                    <SelectValue placeholder="Select a vessel type to test" />
-                </SelectTrigger>
-                <SelectContent>
-                    {isVesselTypesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                    vesselTypes?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
-                    }
-                </SelectContent>
-            </Select>
+            <Label htmlFor="batchId">Batch ID</Label>
+            <Input id="batchId" placeholder="e.g., BATCH-001" value={tempTestSession.batchId || ''} onChange={e => handleTestSessionFieldChange('batchId', e.target.value)} />
           </div>
           <div>
-              <Label htmlFor="serialNumber">Serial Number</Label>
-              <Input id="serialNumber" placeholder="e.g., 187-A" value={tempTestSession.serialNumber || ''} onChange={e => handleTestSessionFieldChange('serialNumber', e.target.value)} />
+              <Label htmlFor="numberInBatch">Number in Batch</Label>
+              <Input id="numberInBatch" placeholder="e.g., 5" value={tempTestSession.numberInBatch || ''} onChange={e => handleTestSessionFieldChange('numberInBatch', e.target.value)} />
           </div>
           <div>
               <Label htmlFor="description">Description</Label>
@@ -1232,7 +1183,7 @@ function TestingComponent() {
                     await handleStartNewTestSession({ measurementType: 'ARDUINO' })
                   }} 
                   className="w-full btn-shine bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md"
-                  disabled={!tempTestSession?.vesselTypeId || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId || !!runningTestSession}
+                  disabled={!tempTestSession?.batchId || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId || !!runningTestSession}
               >
                   Start Test Bench Session
               </Button>
@@ -1247,7 +1198,7 @@ function TestingComponent() {
                     <AlertDialogHeader>
                       <AlertDialogTitle>Start Demo Simulation</AlertDialogTitle>
                       <AlertDialogDescription>
-                        Choose a scenario to simulate. This will use the vessel type and session details you've entered above.
+                        Choose a scenario to simulate. This will use the batch details you've entered above.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -1377,7 +1328,7 @@ function TestingComponent() {
                 </SelectTrigger>
                 <SelectContent>
                   {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                  testSessions?.filter(s => s.status !== 'RUNNING').map(s => <SelectItem key={s.id} value={s.id}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString()}</SelectItem>)
+                  testSessions?.filter(s => s.status !== 'RUNNING').map(s => <SelectItem key={s.id} value={s.id}>{s.batchId} (No. {s.numberInBatch}) - {new Date(s.startTime).toLocaleString()}</SelectItem>)
                   }
                 </SelectContent>
             </Select>
@@ -1560,7 +1511,7 @@ function TestingComponent() {
                     <CardContent className='p-2'>
                         <div className="flex justify-between items-center">
                             <div>
-                                <p className="font-semibold">{runningTestSession.vesselTypeName}</p>
+                                <p className="font-semibold">{runningTestSession.batchId} (No. {runningTestSession.numberInBatch})</p>
                                 <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString()}</p>
                                 <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.classification ? `(${runningTestSession.classification})` : ''}</p>
                             </div>
@@ -1665,7 +1616,7 @@ function TestingComponent() {
                             </SelectTrigger>
                             <SelectContent>
                                 {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                                testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.vesselTypeName} - {new Date(s.startTime).toLocaleString()}</SelectItem>)}
+                                testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.batchId} (No. {s.numberInBatch}) - {new Date(s.startTime).toLocaleString()}</SelectItem>)}
                             </SelectContent>
                         </Select>
                     </div>
@@ -1708,7 +1659,7 @@ function TestingComponent() {
                             return (
                                 <div key={id} className="flex items-center gap-2 bg-muted text-muted-foreground px-2 py-1 rounded-md text-xs">
                                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }}></div>
-                                    <span>{session?.vesselTypeName || id} - {session ? new Date(session.startTime).toLocaleString() : ''}</span>
+                                    <span>{session?.batchId || id} (No. {session?.numberInBatch})</span>
                                     <button onClick={() => setSelectedSessionIds(prev => prev.filter(sid => sid !== id))} className="text-muted-foreground hover:text-foreground">
                                         <XIcon className="h-3 w-3" />
                                     </button>
@@ -1761,7 +1712,7 @@ function TestingComponent() {
                           Object.entries(chartData).map(([sessionId, data], index) => {
                           const session = testSessions?.find(s => s.id === sessionId);
                           return (
-                              <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={session?.vesselTypeName || sessionId} dot={false} strokeWidth={2} isAnimationActive={false} />
+                              <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={`${session?.batchId || 'N/A'} (No. ${session?.numberInBatch})`} dot={false} strokeWidth={2} isAnimationActive={false} />
                           )
                           })
                       )}
@@ -1822,7 +1773,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-
-    
-

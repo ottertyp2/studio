@@ -3,7 +3,6 @@
 'use client';
 import React from 'react';
 import { Page, Text, View, Document, StyleSheet, Image } from '@react-pdf/renderer';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts'; // Assuming you can use this for rendering logic if not direct rendering
 
 type SensorConfig = {
     id: string;
@@ -20,9 +19,8 @@ type SensorConfig = {
 
 type TestSession = {
     id: string;
-    vesselTypeId: string;
-    vesselTypeName: string;
-    serialNumber: string;
+    batchId: string;
+    numberInBatch: string;
     description: string;
     startTime: string;
     endTime?: string;
@@ -35,8 +33,6 @@ type TestSession = {
     username: string;
 };
 
-type GuidelineCurvePoint = { x: number; y: number };
-
 type ChartDataPoint = {
     name: number; // time in seconds
     value: number;
@@ -46,8 +42,6 @@ interface TestReportProps {
   session: TestSession;
   data: ChartDataPoint[];
   config: SensorConfig;
-  minCurve?: GuidelineCurvePoint[];
-  maxCurve?: GuidelineCurvePoint[];
   chartImage: string;
 }
 
@@ -173,7 +167,7 @@ const styles = StyleSheet.create({
 });
 
 
-const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartImage, minCurve, maxCurve }) => {
+const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartImage }) => {
     
     const summaryStats = data.reduce((acc, point) => {
         acc.max = Math.max(acc.max, point.value);
@@ -195,25 +189,6 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartIma
         }
     };
 
-  // Although we are passing the pre-rendered image, we create a chart here to show the structure
-  // This is for logical clarity, the actual chart is the `chartImage` prop
-  const ChartWithGuidelines = () => (
-      <LineChart
-        width={500}
-        height={200}
-        margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
-      >
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} />
-        <YAxis domain={['dataMin', 'dataMax']} />
-        <Tooltip />
-        <Legend />
-        <Line type="monotone" data={data} dataKey="value" stroke="#3b82f6" dot={false} name="Pressure" />
-        {maxCurve && <Line type="monotone" data={maxCurve.map(p => ({name: p.x, value: p.y}))} dataKey="value" stroke="red" dot={false} strokeDasharray="5 5" name="Max Limit" />}
-        {minCurve && <Line type="monotone" data={minCurve.map(p => ({name: p.x, value: p.y}))} dataKey="value" stroke="green" dot={false} strokeDasharray="5 5" name="Min Limit" />}
-      </LineChart>
-  );
-
 
   return (
     <Document>
@@ -228,8 +203,8 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartIma
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Session Details</Text>
             <View style={styles.grid}>
-                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Vessel Type: </Text>{session.vesselTypeName}</Text></View>
-                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Serial Number: </Text>{session.serialNumber || 'N/A'}</Text></View>
+                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Batch ID: </Text>{session.batchId}</Text></View>
+                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Number in Batch: </Text>{session.numberInBatch || 'N/A'}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Start Time: </Text>{new Date(session.startTime).toLocaleString()}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>End Time: </Text>{session.endTime ? new Date(session.endTime).toLocaleString() : 'N/A'}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Tested By: </Text>{session.username}</Text></View>
@@ -304,5 +279,3 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartIma
 };
 
 export default TestReport;
-
-    

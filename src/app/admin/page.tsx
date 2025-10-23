@@ -100,15 +100,6 @@ type AppUser = {
     role: 'user' | 'superadmin';
 };
 
-type GuidelineCurvePoint = { x: number; y: number };
-
-type VesselType = {
-    id: string;
-    name: string;
-    minCurve?: GuidelineCurvePoint[];
-    maxCurve?: GuidelineCurvePoint[];
-};
-
 type TestBench = {
     id: string;
     name: string;
@@ -136,8 +127,8 @@ type Report = {
     testSessionId: string;
     generatedAt: string;
     downloadUrl: string;
-    vesselTypeName: string;
-    serialNumber: string;
+    batchId: string;
+    numberInBatch: string;
     username: string;
 };
 
@@ -152,9 +143,8 @@ type SensorData = {
 
 type TestSession = {
     id: string;
-    vesselTypeId: string;
-    vesselTypeName: string;
-    serialNumber: string;
+    batchId: string;
+    numberInBatch: string;
     description: string;
     startTime: string;
     endTime?: string;
@@ -203,24 +193,17 @@ export default function AdminPage() {
   const [sessionSearchTerm, setSessionSearchTerm] = useState('');
   const [sessionSortOrder, setSessionSortOrder] = useState('startTime-desc');
   const [sessionUserFilter, setSessionUserFilter] = useState('all');
-  const [sessionVesselTypeFilter, setSessionVesselTypeFilter] = useState('all');
+  const [sessionBatchFilter, setSessionBatchFilter] = useState('all');
   const [sessionTestBenchFilter, setSessionTestBenchFilter] = useState('all');
   const [sessionClassificationFilter, setSessionClassificationFilter] = useState('all');
 
   const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
-  const [newVesselTypeName, setNewVesselTypeName] = useState('');
   const [bulkClassifyModelId, setBulkClassifyModelId] = useState<string | null>(null);
   const [trainingProgress, setTrainingProgress] = useState(0);
 
   const [reportSearchTerm, setReportSearchTerm] = useState('');
   const [reportSortOrder, setReportSortOrder] = useState('generatedAt-desc');
-  const [editingVesselType, setEditingVesselType] = useState<VesselType | null>(null);
-  const [minCurvePoints, setMinCurvePoints] = useState<GuidelineCurvePoint[]>([]);
-  const [maxCurvePoints, setMaxCurvePoints] = useState<GuidelineCurvePoint[]>([]);
-  const [guidelineEditorMaxX, setGuidelineEditorMaxX] = useState(120);
-  const [guidelineEditorMaxY, setGuidelineEditorMaxY] = useState(1200);
-  const guidelineImportRef = useRef<HTMLInputElement>(null);
-
+  
   useEffect(() => {
     if (!isUserLoading) {
       if (!user) {
@@ -249,13 +232,6 @@ export default function AdminPage() {
   }, [firestore, user]);
 
   const { data: users, isLoading: isUsersLoading, error: usersError } = useCollection<AppUser>(usersCollectionRef);
-
-  const vesselTypesCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return collection(firestore, 'products');
-  }, [firestore, user]);
-
-  const { data: vesselTypes, isLoading: isVesselTypesLoading, error: productsError } = useCollection<VesselType>(vesselTypesCollectionRef);
 
   const testBenchesCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -541,7 +517,7 @@ export default function AdminPage() {
         await batch.commit();
         toast({
             title: 'Session Deleted',
-            description: `Session "${session.vesselTypeName}" and ${dataDeletedCount} data points deleted.`
+            description: `Session for batch "${session.batchId}" and ${dataDeletedCount} data points deleted.`
         });
     } catch (serverError) {
         toast({
@@ -578,7 +554,7 @@ export default function AdminPage() {
         const sensorData = snapshot.docs.map(doc => doc.data() as SensorData).sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
         if (sensorData.length < 20) {
-          toast({ variant: 'destructive', title: 'Not Enough Data', description: `Session for ${session.vesselTypeName} has less than 20 data points.` });
+          toast({ variant: 'destructive', title: 'Not Enough Data', description: `Session for batch ${session.batchId} has less than 20 data points.` });
           return;
         }
 
@@ -596,10 +572,10 @@ export default function AdminPage() {
 
         const classification = predictionValue > 0.5 ? 'LEAK' : 'DIFFUSION';
         handleSetSessionClassification(session.id, classification);
-        toast({ title: 'AI Classification Complete', description: `Session for ${session.vesselTypeName} classified as: ${classification}`});
+        toast({ title: 'AI Classification Complete', description: `Session for batch ${session.batchId} classified as: ${classification}`});
 
     } catch (e: any) {
-        toast({ variant: 'destructive', title: `AI Classification Failed for ${session.vesselTypeName}`, description: e.message.includes('No model found in IndexedDB') ? `A trained model named "${modelToUse.name}" was not found in your browser.` : e.message});
+        toast({ variant: 'destructive', title: `AI Classification Failed for batch ${session.batchId}`, description: e.message.includes('No model found in IndexedDB') ? `A trained model named "${modelToUse.name}" was not found in your browser.` : e.message});
         throw e;
     }
   };
@@ -624,7 +600,7 @@ export default function AdminPage() {
         await handleClassifyWithAI(session, bulkClassifyModelId);
         await new Promise(resolve => setTimeout(resolve, 300));
       } catch (error) {
-        console.error(`Failed to classify session ${session.id} (${session.vesselTypeName}):`, error);
+        console.error(`Failed to classify session ${session.id} (batch ${session.batchId}):`, error);
       }
     }
     
@@ -692,7 +668,7 @@ export default function AdminPage() {
         title: 'User Profile Deleted',
         description: `The user's profile data has been deleted. Their auth account still exists.`,
       });
-    } catch (error: any) {
+    } catch (error: any) => {
       toast({
         variant: 'destructive',
         title: 'Error Deleting User Profile',
@@ -1017,8 +993,8 @@ export default function AdminPage() {
         filtered = filtered.filter(session => session.userId === sessionUserFilter);
     }
     
-    if (sessionVesselTypeFilter !== 'all') {
-        filtered = filtered.filter(session => session.vesselTypeId === sessionVesselTypeFilter);
+    if (sessionBatchFilter !== 'all') {
+        filtered = filtered.filter(session => session.batchId === sessionBatchFilter);
     }
     
     if (sessionTestBenchFilter !== 'all') {
@@ -1037,8 +1013,8 @@ export default function AdminPage() {
         const searchTerm = sessionSearchTerm.toLowerCase();
         if (!searchTerm) return true;
         return (
-            session.vesselTypeName.toLowerCase().includes(searchTerm) ||
-            session.serialNumber.toLowerCase().includes(searchTerm) ||
+            session.batchId.toLowerCase().includes(searchTerm) ||
+            session.numberInBatch.toLowerCase().includes(searchTerm) ||
             session.description.toLowerCase().includes(searchTerm) ||
             session.username.toLowerCase().includes(searchTerm)
         );
@@ -1050,8 +1026,8 @@ export default function AdminPage() {
                 return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
             case 'startTime-asc':
                 return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
-            case 'vesselTypeName-asc':
-                return a.vesselTypeName.localeCompare(b.vesselTypeName);
+            case 'batchId-asc':
+                return a.batchId.localeCompare(b.batchId);
              case 'username-asc':
                 return a.username.localeCompare(b.username);
             case 'testBenchName-asc': {
@@ -1064,7 +1040,7 @@ export default function AdminPage() {
         }
     });
 
-  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionTestBenchFilter, sessionClassificationFilter, testBenches]);
+  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, testBenches]);
 
     const filteredAndSortedReports = useMemo(() => {
         if (!reports) return [];
@@ -1073,8 +1049,8 @@ export default function AdminPage() {
             const searchTerm = reportSearchTerm.toLowerCase();
             if (!searchTerm) return true;
             return (
-                report.vesselTypeName.toLowerCase().includes(searchTerm) ||
-                report.serialNumber.toLowerCase().includes(searchTerm) ||
+                report.batchId.toLowerCase().includes(searchTerm) ||
+                report.numberInBatch.toLowerCase().includes(searchTerm) ||
                 report.username.toLowerCase().includes(searchTerm)
             );
         });
@@ -1085,8 +1061,8 @@ export default function AdminPage() {
                     return new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime();
                 case 'generatedAt-asc':
                     return new Date(a.generatedAt).getTime() - new Date(b.generatedAt).getTime();
-                case 'vesselTypeName-asc':
-                    return a.vesselTypeName.localeCompare(b.vesselTypeName);
+                case 'batchId-asc':
+                    return a.batchId.localeCompare(b.batchId);
                 case 'username-asc':
                     return a.username.localeCompare(b.username);
                 default:
@@ -1096,182 +1072,12 @@ export default function AdminPage() {
     }, [reports, reportSearchTerm, reportSortOrder]);
 
 
-    const handleAddVesselType = () => {
-    if (!newVesselTypeName.trim()) {
-        toast({ variant: 'destructive', title: 'Invalid Input', description: 'Vessel type name cannot be empty.' });
-        return;
-    }
-    if (!firestore || !vesselTypesCollectionRef) return;
-    const newVesselTypeId = doc(collection(firestore, '_')).id;
-    addDocumentNonBlocking(vesselTypesCollectionRef, { id: newVesselTypeId, name: newVesselTypeName.trim() });
-    setNewVesselTypeName('');
-    toast({ title: 'Vessel Type Added', description: `"${newVesselTypeName.trim()}" has been added.`});
-  };
-
-  const handleDeleteVesselType = (vesselTypeId: string) => {
-    if (!firestore) return;
-    deleteDocumentNonBlocking(doc(firestore, 'products', vesselTypeId));
-    toast({ title: 'Vessel Type Deleted'});
-  };
-
-    const handleEditVesselGuidelines = (vesselType: VesselType) => {
-        setEditingVesselType(vesselType);
-
-        const allPoints = [...(vesselType.minCurve || []), ...(vesselType.maxCurve || [])];
-        if (allPoints.length > 0) {
-            const maxX = Math.max(...allPoints.map(p => p.x));
-            const maxY = Math.max(...allPoints.map(p => p.y));
-            setGuidelineEditorMaxX(Math.ceil(maxX * 1.1));
-            setGuidelineEditorMaxY(Math.ceil(maxY * 1.1));
-        } else {
-            setGuidelineEditorMaxX(120);
-            setGuidelineEditorMaxY(1200);
-        }
-
-        setMinCurvePoints(vesselType.minCurve || []);
-        setMaxCurvePoints(vesselType.maxCurve || []);
-    };
-
-    const handleSaveVesselGuidelines = async () => {
-        if (!editingVesselType || !firestore) return;
-    
-        try {
-            const minCurve = minCurvePoints.sort((a, b) => a.x - b.x);
-            const maxCurve = maxCurvePoints.sort((a, b) => a.x - b.x);
-    
-            const vesselDocRef = doc(firestore, 'products', editingVesselType.id);
-            await updateDoc(vesselDocRef, { minCurve, maxCurve });
-    
-            toast({ title: 'Guidelines Saved', description: `Guidelines for "${editingVesselType.name}" have been updated.` });
-            setEditingVesselType(null);
-            setMinCurvePoints([]);
-            setMaxCurvePoints([]);
-        } catch (e: any) {
-            toast({ variant: 'destructive', title: 'Save Failed', description: e.message });
-        }
-    };
-
-
-    const handleExportGuidelinesCSV = () => {
-        if (!vesselTypes || vesselTypes.length === 0) {
-            toast({ variant: 'destructive', title: 'No Data', description: 'There are no vessel types with guidelines to export.' });
-            return;
-        }
-
-        const rows: (string | number)[][] = [['vesselId', 'timestamp', 'minPressure', 'maxPressure']];
-        
-        vesselTypes.forEach(vessel => {
-            const minCurve = vessel.minCurve || [];
-            const maxCurve = vessel.maxCurve || [];
-            const timePoints = [...new Set([...minCurve.map(p => p.x), ...maxCurve.map(p => p.x)])].sort((a, b) => a - b);
-            
-            timePoints.forEach(time => {
-                const minPoint = minCurve.find(p => p.x === time);
-                const maxPoint = maxCurve.find(p => p.x === time);
-                rows.push([
-                    vessel.id,
-                    time,
-                    minPoint ? minPoint.y : '',
-                    maxPoint ? maxPoint.y : ''
-                ]);
-            });
-        });
-
-        if (rows.length <= 1) {
-            toast({ title: 'No Guidelines to Export', description: 'No vessel types have defined min/max curves.' });
-            return;
-        }
-
-        const csv = Papa.unparse(rows);
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        link.setAttribute('href', url);
-        link.setAttribute('download', `vessel_guidelines_${new Date().toISOString().split('T')[0]}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        toast({ title: 'Guidelines Exported' });
-    };
-
-    const handleImportGuidelinesCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file || !firestore) return;
-
-        Papa.parse(file, {
-            header: true,
-            skipEmptyLines: true,
-            complete: async (results) => {
-                if (results.errors.length > 0) {
-                    toast({ variant: 'destructive', title: 'Import Error', description: `CSV parsing failed: ${results.errors[0].message}` });
-                    return;
-                }
-
-                const requiredFields = ['vesselId', 'timestamp', 'minPressure', 'maxPressure'];
-                if (!requiredFields.every(field => results.meta.fields?.includes(field))) {
-                    toast({ variant: 'destructive', title: 'Invalid Format', description: `CSV must contain the headers: ${requiredFields.join(', ')}.` });
-                    return;
-                }
-
-                const dataByVessel: Record<string, { minCurve: GuidelineCurvePoint[], maxCurve: GuidelineCurvePoint[] }> = {};
-
-                (results.data as any[]).forEach(row => {
-                    const { vesselId, timestamp, minPressure, maxPressure } = row;
-                    if (!vesselId || !timestamp) return;
-
-                    if (!dataByVessel[vesselId]) {
-                        dataByVessel[vesselId] = { minCurve: [], maxCurve: [] };
-                    }
-                    
-                    const time = parseFloat(timestamp);
-                    if (isNaN(time)) return;
-
-                    const minP = parseFloat(minPressure);
-                    if (!isNaN(minP)) {
-                        dataByVessel[vesselId].minCurve.push({ x: time, y: minP });
-                    }
-                    
-                    const maxP = parseFloat(maxPressure);
-                    if (!isNaN(maxP)) {
-                        dataByVessel[vesselId].maxCurve.push({ x: time, y: maxP });
-                    }
-                });
-
-                try {
-                    const batch = writeBatch(firestore);
-                    let vesselsUpdated = 0;
-                    
-                    for (const vesselId in dataByVessel) {
-                        const vesselDocRef = doc(firestore, 'products', vesselId);
-                        const { minCurve, maxCurve } = dataByVessel[vesselId];
-
-                        minCurve.sort((a, b) => a.x - b.x);
-                        maxCurve.sort((a, b) => a.x - b.x);
-                        
-                        batch.update(vesselDocRef, { minCurve, maxCurve });
-                        vesselsUpdated++;
-                    }
-
-                    await batch.commit();
-                    toast({ title: 'Import Successful', description: `Updated guidelines for ${vesselsUpdated} vessel types.` });
-                } catch (e: any) {
-                    toast({ variant: 'destructive', title: 'Import Failed', description: `Could not save to Firestore. Check permissions and vessel IDs. ${e.message}` });
-                }
-            }
-        });
-
-        if (guidelineImportRef.current) {
-            guidelineImportRef.current.value = '';
-        }
-    };
-
   const isFilterActive = useMemo(() => {
     return sessionUserFilter !== 'all' || 
-           sessionVesselTypeFilter !== 'all' || 
+           sessionBatchFilter !== 'all' || 
            sessionTestBenchFilter !== 'all' || 
            sessionClassificationFilter !== 'all';
-  }, [sessionUserFilter, sessionVesselTypeFilter, sessionTestBenchFilter, sessionClassificationFilter]);
+  }, [sessionUserFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter]);
 
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
@@ -1363,6 +1169,8 @@ export default function AdminPage() {
   }
 
   const renderTestSessionManager = () => {
+    const uniqueBatchIds = [...new Set(testSessions?.map(s => s.batchId) || [])];
+
     return (
       <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg lg:col-span-2">
         <CardHeader>
@@ -1391,7 +1199,7 @@ export default function AdminPage() {
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('startTime-desc')}>Newest</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('startTime-asc')}>Oldest</DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setSessionSortOrder('vesselTypeName-asc')}>Vessel Type Name</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setSessionSortOrder('batchId-asc')}>Batch ID</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('username-asc')}>Username</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('testBenchName-asc')}>Test Bench</DropdownMenuItem>
                   </DropdownMenuContent>
@@ -1417,12 +1225,12 @@ export default function AdminPage() {
                                 </Select>
                             </div>
                             <div className="space-y-2">
-                                <Label>Vessel Type</Label>
-                                <Select value={sessionVesselTypeFilter} onValueChange={setSessionVesselTypeFilter}>
+                                <Label>Batch ID</Label>
+                                <Select value={sessionBatchFilter} onValueChange={setSessionBatchFilter}>
                                     <SelectTrigger><SelectValue/></SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="all">All Vessel Types</SelectItem>
-                                        {vesselTypes?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                                        <SelectItem value="all">All Batches</SelectItem>
+                                        {uniqueBatchIds.map(id => <SelectItem key={id} value={id}>{id}</SelectItem>)}
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -1514,7 +1322,7 @@ export default function AdminPage() {
                     <Card key={session.id} className={`p-4 ${session.status === 'RUNNING' ? 'border-primary' : ''} hover:bg-muted/50`}>
                         <div className="flex justify-between items-start gap-4">
                             <div className='flex-grow space-y-1'>
-                                <p className="font-semibold">{session.vesselTypeName} <span className="text-sm text-muted-foreground">({session.serialNumber || 'N/A'})</span></p>
+                                <p className="font-semibold">{session.batchId} <span className="text-sm text-muted-foreground">(No. {session.numberInBatch || 'N/A'})</span></p>
                                 <p className="text-sm text-muted-foreground">
                                     {new Date(session.startTime).toLocaleString()} - {session.status}
                                 </p>
@@ -1587,7 +1395,7 @@ export default function AdminPage() {
                                             <AlertDialogHeader>
                                                 <AlertDialogTitle className="text-destructive">Permanently Delete Session?</AlertDialogTitle>
                                                 <AlertDialogDescription>
-                                                    This will permanently delete the session for "{session.vesselTypeName}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
+                                                    This will permanently delete the session for batch "{session.batchId}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
                                                 </AlertDialogDescription>
                                             </AlertDialogHeader>
                                             <AlertDialogFooter>
@@ -1716,142 +1524,6 @@ export default function AdminPage() {
     );
   };
   
-    const renderVesselTypeManagement = () => (
-    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-      <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
-        <AccordionItem value="item-1">
-          <AccordionTrigger className="p-6">
-            <div className="text-left">
-              <CardTitle>Vessel Type Management</CardTitle>
-              <CardDescription>Add, remove, and manage guidelines for your vessel types.</CardDescription>
-            </div>
-          </AccordionTrigger>
-          <AccordionContent className="p-6 pt-0">
-            <div className="space-y-4">
-                <div className="flex gap-2">
-                    <Input
-                        placeholder="New vessel type name..."
-                        value={newVesselTypeName}
-                        onChange={(e) => setNewVesselTypeName(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && newVesselTypeName.trim() && handleAddVesselType()}
-                    />
-                    <Button onClick={handleAddVesselType} disabled={!newVesselTypeName.trim()}>
-                        <PackagePlus className="h-4 w-4 mr-2" />
-                        Add
-                    </Button>
-                </div>
-                <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => guidelineImportRef.current?.click()}>
-                        <Upload className="h-4 w-4 mr-2" />
-                        Import CSV
-                    </Button>
-                    <input type="file" ref={guidelineImportRef} onChange={handleImportGuidelinesCSV} accept=".csv" className="hidden" />
-                    <Button variant="outline" size="sm" onClick={handleExportGuidelinesCSV}>
-                        <Download className="h-4 w-4 mr-2" />
-                        Export CSV
-                    </Button>
-                </div>
-                <ScrollArea className="h-64 border rounded-md p-2 bg-background/50">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Vessel Type Name</TableHead>
-                                <TableHead className="text-right">Action</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {isVesselTypesLoading ? (
-                                <TableRow><TableCell colSpan={2} className="text-center">Loading vessel types...</TableCell></TableRow>
-                            ) : vesselTypes && vesselTypes.length > 0 ? (
-                                vesselTypes.map(p => (
-                                    <TableRow key={p.id}>
-                                        <TableCell className="truncate max-w-[200px] font-medium">{p.name}</TableCell>
-                                        <TableCell className="text-right space-x-2">
-                                            <Button variant="outline" size="sm" onClick={() => handleEditVesselGuidelines(p)}>
-                                                <Edit className="h-3 w-3 mr-1" />
-                                                Guidelines
-                                            </Button>
-                                            <AlertDialog>
-                                                <AlertDialogTrigger asChild>
-                                                    <Button variant="ghost" size="icon" disabled={!user}>
-                                                        <Trash2 className="h-4 w-4 text-destructive" />
-                                                    </Button>
-                                                </AlertDialogTrigger>
-                                                <AlertDialogContent>
-                                                    <AlertDialogHeader>
-                                                        <AlertDialogTitle>Delete Vessel Type?</AlertDialogTitle>
-                                                        <AlertDialogDescription>
-                                                            Are you sure you want to delete "{p.name}"? This cannot be undone. Associated test sessions will not be deleted but will reference a missing vessel type.
-                                                        </AlertDialogDescription>
-                                                    </AlertDialogHeader>
-                                                    <AlertDialogFooter>
-                                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                        <AlertDialogAction variant="destructive" onClick={() => handleDeleteVesselType(p.id)}>Confirm Delete</AlertDialogAction>
-                                                    </AlertDialogFooter>
-                                                </AlertDialogContent>
-                                            </AlertDialog>
-                                        </TableCell>
-                                    </TableRow>
-                                ))
-                            ) : (
-                                <TableRow><TableCell colSpan={2} className="text-center text-muted-foreground">No vessel types found.</TableCell></TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </ScrollArea>
-                 <Dialog open={!!editingVesselType} onOpenChange={(open) => !open && setEditingVesselType(null)}>
-                    <DialogContent className="max-w-4xl">
-                        <DialogHeader>
-                            <DialogTitle>Edit Guidelines for "{editingVesselType?.name}"</DialogTitle>
-                            <DialogDescription>
-                                Double-click a point to clear the curve. Click twice to set start and end points, then drag all 4 points to shape the curve.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="grid grid-cols-2 gap-4 py-4">
-                           <div className="space-y-2">
-                                <Label>Max Time (s)</Label>
-                                <Input type="number" value={guidelineEditorMaxX} onChange={e => setGuidelineEditorMaxX(Number(e.target.value))} />
-                            </div>
-                             <div className="space-y-2">
-                                <Label>Max Pressure</Label>
-                                <Input type="number" value={guidelineEditorMaxY} onChange={e => setGuidelineEditorMaxY(Number(e.target.value))} />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Minimum Curve</Label>
-                                <GuidelineCurveEditor
-                                    points={minCurvePoints}
-                                    setPoints={setMinCurvePoints}
-                                    className="h-64 w-full"
-                                    lineColor="hsl(var(--chart-2))"
-                                    maxX={guidelineEditorMaxX} 
-                                    maxY={guidelineEditorMaxY}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Maximum Curve</Label>
-                                 <GuidelineCurveEditor
-                                    points={maxCurvePoints}
-                                    setPoints={setMaxCurvePoints}
-                                    className="h-64 w-full"
-                                    lineColor="hsl(var(--destructive))"
-                                    maxX={guidelineEditorMaxX}
-                                    maxY={guidelineEditorMaxY}
-                                />
-                            </div>
-                        </div>
-                        <DialogFooter>
-                            <Button variant="ghost" onClick={() => setEditingVesselType(null)}>Cancel</Button>
-                            <Button onClick={handleSaveVesselGuidelines}>Save Guidelines</Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
-            </div>
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
-    </Card>
-  );
-
   const renderModelManagement = () => (
     <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
       <CardHeader>
@@ -1947,7 +1619,7 @@ export default function AdminPage() {
                                 }}
                              />
                              <label htmlFor={d.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                 {d.vesselTypeName} ({d.classification}) - <span className="text-xs text-muted-foreground">{new Date(d.startTime).toLocaleDateString()}</span>
+                                 {d.batchId} (No. {d.numberInBatch}) - <span className="text-xs text-muted-foreground">{new Date(d.startTime).toLocaleDateString()}</span>
                              </label>
                          </div>
                      ))}
@@ -2048,7 +1720,7 @@ export default function AdminPage() {
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onSelect={() => setReportSortOrder('generatedAt-desc')}>Newest</DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => setReportSortOrder('generatedAt-asc')}>Oldest</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setReportSortOrder('vesselTypeName-asc')}>Vessel Type Name</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setReportSortOrder('batchId-asc')}>Batch ID</DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => setReportSortOrder('username-asc')}>Username</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -2057,8 +1729,8 @@ export default function AdminPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Vessel Type</TableHead>
-                    <TableHead>Serial Number</TableHead>
+                    <TableHead>Batch ID</TableHead>
+                    <TableHead>Batch No.</TableHead>
                     <TableHead>Generated By</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -2070,8 +1742,8 @@ export default function AdminPage() {
                   ) : filteredAndSortedReports.length > 0 ? (
                     filteredAndSortedReports.map((report) => (
                       <TableRow key={report.id}>
-                        <TableCell className="font-medium">{report.vesselTypeName}</TableCell>
-                        <TableCell>{report.serialNumber || 'N/A'}</TableCell>
+                        <TableCell className="font-medium">{report.batchId}</TableCell>
+                        <TableCell>{report.numberInBatch || 'N/A'}</TableCell>
                         <TableCell>{report.username}</TableCell>
                         <TableCell>{new Date(report.generatedAt).toLocaleString()}</TableCell>
                         <TableCell className="text-right">
@@ -2131,7 +1803,7 @@ export default function AdminPage() {
                 </div>
             </div>
             <CardDescription>
-              Manage vessel types, sensor configurations, and test sessions.
+              Manage sensor configurations and test sessions.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -2260,7 +1932,6 @@ export default function AdminPage() {
                       </AccordionItem>
                   </Accordion>
               </Card>
-               {renderVesselTypeManagement()}
           </div>
           <div className="lg:col-span-2 space-y-6">
               {renderTestSessionManager()}
@@ -2283,5 +1954,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-    
