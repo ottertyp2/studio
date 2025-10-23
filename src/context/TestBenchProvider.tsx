@@ -154,9 +154,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 setValve1Status(trimmedLine.includes('ON') ? 'ON' : 'OFF');
               } else if (trimmedLine.startsWith('VALVE2:STATE:')) {
                 setValve2Status(trimmedLine.includes('ON') ? 'ON' : 'OFF');
-              } else {
+              } else if (trimmedLine.startsWith('SENSOR:')) {
                 const parts = trimmedLine.split(':');
-                if (parts.length === 2 && parts[0] === 'SENSOR') {
+                if (parts.length === 2) {
                   const sensorValue = parseInt(parts[1], 10);
                   if (!isNaN(sensorValue)) {
                     handleNewDataPoint({
