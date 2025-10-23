@@ -148,6 +148,17 @@ type MLModel = {
     fileSize: number;
 };
 
+type Report = {
+    id: string;
+    testSessionId: string;
+    generatedAt: string;
+    downloadUrl: string;
+    vesselTypeName: string;
+    serialNumber: string;
+    username: string;
+};
+
+
 type AiAnalysisResult = {
   prediction: 'Leak' | 'Diffusion';
   confidence: number;
@@ -1064,13 +1075,25 @@ function TestingComponent() {
   }, [lastDataPointTimestamp, setCurrentValue]);
 
     const handleGenerateReport = useCallback(async () => {
-        if (!activeTestSession || !firestore || !firebaseApp || !chartRef.current) return;
+        if (!activeTestSession || !firestore || !firebaseApp || !chartRef.current) {
+            return;
+        }
+
+        const currentSensorConfig = sensorConfigs?.find(c => c.id === activeTestSession.sensorConfigurationId);
+        const currentVesselType = vesselTypes?.find(p => p.id === activeTestSession.vesselTypeId);
+        
+        if (!currentSensorConfig || !currentVesselType) {
+            toast({
+                variant: 'destructive',
+                title: 'Report Failed',
+                description: 'Could not find the sensor configuration or vessel type for this session.',
+            });
+            return;
+        }
     
         setGeneratingReportFor(activeTestSession.id);
     
         try {
-            const vesselType = vesselTypes?.find(p => p.id === activeTestSession.vesselTypeId);
-            
             const svgElement = chartRef.current.querySelector('svg');
             if (!svgElement) {
                 throw new Error("Could not find chart SVG element.");
@@ -1083,9 +1106,9 @@ function TestingComponent() {
                 <TestReport
                     session={activeTestSession}
                     data={chartData as any[]}
-                    config={sensorConfig!}
+                    config={currentSensorConfig}
                     chartImage={chartImage}
-                    vesselType={vesselType}
+                    vesselType={currentVesselType}
                 />
             ).toBlob();
     
@@ -1124,7 +1147,7 @@ function TestingComponent() {
         } finally {
             setGeneratingReportFor(null);
         }
-    }, [activeTestSession, firestore, firebaseApp, toast, chartData, sensorConfig, vesselTypes]);
+    }, [activeTestSession, firestore, firebaseApp, toast, chartData, sensorConfigs, vesselTypes]);
   
   const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
   const displayDecimals = sensorConfig?.decimalPlaces ?? 0;
@@ -1403,7 +1426,7 @@ function TestingComponent() {
                           {isAnalyzing ? 'Analyzing...' : 'Analyze with AI'}
                       </Button>
                       
-                    {activeTestSession && sensorConfig && (
+                    {activeTestSession && (
                         <Button 
                             variant="outline" 
                             disabled={generatingReportFor === activeTestSession.id}
