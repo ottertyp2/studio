@@ -56,9 +56,10 @@ interface TestReportProps {
 const styles = StyleSheet.create({
   page: {
     flexDirection: 'column',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F3F4F6', // Light gray background
     padding: 30,
     fontFamily: 'Helvetica',
+    color: '#374151', // Darker gray text for main content
   },
   header: {
     flexDirection: 'row',
@@ -66,7 +67,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     borderBottomWidth: 2,
-    borderBottomColor: '#1E40AF', // primary color
+    borderBottomColor: '#4A5568', // Darker gray for header border
     paddingBottom: 10,
   },
   logo: {
@@ -76,7 +77,7 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1E3A8A', // A darker blue
+    color: '#1F2937', // Even darker for main title
   },
   section: {
     marginBottom: 15,
@@ -85,9 +86,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginBottom: 8,
-    color: '#1E40AF',
+    color: '#1F2937',
     borderBottomWidth: 1,
-    borderBottomColor: '#BFDBFE', // accent color
+    borderBottomColor: '#D1D5DB', // Lighter gray for section underline
     paddingBottom: 4,
   },
   text: {
@@ -112,7 +113,7 @@ const styles = StyleSheet.create({
     right: 30,
     textAlign: 'center',
     fontSize: 9,
-    color: 'grey',
+    color: '#6B7280', // Medium gray for footer
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
     paddingTop: 5,
@@ -120,16 +121,17 @@ const styles = StyleSheet.create({
   chartContainer: {
     marginTop: 10,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#D1D5DB',
     height: 250, 
     padding: 5,
-    backgroundColor: '#FAFAFA'
+    backgroundColor: '#FFFFFF' // White background for the chart area itself
   },
   table: { 
     display: 'flex', 
     width: "auto", 
     borderStyle: "solid", 
     borderWidth: 1, 
+    borderColor: '#D1D5DB',
     borderRightWidth: 0, 
     borderBottomWidth: 0,
     marginTop: 10,
@@ -142,15 +144,17 @@ const styles = StyleSheet.create({
     width: "50%", 
     borderStyle: "solid", 
     borderWidth: 1, 
+    borderColor: '#D1D5DB',
     borderLeftWidth: 0, 
     borderTopWidth: 0,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#E5E7EB', // Slightly darker gray for table header
     padding: 5,
   }, 
   tableCol: { 
     width: "50%", 
     borderStyle: "solid", 
     borderWidth: 1, 
+    borderColor: '#D1D5DB',
     borderLeftWidth: 0, 
     borderTopWidth: 0,
     padding: 5,
@@ -158,6 +162,7 @@ const styles = StyleSheet.create({
   tableHeader: {
     fontSize: 10,
     fontWeight: 'bold',
+    color: '#1F2937'
   },
   tableCell: {
     fontSize: 9,
