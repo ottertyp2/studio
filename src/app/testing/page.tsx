@@ -185,7 +185,7 @@ function TestingComponent() {
     localDataLog,
     setLocalDataLog,
     currentValue,
-    handleNewDataPoint,
+    handleNewDataPoint: originalHandleNewDataPoint,
     connectToTestBench,
   } = useTestBench();
 
@@ -351,6 +351,20 @@ function TestingComponent() {
     runningTestSessionRef.current = session;
     return session;
   }, [testSessions]);
+
+  const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
+    if (!activeTestBenchId) return;
+
+    const currentRunningSession = runningTestSessionRef.current;
+    
+    // Enrich the data point with the current session ID if a session is running
+    if (currentRunningSession) {
+      newDataPoint.testSessionId = currentRunningSession.id;
+    }
+
+    originalHandleNewDataPoint(newDataPoint);
+
+  }, [activeTestBenchId, originalHandleNewDataPoint]);
   
   const stopDemoMode = useCallback(() => {
     if (demoIntervalRef.current) {
@@ -377,22 +391,25 @@ function TestingComponent() {
   
 
   useEffect(() => {
-    const currentRunningSession = runningTestSessionRef.current;
-    if (currentRunningSession && activeTestBenchId) {
-        const sensorDataRef = collection(firestore, `sensor_configurations/${currentRunningSession.sensorConfigurationId}/sensor_data`);
-        const q = query(sensorDataRef, where("testSessionId", "==", currentRunningSession.id));
+    if (runningTestSession && isConnected) {
+        // Data is being handled by the TestBenchProvider's snapshot listener.
+        // We just need to make sure new data points get the session ID.
+        // The handleNewDataPoint wrapper now handles this.
+    } else if (runningTestSession && runningTestSession.measurementType !== 'DEMO' && !isConnected) {
+        // Non-demo, non-wifi session (e.g., from imported data)
+        const sensorDataRef = collection(firestore, `sensor_configurations/${runningTestSession.sensorConfigurationId}/sensor_data`);
+        const q = query(sensorDataRef, where("testSessionId", "==", runningTestSession.id));
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
             snapshot.docChanges().forEach((change) => {
                 if (change.type === 'added') {
-                    const newPoint = change.doc.data() as SensorData;
-                    handleNewDataPoint(newPoint);
+                    handleNewDataPoint(change.doc.data() as SensorData);
                 }
             });
         });
         return () => unsubscribe();
     }
-  }, [runningTestSession, activeTestBenchId, firestore, handleNewDataPoint]);
+  }, [runningTestSession, isConnected, firestore, handleNewDataPoint]);
 
 
   useEffect(() => {
@@ -462,7 +479,7 @@ function TestingComponent() {
 
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
   
-  const isLiveSessionActive = useMemo(() => !!runningTestSession || isConnected, [runningTestSession, isConnected]);
+  const isLiveSessionActive = useMemo(() => !!runningTestSession || (isConnected && !!currentValue), [runningTestSession, isConnected, currentValue]);
 
   const dataLog = useMemo(() => {
     if (isLiveSessionActive) {
@@ -953,7 +970,7 @@ function TestingComponent() {
   
     let visibleData: SensorData[];
     if (isLiveSessionActive) {
-      visibleData = allChronologicalData;
+      visibleData = allChronologicalData.filter(d => d.testSessionId === runningTestSession?.id);
     } else {
       if (selectedSessionIds.length === 1) {
         visibleData = allChronologicalData.filter(d => d.testSessionId === selectedSessionIds[0]);
@@ -985,7 +1002,7 @@ function TestingComponent() {
   
     return { chartData: mappedData, chartDomain: domain };
   
-  }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, editingSessionId, isLiveSessionActive, liveUpdateEnabled]);
+  }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, testSessions, editingSessionId, isLiveSessionActive, liveUpdateEnabled, runningTestSession]);
 
   useEffect(() => {
     if (isLiveSessionActive && Array.isArray(chartData) && liveUpdateEnabled) {
@@ -1120,6 +1137,16 @@ function TestingComponent() {
         });
         return;
     }
+    
+    const svgElement = chartRef.current.querySelector('svg');
+    if (!svgElement) {
+        toast({
+            variant: 'destructive',
+            title: 'Report Failed',
+            description: 'Could not find chart SVG element to generate the report image.',
+        });
+        return;
+    }
 
     const currentSensorConfig = sensorConfigs?.find(c => c.id === activeTestSession.sensorConfigurationId);
     const currentVesselType = vesselTypes?.find(p => p.id === activeTestSession.vesselTypeId);
@@ -1137,10 +1164,6 @@ function TestingComponent() {
     setGeneratingReportFor(activeTestSession.id);
 
     try {
-        const svgElement = chartRef.current.querySelector('svg');
-        if (!svgElement) {
-            throw new Error("Could not find chart SVG element to generate the report image.");
-        }
 
         const svgString = new XMLSerializer().serializeToString(svgElement);
         const chartImage = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgString)))}`;
@@ -1211,11 +1234,11 @@ function TestingComponent() {
       }
       return 'Watching Live Demo';
     }
-    if (isConnected) {
+    if (isConnected && currentValue !== null) {
         return 'Streaming from Test Bench';
     }
     return 'Offline';
-  }, [isConnected, runningTestSession, instanceId]);
+  }, [isConnected, currentValue, runningTestSession, instanceId]);
 
 
   const renderNewSessionForm = () => (

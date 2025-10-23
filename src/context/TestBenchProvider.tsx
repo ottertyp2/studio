@@ -58,6 +58,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     
     activeTestBenchIdRef.current = null;
     setIsConnected(false);
+    setCurrentValue(null);
+    setLastDataPointTimestamp(null);
     
     if (!firestore || !testBenchId) {
         return;
@@ -71,9 +73,15 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             setIsConnected(true);
             const data = snapshot.data();
             
-            if (data.liveSensorValue !== undefined && data.liveSensorValue !== currentValue) {
-                 setCurrentValue(data.liveSensorValue);
-                 setLastDataPointTimestamp(Date.now());
+            if (data.liveSensorValue !== undefined) {
+                 // Create a full SensorData object to pass to handleNewDataPoint
+                 const newDataPoint: SensorData = {
+                    value: data.liveSensorValue,
+                    timestamp: new Date().toISOString(),
+                    testBenchId: testBenchId,
+                    // testSessionId will be added in the testing page if a session is running
+                 };
+                 handleNewDataPoint(newDataPoint);
             }
 
             if (data.valves?.VALVE1 && data.valves.VALVE1 !== valve1Status) {
@@ -95,7 +103,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
     unsubscribeRef.current = unsubscribe;
     
-  }, [firestore, toast, currentValue, valve1Status, valve2Status]);
+  }, [firestore, toast, handleNewDataPoint, valve1Status, valve2Status]);
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout | null = null;

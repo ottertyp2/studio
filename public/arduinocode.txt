@@ -1,62 +1,321 @@
+#include <WiFi.h>
+#include <Firebase_ESP_Client.h>
+#include "addons/TokenHelper.h"
+#include "addons/RTDBHelper.h"
+
+// WiFi-Zugangsdaten
+#define WIFI_SSID "BioThrust"
+#define WIFI_PASSWORD "WORKBOX-declare-mescal-lion"
+
+// Firebase-Zugangsdaten
+#define API_KEY "AIzaSyCm5iVRj1hOG9NlBtLydsOW-H51d0IdoQs"
+// WICHTIG: Korrigierte Database URL (nicht die Console-URL!)
+#define DATABASE_URL "https://studio-946072313-2310e-default-rtdb.firebaseio.com/"
+#define USER_EMAIL "esp32@biothrust.app"
+#define USER_PASSWORD "esp32esp32"
+
+// Pin-Definitionen
 const int analogPin = A0;
 const int valve1Pin = 18;
 const int valve2Pin = 19;
+const int valve1LedPin = D2;
+const int valve2LedPin = D3;
 
-int adcResolution = 12; // Default ESP32
+// Firebase-Objekte
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
 
-bool valve1 = false;
-bool valve2 = false;
-bool showValve1 = true;
+// Timing-Variablen
 unsigned long lastSensorTime = 0;
 unsigned long lastStatusTime = 0;
-unsigned long lastLedSwitch = 0;
+unsigned long lastCommandCheck = 0;
+
+// System-Status
+bool valve1 = false;
+bool valve2 = false;
+bool recordingActive = false;
+String currentSessionId = "";
+unsigned long sessionStartTime = 0;
 
 void setup() {
-  Serial.begin(9600);
-  delay(200); // Stability workaround (optional)
-#if defined(analogReadResolution)
-  analogReadResolution(adcResolution);
-#endif
+  // Serial für Debugging (bleibt IMMER aktiv!)
+  Serial.begin(115200);
+  delay(500);
+  Serial.println("\n=== ESP32 Studio Sensor System ===");
+  Serial.println("Version: 1.0");
+  
+  // Pin-Konfiguration
+  pinMode(analogPin, INPUT);
   pinMode(valve1Pin, OUTPUT);
   pinMode(valve2Pin, OUTPUT);
-
+  pinMode(valve1LedPin, OUTPUT);
+  pinMode(valve2LedPin, OUTPUT);
+  
   digitalWrite(valve1Pin, LOW);
   digitalWrite(valve2Pin, LOW);
-
-  Serial.println("READY");
+  digitalWrite(valve1LedPin, LOW);
+  digitalWrite(valve2LedPin, LOW);
+  
+  Serial.println("[GPIO] Pins initialisiert");
+  
+  // WiFi-Verbindung
+  Serial.printf("[WiFi] Verbinde mit %s...\n", WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  
+  int wifiTimeout = 0;
+  while (WiFi.status() != WL_CONNECTED && wifiTimeout < 30) {
+    delay(500);
+    Serial.print(".");
+    wifiTimeout++;
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n[WiFi] ✓ Verbunden!");
+    Serial.printf("[WiFi] IP: %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("[WiFi] Signal: %d dBm\n", WiFi.RSSI());
+  } else {
+    Serial.println("\n[WiFi] ✗ FEHLER: Verbindung fehlgeschlagen!");
+    Serial.println("[System] Arbeite nur im Serial-Debug-Modus");
+    Serial.println("[System] READY (Serial-only mode)");
+    return;
+  }
+  
+  // Firebase initialisieren
+  Serial.println("[Firebase] Initialisiere...");
+  config.api_key = API_KEY;
+  config.database_url = DATABASE_URL;
+  auth.user.email = USER_EMAIL;
+  auth.user.password = USER_PASSWORD;
+  
+  // Token-Status-Callback
+  config.token_status_callback = tokenStatusCallback;
+  
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
+  
+  Serial.println("[Firebase] ✓ Verbunden!");
+  Serial.printf("[Firebase] Database: %s\n", DATABASE_URL);
+  Serial.println("[System] ✓ READY");
+  Serial.println("=====================================");
+  Serial.println("Serial Commands:");
+  Serial.println("  VALVE1:ON / VALVE1:OFF");
+  Serial.println("  VALVE2:ON / VALVE2:OFF");
+  Serial.println("  START / STOP (Recording)");
+  Serial.println("  STATUS (System-Info)");
+  Serial.println("=====================================\n");
 }
 
 void loop() {
-  // Sensor every 500 ms
+  // Sensor immer auslesen (für Serial Debug)
   if (millis() - lastSensorTime > 500) {
     lastSensorTime = millis();
     int sensorValue = analogRead(analogPin);
-    Serial.print("SENSOR:");
-    Serial.println(sensorValue);
+    unsigned long timestamp = millis();
+    
+    // Immer auf Serial ausgeben (Debug)
+    Serial.printf("[Sensor] %d | %lu ms", sensorValue, timestamp);
+    if (recordingActive) {
+      Serial.print(" [REC]");
+    }
+    Serial.println();
+    
+    // Firebase nur wenn verbunden
+    if (Firebase.ready()) {
+      // LIVE-Wert (wird überschrieben, keine Historie!)
+      if (Firebase.RTDB.setInt(&fbdo, "/live/sensor", sensorValue)) {
+        // Erfolg - optional debug message
+      } else {
+        Serial.printf("[Firebase] Fehler: %s\n", fbdo.errorReason().c_str());
+      }
+      
+      Firebase.RTDB.setInt(&fbdo, "/live/timestamp", timestamp);
+      
+      // Wenn Recording aktiv: In Session speichern
+      if (recordingActive && currentSessionId != "") {
+        String path = "/sessions/" + currentSessionId + "/data/" + String(timestamp);
+        
+        // JSON-Objekt für bessere Performance
+        FirebaseJson json;
+        json.set("value", sensorValue);
+        json.set("time", timestamp);
+        json.set("relativeTime", timestamp - sessionStartTime);
+        
+        if (Firebase.RTDB.setJSON(&fbdo, path.c_str(), &json)) {
+          // Erfolg
+        } else {
+          Serial.printf("[Recording] Fehler: %s\n", fbdo.errorReason().c_str());
+        }
+      }
+    }
   }
-
-  // Status every second
+  
+  // Ventilstatus alle 1000ms senden
   if (millis() - lastStatusTime > 1000) {
     lastStatusTime = millis();
-    Serial.print("VALVE1:STATE:");
-    Serial.println(valve1 ? "ON" : "OFF");
-    Serial.print("VALVE2:STATE:");
-    Serial.println(valve2 ? "ON" : "OFF");
+    
+    if (Firebase.ready()) {
+      Firebase.RTDB.setBool(&fbdo, "/live/valve1", valve1);
+      Firebase.RTDB.setBool(&fbdo, "/live/valve2", valve2);
+      Firebase.RTDB.setBool(&fbdo, "/live/recording", recordingActive);
+    }
   }
-
-  // Serial input
+  
+  // Commands von Firebase lesen (alle 200ms)
+  if (Firebase.ready() && millis() - lastCommandCheck > 200) {
+    lastCommandCheck = millis();
+    
+    // Valve 1 Command
+    if (Firebase.RTDB.getBool(&fbdo, "/commands/valve1")) {
+      bool newState = fbdo.boolData();
+      if (newState != valve1) {
+        valve1 = newState;
+        digitalWrite(valve1Pin, valve1 ? HIGH : LOW);
+        digitalWrite(valve1LedPin, valve1 ? HIGH : LOW);
+        Serial.printf("[Command] Valve1 -> %s\n", valve1 ? "ON" : "OFF");
+      }
+    }
+    
+    // Valve 2 Command
+    if (Firebase.RTDB.getBool(&fbdo, "/commands/valve2")) {
+      bool newState = fbdo.boolData();
+      if (newState != valve2) {
+        valve2 = newState;
+        digitalWrite(valve2Pin, valve2 ? HIGH : LOW);
+        digitalWrite(valve2LedPin, valve2 ? HIGH : LOW);
+        Serial.printf("[Command] Valve2 -> %s\n", valve2 ? "ON" : "OFF");
+      }
+    }
+    
+    // Recording Command
+    if (Firebase.RTDB.getBool(&fbdo, "/commands/recording")) {
+      bool shouldRecord = fbdo.boolData();
+      
+      if (shouldRecord && !recordingActive) {
+        // START RECORDING
+        recordingActive = true;
+        currentSessionId = String(millis());
+        sessionStartTime = millis();
+        
+        // Session-Metadaten speichern
+        String metaPath = "/sessions/" + currentSessionId + "/meta";
+        FirebaseJson meta;
+        meta.set("id", currentSessionId);
+        meta.set("startTime", sessionStartTime);
+        meta.set("startTimeISO", getISOTimestamp());
+        meta.set("status", "recording");
+        
+        Firebase.RTDB.setJSON(&fbdo, metaPath.c_str(), &meta);
+        
+        Serial.println("=====================================");
+        Serial.printf("[Recording] ▶ GESTARTET\n");
+        Serial.printf("[Recording] Session: %s\n", currentSessionId.c_str());
+        Serial.println("=====================================");
+        
+      } else if (!shouldRecord && recordingActive) {
+        // STOP RECORDING
+        String metaPath = "/sessions/" + currentSessionId + "/meta";
+        FirebaseJson meta;
+        meta.set("endTime", millis());
+        meta.set("endTimeISO", getISOTimestamp());
+        meta.set("duration", millis() - sessionStartTime);
+        meta.set("status", "completed");
+        
+        Firebase.RTDB.updateNode(&fbdo, metaPath.c_str(), &meta);
+        
+        Serial.println("=====================================");
+        Serial.printf("[Recording] ■ GESTOPPT\n");
+        Serial.printf("[Recording] Session: %s\n", currentSessionId.c_str());
+        Serial.printf("[Recording] Dauer: %lu ms\n", millis() - sessionStartTime);
+        Serial.println("=====================================");
+        
+        recordingActive = false;
+        currentSessionId = "";
+        sessionStartTime = 0;
+      }
+    }
+  }
+  
+  // Serial Commands (für Debug)
   if (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
-    if (cmd == "VALVE1:ON")  { valve1 = true;  digitalWrite(valve1Pin, HIGH); }
-    if (cmd == "VALVE1:OFF") { valve1 = false; digitalWrite(valve1Pin, LOW);  }
-    if (cmd == "VALVE2:ON")  { valve2 = true;  digitalWrite(valve2Pin, HIGH); }
-    if (cmd == "VALVE2:OFF") { valve2 = false; digitalWrite(valve2Pin, LOW);  }
-    if (cmd == "STATUS?") {
-      Serial.print("VALVE1:STATE:");
-      Serial.println(valve1 ? "ON" : "OFF");
-      Serial.print("VALVE2:STATE:");
-      Serial.println(valve2 ? "ON" : "OFF");
+    
+    Serial.printf("[Serial] Command: %s\n", cmd.c_str());
+    
+    if (cmd == "VALVE1:ON") {
+      valve1 = true;
+      digitalWrite(valve1Pin, HIGH);
+      digitalWrite(valve1LedPin, HIGH);
+      if (Firebase.ready()) Firebase.RTDB.setBool(&fbdo, "/commands/valve1", true);
+      Serial.println("[Serial] ✓ Valve1 ON");
+    }
+    else if (cmd == "VALVE1:OFF") {
+      valve1 = false;
+      digitalWrite(valve1Pin, LOW);
+      digitalWrite(valve1LedPin, LOW);
+      if (Firebase.ready()) Firebase.RTDB.setBool(&fbdo, "/commands/valve1", false);
+      Serial.println("[Serial] ✓ Valve1 OFF");
+    }
+    else if (cmd == "VALVE2:ON") {
+      valve2 = true;
+      digitalWrite(valve2Pin, HIGH);
+      digitalWrite(valve2LedPin, HIGH);
+      if (Firebase.ready()) Firebase.RTDB.setBool(&fbdo, "/commands/valve2", true);
+      Serial.println("[Serial] ✓ Valve2 ON");
+    }
+    else if (cmd == "VALVE2:OFF") {
+      valve2 = false;
+      digitalWrite(valve2Pin, LOW);
+      digitalWrite(valve2LedPin, LOW);
+      if (Firebase.ready()) Firebase.RTDB.setBool(&fbdo, "/commands/valve2", false);
+      Serial.println("[Serial] ✓ Valve2 OFF");
+    }
+    else if (cmd == "START") {
+      if (Firebase.ready()) {
+        Firebase.RTDB.setBool(&fbdo, "/commands/recording", true);
+        Serial.println("[Serial] ✓ Recording START command sent");
+      }
+    }
+    else if (cmd == "STOP") {
+      if (Firebase.ready()) {
+        Firebase.RTDB.setBool(&fbdo, "/commands/recording", false);
+        Serial.println("[Serial] ✓ Recording STOP command sent");
+      }
+    }
+    else if (cmd == "STATUS") {
+      printStatus();
+    }
+    else {
+      Serial.println("[Serial] ✗ Unbekannter Command");
     }
   }
+}
+
+// Hilfsfunktion: Status ausgeben
+void printStatus() {
+  Serial.println("\n=====================================");
+  Serial.println("        SYSTEM STATUS");
+  Serial.println("=====================================");
+  Serial.printf("WiFi:      %s\n", WiFi.status() == WL_CONNECTED ? "✓ Verbunden" : "✗ Getrennt");
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("IP:        %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("Signal:    %d dBm\n", WiFi.RSSI());
+  }
+  Serial.printf("Firebase:  %s\n", Firebase.ready() ? "✓ Bereit" : "✗ Nicht bereit");
+  Serial.printf("Recording: %s\n", recordingActive ? "▶ AKTIV" : "■ INAKTIV");
+  if (recordingActive) {
+    Serial.printf("Session:   %s\n", currentSessionId.c_str());
+    Serial.printf("Dauer:     %lu ms\n", millis() - sessionStartTime);
+  }
+  Serial.printf("Valve1:    %s\n", valve1 ? "ON" : "OFF");
+  Serial.printf("Valve2:    %s\n", valve2 ? "ON" : "OFF");
+  Serial.printf("Uptime:    %lu ms\n", millis());
+  Serial.println("=====================================\n");
+}
+
+// Hilfsfunktion: ISO Timestamp
+String getISOTimestamp() {
+  unsigned long ms = millis();
+  return String(ms);
 }
