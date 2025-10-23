@@ -77,6 +77,7 @@ import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, 
 import { signOut, adminCreateUser } from '@/firebase/non-blocking-login';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
+import GuidelineCurveEditor from '@/components/admin/GuidelineCurveEditor';
 
 
 type SensorConfig = {
@@ -215,8 +216,8 @@ export default function AdminPage() {
   const [reportSearchTerm, setReportSearchTerm] = useState('');
   const [reportSortOrder, setReportSortOrder] = useState('generatedAt-desc');
   const [editingVesselType, setEditingVesselType] = useState<VesselType | null>(null);
-  const [minCurveText, setMinCurveText] = useState('');
-  const [maxCurveText, setMaxCurveText] = useState('');
+  const [minCurvePoints, setMinCurvePoints] = useState<GuidelineCurvePoint[]>([]);
+  const [maxCurvePoints, setMaxCurvePoints] = useState<GuidelineCurvePoint[]>([]);
   const guidelineImportRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -1123,40 +1124,24 @@ export default function AdminPage() {
 
     const handleEditVesselGuidelines = (vesselType: VesselType) => {
         setEditingVesselType(vesselType);
-        const formatCurve = (curve: GuidelineCurvePoint[] | undefined) => curve ? curve.map(p => `${p.x},${p.y}`).join('\n') : '';
-        setMinCurveText(formatCurve(vesselType.minCurve));
-        setMaxCurveText(formatCurve(vesselType.maxCurve));
+        setMinCurvePoints(vesselType.minCurve || []);
+        setMaxCurvePoints(vesselType.maxCurve || []);
     };
 
     const handleSaveVesselGuidelines = async () => {
         if (!editingVesselType || !firestore) return;
     
-        const parseCurve = (text: string): GuidelineCurvePoint[] => {
-            return text
-                .split('\n')
-                .map(line => line.trim())
-                .filter(line => line)
-                .map(line => {
-                    const parts = line.split(',');
-                    const x = parseFloat(parts[0]);
-                    const y = parseFloat(parts[1]);
-                    return (isNaN(x) || isNaN(y)) ? null : { x, y };
-                })
-                .filter((p): p is GuidelineCurvePoint => p !== null)
-                .sort((a, b) => a.x - b.x);
-        };
-    
         try {
-            const minCurve = parseCurve(minCurveText);
-            const maxCurve = parseCurve(maxCurveText);
+            const minCurve = minCurvePoints.sort((a, b) => a.x - b.x);
+            const maxCurve = maxCurvePoints.sort((a, b) => a.x - b.x);
     
             const vesselDocRef = doc(firestore, 'products', editingVesselType.id);
             await updateDoc(vesselDocRef, { minCurve, maxCurve });
     
             toast({ title: 'Guidelines Saved', description: `Guidelines for "${editingVesselType.name}" have been updated.` });
             setEditingVesselType(null);
-            setMinCurveText('');
-            setMaxCurveText('');
+            setMinCurvePoints([]);
+            setMaxCurvePoints([]);
         } catch (e: any) {
             toast({ variant: 'destructive', title: 'Save Failed', description: e.message });
         }
@@ -1811,32 +1796,30 @@ export default function AdminPage() {
                     </Table>
                 </ScrollArea>
                  <Dialog open={!!editingVesselType} onOpenChange={(open) => !open && setEditingVesselType(null)}>
-                    <DialogContent className="sm:max-w-[600px]">
+                    <DialogContent className="max-w-4xl">
                         <DialogHeader>
                             <DialogTitle>Edit Guidelines for "{editingVesselType?.name}"</DialogTitle>
                             <DialogDescription>
-                                Define the minimum and maximum pressure curves. Enter as CSV: time (seconds), pressure value.
+                                Click to add a point, drag to move, double-click to delete.
                             </DialogDescription>
                         </DialogHeader>
                         <div className="grid grid-cols-2 gap-4 py-4">
                             <div className="space-y-2">
-                                <Label htmlFor="min-curve">Minimum Curve</Label>
-                                <Textarea
-                                    id="min-curve"
-                                    value={minCurveText}
-                                    onChange={(e) => setMinCurveText(e.target.value)}
-                                    placeholder={"0,900\n10,850\n20,800"}
-                                    className="h-48 font-mono text-xs"
+                                <Label>Minimum Curve</Label>
+                                <GuidelineCurveEditor
+                                    points={minCurvePoints}
+                                    setPoints={setMinCurvePoints}
+                                    className="h-64 w-full"
+                                    lineColor="hsl(var(--chart-2))"
                                 />
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="max-curve">Maximum Curve</Label>
-                                <Textarea
-                                    id="max-curve"
-                                    value={maxCurveText}
-                                    onChange={(e) => setMaxCurveText(e.target.value)}
-                                    placeholder={"0,950\n10,920\n20,900"}
-                                    className="h-48 font-mono text-xs"
+                                <Label>Maximum Curve</Label>
+                                 <GuidelineCurveEditor
+                                    points={maxCurvePoints}
+                                    setPoints={setMaxCurvePoints}
+                                    className="h-64 w-full"
+                                    lineColor="hsl(var(--destructive))"
                                 />
                             </div>
                         </div>
