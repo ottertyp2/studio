@@ -50,7 +50,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         console.error('Failed to send command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
     }
-  }, []);
+  }, [toast]);
 
   const disconnectSerial = useCallback(async (options: { silent?: boolean } = {}) => {
     if (isDisconnectingRef.current) return;
@@ -155,12 +155,15 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
               } else if (trimmedLine.startsWith('VALVE2:STATE:')) {
                 setValve2Status(trimmedLine.includes('ON') ? 'ON' : 'OFF');
               } else {
-                const sensorValue = parseInt(trimmedLine, 10);
-                if (!isNaN(sensorValue)) {
-                  handleNewDataPoint({
-                    timestamp: new Date().toISOString(),
-                    value: sensorValue
-                  });
+                const parts = trimmedLine.split(':');
+                if (parts.length === 2 && parts[0] === 'SENSOR') {
+                  const sensorValue = parseInt(parts[1], 10);
+                  if (!isNaN(sensorValue)) {
+                    handleNewDataPoint({
+                      timestamp: new Date().toISOString(),
+                      value: sensorValue
+                    });
+                  }
                 }
               }
             });
