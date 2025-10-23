@@ -30,8 +30,18 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
+    // Optimistic UI update
+    if (valve === 'VALVE1') {
+      setValve1Status(state);
+    } else {
+      setValve2Status(state);
+    }
+
     if (!writerRef.current) {
         toast({ variant: 'destructive', title: 'Not Connected', description: 'Cannot send command. No device connected.' });
+        // Revert UI if not connected
+        if (valve === 'VALVE1') setValve1Status(state === 'ON' ? 'OFF' : 'ON');
+        else setValve2Status(state === 'ON' ? 'OFF' : 'ON');
         return;
     }
     try {
@@ -41,6 +51,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     } catch (error: any) {
         console.error('Failed to send command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
+         // Revert UI on failure
+        if (valve === 'VALVE1') setValve1Status(state === 'ON' ? 'OFF' : 'ON');
+        else setValve2Status(state === 'ON' ? 'OFF' : 'ON');
     }
   }, [toast]);
 
