@@ -100,8 +100,76 @@ const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [toast]);
 
+  const processLine = (line: string) => {
+    const trimmedLine = line.trim();
+    if (trimmedLine === '') return;
+
+    // Split concatenated messages (e.g., "VALVE1:STATE:OFFSENSOR:123")
+    const keywords = ['SENSOR:', 'VALVE1:', 'VALVE2:'];
+    let remainingLine = trimmedLine;
+    
+    // Find all keyword occurrences and their positions
+    const parts = [];
+    let lastIndex = 0;
+    while(true) {
+        let nearestKeywordIndex = -1;
+        let nearestKeyword = '';
+
+        keywords.forEach(kw => {
+            const index = remainingLine.indexOf(kw, lastIndex > 0 ? 1 : 0);
+            if (index !== -1 && (nearestKeywordIndex === -1 || index < nearestKeywordIndex)) {
+                nearestKeywordIndex = index;
+                nearestKeyword = kw;
+            }
+        });
+
+        if (nearestKeywordIndex !== -1) {
+            if (nearestKeywordIndex > 0) {
+                 parts.push(remainingLine.substring(0, nearestKeywordIndex));
+            }
+            const nextKeywordSearchStart = nearestKeywordIndex + nearestKeyword.length;
+            let nextKeywordIndex = -1;
+            keywords.forEach(kw => {
+                const index = remainingLine.indexOf(kw, nextKeywordSearchStart);
+                if(index !== -1 && (nextKeywordIndex === -1 || index < nextKeywordIndex)) {
+                    nextKeywordIndex = index;
+                }
+            });
+
+            if (nextKeywordIndex !== -1) {
+                parts.push(remainingLine.substring(nearestKeywordIndex, nextKeywordIndex));
+                remainingLine = remainingLine.substring(nextKeywordIndex);
+            } else {
+                parts.push(remainingLine.substring(nearestKeywordIndex));
+                break;
+            }
+        } else {
+            if(remainingLine.length > 0) parts.push(remainingLine);
+            break;
+        }
+    }
+
+    parts.forEach(part => {
+        const message = part.trim();
+        if (message.startsWith('VALVE1:STATE:')) {
+            setValve1Status(message.includes('ON') ? 'ON' : 'OFF');
+        } else if (message.startsWith('VALVE2:STATE:')) {
+            setValve2Status(message.includes('ON') ? 'ON' : 'OFF');
+        } else if (message.startsWith('SENSOR:')) {
+            const valueStr = message.substring('SENSOR:'.length);
+            const sensorValue = parseInt(valueStr, 10);
+            if (!isNaN(sensorValue)) {
+            handleNewDataPoint({
+                timestamp: new Date().toISOString(),
+                value: sensorValue
+            });
+            }
+        }
+    });
+  };
+
   const readSerialLoop = async (reader: ReadableStreamDefaultReader<string>) => {
-    let partialLine = '';
+    let partialData = '';
     try {
       while (true) {
         const { value, done } = await reader.read();
@@ -109,31 +177,13 @@ const TestBenchProvider = ({ children }: { children: ReactNode }) => {
           break;
         }
         
-        partialLine += value;
-        const lines = partialLine.split('\n');
-        partialLine = lines.pop() || '';
+        partialData += value;
+        const lines = partialData.split('\n');
+        
+        // Keep the last partial line
+        partialData = lines.pop() || '';
 
-        lines.forEach(line => {
-          const trimmedLine = line.trim();
-          if (trimmedLine === '') return;
-
-          if (trimmedLine.startsWith('VALVE1:STATE:')) {
-            setValve1Status(trimmedLine.includes('ON') ? 'ON' : 'OFF');
-          } else if (trimmedLine.startsWith('VALVE2:STATE:')) {
-            setValve2Status(trimmedLine.includes('ON') ? 'ON' : 'OFF');
-          } else if (trimmedLine.startsWith('SENSOR:')) {
-            const parts = trimmedLine.split(':');
-            if (parts.length === 2) {
-              const sensorValue = parseInt(parts[1], 10);
-              if (!isNaN(sensorValue)) {
-                handleNewDataPoint({
-                  timestamp: new Date().toISOString(),
-                  value: sensorValue
-                });
-              }
-            }
-          }
-        });
+        lines.forEach(processLine);
       }
     } catch(e) {
       if ((e as Error).name !== 'AbortError' && !isDisconnectingRef.current) {
@@ -141,6 +191,9 @@ const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       }
     } finally {
       reader.releaseLock();
+      if(partialData) {
+        processLine(partialData);
+      }
     }
   };
 
