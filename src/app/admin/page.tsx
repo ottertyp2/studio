@@ -70,14 +70,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Edit, Upload } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Edit, Upload, FileSignature } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { signOut, adminCreateUser } from '@/firebase/non-blocking-login';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import GuidelineCurveEditor from '@/components/admin/GuidelineCurveEditor';
+import { PDFDownloadLink, pdf } from '@react-pdf/renderer';
+import BatchReport from '@/components/report/BatchReport';
 
 
 type SensorConfig = {
@@ -177,7 +180,7 @@ export default function AdminPage() {
   const { toast } = useToast();
 
   const { user, userRole, isUserLoading } = useUser();
-  const { firestore, auth } = useFirebase();
+  const { firestore, auth, firebaseApp } = useFirebase();
 
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
   const [tempSensorConfig, setTempSensorConfig] = useState<Partial<SensorConfig> | null>(null);
@@ -220,6 +223,8 @@ export default function AdminPage() {
   const guidelineImportRef = useRef<HTMLInputElement>(null);
   const [guidelineEditorMaxX, setGuidelineEditorMaxX] = useState(120);
   const [guidelineEditorMaxY, setGuidelineEditorMaxY] = useState(1200);
+
+  const [generatingBatchReport, setGeneratingBatchReport] = useState<string | null>(null);
 
   
   useEffect(() => {
@@ -1156,30 +1161,32 @@ export default function AdminPage() {
     setEditingBatchProfile(null);
   };
   
-  const handleExportGuidelines = () => {
-    if (!batchProfiles || batchProfiles.length === 0) {
+  const handleExportGuidelines = (profile?: BatchProfile) => {
+    const profilesToExport = profile ? [profile] : batchProfiles;
+
+    if (!profilesToExport || profilesToExport.length === 0) {
         toast({ title: 'No Data', description: 'There are no batch profiles to export.' });
         return;
     }
 
     const allPoints: Record<string, Record<number, { min?: number, max?: number }>> = {};
 
-    batchProfiles.forEach(profile => {
-        if (!allPoints[profile.id]) allPoints[profile.id] = {};
+    profilesToExport.forEach(p => {
+        if (!allPoints[p.id]) allPoints[p.id] = {};
         
-        profile.minCurve?.forEach(p => {
-            if (!allPoints[profile.id][p.x]) allPoints[profile.id][p.x] = {};
-            allPoints[profile.id][p.x].min = p.y;
+        p.minCurve?.forEach(point => {
+            if (!allPoints[p.id][point.x]) allPoints[p.id][point.x] = {};
+            allPoints[p.id][point.x].min = point.y;
         });
-        profile.maxCurve?.forEach(p => {
-            if (!allPoints[profile.id][p.x]) allPoints[profile.id][p.x] = {};
-            allPoints[profile.id][p.x].max = p.y;
+        p.maxCurve?.forEach(point => {
+            if (!allPoints[p.id][point.x]) allPoints[p.id][point.x] = {};
+            allPoints[p.id][point.x].max = point.y;
         });
     });
     
     const csvData: any[] = [];
     for (const profileId in allPoints) {
-        const profileName = batchProfiles.find(p => p.id === profileId)?.name || profileId;
+        const profileName = profilesToExport.find(p => p.id === profileId)?.name || profileId;
         const sortedTimestamps = Object.keys(allPoints[profileId]).map(Number).sort((a,b) => a - b);
         
         sortedTimestamps.forEach(timestamp => {
@@ -1193,7 +1200,7 @@ export default function AdminPage() {
     }
 
     if (csvData.length === 0) {
-        toast({ title: 'No Guideline Data', description: 'The existing batch profiles have no guideline points to export.' });
+        toast({ title: 'No Guideline Data', description: 'The selected batch profile(s) have no guideline points to export.' });
         return;
     }
 
@@ -1202,7 +1209,7 @@ export default function AdminPage() {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', 'batch_profile_guidelines.csv');
+    link.setAttribute('download', `${profile ? profile.name + '_' : ''}guidelines.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -1275,6 +1282,72 @@ export default function AdminPage() {
             }
         }
     });
+  };
+
+    const handleGenerateBatchReport = async (profile: BatchProfile) => {
+    if (!firestore || !firebaseApp || !testSessions || !sensorConfigs) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Required data is not loaded.' });
+      return;
+    }
+    
+    setGeneratingBatchReport(profile.id);
+
+    try {
+      const relevantSessions = testSessions.filter(s => s.batchId === profile.id && s.status === 'COMPLETED');
+      if (relevantSessions.length === 0) {
+        toast({ title: 'No Data', description: 'No completed test sessions found for this batch profile.' });
+        setGeneratingBatchReport(null);
+        return;
+      }
+
+      const allSensorData: Record<string, SensorData[]> = {};
+      for (const session of relevantSessions) {
+          const sensorDataRef = collection(firestore, `sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
+          const q = query(sensorDataRef, where('testSessionId', '==', session.id));
+          const snapshot = await getDocs(q);
+          const data = snapshot.docs.map(doc => doc.data() as SensorData).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+          allSensorData[session.id] = data;
+      }
+      
+      const blob = await pdf(
+          <BatchReport 
+              batchProfile={profile} 
+              sessions={relevantSessions}
+              allSensorData={allSensorData}
+              sensorConfigs={sensorConfigs}
+          />
+      ).toBlob();
+
+      const storage = getStorage(firebaseApp);
+      const reportId = doc(collection(firestore, '_')).id;
+      const filePath = `reports/batch_reports/${profile.id}/${reportId}.pdf`;
+      const fileRef = storageRef(storage, filePath);
+
+      await uploadBytes(fileRef, blob);
+      const downloadUrl = await getDownloadURL(fileRef);
+
+      const reportData = {
+          id: reportId,
+          testSessionId: `batch-${profile.id}`,
+          generatedAt: new Date().toISOString(),
+          downloadUrl: downloadUrl,
+          batchId: profile.id,
+          numberInBatch: 'N/A',
+          username: user?.displayName || 'admin',
+      };
+      await setDoc(doc(firestore, 'reports', reportId), reportData);
+
+      toast({
+          title: 'Batch Report Generated',
+          description: 'The unified batch report has been saved.',
+      });
+
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Batch Report Failed', description: e.message });
+      console.error(e);
+    } finally {
+      setGeneratingBatchReport(null);
+    }
   };
 
   const renderSensorConfigurator = () => {
@@ -1551,6 +1624,11 @@ export default function AdminPage() {
                                     <Button size="sm" variant="outline" disabled={session.status === 'RUNNING'}>Actions</Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
+                                     <DropdownMenuItem onClick={() => router.push(`/testing?sessionId=${session.id}`)}>
+                                        <FileSignature className="mr-2 h-4 w-4" />
+                                        <span>View &amp; Generate Report</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
                                     <DropdownMenuSub>
                                       <DropdownMenuSubTrigger>
                                         <Tag className="mr-2 h-4 w-4" />
@@ -1987,13 +2065,13 @@ export default function AdminPage() {
                         <Button onClick={handleAddBatchProfile} size="sm" className="w-full mt-2">Add Batch Profile</Button>
                     </div>
                     <div className="flex justify-center gap-2 mb-4">
-                        <Button onClick={handleExportGuidelines} variant="outline" size="sm">
+                        <Button onClick={() => handleExportGuidelines()} variant="outline" size="sm">
                             <Download className="mr-2 h-4 w-4" />
-                            Export All Guidelines (CSV)
+                            Export All Guidelines
                         </Button>
                         <Button onClick={() => guidelineImportRef.current?.click()} variant="outline" size="sm">
                             <Upload className="mr-2 h-4 w-4" />
-                            Import Guidelines (CSV)
+                            Import Guidelines
                         </Button>
                         <input type="file" ref={guidelineImportRef} onChange={handleImportGuidelines} accept=".csv" className="hidden" />
                     </div>
@@ -2004,10 +2082,19 @@ export default function AdminPage() {
                                     <Card key={p.id} className='p-4 hover:bg-muted/50'>
                                         <div className='flex justify-between items-center'>
                                             <p className='font-semibold'>{p.name}</p>
-                                            <div className="flex gap-2">
+                                            <div className="flex flex-wrap gap-2">
+                                                <Button size="sm" variant="outline" onClick={() => handleExportGuidelines(p)}>CSV</Button>
+                                                <Button 
+                                                    size="sm" 
+                                                    variant="outline" 
+                                                    onClick={() => handleGenerateBatchReport(p)}
+                                                    disabled={generatingBatchReport === p.id}
+                                                >
+                                                  {generatingBatchReport === p.id ? 'Generating...' : 'Report'}
+                                                </Button>
                                                 <Dialog>
                                                     <DialogTrigger asChild>
-                                                        <Button size="sm" variant="outline" onClick={() => setEditingBatchProfile(p)}>Edit Guidelines</Button>
+                                                        <Button size="sm" variant="outline" onClick={() => setEditingBatchProfile(p)}>Edit</Button>
                                                     </DialogTrigger>
                                                     <DialogContent className="max-w-4xl">
                                                         <DialogHeader>
@@ -2062,7 +2149,7 @@ export default function AdminPage() {
                                                 </Dialog>
                                                 <AlertDialog>
                                                     <AlertDialogTrigger asChild>
-                                                        <Button size="sm" variant="destructive">Delete</Button>
+                                                        <Button size="sm" variant="destructive">Del</Button>
                                                     </AlertDialogTrigger>
                                                     <AlertDialogContent>
                                                         <AlertDialogHeader>
@@ -2277,5 +2364,4 @@ export default function AdminPage() {
     </div>
   );
 }
-
 

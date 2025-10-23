@@ -35,8 +35,7 @@ const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const portRef = useRef<any>(null);
   const readerRef = useRef<any>(null);
   const writerRef = useRef<any>(null);
-  const readableStreamClosedRef = useRef<Promise<void> | null>(null);
-  const writableStreamClosedRef = useRef<Promise<void> | null>(null);
+  
   const isDisconnectingRef = useRef(false);
 
   const handleNewDataPoint = useCallback((newDataPoint: Omit<SensorData, 'testBenchId'>) => {
@@ -61,44 +60,38 @@ const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   }, [toast]);
 
   const disconnectSerial = useCallback(async (options: { silent?: boolean } = {}) => {
-    if (isDisconnectingRef.current) return;
     isDisconnectingRef.current = true;
+    
+    if (writerRef.current) {
+      try {
+        await writerRef.current.close();
+      } catch (e) {
+        // Ignore errors
+      } finally {
+        writerRef.current = null;
+      }
+    }
     
     if (readerRef.current) {
       try {
         await readerRef.current.cancel();
-      } catch (error) {
-        // Ignore cancel errors
-      }
-    }
-
-    if (writerRef.current) {
-      try {
-        await writerRef.current.close();
-      } catch (error) {
-        // Ignore close errors
+      } catch (e) {
+        // Ignore errors
+      } finally {
+        readerRef.current = null;
       }
     }
 
     if (portRef.current) {
       try {
-        if (readableStreamClosedRef.current) {
-          await readableStreamClosedRef.current.catch(() => {});
-        }
-        if (writableStreamClosedRef.current) {
-            await writableStreamClosedRef.current.catch(() => {});
-        }
         await portRef.current.close();
       } catch (e) {
-        // Ignore close errors
+        // Ignore errors
+      } finally {
+        portRef.current = null;
       }
     }
 
-    portRef.current = null;
-    readerRef.current = null;
-    writerRef.current = null;
-    readableStreamClosedRef.current = null;
-    writableStreamClosedRef.current = null;
     setIsConnected(false);
     isDisconnectingRef.current = false;
     
@@ -106,6 +99,51 @@ const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       toast({ title: 'Disconnected', description: 'Successfully disconnected from device.' });
     }
   }, [toast]);
+
+  const readSerialLoop = async (reader: ReadableStreamDefaultReader<string>) => {
+    let partialLine = '';
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+        
+        partialLine += value;
+        const lines = partialLine.split('\n');
+        partialLine = lines.pop() || '';
+
+        lines.forEach(line => {
+          const trimmedLine = line.trim();
+          if (trimmedLine === '') return;
+
+          if (trimmedLine.startsWith('VALVE1:STATE:')) {
+            setValve1Status(trimmedLine.includes('ON') ? 'ON' : 'OFF');
+          } else if (trimmedLine.startsWith('VALVE2:STATE:')) {
+            setValve2Status(trimmedLine.includes('ON') ? 'ON' : 'OFF');
+          } else if (trimmedLine.startsWith('SENSOR:')) {
+            const parts = trimmedLine.split(':');
+            if (parts.length === 2) {
+              const sensorValue = parseInt(parts[1], 10);
+              if (!isNaN(sensorValue)) {
+                handleNewDataPoint({
+                  timestamp: new Date().toISOString(),
+                  value: sensorValue
+                });
+              }
+            }
+          }
+        });
+      }
+    } catch(e) {
+      if ((e as Error).name !== 'AbortError' && !isDisconnectingRef.current) {
+        console.error("Serial read error:", e);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  };
+
 
   const handleConnect = useCallback(async () => {
     if (isConnected) {
@@ -123,9 +161,15 @@ const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       portRef.current = port;
       await port.open({ baudRate });
 
+      // Setup writer
       const textEncoder = new TextEncoderStream();
-      writableStreamClosedRef.current = textEncoder.readable.pipeTo(port.writable);
+      const writableStreamClosed = textEncoder.readable.pipeTo(port.writable);
       writerRef.current = textEncoder.writable.getWriter();
+
+      // Setup reader
+      const textDecoder = new TextDecoderStream();
+      const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+      readerRef.current = textDecoder.readable.getReader();
       
       setIsConnected(true);
       setLocalDataLog([]);
@@ -137,53 +181,16 @@ const TestBenchProvider = ({ children }: { children: ReactNode }) => {
           toast({ variant: 'destructive', title: 'Device Disconnected', description: 'The test bench was unplugged.' });
         }
       });
-
-      while (port.readable && portRef.current === port) {
-        const textDecoder = new TextDecoderStream();
-        readableStreamClosedRef.current = port.readable.pipeTo(textDecoder.writable);
-        const streamReader = textDecoder.readable.getReader();
-        readerRef.current = streamReader;
-
-        try {
-          let partialLine = '';
-          while (true) {
-            const { value, done } = await streamReader.read();
-            if (done) break;
-            
-            partialLine += value;
-            let lines = partialLine.split('\n');
-            partialLine = lines.pop() || '';
-
-            lines.forEach(line => {
-              const trimmedLine = line.trim();
-              if (trimmedLine === '') return;
-
-              if (trimmedLine.startsWith('VALVE1:STATE:')) {
-                setValve1Status(trimmedLine.includes('ON') ? 'ON' : 'OFF');
-              } else if (trimmedLine.startsWith('VALVE2:STATE:')) {
-                setValve2Status(trimmedLine.includes('ON') ? 'ON' : 'OFF');
-              } else if (trimmedLine.startsWith('SENSOR:')) {
-                const parts = trimmedLine.split(':');
-                if (parts.length === 2) {
-                  const sensorValue = parseInt(parts[1], 10);
-                  if (!isNaN(sensorValue)) {
-                    handleNewDataPoint({
-                      timestamp: new Date().toISOString(),
-                      value: sensorValue
-                    });
-                  }
-                }
-              }
-            });
+      
+      readSerialLoop(readerRef.current);
+      
+      Promise.all([readableStreamClosed.catch(() => {}), writableStreamClosed.catch(() => {})])
+        .then(() => {
+          if(!isDisconnectingRef.current) {
+            disconnectSerial({silent: true});
           }
-        } catch(e) {
-          if ((e as Error).name !== 'AbortError' && !isDisconnectingRef.current) {
-            console.error("Serial read error:", e);
-          }
-        } finally {
-          streamReader.releaseLock();
-        }
-      }
+        });
+
 
     } catch (error) {
       if ((error as Error).name !== 'NotFoundError') {
