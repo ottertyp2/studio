@@ -97,7 +97,7 @@ type SensorConfig = {
 type AppUser = {
     id: string;
     username: string;
-    email: string: string;
+    email: string;
     role: 'user' | 'superadmin';
 };
 
@@ -2267,5 +2267,8 @@ export default function AdminPage() {
     </div>
   );
 }
+    
+
+    
 
     
