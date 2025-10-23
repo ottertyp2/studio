@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
     flexDirection: "row" 
   }, 
   tableColHeader: { 
-    width: "25%", 
+    width: "50%", 
     borderStyle: "solid", 
     borderWidth: 1, 
     borderLeftWidth: 0, 
@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
     padding: 5,
   }, 
   tableCol: { 
-    width: "25%", 
+    width: "50%", 
     borderStyle: "solid", 
     borderWidth: 1, 
     borderLeftWidth: 0, 
