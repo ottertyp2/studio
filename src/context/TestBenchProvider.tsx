@@ -2,7 +2,7 @@
 'use client';
 import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { TestBenchContext, ValveStatus, SensorData } from './TestBenchContext';
+import { TestBenchContext, ValveStatus, SensorData, RtdbSession } from './TestBenchContext';
 import { useFirebase } from '@/firebase';
 import { ref, onValue, set } from 'firebase/database';
 
@@ -16,6 +16,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [lastDataPointTimestamp, setLastDataPointTimestamp] = useState<number | null>(null);
   const [valve1Status, setValve1Status] = useState<ValveStatus>('OFF');
   const [valve2Status, setValve2Status] = useState<ValveStatus>('OFF');
+  const [rtdbSessions, setRtdbSessions] = useState<Record<string, RtdbSession>>({});
   
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
     setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
@@ -96,6 +97,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     unsubscribers.push(onValue(recordingRef, (snap) => {
         setIsRecording(snap.val() === true);
     }));
+    
+    // Recorded sessions
+    const sessionsRef = ref(database, 'sessions');
+    unsubscribers.push(onValue(sessionsRef, (snapshot) => {
+        setRtdbSessions(snapshot.val() || {});
+    }));
 
     return () => {
         unsubscribers.forEach(unsub => unsub());
@@ -132,6 +139,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     valve2Status,
     sendValveCommand,
     sendRecordingCommand,
+    rtdbSessions,
   };
 
   return (

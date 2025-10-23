@@ -11,6 +11,23 @@ export type SensorData = {
 
 export type ValveStatus = 'ON' | 'OFF';
 
+type RtdbSessionData = {
+    [timestamp: string]: {
+        value: number,
+        relativeTime: number,
+    }
+}
+
+export type RtdbSession = {
+    meta: {
+        startTime: number,
+        duration?: number,
+        status: 'recording' | 'completed'
+    },
+    data: RtdbSessionData
+}
+
+
 export interface TestBenchContextType {
   isConnected: boolean;
   isRecording: boolean;
@@ -24,6 +41,7 @@ export interface TestBenchContextType {
   valve2Status: ValveStatus;
   sendValveCommand: (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => Promise<void>;
   sendRecordingCommand: (shouldRecord: boolean) => Promise<void>;
+  rtdbSessions: Record<string, RtdbSession>;
 }
 
 export const TestBenchContext = createContext<TestBenchContextType | undefined>(undefined);

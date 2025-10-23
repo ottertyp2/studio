@@ -204,6 +204,7 @@ function TestingComponent() {
     currentValue,
     sendValveCommand,
     sendRecordingCommand,
+    rtdbSessions,
   } = useTestBench();
 
   const preselectedSessionId = searchParams.get('sessionId');
@@ -247,18 +248,7 @@ function TestingComponent() {
   const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
   const [generatingReportFor, setGeneratingReportFor] = useState<string | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
-  const [rtdbSessions, setRtdbSessions] = useState<Record<string, RtdbSession>>({});
   const [rtdbSessionData, setRtdbSessionData] = useState<Record<string, SensorData[]>>({});
-
-
-  useEffect(() => {
-    if (!database) return;
-    const sessionsRef = ref(database, 'sessions');
-    const unsubscribe = onValue(sessionsRef, (snapshot) => {
-        setRtdbSessions(snapshot.val() || {});
-    });
-    return () => unsubscribe();
-  }, [database]);
 
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
