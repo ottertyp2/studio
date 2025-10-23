@@ -2,27 +2,49 @@
 'use client';
 import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { TestBenchContext, ValveStatus, SensorData, RtdbSession } from './TestBenchContext';
-import { useFirebase } from '@/firebase';
+import { TestBenchContext, ValveStatus, SensorData } from './TestBenchContext';
+import { useFirebase, addDocumentNonBlocking } from '@/firebase';
 import { ref, onValue, set } from 'firebase/database';
+import { collection, doc } from 'firebase/firestore';
 
 export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
-  const { database } = useFirebase();
+  const { database, firestore } = useFirebase();
   const [isConnected, setIsConnected] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
+  const [isRecording, setIsRecording] = useState(false); // This will be derived from runningTestSession now
   const [localDataLog, setLocalDataLog] = useState<SensorData[]>([]);
   const [currentValue, setCurrentValue] = useState<number | null>(null);
   const [lastDataPointTimestamp, setLastDataPointTimestamp] = useState<number | null>(null);
   const [valve1Status, setValve1Status] = useState<ValveStatus>('OFF');
   const [valve2Status, setValve2Status] = useState<ValveStatus>('OFF');
-  const [rtdbSessions, setRtdbSessions] = useState<Record<string, RtdbSession>>({});
+  
+  const runningTestSessionRef = useRef<{id: string, sensorConfigurationId: string} | null>(null);
   
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
-    setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
     setCurrentValue(newDataPoint.value);
     setLastDataPointTimestamp(Date.now());
-  }, []);
+    
+    // If a session is running, add to its local log and save to Firestore
+    if (runningTestSessionRef.current) {
+        const sessionPoint = { ...newDataPoint, testSessionId: runningTestSessionRef.current.id };
+        setLocalDataLog(prevLog => [sessionPoint, ...prevLog].slice(0, 1000));
+        
+        if (firestore) {
+            const dataRef = collection(firestore, `sensor_configurations/${runningTestSessionRef.current.sensorConfigurationId}/sensor_data`);
+            addDocumentNonBlocking(dataRef, sessionPoint);
+        }
+    }
+  }, [firestore]);
+  
+  // This effect will be triggered by an external component (testing page) now
+  const setRunningTestSession = (session: {id: string, sensorConfigurationId: string} | null) => {
+      runningTestSessionRef.current = session;
+      setIsRecording(!!session);
+      if (session) {
+          setLocalDataLog([]); // Clear log for new session
+      }
+  };
+
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!database) {
@@ -46,19 +68,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [database, toast]);
 
+  // This function is no longer needed as recording is tied to Firestore sessions
   const sendRecordingCommand = useCallback(async (shouldRecord: boolean) => {
-      if (!database) {
-        toast({ variant: 'destructive', title: 'Not Connected', description: 'Database service is not available.' });
-        return;
-      }
-      try {
-        await set(ref(database, 'commands/recording'), shouldRecord);
-        toast({ title: `Recording ${shouldRecord ? 'started' : 'stopped'}` });
-      } catch (error: any) {
-        console.error('Failed to send recording command:', error);
-        toast({ variant: 'destructive', title: 'Recording Command Failed', description: error.message });
-      }
-  }, [database, toast]);
+      console.warn("sendRecordingCommand is deprecated. Recording is now handled via Firestore test sessions.");
+  }, []);
 
   useEffect(() => {
     if (!database) return;
@@ -92,17 +105,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         setValve2Status(snap.val() ? 'ON' : 'OFF');
     }));
 
-    // Live recording status
+    // The RTDB recording status is no longer the source of truth, but we can listen to it for debug/info
     const recordingRef = ref(database, 'live/recording');
     unsubscribers.push(onValue(recordingRef, (snap) => {
-        setIsRecording(snap.val() === true);
+        // We don't set our internal `isRecording` state from this anymore.
     }));
     
-    // Recorded sessions
-    const sessionsRef = ref(database, 'sessions');
-    unsubscribers.push(onValue(sessionsRef, (snapshot) => {
-        setRtdbSessions(snapshot.val() || {});
-    }));
 
     return () => {
         unsubscribers.forEach(unsub => unsub());
@@ -139,7 +147,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     valve2Status,
     sendValveCommand,
     sendRecordingCommand,
-    rtdbSessions,
+    setRunningTestSession, // Expose this to the testing page
   };
 
   return (

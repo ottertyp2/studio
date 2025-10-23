@@ -172,22 +172,6 @@ type AiAnalysisResult = {
   confidence: number;
 }
 
-type RtdbSessionData = {
-    [timestamp: string]: {
-        value: number,
-        relativeTime: number,
-    }
-}
-
-type RtdbSession = {
-    meta: {
-        startTime: number,
-        duration?: number,
-        status: 'recording' | 'completed'
-    },
-    data: RtdbSessionData
-}
-
 function TestingComponent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -204,12 +188,11 @@ function TestingComponent() {
     currentValue,
     sendValveCommand,
     sendRecordingCommand,
-    rtdbSessions,
   } = useTestBench();
 
   const preselectedSessionId = searchParams.get('sessionId');
 
-  const [activeTab, setActiveTab] = useState('live');
+  const [activeTab, setActiveTab] = useState('session');
   
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
@@ -248,7 +231,7 @@ function TestingComponent() {
   const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
   const [generatingReportFor, setGeneratingReportFor] = useState<string | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
-  const [rtdbSessionData, setRtdbSessionData] = useState<Record<string, SensorData[]>>({});
+  const [sessionData, setSessionData] = useState<Record<string, SensorData[]>>({});
 
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
@@ -370,10 +353,10 @@ function TestingComponent() {
   }, [firestore, stopDemoMode, testSessions, toast]);
 
     useEffect(() => {
-    if (!isRecording) {
+    if (!runningTestSession) {
       setShowNewSessionForm(false);
     }
-  }, [isRecording]);
+  }, [runningTestSession]);
 
   const activeTestSession = useMemo(() => {
     if (selectedSessionIds.length !== 1) return null;
@@ -400,58 +383,41 @@ function TestingComponent() {
     }
   }, [sensorConfigs, activeSensorConfigId, runningTestSession]);
 
-  const viewRtdbSession = (sessionId: string) => {
-    if (!database) return;
-    const sessionDataRef = ref(database, `sessions/${sessionId}/data`);
-    onValue(sessionDataRef, (snapshot) => {
-        const data = snapshot.val();
-        if (!data) {
-            setRtdbSessionData(prev => ({...prev, [sessionId]: []}));
-            return;
-        };
+    useEffect(() => {
+    if (!firestore || selectedSessionIds.length === 0) return;
 
-        const chartData: SensorData[] = Object.keys(data).map(timestamp => ({
-            timestamp: new Date(parseInt(timestamp)).toISOString(),
-            value: data[timestamp].value,
-            testSessionId: sessionId
-        })).sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    const unsubscribers = selectedSessionIds.map(sessionId => {
+      const configId = testSessions?.find(s => s.id === sessionId)?.sensorConfigurationId;
+      if (!configId) return () => {};
 
-        setRtdbSessionData(prev => ({...prev, [sessionId]: chartData}));
-    }, { onlyOnce: true });
+      const dataRef = collection(firestore, `sensor_configurations/${configId}/sensor_data`);
+      const q = query(dataRef, where('testSessionId', '==', sessionId), orderBy('timestamp', 'asc'));
 
-    setSelectedSessionIds(prev => prev.includes(sessionId) ? prev : [...prev, sessionId]);
-  };
-  
-  const deleteRtdbSession = (sessionId: string) => {
-      if (!database) return;
-      if (confirm(`Are you sure you want to delete session ${sessionId}?`)) {
-          remove(ref(database, `sessions/${sessionId}`)).then(() => {
-              toast({ title: "Session Deleted", description: `Session ${sessionId} was removed from Realtime Database.`});
-              if(selectedSessionIds.includes(sessionId)) {
-                  setSelectedSessionIds(prev => prev.filter(id => id !== sessionId));
-              }
-          }).catch(e => {
-              toast({ variant: 'destructive', title: "Delete Failed", description: e.message });
-          });
-      }
-  }
+      return onSnapshot(q, (snapshot) => {
+        const data = snapshot.docs.map(doc => doc.data() as SensorData);
+        setSessionData(prev => ({ ...prev, [sessionId]: data }));
+      });
+    });
+
+    return () => unsubscribers.forEach(unsub => unsub());
+  }, [firestore, selectedSessionIds, testSessions]);
 
 
   const dataLog = useMemo(() => {
-    if (isRecording || (isConnected && currentValue !== null)) {
+    if (runningTestSession) {
       return localDataLog;
     }
     
     let combinedData: SensorData[] = [];
     selectedSessionIds.forEach(id => {
-      if (rtdbSessionData[id]) {
-        combinedData = [...combinedData, ...rtdbSessionData[id]];
+      if (sessionData[id]) {
+        combinedData = [...combinedData, ...sessionData[id]];
       }
     });
 
     return combinedData.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-  }, [localDataLog, isConnected, isRecording, currentValue, selectedSessionIds, rtdbSessionData]);
+  }, [localDataLog, runningTestSession, selectedSessionIds, sessionData]);
   
   const handleAiAnalysis = async () => {
       if (!selectedAnalysisModelName) {
@@ -557,11 +523,109 @@ function TestingComponent() {
     router.push('/login');
   };
 
+  const handleStartTestSession = async () => {
+    if (!user || !firestore || !vesselTypes || !batches) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Services not initialized.' });
+      return;
+    }
+    if (!tempTestSession.batchId || !sensorConfig) {
+      toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select a batch and ensure a sensor is configured.' });
+      return;
+    }
+
+    const selectedBatch = batches.find(b => b.id === tempTestSession.batchId);
+    if (!selectedBatch) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Selected batch not found.' });
+      return;
+    }
+    const selectedVesselType = vesselTypes.find(vt => vt.id === selectedBatch.vesselTypeId);
+    if (!selectedVesselType) {
+        toast({ variant: 'destructive', title: 'Error', description: `Vessel Type for batch "${selectedBatch.name}" not found.` });
+        return;
+    }
+
+    const newSessionId = doc(collection(firestore, '_')).id;
+    
+    const measurementType = isConnected ? 'ARDUINO' : 'DEMO';
+
+    const newSession: TestSession = {
+      id: newSessionId,
+      vesselTypeId: selectedVesselType.id,
+      vesselTypeName: selectedVesselType.name,
+      batchId: selectedBatch.id,
+      serialNumber: tempTestSession.serialNumber || '',
+      description: tempTestSession.description || '',
+      startTime: new Date().toISOString(),
+      status: 'RUNNING',
+      testBenchId: sensorConfig.testBenchId,
+      sensorConfigurationId: sensorConfig.id,
+      measurementType: measurementType,
+      userId: user.uid,
+      username: user.displayName || user.email || 'Unknown User',
+    };
+    
+    if (measurementType === 'DEMO') {
+      newSession.demoOwnerInstanceId = instanceId;
+      startDemoMode(newSession);
+    }
+    
+    const sessionRef = doc(firestore, `test_sessions`, newSessionId);
+    setDocumentNonBlocking(sessionRef, newSession);
+    
+    setLocalDataLog([]);
+    setSelectedSessionIds([newSessionId]);
+    setShowNewSessionForm(false);
+    setTempTestSession({});
+    setActiveTab('live');
+    toast({ title: 'Test Session Started', description: `Now recording for "${newSession.vesselTypeName}"` });
+  };
+  
+    const startDemoMode = (session: TestSession) => {
+    stopDemoMode();
+    setIsDemoRunning(true);
+    let time = 0;
+    let value = 950;
+    
+    demoIntervalRef.current = setInterval(() => {
+        if (!runningTestSessionRef.current || runningTestSessionRef.current.id !== session.id || runningTestSessionRef.current.status !== 'RUNNING') {
+            stopDemoMode();
+            return;
+        }
+
+        const isLeak = Math.random() < 0.1;
+        
+        if (isLeak) {
+            value -= Math.random() * 5 + 2; // Steeper drop for leak
+        } else {
+            value -= Math.random() * 2; // Gradual drop for diffusion
+        }
+        value = Math.max(100, value); // Ensure value doesn't drop too low
+
+        const newDataPoint: SensorData = {
+            value: value + (Math.random() - 0.5) * 10,
+            timestamp: new Date().toISOString(),
+            testSessionId: session.id,
+        };
+
+        if (firestore && runningTestSessionRef.current) {
+            const dataRef = collection(firestore, `sensor_configurations/${runningTestSessionRef.current.sensorConfigurationId}/sensor_data`);
+            addDocumentNonBlocking(dataRef, newDataPoint);
+        }
+
+        setLocalDataLog(prev => [newDataPoint, ...prev].slice(0, 1000));
+        
+        time++;
+        if (time > 600) { // Auto-stop after 10 minutes
+            handleStopTestSession(session.id);
+        }
+    }, 1000);
+  };
+
   const { chartData, chartDomain } = useMemo(() => {
     if (!sensorConfig) return { chartData: [], chartDomain: [0, 1] as [number, number] };
   
-    const dataToProcess = (isRecording && !liveUpdateEnabled) ? frozenDataRef.current || dataLog : dataLog;
-    const allChronologicalData = isRecording ? [...dataToProcess].reverse() : dataToProcess;
+    const dataToProcess = (runningTestSession && !liveUpdateEnabled) ? frozenDataRef.current || dataLog : dataLog;
+    const allChronologicalData = runningTestSession ? [...dataToProcess].reverse() : dataToProcess;
   
     const processData = (data: SensorData[], startTimeOverride?: number) => {
       const startTime = startTimeOverride ?? (data.length > 0 ? new Date(data[0].timestamp).getTime() : Date.now());
@@ -576,45 +640,46 @@ function TestingComponent() {
         let allNames: number[] = [];
 
         selectedSessionIds.forEach(id => {
-            let sessionData: { name: number; value: number }[] = [];
-            if (rtdbSessionData[id]) {
-                const sessionStartTime = rtdbSessions[id]?.meta?.startTime;
-                sessionData = processData(rtdbSessionData[id], sessionStartTime);
+            let sessionChartData: { name: number; value: number }[] = [];
+            if (sessionData[id]) {
+                const s = testSessions?.find(ts => ts.id === id);
+                const sessionStartTime = s ? new Date(s.startTime).getTime() : undefined;
+                sessionChartData = processData(sessionData[id], sessionStartTime);
             }
             
             if (chartInterval !== 'all') {
                 const intervalSeconds = parseInt(chartInterval, 10);
-                const maxTime = sessionData.length > 0 ? sessionData[sessionData.length - 1].name : 0;
-                sessionData = sessionData.filter(d => d.name >= maxTime - intervalSeconds);
+                const maxTime = sessionChartData.length > 0 ? sessionChartData[sessionChartData.length - 1].name : 0;
+                sessionChartData = sessionChartData.filter(d => d.name >= maxTime - intervalSeconds);
             }
 
-            dataBySession[id] = sessionData;
-            allNames.push(...sessionData.map(d => d.name));
+            dataBySession[id] = sessionChartData;
+            allNames.push(...sessionChartData.map(d => d.name));
         });
         const domain: [number, number] = allNames.length > 0 ? [Math.min(...allNames), Math.max(...allNames)] : [0, 1];
         return { chartData: dataBySession, chartDomain: domain };
     }
   
     let visibleData: SensorData[];
-    if (isRecording) {
+    if (runningTestSession) {
       visibleData = allChronologicalData;
     } else {
       if (selectedSessionIds.length === 1) {
-        visibleData = rtdbSessionData[selectedSessionIds[0]] || [];
+        visibleData = sessionData[selectedSessionIds[0]] || [];
       } else {
         visibleData = localDataLog;
       }
     }
   
-    let mappedData = processData(visibleData);
+    let mappedData = processData(visibleData, runningTestSession ? new Date(runningTestSession.startTime).getTime() : undefined);
   
-    if (isRecording && chartInterval !== 'all' && liveUpdateEnabled) {
+    if (runningTestSession && chartInterval !== 'all' && liveUpdateEnabled) {
       const intervalSeconds = parseInt(chartInterval, 10);
       if (mappedData.length > 0) {
         const maxTime = mappedData[mappedData.length - 1].name;
         mappedData = mappedData.filter(d => d.name >= maxTime - intervalSeconds);
       }
-    } else if (!isRecording && chartInterval !== 'all' && !editingSessionId) {
+    } else if (!runningTestSession && chartInterval !== 'all' && !editingSessionId) {
         const intervalSeconds = parseInt(chartInterval, 10);
         if (mappedData.length > 0) {
             const firstTime = mappedData[0].name;
@@ -623,16 +688,16 @@ function TestingComponent() {
         }
     }
   
-    const domain: [number, number] | ['dataMin', 'dataMax'] = isRecording ? ['dataMin', 'dataMax'] : (
+    const domain: [number, number] | ['dataMin', 'dataMax'] = runningTestSession ? ['dataMin', 'dataMax'] : (
       mappedData.length > 1 ? [mappedData[0].name, mappedData[mappedData.length-1].name] : [0, 1]
     );
   
     return { chartData: mappedData, chartDomain: domain };
   
-  }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, editingSessionId, isRecording, liveUpdateEnabled, rtdbSessionData, rtdbSessions, localDataLog]);
+  }, [dataLog, chartInterval, sensorConfig, selectedSessionIds, editingSessionId, runningTestSession, liveUpdateEnabled, sessionData, testSessions, localDataLog]);
 
   useEffect(() => {
-    if (isRecording && Array.isArray(chartData) && liveUpdateEnabled) {
+    if (runningTestSession && Array.isArray(chartData) && liveUpdateEnabled) {
       if (chartData.length > 0) {
         const maxTime = chartData[chartData.length - 1].name;
         const currentInterval = parseInt(chartInterval, 10);
@@ -644,7 +709,7 @@ function TestingComponent() {
         }
       }
     }
-  }, [chartData, chartInterval, isRecording, liveUpdateEnabled]);
+  }, [chartData, chartInterval, runningTestSession, liveUpdateEnabled]);
 
 
   const handleWheel = useCallback((event: WheelEvent) => {
@@ -655,7 +720,7 @@ function TestingComponent() {
 
     setZoomDomain(prevDomain => {
         const dataToUse = frozenDataRef.current || [];
-        const chronologicalData = isRecording ? [...dataToUse].reverse() : dataToUse;
+        const chronologicalData = runningTestSession ? [...dataToUse].reverse() : dataToUse;
 
         const processData = (data: SensorData[]) => {
             const startTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : Date.now();
@@ -715,7 +780,7 @@ function TestingComponent() {
         }
         return prevDomain;
     });
-  }, [liveUpdateEnabled, isRecording]);
+  }, [liveUpdateEnabled, runningTestSession]);
 
 
   const handleResetZoom = () => {
@@ -740,11 +805,11 @@ function TestingComponent() {
       setZoomDomain(null);
       frozenDataRef.current = undefined;
     } else {
-      if (isRecording && (!frozenDataRef.current || frozenDataRef.current.length === 0)) {
+      if (runningTestSession && (!frozenDataRef.current || frozenDataRef.current.length === 0)) {
         frozenDataRef.current = [...dataLog];
       }
     }
-  }, [liveUpdateEnabled, dataLog, isRecording]);
+  }, [liveUpdateEnabled, dataLog, runningTestSession]);
   
   const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
   const displayDecimals = sensorConfig?.decimalPlaces ?? 0;
@@ -755,55 +820,108 @@ function TestingComponent() {
   ];
 
   const dataSourceStatus = useMemo(() => {
-    if (isRecording) {
-      return 'Recording Session...';
+    if (runningTestSession) {
+      return `Recording Session (${runningTestSession.measurementType})...`;
     }
     if (isConnected && currentValue !== null) {
         return 'Streaming Live';
     }
     return 'Offline';
-  }, [isConnected, currentValue, isRecording]);
+  }, [isConnected, currentValue, runningTestSession]);
 
-  const renderLiveTab = () => (
-    <Card className="mt-4 bg-white/80 backdrop-blur-sm shadow-lg w-full">
-        <CardHeader>
-          <CardTitle className="text-2xl text-center">
-              Live Control
-          </CardTitle>
-          <CardDescription className="text-center">
-            Monitor a device or start a new measurement session.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col items-center justify-center gap-4">
-            <ValveControl />
-            
-            <div className="flex gap-4 items-center">
-                <Button 
-                    onClick={() => sendRecordingCommand(true)}
-                    disabled={isRecording || !isConnected}
-                    className="btn-shine bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md"
-                >
-                    Start Recording
-                </Button>
-                <Button 
-                    onClick={() => sendRecordingCommand(false)}
-                    disabled={!isRecording}
-                    variant="destructive"
-                >
-                    Stop Recording
-                </Button>
-            </div>
-            {isRecording && <p className="text-sm text-primary font-semibold animate-pulse">🔴 Recording in progress...</p>}
-        </CardContent>
-      </Card>
-  );
+    const renderSessionControl = () => {
+        if (runningTestSession) {
+            return (
+                <Card className="mt-4 bg-white/80 backdrop-blur-sm shadow-lg w-full">
+                    <CardHeader>
+                        <CardTitle className="text-xl text-center">Session in Progress</CardTitle>
+                    </CardHeader>
+                    <CardContent className="flex flex-col items-center justify-center gap-4">
+                        <p className="text-center">
+                            Recording for <span className="font-semibold">{runningTestSession.vesselTypeName} (S/N: {runningTestSession.serialNumber || 'N/A'})</span>
+                        </p>
+                        <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                                <Button variant="destructive">Stop Session</Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>End Test Session?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        This will stop the recording and mark the session as complete.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => handleStopTestSession(runningTestSession.id)}>Confirm Stop</AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
+                    </CardContent>
+                </Card>
+            );
+        }
+
+        if (showNewSessionForm) {
+            const availableBatches = tempTestSession.vesselTypeId ? batches?.filter(b => b.vesselTypeId === tempTestSession.vesselTypeId) : batches;
+            return (
+                <Card className="mt-4 bg-white/80 backdrop-blur-sm shadow-lg w-full">
+                    <CardHeader>
+                        <CardTitle className="text-xl text-center">New Test Session</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="batch-select">Batch</Label>
+                          <Select onValueChange={(value) => setTempTestSession(p => ({...p, batchId: value}))}>
+                            <SelectTrigger id="batch-select"><SelectValue placeholder="Select a batch..." /></SelectTrigger>
+                            <SelectContent>
+                              {isBatchesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                               batches?.map(b => <SelectItem key={b.id} value={b.id}>{b.name} ({vesselTypes?.find(vt => vt.id === b.vesselTypeId)?.name})</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="serial-number">Serial Number</Label>
+                          <Input id="serial-number" value={tempTestSession.serialNumber || ''} onChange={e => setTempTestSession(p => ({...p, serialNumber: e.target.value}))} placeholder="Optional serial number..." />
+                        </div>
+                         <div className="space-y-2">
+                          <Label htmlFor="description">Description</Label>
+                          <Input id="description" value={tempTestSession.description || ''} onChange={e => setTempTestSession(p => ({...p, description: e.target.value}))} placeholder="Optional description..." />
+                        </div>
+                        <div className="flex gap-4 justify-center">
+                            <Button onClick={handleStartTestSession}>Start Session</Button>
+                            <Button variant="ghost" onClick={() => setShowNewSessionForm(false)}>Cancel</Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            );
+        }
+
+        return (
+            <Card className="mt-4 bg-white/80 backdrop-blur-sm shadow-lg w-full">
+                 <CardHeader>
+                  <CardTitle className="text-2xl text-center">
+                      Session Control
+                  </CardTitle>
+                   <CardDescription className="text-center">
+                    Start a new session to begin recording data.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-center">
+                    <Button onClick={() => setShowNewSessionForm(true)} disabled={!!runningTestSession} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md">
+                        New Test Session
+                    </Button>
+                </CardContent>
+            </Card>
+        );
+    }
 
   const renderFileTab = () => (
       <Card className="mt-4 bg-white/80 backdrop-blur-sm shadow-lg w-full">
         <CardHeader>
             <CardTitle>File & Session Operations</CardTitle>
             <CardDescription>
-                Export chart data, or manage recorded sessions from the Realtime Database.
+                Export chart data, or view past sessions.
             </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -811,7 +929,7 @@ function TestingComponent() {
               <Button onClick={handleExportCSV} variant="outline" disabled={isSyncing}>Export Chart Data (CSV)</Button>
               <AlertDialog>
                   <AlertDialogTrigger asChild>
-                  <Button variant="destructive" className="ml-4" disabled={isRecording}>Clear Live Data</Button>
+                  <Button variant="destructive" className="ml-4" disabled={!runningTestSession}>Clear Live Data</Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                   <AlertDialogHeader>
@@ -828,30 +946,27 @@ function TestingComponent() {
               </AlertDialog>
             </div>
             <div className="border-t pt-4">
-                <h3 className="text-lg font-semibold text-center mb-2">Recorded Sessions</h3>
+                <h3 className="text-lg font-semibold text-center mb-2">Past Sessions</h3>
                  <ScrollArea className="h-60">
                     <div className="space-y-2">
-                        {Object.keys(rtdbSessions).length > 0 ? Object.keys(rtdbSessions).sort((a,b) => parseInt(b) - parseInt(a)).map(sessionId => {
-                            const session = rtdbSessions[sessionId];
-                            const meta = session.meta || {};
+                        {isTestSessionsLoading ? <p className="text-center text-muted-foreground">Loading sessions...</p> : 
+                        testSessions && testSessions.length > 0 ? testSessions.map(session => {
                             return (
-                                <Card key={sessionId} className="p-3">
+                                <Card key={session.id} className={`p-3 ${selectedSessionIds.includes(session.id) ? 'border-primary' : ''}`}>
                                     <div className="flex justify-between items-center">
                                         <div>
-                                            <p className="font-semibold">Session {new Date(meta.startTime).toLocaleString()}</p>
+                                            <p className="font-semibold">{session.vesselTypeName} (S/N: {session.serialNumber || 'N/A'})</p>
                                             <p className="text-xs text-muted-foreground">
-                                                Status: <span className={`font-medium ${meta.status === 'recording' ? 'text-destructive animate-pulse' : 'text-primary'}`}>{meta.status}</span>
-                                                {meta.duration && ` | Duration: ${(meta.duration / 1000).toFixed(1)}s`}
+                                                {new Date(session.startTime).toLocaleString()}
                                             </p>
                                         </div>
                                         <div className="flex gap-2">
-                                            <Button size="sm" variant="outline" onClick={() => viewRtdbSession(sessionId)}>View</Button>
-                                            <Button size="sm" variant="destructive" onClick={() => deleteRtdbSession(sessionId)}>Delete</Button>
+                                            <Button size="sm" variant="outline" onClick={() => setSelectedSessionIds(prev => prev.includes(session.id) ? prev.filter(id => id !== session.id) : [...prev, session.id])}>View</Button>
                                         </div>
                                     </div>
                                 </Card>
                             )
-                        }) : <p className="text-center text-muted-foreground p-4">No sessions recorded in Realtime Database.</p>}
+                        }) : <p className="text-center text-muted-foreground p-4">No sessions recorded.</p>}
                     </div>
                 </ScrollArea>
             </div>
@@ -907,10 +1022,10 @@ function TestingComponent() {
                 <CardContent className="p-4">
                     <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                     <TabsList className="grid w-full grid-cols-2 bg-muted/80">
-                        <TabsTrigger value="live">Live Control</TabsTrigger>
+                        <TabsTrigger value="session">Session Control</TabsTrigger>
                         <TabsTrigger value="file">File & Sessions</TabsTrigger>
                     </TabsList>
-                    <TabsContent value="live" className="data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
+                    <TabsContent value="session" className="data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderSessionControl()}</TabsContent>
                     <TabsContent value="file" className="data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
                     </Tabs>
                 </CardContent>
@@ -941,22 +1056,7 @@ function TestingComponent() {
                 </div>
                 </CardContent>
             </Card>
-            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-                <CardHeader>
-                <CardTitle className="text-xl">Settings</CardTitle>
-                <CardDescription>
-                    Configure sensors and devices on the management page.
-                </CardDescription>
-                </CardHeader>
-                <CardContent>
-                <Button
-                    onClick={() => router.push('/admin')}
-                    className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
-                >
-                    <Cog className="mr-2 h-4 w-4" /> Go to Management
-                </Button>
-                </CardContent>
-            </Card>
+            <ValveControl />
         </div>
 
         <div className="lg:col-span-3">
@@ -1013,11 +1113,11 @@ function TestingComponent() {
                     <div className="pt-2 flex flex-wrap gap-2 items-center">
                         <p className="text-sm text-muted-foreground">Comparing:</p>
                         {selectedSessionIds.map((id, index) => {
-                            const session = rtdbSessions[id];
+                            const session = testSessions?.find(s => s.id === id);
                             return (
                                 <div key={id} className="flex items-center gap-2 bg-muted text-muted-foreground px-2 py-1 rounded-md text-xs">
                                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }}></div>
-                                    <span>Session from {session ? new Date(session.meta.startTime).toLocaleString() : '...'}</span>
+                                    <span>{session ? `${session.vesselTypeName} (S/N: ${session.serialNumber || 'N/A'})` : '...'}</span>
                                     <button onClick={() => setSelectedSessionIds(prev => prev.filter(sid => sid !== id))} className="text-muted-foreground hover:text-foreground">
                                         <XIcon className="h-3 w-3" />
                                     </button>
@@ -1068,8 +1168,8 @@ function TestingComponent() {
                           <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig?.name || 'Value'} (${sensorConfig?.unit || 'N/A'})`} dot={false} strokeWidth={2} isAnimationActive={false} />
                       ) : (
                           Object.entries(chartData).map(([sessionId, data], index) => {
-                          const session = rtdbSessions[sessionId];
-                          const sessionName = session ? `Session ${new Date(session.meta.startTime).toLocaleTimeString()}` : `Session ${sessionId}`;
+                          const session = testSessions?.find(s => s.id === sessionId);
+                          const sessionName = session ? `${session.vesselTypeName} (S/N: ${session.serialNumber || 'N/A'})` : `Session ${sessionId}`;
                           return (
                               <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={sessionName} dot={false} strokeWidth={2} isAnimationActive={false} />
                           )

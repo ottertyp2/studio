@@ -65,7 +65,7 @@ void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println("\n=== ESP32 Studio Sensor System ===");
-  Serial.println("Version: 1.2 (Whitespace-Fixed)");
+  Serial.println("Version: 1.3 (Status-Log)");
   
   // Pin-Konfiguration
   pinMode(analogPin, INPUT);
@@ -150,11 +150,21 @@ void loop() {
     unsigned long timestamp = millis();
     
     // Immer auf Serial ausgeben (Debug)
-    Serial.printf("[Sensor] %d | %lu ms", sensorValue, timestamp);
+    
+    // *** ÄNDERUNG (v1.3) ***
+    // Die Serial.printf-Zeile wurde angepasst, um den Status von
+    // valve1 und valve2 (als HIGH/LOW) direkt anzuzeigen,
+    // wie vom Benutzer gewünscht.
+    Serial.printf("[Sensor] %d | V1: %s | V2: %s | %lu ms", 
+                  sensorValue, 
+                  valve1 ? "HIGH" : "LOW", 
+                  valve2 ? "HIGH" : "LOW", 
+                  timestamp);
+    
     if (recordingActive) {
       Serial.print(" [REC]");
     }
-    Serial.println();
+    Serial.println(); // Zeilenumbruch
     
     // Firebase nur wenn verbunden
     if (Firebase.ready()) {
@@ -210,6 +220,7 @@ void loop() {
         valve1 = newState;
         digitalWrite(valve1Pin, valve1 ? HIGH : LOW);
         digitalWrite(valve1LedPin, valve1 ? HIGH : LOW);
+        // DIESE ZEILE ist die Ausgabe "was das Portal sagt"
         Serial.printf("[Command] Valve1 -> %s\n", valve1 ? "ON" : "OFF");
       }
     }
@@ -221,6 +232,7 @@ void loop() {
         valve2 = newState;
         digitalWrite(valve2Pin, valve2 ? HIGH : LOW);
         digitalWrite(valve2LedPin, valve2 ? HIGH : LOW);
+        // DIESE ZEILE ist die Ausgabe "was das Portal sagt"
         Serial.printf("[Command] Valve2 -> %s\n", valve2 ? "ON" : "OFF");
       }
     }
@@ -246,6 +258,7 @@ void loop() {
         Firebase.RTDB.setJSON(&fbdo, metaPath.c_str(), &meta);
         
         Serial.println("=====================================");
+        // DIESE ZEILE ist die Ausgabe "was das Portal sagt"
         Serial.printf("[Recording] ▶ GESTARTET\n");
         Serial.printf("[Recording] Session: %s\n", currentSessionId.c_str());
         Serial.println("=====================================");
@@ -264,6 +277,7 @@ void loop() {
         Firebase.RTDB.updateNode(&fbdo, metaPath.c_str(), &meta);
         
         Serial.println("=====================================");
+        // DIESE ZEILE ist die Ausgabe "was das Portal sagt"
         Serial.printf("[Recording] ■ GESTOPPT\n");
         Serial.printf("[Recording] Session: %s\n", currentSessionId.c_str());
         Serial.printf("[Recording] Dauer: %lu ms\n", millis() - sessionStartTime);
@@ -343,7 +357,7 @@ void loop() {
 // Hilfsfunktion: Status ausgeben
 void printStatus() {
   Serial.println("\n=====================================");
-  Serial.println("        SYSTEM STATUS");
+  Serial.println("         SYSTEM STATUS");
   Serial.println("=====================================");
   Serial.printf("WiFi:      %s\n", WiFi.status() == WL_CONNECTED ? "✓ Verbunden" : "✗ Getrennt");
   if (WiFi.status() == WL_CONNECTED) {
@@ -356,8 +370,8 @@ void printStatus() {
     Serial.printf("Session:   %s\n", currentSessionId.c_str());
     Serial.printf("Dauer:     %lu ms\n", millis() - sessionStartTime);
   }
-  Serial.printf("Valve1:    %s\n", valve1 ? "ON" : "OFF");
-  Serial.printf("Valve2:    %s\n", valve2 ? "ON" : "OFF");
+  Serial.printf("Valve1:    %s\n", valve1 ? "ON (HIGH)" : "OFF (LOW)");
+  Serial.printf("Valve2:    %s\n", valve2 ? "ON (HIGH)" : "OFF (LOW)");
   Serial.printf("Uptime:    %lu ms\n", millis());
   Serial.println("=====================================\n");
 }
