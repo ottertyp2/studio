@@ -74,7 +74,7 @@ import { signOut } from '@/firebase/non-blocking-login';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { convertRawValue } from '@/lib/utils';
 import { useTestBench } from '@/context/TestBenchContext';
-import { PDFDownloadLink, pdf } from '@react-pdf/renderer';
+import { pdf } from '@react-pdf/renderer';
 import TestReport from '@/components/report/TestReport';
 import ValveControl from '@/components/dashboard/ValveControl';
 
@@ -1104,7 +1104,6 @@ function TestingComponent() {
 
         const currentSensorConfig = sensorConfigs?.find(c => c.id === activeTestSession.sensorConfigurationId);
         const currentVesselType = vesselTypes?.find(p => p.id === activeTestSession.vesselTypeId);
-        const currentBatch = batches?.find(b => b.id === activeTestSession.batchId);
         
         if (!currentSensorConfig || !currentVesselType) {
             toast({
@@ -1114,6 +1113,8 @@ function TestingComponent() {
             });
             return;
         }
+
+        const currentBatch = batches?.find(b => b.id === activeTestSession.batchId);
     
         setGeneratingReportFor(activeTestSession.id);
     

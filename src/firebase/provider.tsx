@@ -6,7 +6,6 @@ import { FirebaseApp } from 'firebase/app';
 import { Firestore, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { Auth, User, onAuthStateChanged } from 'firebase/auth';
 import { FirebaseStorage } from 'firebase/storage';
-import { FirebaseErrorListener } from '@/components/FirebaseErrorListener'
 import { FirestorePermissionError } from './errors';
 import { errorEmitter } from './error-emitter';
 
@@ -37,6 +36,30 @@ export interface FirebaseServices {
 
 // React Context
 export const FirebaseContext = createContext<FirebaseContextState | undefined>(undefined);
+
+/**
+ * An invisible component that listens for globally emitted 'permission-error' events.
+ * It throws any received error to be caught by Next.js's global-error.tsx.
+ */
+function FirebaseErrorListener() {
+  const [error, setError] = useState<FirestorePermissionError | null>(null);
+
+  useEffect(() => {
+    const handleError = (error: FirestorePermissionError) => {
+      setError(error);
+    };
+    errorEmitter.on('permission-error', handleError);
+    return () => {
+      errorEmitter.off('permission-error', handleError);
+    };
+  }, []);
+
+  if (error) {
+    throw error;
+  }
+  return null;
+}
+
 
 /**
  * FirebaseProvider manages and provides Firebase services.
