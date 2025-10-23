@@ -1112,88 +1112,123 @@ function TestingComponent() {
     };
   }, [lastDataPointTimestamp, setCurrentValue]);
 
-    const handleGenerateReport = useCallback(async () => {
-        if (!activeTestSession || !firestore || !firebaseApp || !chartRef.current) {
-            toast({
-                variant: 'destructive',
-                title: 'Prerequisites Missing',
-                description: 'Cannot generate report. Ensure a session is selected and services are available.',
-            });
-            return;
+  const handleGenerateReport = useCallback(async () => {
+    //
+    // DEBUG LOGS START
+    //
+    console.log("DEBUG: Report generation triggered.");
+    console.log("DEBUG: activeTestSession", activeTestSession);
+    console.log("DEBUG: chartData", chartData);
+    console.log("DEBUG: typeof chartData", typeof chartData);
+    console.log("DEBUG: chartData is array", Array.isArray(chartData));
+
+    // Guard against required objects being unavailable
+    if (!activeTestSession || !firestore || !firebaseApp || !chartRef.current) {
+        toast({
+            variant: 'destructive',
+            title: 'Prerequisites Missing',
+            description: 'Cannot generate report. Ensure a session is selected and services are available.',
+        });
+        return;
+    }
+
+    // Guard against empty chart data
+    if (!Array.isArray(chartData) || chartData.length === 0) {
+        toast({
+            variant: 'destructive',
+            title: 'No Data',
+            description: 'Cannot generate a report for a session with no data points.',
+        });
+        return;
+    }
+
+    const currentSensorConfig = sensorConfigs?.find(c => c.id === activeTestSession.sensorConfigurationId);
+    const currentVesselType = vesselTypes?.find(p => p.id === activeTestSession.vesselTypeId);
+    const currentBatch = batches?.find(b => b.id === activeTestSession.batchId);
+
+    //
+    // DEBUG LOGS FOR FOUND CONFIGS
+    //
+    console.log("DEBUG: currentSensorConfig", currentSensorConfig);
+    console.log("DEBUG: currentVesselType", currentVesselType);
+    console.log("DEBUG: currentBatch", currentBatch);
+
+    if (!currentSensorConfig || !currentVesselType || !currentBatch) {
+        toast({
+            variant: 'destructive',
+            title: 'Report Failed',
+            description: 'Could not find the sensor config, vessel type, or batch for this session.',
+        });
+        return;
+    }
+
+    setGeneratingReportFor(activeTestSession.id);
+
+    try {
+        const svgElement = chartRef.current.querySelector('svg');
+        if (!svgElement) {
+            // This is a critical failure point if the chart isn't rendered
+            console.error("DEBUG: Failed to find SVG element for chart.");
+            throw new Error("Could not find chart SVG element to generate the report image.");
         }
 
-        const currentSensorConfig = sensorConfigs?.find(c => c.id === activeTestSession.sensorConfigurationId);
-        const currentVesselType = vesselTypes?.find(p => p.id === activeTestSession.vesselTypeId);
-        const currentBatch = batches?.find(b => b.id === activeTestSession.batchId);
-        
-        if (!currentSensorConfig || !currentVesselType || !currentBatch) {
-            toast({
-                variant: 'destructive',
-                title: 'Report Failed',
-                description: 'Could not find the sensor config, vessel type, or batch for this session.',
-            });
-            return;
-        }
-    
-        setGeneratingReportFor(activeTestSession.id);
-    
-        try {
-            const svgElement = chartRef.current.querySelector('svg');
-            if (!svgElement) {
-                throw new Error("Could not find chart SVG element.");
-            }
-    
-            const svgString = new XMLSerializer().serializeToString(svgElement);
-            const chartImage = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgString)))}`;
-    
-            const blob = await pdf(
-                <TestReport
-                    session={activeTestSession}
-                    data={chartData as any[]}
-                    config={currentSensorConfig}
-                    chartImage={chartImage}
-                    vesselType={currentVesselType}
-                    batch={currentBatch}
-                />
-            ).toBlob();
-    
-            const storage = getStorage(firebaseApp);
-            const reportId = doc(collection(firestore, '_')).id;
-            const filePath = `reports/${activeTestSession.id}/${reportId}.pdf`;
-            const fileRef = storageRef(storage, filePath);
-    
-            const snapshot = await uploadBytes(fileRef, blob);
-            const downloadUrl = await getDownloadURL(snapshot.ref);
-    
-            const reportData: Report = {
-                id: reportId,
-                testSessionId: activeTestSession.id,
-                generatedAt: new Date().toISOString(),
-                downloadUrl: downloadUrl,
-                vesselTypeName: activeTestSession.vesselTypeName,
-                batchId: activeTestSession.batchId,
-                serialNumber: activeTestSession.serialNumber,
-                username: activeTestSession.username,
-            };
-    
-            await setDoc(doc(firestore, 'reports', reportId), reportData);
-    
-            toast({
-                title: 'Report Generated & Saved',
-                description: 'The PDF report has been successfully stored in the cloud.',
-            });
-    
-        } catch (e: any) {
-            console.error("Report generation/upload failed: ", e);
-            toast({
-                variant: 'destructive',
-                title: 'Report Failed',
-                description: e.message || 'Could not generate or upload the report.',
-            });
-        } finally {
-            setGeneratingReportFor(null);
-        }
-    }, [activeTestSession, firestore, firebaseApp, toast, chartData, sensorConfigs, vesselTypes, batches]);
+        const svgString = new XMLSerializer().serializeToString(svgElement);
+        const chartImage = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgString)))}`;
+
+        //
+        // DEBUG LOG BEFORE PDF CALL
+        //
+        const reportProps = {
+            session: activeTestSession,
+            data: chartData as any[],
+            config: currentSensorConfig,
+            chartImage: chartImage,
+            vesselType: currentVesselType,
+            batch: currentBatch,
+        };
+        console.log("DEBUG: Props being passed to PDF renderer", reportProps);
+
+        const blob = await pdf(
+            <TestReport {...reportProps} />
+        ).toBlob();
+
+        const storage = getStorage(firebaseApp);
+        const reportId = doc(collection(firestore, '_')).id;
+        const filePath = `reports/${activeTestSession.id}/${reportId}.pdf`;
+        const fileRef = storageRef(storage, filePath);
+
+        const snapshot = await uploadBytes(fileRef, blob);
+        const downloadUrl = await getDownloadURL(snapshot.ref);
+
+        const reportData: Report = {
+            id: reportId,
+            testSessionId: activeTestSession.id,
+            generatedAt: new Date().toISOString(),
+            downloadUrl: downloadUrl,
+            vesselTypeName: activeTestSession.vesselTypeName,
+            batchId: activeTestSession.batchId,
+            serialNumber: activeTestSession.serialNumber,
+            username: activeTestSession.username,
+        };
+
+        await setDoc(doc(firestore, 'reports', reportId), reportData);
+
+        toast({
+            title: 'Report Generated & Saved',
+            description: 'The PDF report has been successfully stored in the cloud.',
+        });
+
+    } catch (e: any) {
+        console.error("DEBUG: Report generation/upload failed: ", e);
+        toast({
+            variant: 'destructive',
+            title: 'Report Failed',
+            description: e.message || 'Could not generate or upload the report.',
+        });
+    } finally {
+        setGeneratingReportFor(null);
+    }
+  }, [activeTestSession, firestore, firebaseApp, toast, chartData, sensorConfigs, vesselTypes, batches]);
   
   const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
   const displayDecimals = sensorConfig?.decimalPlaces ?? 0;
