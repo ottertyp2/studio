@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import * as tf from '@tensorflow/tfjs';
+import Papa from 'papaparse';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -69,7 +70,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Edit } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Edit, Upload } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
@@ -216,6 +217,7 @@ export default function AdminPage() {
   const [editingVesselType, setEditingVesselType] = useState<VesselType | null>(null);
   const [minCurveText, setMinCurveText] = useState('');
   const [maxCurveText, setMaxCurveText] = useState('');
+  const guidelineImportRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isUserLoading) {
@@ -1161,6 +1163,120 @@ export default function AdminPage() {
     };
 
 
+    const handleExportGuidelinesCSV = () => {
+        if (!vesselTypes || vesselTypes.length === 0) {
+            toast({ variant: 'destructive', title: 'No Data', description: 'There are no vessel types with guidelines to export.' });
+            return;
+        }
+
+        const rows: (string | number)[][] = [['vesselId', 'timestamp', 'minPressure', 'maxPressure']];
+        
+        vesselTypes.forEach(vessel => {
+            const minCurve = vessel.minCurve || [];
+            const maxCurve = vessel.maxCurve || [];
+            const timePoints = [...new Set([...minCurve.map(p => p.x), ...maxCurve.map(p => p.x)])].sort((a, b) => a - b);
+            
+            timePoints.forEach(time => {
+                const minPoint = minCurve.find(p => p.x === time);
+                const maxPoint = maxCurve.find(p => p.x === time);
+                rows.push([
+                    vessel.id,
+                    time,
+                    minPoint ? minPoint.y : '',
+                    maxPoint ? maxPoint.y : ''
+                ]);
+            });
+        });
+
+        if (rows.length <= 1) {
+            toast({ title: 'No Guidelines to Export', description: 'No vessel types have defined min/max curves.' });
+            return;
+        }
+
+        const csv = Papa.unparse(rows);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `vessel_guidelines_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast({ title: 'Guidelines Exported' });
+    };
+
+    const handleImportGuidelinesCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file || !firestore) return;
+
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: async (results) => {
+                if (results.errors.length > 0) {
+                    toast({ variant: 'destructive', title: 'Import Error', description: `CSV parsing failed: ${results.errors[0].message}` });
+                    return;
+                }
+
+                const requiredFields = ['vesselId', 'timestamp', 'minPressure', 'maxPressure'];
+                if (!requiredFields.every(field => results.meta.fields?.includes(field))) {
+                    toast({ variant: 'destructive', title: 'Invalid Format', description: `CSV must contain the headers: ${requiredFields.join(', ')}.` });
+                    return;
+                }
+
+                const dataByVessel: Record<string, { minCurve: GuidelineCurvePoint[], maxCurve: GuidelineCurvePoint[] }> = {};
+
+                (results.data as any[]).forEach(row => {
+                    const { vesselId, timestamp, minPressure, maxPressure } = row;
+                    if (!vesselId || !timestamp) return;
+
+                    if (!dataByVessel[vesselId]) {
+                        dataByVessel[vesselId] = { minCurve: [], maxCurve: [] };
+                    }
+                    
+                    const time = parseFloat(timestamp);
+                    if (isNaN(time)) return;
+
+                    const minP = parseFloat(minPressure);
+                    if (!isNaN(minP)) {
+                        dataByVessel[vesselId].minCurve.push({ x: time, y: minP });
+                    }
+                    
+                    const maxP = parseFloat(maxPressure);
+                    if (!isNaN(maxP)) {
+                        dataByVessel[vesselId].maxCurve.push({ x: time, y: maxP });
+                    }
+                });
+
+                try {
+                    const batch = writeBatch(firestore);
+                    let vesselsUpdated = 0;
+                    
+                    for (const vesselId in dataByVessel) {
+                        const vesselDocRef = doc(firestore, 'products', vesselId);
+                        const { minCurve, maxCurve } = dataByVessel[vesselId];
+
+                        minCurve.sort((a, b) => a.x - b.x);
+                        maxCurve.sort((a, b) => a.x - b.x);
+                        
+                        batch.update(vesselDocRef, { minCurve, maxCurve });
+                        vesselsUpdated++;
+                    }
+
+                    await batch.commit();
+                    toast({ title: 'Import Successful', description: `Updated guidelines for ${vesselsUpdated} vessel types.` });
+                } catch (e: any) {
+                    toast({ variant: 'destructive', title: 'Import Failed', description: `Could not save to Firestore. Check permissions and vessel IDs. ${e.message}` });
+                }
+            }
+        });
+
+        if (guidelineImportRef.current) {
+            guidelineImportRef.current.value = '';
+        }
+    };
+
   const isFilterActive = useMemo(() => {
     return sessionUserFilter !== 'all' || 
            sessionVesselTypeFilter !== 'all' || 
@@ -1633,6 +1749,17 @@ export default function AdminPage() {
                     <Button onClick={handleAddVesselType} disabled={!newVesselTypeName.trim()}>
                         <PackagePlus className="h-4 w-4 mr-2" />
                         Add
+                    </Button>
+                </div>
+                <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => guidelineImportRef.current?.click()}>
+                        <Upload className="h-4 w-4 mr-2" />
+                        Import CSV
+                    </Button>
+                    <input type="file" ref={guidelineImportRef} onChange={handleImportGuidelinesCSV} accept=".csv" className="hidden" />
+                    <Button variant="outline" size="sm" onClick={handleExportGuidelinesCSV}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Export CSV
                     </Button>
                 </div>
                 <ScrollArea className="h-64 border rounded-md p-2 bg-background/50">
