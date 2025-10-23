@@ -2,7 +2,7 @@
 
 'use client';
 import React from 'react';
-import { Page, Text, View, Document, StyleSheet, Image } from '@react-pdf/renderer';
+import { Page, Text, View, Document, StyleSheet, Image, Line, Svg } from '@react-pdf/renderer';
 
 type SensorConfig = {
     id: string;
@@ -33,6 +33,13 @@ type TestSession = {
     username: string;
 };
 
+type BatchProfile = {
+    id: string;
+    name: string;
+    minCurve: {x: number, y: number}[];
+    maxCurve: {x: number, y: number}[];
+}
+
 type ChartDataPoint = {
     name: number; // time in seconds
     value: number;
@@ -43,6 +50,7 @@ interface TestReportProps {
   data: ChartDataPoint[];
   config: SensorConfig;
   chartImage: string;
+  batchProfile?: BatchProfile;
 }
 
 const styles = StyleSheet.create({
@@ -167,7 +175,7 @@ const styles = StyleSheet.create({
 });
 
 
-const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartImage }) => {
+const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartImage, batchProfile }) => {
     
     const summaryStats = data.reduce((acc, point) => {
         acc.max = Math.max(acc.max, point.value);
@@ -203,7 +211,7 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartIma
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Session Details</Text>
             <View style={styles.grid}>
-                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Batch ID: </Text>{session.batchId}</Text></View>
+                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Batch ID: </Text>{batchProfile?.name || session.batchId}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Number in Batch: </Text>{session.numberInBatch || 'N/A'}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Start Time: </Text>{new Date(session.startTime).toLocaleString()}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>End Time: </Text>{session.endTime ? new Date(session.endTime).toLocaleString() : 'N/A'}</Text></View>

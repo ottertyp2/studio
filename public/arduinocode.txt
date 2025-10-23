@@ -1,0 +1,62 @@
+const int analogPin = A0;
+const int valve1Pin = 18;
+const int valve2Pin = 19;
+
+int adcResolution = 12; // Default ESP32
+
+bool valve1 = false;
+bool valve2 = false;
+bool showValve1 = true;
+unsigned long lastSensorTime = 0;
+unsigned long lastStatusTime = 0;
+unsigned long lastLedSwitch = 0;
+
+void setup() {
+  Serial.begin(9600);
+  delay(200); // Stability workaround (optional)
+#if defined(analogReadResolution)
+  analogReadResolution(adcResolution);
+#endif
+  pinMode(valve1Pin, OUTPUT);
+  pinMode(valve2Pin, OUTPUT);
+
+  digitalWrite(valve1Pin, LOW);
+  digitalWrite(valve2Pin, LOW);
+
+  Serial.println("READY");
+}
+
+void loop() {
+  // Sensor every 500 ms
+  if (millis() - lastSensorTime > 500) {
+    lastSensorTime = millis();
+    int sensorValue = analogRead(analogPin);
+    Serial.print("SENSOR:");
+    Serial.println(sensorValue);
+  }
+
+  // Status every second
+  if (millis() - lastStatusTime > 1000) {
+    lastStatusTime = millis();
+    Serial.print("VALVE1:STATE:");
+    Serial.println(valve1 ? "ON" : "OFF");
+    Serial.print("VALVE2:STATE:");
+    Serial.println(valve2 ? "ON" : "OFF");
+  }
+
+  // Serial input
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    if (cmd == "VALVE1:ON")  { valve1 = true;  digitalWrite(valve1Pin, HIGH); }
+    if (cmd == "VALVE1:OFF") { valve1 = false; digitalWrite(valve1Pin, LOW);  }
+    if (cmd == "VALVE2:ON")  { valve2 = true;  digitalWrite(valve2Pin, HIGH); }
+    if (cmd == "VALVE2:OFF") { valve2 = false; digitalWrite(valve2Pin, LOW);  }
+    if (cmd == "STATUS?") {
+      Serial.print("VALVE1:STATE:");
+      Serial.println(valve1 ? "ON" : "OFF");
+      Serial.print("VALVE2:STATE:");
+      Serial.println(valve2 ? "ON" : "OFF");
+    }
+  }
+}

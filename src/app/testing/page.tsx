@@ -133,6 +133,13 @@ type TestSession = {
     demoOwnerInstanceId?: string;
 };
 
+type BatchProfile = {
+    id: string;
+    name: string;
+    minCurve: {x: number, y: number}[];
+    maxCurve: {x: number, y: number}[];
+}
+
 type MLModel = {
     id: string;
     name: string;
@@ -239,6 +246,13 @@ function TestingComponent() {
   }, [firestore, user]);
 
   const { data: testBenches, isLoading: isTestBenchesLoading, error: testBenchesError } = useCollection<TestBench>(testBenchesCollectionRef);
+  
+  const batchProfilesCollectionRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'batch_profiles');
+  }, [firestore, user]);
+
+  const { data: batchProfiles, isLoading: isBatchProfilesLoading } = useCollection<BatchProfile>(batchProfilesCollectionRef);
   
   useEffect(() => {
     if (!isUserLoading && !user) {
@@ -442,7 +456,7 @@ function TestingComponent() {
       return;
     }
     if (!tempTestSession.batchId) {
-      toast({variant: 'destructive', title: 'Input Error', description: 'Please enter a Batch ID for the session.'});
+      toast({variant: 'destructive', title: 'Input Error', description: 'Please select a Batch Profile for the session.'});
       return;
     }
     if (!tempTestSession.testBenchId) {
@@ -498,7 +512,7 @@ function TestingComponent() {
       setSelectedSessionIds([newSessionId]);
       setShowNewSessionForm(false);
       setTempTestSession({});
-      toast({ title: 'New Test Session Started', description: `Batch ID: ${newSession.batchId}`});
+      toast({ title: 'New Test Session Started', description: `Batch ID: ${batchProfiles?.find(b => b.id === newSession.batchId)?.name || newSession.batchId}`});
     } catch(e: any) {
         console.error("FirebaseError:", e);
         toast({
@@ -1052,6 +1066,8 @@ function TestingComponent() {
         setGeneratingReportFor(activeTestSession.id);
     
         try {
+            const batchProfile = batchProfiles?.find(p => p.id === activeTestSession.batchId);
+            
             const svgElement = chartRef.current.querySelector('svg');
             if (!svgElement) {
                 throw new Error("Could not find chart SVG element.");
@@ -1066,6 +1082,7 @@ function TestingComponent() {
                     data={chartData as any[]}
                     config={sensorConfig!}
                     chartImage={chartImage}
+                    batchProfile={batchProfile}
                 />
             ).toBlob();
     
@@ -1104,7 +1121,7 @@ function TestingComponent() {
         } finally {
             setGeneratingReportFor(null);
         }
-    }, [activeTestSession, firestore, firebaseApp, toast, chartData, sensorConfig]);
+    }, [activeTestSession, firestore, firebaseApp, toast, chartData, sensorConfig, batchProfiles]);
   
   const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
   const displayDecimals = sensorConfig?.decimalPlaces ?? 0;
@@ -1164,8 +1181,17 @@ function TestingComponent() {
               </Select>
           </div>
           <div>
-            <Label htmlFor="batchId">Batch ID</Label>
-            <Input id="batchId" placeholder="e.g., BATCH-001" value={tempTestSession.batchId || ''} onChange={e => handleTestSessionFieldChange('batchId', e.target.value)} />
+            <Label htmlFor="batchId">Batch Profile</Label>
+             <Select value={tempTestSession.batchId || ''} onValueChange={value => handleTestSessionFieldChange('batchId', value)}>
+                <SelectTrigger id="batchId">
+                    <SelectValue placeholder="Select a Batch Profile" />
+                </SelectTrigger>
+                <SelectContent>
+                    {isBatchProfilesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                    batchProfiles?.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)
+                    }
+                </SelectContent>
+            </Select>
           </div>
           <div>
               <Label htmlFor="numberInBatch">Number in Batch</Label>
@@ -1328,7 +1354,7 @@ function TestingComponent() {
                 </SelectTrigger>
                 <SelectContent>
                   {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                  testSessions?.filter(s => s.status !== 'RUNNING').map(s => <SelectItem key={s.id} value={s.id}>{s.batchId} (No. {s.numberInBatch}) - {new Date(s.startTime).toLocaleString()}</SelectItem>)
+                  testSessions?.filter(s => s.status !== 'RUNNING').map(s => <SelectItem key={s.id} value={s.id}>{batchProfiles?.find(b => b.id === s.batchId)?.name || s.batchId} (No. {s.numberInBatch}) - {new Date(s.startTime).toLocaleString()}</SelectItem>)
                   }
                 </SelectContent>
             </Select>
@@ -1511,7 +1537,7 @@ function TestingComponent() {
                     <CardContent className='p-2'>
                         <div className="flex justify-between items-center">
                             <div>
-                                <p className="font-semibold">{runningTestSession.batchId} (No. {runningTestSession.numberInBatch})</p>
+                                <p className="font-semibold">{batchProfiles?.find(b => b.id === runningTestSession.batchId)?.name || runningTestSession.batchId} (No. {runningTestSession.numberInBatch})</p>
                                 <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString()}</p>
                                 <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.classification ? `(${runningTestSession.classification})` : ''}</p>
                             </div>
@@ -1616,7 +1642,7 @@ function TestingComponent() {
                             </SelectTrigger>
                             <SelectContent>
                                 {isTestSessionsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                                testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{s.batchId} (No. {s.numberInBatch}) - {new Date(s.startTime).toLocaleString()}</SelectItem>)}
+                                testSessions?.filter(s => s.sensorConfigurationId === sensorConfig?.id).map(s => <SelectItem key={s.id} value={s.id} disabled={selectedSessionIds.includes(s.id)}>{batchProfiles?.find(b=>b.id===s.batchId)?.name || s.batchId} (No. {s.numberInBatch}) - {new Date(s.startTime).toLocaleString()}</SelectItem>)}
                             </SelectContent>
                         </Select>
                     </div>
@@ -1656,10 +1682,11 @@ function TestingComponent() {
                         <p className="text-sm text-muted-foreground">Comparing:</p>
                         {selectedSessionIds.map((id, index) => {
                             const session = testSessions?.find(s => s.id === id);
+                            const batchProfile = batchProfiles?.find(b => b.id === session?.batchId);
                             return (
                                 <div key={id} className="flex items-center gap-2 bg-muted text-muted-foreground px-2 py-1 rounded-md text-xs">
                                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }}></div>
-                                    <span>{session?.batchId || id} (No. {session?.numberInBatch})</span>
+                                    <span>{batchProfile?.name || session?.batchId || id} (No. {session?.numberInBatch})</span>
                                     <button onClick={() => setSelectedSessionIds(prev => prev.filter(sid => sid !== id))} className="text-muted-foreground hover:text-foreground">
                                         <XIcon className="h-3 w-3" />
                                     </button>
@@ -1711,8 +1738,9 @@ function TestingComponent() {
                       ) : (
                           Object.entries(chartData).map(([sessionId, data], index) => {
                           const session = testSessions?.find(s => s.id === sessionId);
+                          const batchProfile = batchProfiles?.find(b => b.id === session?.batchId);
                           return (
-                              <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={`${session?.batchId || 'N/A'} (No. ${session?.numberInBatch})`} dot={false} strokeWidth={2} isAnimationActive={false} />
+                              <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={`${batchProfile?.name || 'N/A'} (No. ${session?.numberInBatch})`} dot={false} strokeWidth={2} isAnimationActive={false} />
                           )
                           })
                       )}

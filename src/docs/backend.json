@@ -175,7 +175,7 @@
         "description": "Represents a single test session for a specific item within a batch.",
         "properties": {
             "id": { "type": "string", "description": "Unique identifier for the test session." },
-            "batchId": { "type": "string", "description": "Identifier for the batch being tested." },
+            "batchId": { "type": "string", "description": "Reference to the Batch Profile being tested." },
             "numberInBatch": { "type": "string", "description": "The specific number or identifier of the item within the batch." },
             "description": { "type": "string", "description": "A description of the test session." },
             "startTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test started." },
@@ -190,6 +190,41 @@
             "classification": { "type": "string", "enum": ["LEAK", "DIFFUSION"], "description": "The classification of the test result (e.g. Leak, Diffusion)." }
         },
         "required": ["id", "batchId", "startTime", "status", "testBenchId", "sensorConfigurationId", "measurementType", "userId", "username"]
+    },
+    "BatchProfile": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "BatchProfile",
+        "type": "object",
+        "description": "Represents a batch profile that can be tested, including its test guidelines.",
+        "properties": {
+            "id": { "type": "string", "description": "Unique identifier for the batch profile." },
+            "name": { "type": "string", "description": "The name of the batch profile." },
+            "minCurve": {
+                "type": "array",
+                "description": "An array of points defining the minimum pressure curve guideline.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "x": { "type": "number", "description": "Time in seconds." },
+                        "y": { "type": "number", "description": "Pressure value." }
+                    },
+                    "required": ["x", "y"]
+                }
+            },
+            "maxCurve": {
+                "type": "array",
+                "description": "An array of points defining the maximum pressure curve guideline.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "x": { "type": "number", "description": "Time in seconds." },
+                        "y": { "type": "number", "description": "Pressure value." }
+                    },
+                    "required": ["x", "y"]
+                }
+            }
+        },
+        "required": ["id", "name"]
     },
     "TestBench": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -309,6 +344,14 @@
           "entityName": "TestSession",
           "schema": { "$ref": "#/entities/TestSession" },
           "description": "Stores all test sessions globally."
+        }
+      },
+      {
+        "path": "/batch_profiles/{batchProfileId}",
+        "definition": {
+            "entityName": "BatchProfile",
+            "schema": { "$ref": "#/entities/BatchProfile" },
+            "description": "Stores all available batch profiles and their testing guidelines."
         }
       },
       {

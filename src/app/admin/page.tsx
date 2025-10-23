@@ -24,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogClose
 } from "@/components/ui/dialog"
 import {
   Accordion,
@@ -158,6 +159,13 @@ type TestSession = {
     demoOwnerInstanceId?: string;
 };
 
+type BatchProfile = {
+    id: string;
+    name: string;
+    minCurve: {x: number, y: number}[];
+    maxCurve: {x: number, y: number}[];
+}
+
 type AutomatedTrainingStatus = {
   step: string;
   progress: number;
@@ -203,6 +211,16 @@ export default function AdminPage() {
 
   const [reportSearchTerm, setReportSearchTerm] = useState('');
   const [reportSortOrder, setReportSortOrder] = useState('generatedAt-desc');
+  
+  // Batch Profile State
+  const [newBatchProfile, setNewBatchProfile] = useState<Partial<BatchProfile>>({ name: '' });
+  const [editingBatchProfile, setEditingBatchProfile] = useState<BatchProfile | null>(null);
+  const [minCurvePoints, setMinCurvePoints] = useState<{x: number, y: number}[]>([]);
+  const [maxCurvePoints, setMaxCurvePoints] = useState<{x: number, y: number}[]>([]);
+  const guidelineImportRef = useRef<HTMLInputElement>(null);
+  const [guidelineEditorMaxX, setGuidelineEditorMaxX] = useState(120);
+  const [guidelineEditorMaxY, setGuidelineEditorMaxY] = useState(1200);
+
   
   useEffect(() => {
     if (!isUserLoading) {
@@ -260,6 +278,31 @@ export default function AdminPage() {
   }, [firestore, user]);
 
   const { data: reports, isLoading: isReportsLoading } = useCollection<Report>(reportsCollectionRef);
+
+  const batchProfilesCollectionRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'batch_profiles');
+  }, [firestore, user]);
+
+  const { data: batchProfiles, isLoading: isBatchProfilesLoading } = useCollection<BatchProfile>(batchProfilesCollectionRef);
+
+  useEffect(() => {
+    if (editingBatchProfile) {
+        setMinCurvePoints(editingBatchProfile.minCurve || []);
+        setMaxCurvePoints(editingBatchProfile.maxCurve || []);
+        
+        const allPoints = [...(editingBatchProfile.minCurve || []), ...(editingBatchProfile.maxCurve || [])];
+        if (allPoints.length > 0) {
+            const maxX = Math.max(...allPoints.map(p => p.x));
+            const maxY = Math.max(...allPoints.map(p => p.y));
+            setGuidelineEditorMaxX(Math.ceil((maxX + 10) / 10) * 10);
+            setGuidelineEditorMaxY(Math.ceil((maxY + 100) / 100) * 100);
+        } else {
+            setGuidelineEditorMaxX(120);
+            setGuidelineEditorMaxY(1200);
+        }
+    }
+  }, [editingBatchProfile]);
 
 
   useEffect(() => {
@@ -668,7 +711,7 @@ export default function AdminPage() {
         title: 'User Profile Deleted',
         description: `The user's profile data has been deleted. Their auth account still exists.`,
       });
-    } catch (error: any) => {
+    } catch (error: any) {
       toast({
         variant: 'destructive',
         title: 'Error Deleting User Profile',
@@ -1079,6 +1122,161 @@ export default function AdminPage() {
            sessionClassificationFilter !== 'all';
   }, [sessionUserFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter]);
 
+  const handleAddBatchProfile = () => {
+    if (!firestore || !newBatchProfile.name?.trim() || !batchProfilesCollectionRef) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Batch Profile name is required.' });
+      return;
+    }
+    const newId = doc(collection(firestore, '_')).id;
+    const docToSave: BatchProfile = {
+      id: newId,
+      name: newBatchProfile.name,
+      minCurve: [],
+      maxCurve: []
+    };
+    addDocumentNonBlocking(batchProfilesCollectionRef, docToSave);
+    toast({ title: 'Batch Profile Added', description: `Added "${docToSave.name}" to the catalog.` });
+    setNewBatchProfile({ name: '' });
+  };
+
+  const handleDeleteBatchProfile = (profileId: string) => {
+    if (!firestore) return;
+    deleteDocumentNonBlocking(doc(firestore, 'batch_profiles', profileId));
+    toast({ title: 'Batch Profile Deleted' });
+  };
+
+  const handleSaveGuidelines = () => {
+    if (!firestore || !editingBatchProfile) return;
+    const profileRef = doc(firestore, 'batch_profiles', editingBatchProfile.id);
+    updateDocumentNonBlocking(profileRef, {
+        minCurve: minCurvePoints,
+        maxCurve: maxCurvePoints,
+    });
+    toast({ title: 'Guidelines Saved', description: `Guidelines for "${editingBatchProfile.name}" have been updated.`});
+    setEditingBatchProfile(null);
+  };
+  
+  const handleExportGuidelines = () => {
+    if (!batchProfiles || batchProfiles.length === 0) {
+        toast({ title: 'No Data', description: 'There are no batch profiles to export.' });
+        return;
+    }
+
+    const allPoints: Record<string, Record<number, { min?: number, max?: number }>> = {};
+
+    batchProfiles.forEach(profile => {
+        if (!allPoints[profile.id]) allPoints[profile.id] = {};
+        
+        profile.minCurve?.forEach(p => {
+            if (!allPoints[profile.id][p.x]) allPoints[profile.id][p.x] = {};
+            allPoints[profile.id][p.x].min = p.y;
+        });
+        profile.maxCurve?.forEach(p => {
+            if (!allPoints[profile.id][p.x]) allPoints[profile.id][p.x] = {};
+            allPoints[profile.id][p.x].max = p.y;
+        });
+    });
+    
+    const csvData: any[] = [];
+    for (const profileId in allPoints) {
+        const profileName = batchProfiles.find(p => p.id === profileId)?.name || profileId;
+        const sortedTimestamps = Object.keys(allPoints[profileId]).map(Number).sort((a,b) => a - b);
+        
+        sortedTimestamps.forEach(timestamp => {
+            csvData.push({
+                batchId: profileName,
+                timestamp: timestamp,
+                minPressure: allPoints[profileId][timestamp].min ?? '',
+                maxPressure: allPoints[profileId][timestamp].max ?? '',
+            });
+        });
+    }
+
+    if (csvData.length === 0) {
+        toast({ title: 'No Guideline Data', description: 'The existing batch profiles have no guideline points to export.' });
+        return;
+    }
+
+    const csv = Papa.unparse(csvData);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'batch_profile_guidelines.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast({ title: 'Guidelines Exported' });
+  };
+  
+  const handleImportGuidelines = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !firestore || !batchProfiles) {
+        toast({ variant: 'destructive', title: 'Import Failed', description: 'Could not prepare for import.'});
+        return;
+    }
+
+    Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: async (results) => {
+            if (results.errors.length > 0 || !results.data.length) {
+                toast({ variant: 'destructive', title: 'Import Error', description: 'Could not parse the CSV file.' });
+                return;
+            }
+
+            const dataByBatchName: Record<string, { minCurve: {x:number, y:number}[], maxCurve: {x:number, y:number}[] }> = {};
+
+            for (const row of results.data as any[]) {
+                const batchName = row.batchId;
+                if (!batchName) continue;
+
+                if (!dataByBatchName[batchName]) {
+                    dataByBatchName[batchName] = { minCurve: [], maxCurve: [] };
+                }
+
+                const timestamp = parseFloat(row.timestamp);
+                if (isNaN(timestamp)) continue;
+
+                if (row.minPressure) {
+                    const minPressure = parseFloat(row.minPressure);
+                    if (!isNaN(minPressure)) dataByBatchName[batchName].minCurve.push({ x: timestamp, y: minPressure });
+                }
+                if (row.maxPressure) {
+                    const maxPressure = parseFloat(row.maxPressure);
+                    if (!isNaN(maxPressure)) dataByBatchName[batchName].maxCurve.push({ x: timestamp, y: maxPressure });
+                }
+            }
+
+            const batch = writeBatch(firestore);
+            let updatedCount = 0;
+            for (const batchName in dataByBatchName) {
+                const profile = batchProfiles.find(p => p.name === batchName);
+                if (profile) {
+                    const profileRef = doc(firestore, 'batch_profiles', profile.id);
+                    batch.update(profileRef, {
+                        minCurve: dataByBatchName[batchName].minCurve.sort((a,b) => a.x - b.x),
+                        maxCurve: dataByBatchName[batchName].maxCurve.sort((a,b) => a.x - b.x),
+                    });
+                    updatedCount++;
+                } else {
+                    toast({ variant: 'warning', title: 'Skipped Batch', description: `Batch profile "${batchName}" not found in catalog.`});
+                }
+            }
+
+            try {
+                await batch.commit();
+                toast({ title: 'Import Successful', description: `Updated guidelines for ${updatedCount} batch profiles.`});
+            } catch (e: any) {
+                toast({ variant: 'destructive', title: 'Import Failed', description: e.message });
+            } finally {
+                 if (guidelineImportRef.current) guidelineImportRef.current.value = '';
+            }
+        }
+    });
+  };
+
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
     return (
@@ -1230,7 +1428,7 @@ export default function AdminPage() {
                                     <SelectTrigger><SelectValue/></SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="all">All Batches</SelectItem>
-                                        {uniqueBatchIds.map(id => <SelectItem key={id} value={id}>{id}</SelectItem>)}
+                                        {uniqueBatchIds.map(id => <SelectItem key={id} value={id}>{batchProfiles?.find(b => b.id === id)?.name || id}</SelectItem>)}
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -1318,11 +1516,12 @@ export default function AdminPage() {
                 {filteredAndSortedSessions.map(session => {
                   const bench = testBenches?.find(b => b.id === session.testBenchId);
                   const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+                  const batchProfile = batchProfiles?.find(b => b.id === session.batchId);
                   return (
                     <Card key={session.id} className={`p-4 ${session.status === 'RUNNING' ? 'border-primary' : ''} hover:bg-muted/50`}>
                         <div className="flex justify-between items-start gap-4">
                             <div className='flex-grow space-y-1'>
-                                <p className="font-semibold">{session.batchId} <span className="text-sm text-muted-foreground">(No. {session.numberInBatch || 'N/A'})</span></p>
+                                <p className="font-semibold">{batchProfile?.name || session.batchId} <span className="text-sm text-muted-foreground">(No. {session.numberInBatch || 'N/A'})</span></p>
                                 <p className="text-sm text-muted-foreground">
                                     {new Date(session.startTime).toLocaleString()} - {session.status}
                                 </p>
@@ -1395,7 +1594,7 @@ export default function AdminPage() {
                                             <AlertDialogHeader>
                                                 <AlertDialogTitle className="text-destructive">Permanently Delete Session?</AlertDialogTitle>
                                                 <AlertDialogDescription>
-                                                    This will permanently delete the session for batch "{session.batchId}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
+                                                    This will permanently delete the session for batch "{batchProfile?.name || session.batchId}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
                                                 </AlertDialogDescription>
                                             </AlertDialogHeader>
                                             <AlertDialogFooter>
@@ -1619,7 +1818,7 @@ export default function AdminPage() {
                                 }}
                              />
                              <label htmlFor={d.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                 {d.batchId} (No. {d.numberInBatch}) - <span className="text-xs text-muted-foreground">{new Date(d.startTime).toLocaleDateString()}</span>
+                                 {batchProfiles?.find(b => b.id === d.batchId)?.name || d.batchId} (No. {d.numberInBatch}) - <span className="text-xs text-muted-foreground">{new Date(d.startTime).toLocaleDateString()}</span>
                              </label>
                          </div>
                      ))}
@@ -1742,7 +1941,7 @@ export default function AdminPage() {
                   ) : filteredAndSortedReports.length > 0 ? (
                     filteredAndSortedReports.map((report) => (
                       <TableRow key={report.id}>
-                        <TableCell className="font-medium">{report.batchId}</TableCell>
+                        <TableCell className="font-medium">{batchProfiles?.find(b => b.id === report.batchId)?.name || report.batchId}</TableCell>
                         <TableCell>{report.numberInBatch || 'N/A'}</TableCell>
                         <TableCell>{report.username}</TableCell>
                         <TableCell>{new Date(report.generatedAt).toLocaleString()}</TableCell>
@@ -1767,6 +1966,129 @@ export default function AdminPage() {
       </Accordion>
     </Card>
   );
+
+  const renderBatchProfileManagement = () => (
+    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+        <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
+            <AccordionItem value="item-1">
+                <AccordionTrigger className="p-6">
+                    <div className="text-left">
+                        <CardTitle>Batch Profile Management</CardTitle>
+                        <CardDescription>Create and manage batch profiles and their test guidelines.</CardDescription>
+                    </div>
+                </AccordionTrigger>
+                <AccordionContent className="p-6 pt-0">
+                    <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
+                        <h3 className="font-semibold text-center">New Batch Profile</h3>
+                        <div className="space-y-2">
+                            <Label htmlFor="new-batch-profile-name">Name</Label>
+                            <Input id="new-batch-profile-name" placeholder="e.g., A-Series V1" value={newBatchProfile.name || ''} onChange={(e) => setNewBatchProfile({ name: e.target.value })} />
+                        </div>
+                        <Button onClick={handleAddBatchProfile} size="sm" className="w-full mt-2">Add Batch Profile</Button>
+                    </div>
+                    <div className="flex justify-center gap-2 mb-4">
+                        <Button onClick={handleExportGuidelines} variant="outline" size="sm">
+                            <Download className="mr-2 h-4 w-4" />
+                            Export All Guidelines (CSV)
+                        </Button>
+                        <Button onClick={() => guidelineImportRef.current?.click()} variant="outline" size="sm">
+                            <Upload className="mr-2 h-4 w-4" />
+                            Import Guidelines (CSV)
+                        </Button>
+                        <input type="file" ref={guidelineImportRef} onChange={handleImportGuidelines} accept=".csv" className="hidden" />
+                    </div>
+                    {isBatchProfilesLoading ? <p className="text-center pt-10">Loading batch profiles...</p> : (
+                        <ScrollArea className="h-64 p-1">
+                            <div className="space-y-2">
+                                {batchProfiles?.map(p => (
+                                    <Card key={p.id} className='p-4 hover:bg-muted/50'>
+                                        <div className='flex justify-between items-center'>
+                                            <p className='font-semibold'>{p.name}</p>
+                                            <div className="flex gap-2">
+                                                <Dialog>
+                                                    <DialogTrigger asChild>
+                                                        <Button size="sm" variant="outline" onClick={() => setEditingBatchProfile(p)}>Edit Guidelines</Button>
+                                                    </DialogTrigger>
+                                                    <DialogContent className="max-w-4xl">
+                                                        <DialogHeader>
+                                                            <DialogTitle>Edit Guidelines for {editingBatchProfile?.name}</DialogTitle>
+                                                            <DialogDescription>
+                                                                Click to set start/end points. Drag points to adjust the curve. Double-click a point to delete it.
+                                                            </DialogDescription>
+                                                        </DialogHeader>
+                                                        <div className="grid grid-cols-2 gap-4">
+                                                            <div className="space-y-2">
+                                                                <Label>Maximum Time (s)</Label>
+                                                                <Input type="number" value={guidelineEditorMaxX} onChange={e => setGuidelineEditorMaxX(Number(e.target.value))} />
+                                                            </div>
+                                                             <div className="space-y-2">
+                                                                <Label>Maximum Pressure</Label>
+                                                                <Input type="number" value={guidelineEditorMaxY} onChange={e => setGuidelineEditorMaxY(Number(e.target.value))} />
+                                                            </div>
+                                                        </div>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+                                                            <div>
+                                                                <h3 className="font-semibold text-center mb-2">Minimum Curve (Green)</h3>
+                                                                <GuidelineCurveEditor
+                                                                    points={minCurvePoints}
+                                                                    setPoints={setMinCurvePoints}
+                                                                    className="h-64"
+                                                                    lineColor="hsl(var(--chart-2))"
+                                                                    maxX={guidelineEditorMaxX}
+                                                                    maxY={guidelineEditorMaxY}
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <h3 className="font-semibold text-center mb-2">Maximum Curve (Red)</h3>
+                                                                <GuidelineCurveEditor
+                                                                    points={maxCurvePoints}
+                                                                    setPoints={setMaxCurvePoints}
+                                                                    className="h-64"
+                                                                    lineColor="hsl(var(--destructive))"
+                                                                    maxX={guidelineEditorMaxX}
+                                                                    maxY={guidelineEditorMaxY}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <DialogFooter>
+                                                            <DialogClose asChild>
+                                                                <Button variant="ghost" onClick={() => setEditingBatchProfile(null)}>Cancel</Button>
+                                                            </DialogClose>
+                                                            <DialogClose asChild>
+                                                                <Button onClick={handleSaveGuidelines}>Save Guidelines</Button>
+                                                            </DialogClose>
+                                                        </DialogFooter>
+                                                    </DialogContent>
+                                                </Dialog>
+                                                <AlertDialog>
+                                                    <AlertDialogTrigger asChild>
+                                                        <Button size="sm" variant="destructive">Delete</Button>
+                                                    </AlertDialogTrigger>
+                                                    <AlertDialogContent>
+                                                        <AlertDialogHeader>
+                                                            <AlertDialogTitle className="text-destructive">Delete Batch Profile?</AlertDialogTitle>
+                                                            <AlertDialogDescription>
+                                                                Are you sure you want to delete "{p.name}"? This action cannot be undone. Associated test sessions will not be deleted.
+                                                            </AlertDialogDescription>
+                                                        </AlertDialogHeader>
+                                                        <AlertDialogFooter>
+                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteBatchProfile(p.id)}>Delete</AlertDialogAction>
+                                                        </AlertDialogFooter>
+                                                    </AlertDialogContent>
+                                                </AlertDialog>
+                                            </div>
+                                        </div>
+                                    </Card>
+                                ))}
+                            </div>
+                        </ScrollArea>
+                    )}
+                </AccordionContent>
+            </AccordionItem>
+        </Accordion>
+    </Card>
+);
 
   if (isUserLoading || !user) {
     return (
@@ -1874,6 +2196,7 @@ export default function AdminPage() {
                       </AccordionItem>
                   </Accordion>
               </Card>
+              {renderBatchProfileManagement()}
               <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
                   <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
                       <AccordionItem value="item-1">
@@ -1954,3 +2277,7 @@ export default function AdminPage() {
     </div>
   );
 }
+
+
+
+    
