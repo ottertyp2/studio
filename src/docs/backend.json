@@ -244,12 +244,29 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "TestBench",
       "type": "object",
-      "description": "Represents a physical test bench or sensor unit.",
+      "description": "Represents a physical test bench or sensor unit, now with live data fields.",
       "properties": {
           "id": { "type": "string", "description": "Unique identifier for the test bench." },
           "name": { "type": "string", "description": "The name of the test bench." },
           "location": { "type": "string", "description": "The physical location of the test bench." },
-          "description": { "type": "string", "description": "A description of the test bench." }
+          "description": { "type": "string", "description": "A description of the test bench." },
+          "liveSensorValue": { "type": "number", "description": "The latest sensor value pushed from the ESP32." },
+          "valves": {
+            "type": "object",
+            "description": "Represents the live state of the valves.",
+            "properties": {
+                "VALVE1": { "type": "string", "enum": ["ON", "OFF"] },
+                "VALVE2": { "type": "string", "enum": ["ON", "OFF"] }
+            }
+          },
+           "commands": {
+            "type": "object",
+            "description": "Commands sent from the dashboard for the ESP32 to act upon.",
+            "properties": {
+                "VALVE1": { "type": "string", "enum": ["ON", "OFF"] },
+                "VALVE2": { "type": "string", "enum": ["ON", "OFF"] }
+            }
+          }
       },
       "required": ["id", "name"]
     },
@@ -339,7 +356,7 @@
         "definition": {
           "entityName": "TestBench",
           "schema": { "$ref": "#/entities/TestBench" },
-          "description": "Stores all available test benches."
+          "description": "Stores all available test benches and their live data/commands."
         }
       },
       {
@@ -404,5 +421,3 @@
     "reasoning": "This Firestore data structure is designed for a single-user or public-access model. All data is stored in global collections, removing any user-specific paths or ownership. This simplifies data access as there is no user authentication or authorization layer to manage. It's suitable for local testing or a fully public dashboard."
   }
 }
-
-    

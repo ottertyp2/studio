@@ -14,7 +14,7 @@ export type ValveStatus = 'ON' | 'OFF';
 
 export interface TestBenchContextType {
   isConnected: boolean;
-  handleConnect: () => Promise<void>;
+  handleConnect: () => Promise<void>; // Kept for compatibility, but now shows a toast.
   localDataLog: SensorData[];
   setLocalDataLog: React.Dispatch<React.SetStateAction<SensorData[]>>;
   currentValue: number | null;
@@ -26,6 +26,7 @@ export interface TestBenchContextType {
   valve1Status: ValveStatus;
   valve2Status: ValveStatus;
   sendValveCommand: (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => Promise<void>;
+  connectToTestBench: (testBenchId: string | null) => void; // New function to manage Firestore connection
 }
 
 export const TestBenchContext = createContext<TestBenchContextType | undefined>(undefined);

@@ -62,13 +62,13 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Cog, LogOut, X as XIcon, UserPlus, BrainCircuit, Trash2, PackagePlus, FileText, FileSignature, Download } from 'lucide-react';
+import { Cog, LogOut, X as XIcon, UserPlus, BrainCircuit, Trash2, PackagePlus, FileText, FileSignature, Download, Wifi, WifiOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
 import * as tf from '@tensorflow/tfjs';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc, useUser, getDocument } from '@/firebase';
-import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc, orderBy, deleteDoc } from 'firebase/firestore';
+import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc, orderBy, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { signOut } from '@/firebase/non-blocking-login';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -182,15 +182,11 @@ function TestingComponent() {
 
   const {
     isConnected,
-    handleConnect,
     localDataLog,
     setLocalDataLog,
     currentValue,
-    setCurrentValue,
-    lastDataPointTimestamp,
-    handleNewDataPoint: contextHandleNewDataPoint,
-    baudRate,
-    setBaudRate,
+    handleNewDataPoint,
+    connectToTestBench,
   } = useTestBench();
 
   const preselectedSessionId = searchParams.get('sessionId');
@@ -279,18 +275,11 @@ function TestingComponent() {
   }, [firestore]);
   const { data: batches, isLoading: isBatchesLoading } = useCollection<Batch>(batchesCollectionRef);
   
-  const handleNewDataPoint = useCallback((newDataPoint: Omit<SensorData, 'testBenchId' | 'testSessionId'>) => {
-    if (!activeTestBenchId) return;
-    const currentRunningSession = runningTestSessionRef.current;
-  
-    const dataPointWithSession: SensorData = {
-      ...newDataPoint,
-      testBenchId: activeTestBenchId,
-      testSessionId: currentRunningSession?.id
-    };
-  
-    contextHandleNewDataPoint(dataPointWithSession);
-  }, [contextHandleNewDataPoint, activeTestBenchId]);
+  useEffect(() => {
+      connectToTestBench(activeTestBenchId);
+      // Cleanup on dismount or when activeTestBenchId changes
+      return () => connectToTestBench(null);
+  }, [activeTestBenchId, connectToTestBench]);
   
   useEffect(() => {
     if (!isUserLoading && !user) {
@@ -388,6 +377,25 @@ function TestingComponent() {
   
 
   useEffect(() => {
+    const currentRunningSession = runningTestSessionRef.current;
+    if (currentRunningSession && activeTestBenchId) {
+        const sensorDataRef = collection(firestore, `sensor_configurations/${currentRunningSession.sensorConfigurationId}/sensor_data`);
+        const q = query(sensorDataRef, where("testSessionId", "==", currentRunningSession.id));
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            snapshot.docChanges().forEach((change) => {
+                if (change.type === 'added') {
+                    const newPoint = change.doc.data() as SensorData;
+                    handleNewDataPoint(newPoint);
+                }
+            });
+        });
+        return () => unsubscribe();
+    }
+  }, [runningTestSession, activeTestBenchId, firestore, handleNewDataPoint]);
+
+
+  useEffect(() => {
     if (runningTestSession && !selectedSessionIds.includes(runningTestSession.id)) {
         setSelectedSessionIds([runningTestSession.id]);
         if (runningTestSession.sensorConfigurationId) {
@@ -436,6 +444,9 @@ function TestingComponent() {
   const sensorDataCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user || !sensorConfig?.id || selectedSessionIds.length === 0) return null;
     
+    // For WiFi mode, live data comes from the test bench doc, not here.
+    if (isConnected) return null;
+    
     const relevantSessionIds = selectedSessionIds.filter(id => {
         const session = testSessions?.find(s => s.id === id);
         return session?.sensorConfigurationId === sensorConfig.id;
@@ -447,26 +458,10 @@ function TestingComponent() {
         collection(firestore, `sensor_configurations/${sensorConfig.id}/sensor_data`),
         where('testSessionId', 'in', relevantSessionIds.slice(0, 10))
     );
-  }, [firestore, user, sensorConfig?.id, selectedSessionIds, testSessions]);
+  }, [firestore, user, sensorConfig?.id, selectedSessionIds, testSessions, isConnected]);
 
   const { data: cloudDataLog, isLoading: isCloudDataLoading } = useCollection<SensorData>(sensorDataCollectionRef);
   
-  useEffect(() => {
-    const currentRunningSession = runningTestSessionRef.current;
-    if (firestore && currentRunningSession && activeSensorConfigId && activeTestBenchId && localDataLog.length > 0) {
-      const pointToSave = localDataLog[0];
-      if (currentRunningSession.sensorConfigurationId === activeSensorConfigId) {
-          const dataToSave: SensorData = {
-              ...pointToSave,
-              testSessionId: currentRunningSession.id,
-              testBenchId: activeTestBenchId,
-          };
-          const docRef = doc(collection(firestore, `sensor_configurations/${activeSensorConfigId}/sensor_data`));
-          setDocumentNonBlocking(docRef, dataToSave, {});
-      }
-    }
-  }, [localDataLog, firestore, activeSensorConfigId, activeTestBenchId]);
-
   const isLiveSessionActive = useMemo(() => !!runningTestSession || isConnected, [runningTestSession, isConnected]);
 
   const dataLog = useMemo(() => {
@@ -598,7 +593,9 @@ function TestingComponent() {
         lastValuesRef.current = [];
         setIsDemoRunning(true);
         
-        demoIntervalRef.current = setInterval(() => {
+        demoIntervalRef.current = setInterval(async () => {
+            if (!firestore || !runningTestSession) return;
+
             let rawValue;
             if (runningTestSession.classification === 'LEAK') {
                 const startValue = 900;
@@ -619,8 +616,17 @@ function TestingComponent() {
 
             const finalValue = Math.min(1023, Math.max(0, Math.round(rawValue)));
             
-            handleNewDataPoint({ timestamp: new Date().toISOString(), value: finalValue });
-
+            const dataPoint: SensorData = {
+                timestamp: new Date().toISOString(),
+                value: finalValue,
+                testSessionId: runningTestSession.id,
+                testBenchId: runningTestSession.testBenchId,
+            };
+            
+            // Save to Firestore
+            const dataRef = doc(collection(firestore, `sensor_configurations/${runningTestSession.sensorConfigurationId}/sensor_data`));
+            await setDoc(dataRef, dataPoint);
+            
             step++;
             if (step >= totalSteps) {
                 if (runningTestSession) {
@@ -639,7 +645,7 @@ function TestingComponent() {
        lastValuesRef.current = [];
        setIsDemoRunning(false);
     };
-  }, [runningTestSession, handleNewDataPoint, handleStopTestSession, instanceId]);
+  }, [runningTestSession, firestore, handleStopTestSession, instanceId]);
   
   const handleAiAnalysis = async () => {
       if (!selectedAnalysisModelName) {
@@ -1096,33 +1102,7 @@ function TestingComponent() {
     }
   }, [liveUpdateEnabled, dataLog, isLiveSessionActive]);
 
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout | null = null;
-    if (lastDataPointTimestamp) {
-        timeoutId = setTimeout(() => {
-            if (Date.now() - lastDataPointTimestamp >= 1000) {
-                setCurrentValue(null);
-            }
-        }, 1000);
-    }
-    return () => {
-        if (timeoutId) {
-            clearTimeout(timeoutId);
-        }
-    };
-  }, [lastDataPointTimestamp, setCurrentValue]);
-
   const handleGenerateReport = useCallback(async () => {
-    //
-    // DEBUG LOGS START
-    //
-    console.log("DEBUG: Report generation triggered.");
-    console.log("DEBUG: activeTestSession", activeTestSession);
-    console.log("DEBUG: chartData", chartData);
-    console.log("DEBUG: typeof chartData", typeof chartData);
-    console.log("DEBUG: chartData is array", Array.isArray(chartData));
-
-    // Guard against required objects being unavailable
     if (!activeTestSession || !firestore || !firebaseApp || !chartRef.current) {
         toast({
             variant: 'destructive',
@@ -1132,7 +1112,6 @@ function TestingComponent() {
         return;
     }
 
-    // Guard against empty chart data
     if (!Array.isArray(chartData) || chartData.length === 0) {
         toast({
             variant: 'destructive',
@@ -1145,14 +1124,7 @@ function TestingComponent() {
     const currentSensorConfig = sensorConfigs?.find(c => c.id === activeTestSession.sensorConfigurationId);
     const currentVesselType = vesselTypes?.find(p => p.id === activeTestSession.vesselTypeId);
     const currentBatch = batches?.find(b => b.id === activeTestSession.batchId);
-
-    //
-    // DEBUG LOGS FOR FOUND CONFIGS
-    //
-    console.log("DEBUG: currentSensorConfig", currentSensorConfig);
-    console.log("DEBUG: currentVesselType", currentVesselType);
-    console.log("DEBUG: currentBatch", currentBatch);
-
+    
     if (!currentSensorConfig || !currentVesselType || !currentBatch) {
         toast({
             variant: 'destructive',
@@ -1167,17 +1139,12 @@ function TestingComponent() {
     try {
         const svgElement = chartRef.current.querySelector('svg');
         if (!svgElement) {
-            // This is a critical failure point if the chart isn't rendered
-            console.error("DEBUG: Failed to find SVG element for chart.");
             throw new Error("Could not find chart SVG element to generate the report image.");
         }
 
         const svgString = new XMLSerializer().serializeToString(svgElement);
         const chartImage = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgString)))}`;
 
-        //
-        // DEBUG LOG BEFORE PDF CALL
-        //
         const reportProps = {
             session: activeTestSession,
             data: chartData as any[],
@@ -1186,7 +1153,6 @@ function TestingComponent() {
             vesselType: currentVesselType,
             batch: currentBatch,
         };
-        console.log("DEBUG: Props being passed to PDF renderer", reportProps);
 
         const blob = await pdf(
             <TestReport {...reportProps} />
@@ -1219,7 +1185,7 @@ function TestingComponent() {
         });
 
     } catch (e: any) {
-        console.error("DEBUG: Report generation/upload failed: ", e);
+        console.error("Report generation/upload failed: ", e);
         toast({
             variant: 'destructive',
             title: 'Report Failed',
@@ -1245,13 +1211,10 @@ function TestingComponent() {
       }
       return 'Watching Live Demo';
     }
-    if (runningTestSession?.measurementType === 'ARDUINO') {
-      return 'Streaming from Test Bench';
-    }
     if (isConnected) {
-        return 'Waiting for data...';
+        return 'Streaming from Test Bench';
     }
-    return null;
+    return 'Offline';
   }, [isConnected, runningTestSession, instanceId]);
 
 
@@ -1355,34 +1318,10 @@ function TestingComponent() {
               Live Control
           </CardTitle>
           <CardDescription className="text-center">
-            Connect to a device or start a new measurement session.
+            Monitor a device or start a new measurement session.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center gap-4">
-            <div className="flex items-center gap-4">
-                <div className='flex items-center gap-2'>
-                    <Label htmlFor="baudRateSelect">Baud Rate:</Label>
-                    <Select value={String(baudRate)} onValueChange={(val) => setBaudRate(Number(val))} disabled={isConnected}>
-                        <SelectTrigger id="baudRateSelect" className="w-[120px] bg-white/80">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="9600">9600</SelectItem>
-                            <SelectItem value="19200">19200</SelectItem>
-                            <SelectItem value="57600">57600</SelectItem>
-                            <SelectItem value="115200">115200</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-                <Button 
-                    onClick={handleConnect} 
-                    className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" 
-                    variant={isConnected ? 'destructive' : 'default'}
-                >
-                    {isConnected ? 'Disconnect from Test Bench' : 'Connect to Test Bench'}
-                </Button>
-            </div>
-
             <ValveControl />
             
             {!runningTestSession && !showNewSessionForm && (
@@ -1669,25 +1608,12 @@ function TestingComponent() {
                         <p>
                             Sensor: <span className="font-semibold text-foreground">{sensorConfig?.name ?? 'N/A'}</span>
                         </p>
-                        {runningTestSession && (
-                            <p>
-                                Source: <span className="font-semibold text-foreground">
-                                    {runningTestSession.measurementType === 'DEMO' ? 'Virtual Sensor' : 'Live Sensor'}
-                                </span>
-                            </p>
-                        )}
                     </div>
 
-                    {(isLiveSessionActive) && (
-                    <div className="text-xs text-green-600 mt-1 flex items-center justify-center gap-1">
-                        <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
-                        </span>
-                        <span>Live</span>
+                    <div className={`text-xs mt-1 flex items-center justify-center gap-1 ${isConnected ? 'text-green-600' : 'text-destructive'}`}>
+                        {isConnected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
+                        <span>{dataSourceStatus}</span>
                     </div>
-                    )}
-                    {dataSourceStatus && <p className="text-xs text-muted-foreground mt-1">{dataSourceStatus}</p>}
                 </div>
                 </CardContent>
             </Card>
