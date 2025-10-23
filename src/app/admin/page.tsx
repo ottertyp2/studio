@@ -131,8 +131,8 @@ type Report = {
     testSessionId: string;
     generatedAt: string;
     downloadUrl: string;
-    batchId: string;
-    numberInBatch: string;
+    vesselTypeName: string;
+    serialNumber: string;
     username: string;
 };
 
@@ -147,8 +147,9 @@ type SensorData = {
 
 type TestSession = {
     id: string;
-    batchId: string;
-    numberInBatch: string;
+    vesselTypeId: string;
+    vesselTypeName: string;
+    serialNumber: string;
     description: string;
     startTime: string;
     endTime?: string;
@@ -162,7 +163,7 @@ type TestSession = {
     demoOwnerInstanceId?: string;
 };
 
-type BatchProfile = {
+type VesselType = {
     id: string;
     name: string;
     minCurve: {x: number, y: number}[];
@@ -204,7 +205,7 @@ export default function AdminPage() {
   const [sessionSearchTerm, setSessionSearchTerm] = useState('');
   const [sessionSortOrder, setSessionSortOrder] = useState('startTime-desc');
   const [sessionUserFilter, setSessionUserFilter] = useState('all');
-  const [sessionBatchFilter, setSessionBatchFilter] = useState('all');
+  const [sessionVesselTypeFilter, setSessionVesselTypeFilter] = useState('all');
   const [sessionTestBenchFilter, setSessionTestBenchFilter] = useState('all');
   const [sessionClassificationFilter, setSessionClassificationFilter] = useState('all');
 
@@ -215,16 +216,16 @@ export default function AdminPage() {
   const [reportSearchTerm, setReportSearchTerm] = useState('');
   const [reportSortOrder, setReportSortOrder] = useState('generatedAt-desc');
   
-  // Batch Profile State
-  const [newBatchProfile, setNewBatchProfile] = useState<Partial<BatchProfile>>({ name: '' });
-  const [editingBatchProfile, setEditingBatchProfile] = useState<BatchProfile | null>(null);
+  // VesselType State
+  const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '' });
+  const [editingVesselType, setEditingVesselType] = useState<VesselType | null>(null);
   const [minCurvePoints, setMinCurvePoints] = useState<{x: number, y: number}[]>([]);
   const [maxCurvePoints, setMaxCurvePoints] = useState<{x: number, y: number}[]>([]);
   const guidelineImportRef = useRef<HTMLInputElement>(null);
   const [guidelineEditorMaxX, setGuidelineEditorMaxX] = useState(120);
   const [guidelineEditorMaxY, setGuidelineEditorMaxY] = useState(1200);
 
-  const [generatingBatchReport, setGeneratingBatchReport] = useState<string | null>(null);
+  const [generatingVesselTypeReport, setGeneratingVesselTypeReport] = useState<string | null>(null);
 
   
   useEffect(() => {
@@ -284,19 +285,19 @@ export default function AdminPage() {
 
   const { data: reports, isLoading: isReportsLoading } = useCollection<Report>(reportsCollectionRef);
 
-  const batchProfilesCollectionRef = useMemoFirebase(() => {
+  const vesselTypesCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
-    return collection(firestore, 'batch_profiles');
+    return collection(firestore, 'vessel_types');
   }, [firestore, user]);
 
-  const { data: batchProfiles, isLoading: isBatchProfilesLoading } = useCollection<BatchProfile>(batchProfilesCollectionRef);
+  const { data: vesselTypes, isLoading: isVesselTypesLoading } = useCollection<VesselType>(vesselTypesCollectionRef);
 
   useEffect(() => {
-    if (editingBatchProfile) {
-        setMinCurvePoints(editingBatchProfile.minCurve || []);
-        setMaxCurvePoints(editingBatchProfile.maxCurve || []);
+    if (editingVesselType) {
+        setMinCurvePoints(editingVesselType.minCurve || []);
+        setMaxCurvePoints(editingVesselType.maxCurve || []);
         
-        const allPoints = [...(editingBatchProfile.minCurve || []), ...(editingBatchProfile.maxCurve || [])];
+        const allPoints = [...(editingVesselType.minCurve || []), ...(editingVesselType.maxCurve || [])];
         if (allPoints.length > 0) {
             const maxX = Math.max(...allPoints.map(p => p.x));
             const maxY = Math.max(...allPoints.map(p => p.y));
@@ -307,7 +308,7 @@ export default function AdminPage() {
             setGuidelineEditorMaxY(1200);
         }
     }
-  }, [editingBatchProfile]);
+  }, [editingVesselType]);
 
 
   useEffect(() => {
@@ -565,7 +566,7 @@ export default function AdminPage() {
         await batch.commit();
         toast({
             title: 'Session Deleted',
-            description: `Session for batch "${session.batchId}" and ${dataDeletedCount} data points deleted.`
+            description: `Session "${session.vesselTypeName} - ${session.serialNumber}" and ${dataDeletedCount} data points deleted.`
         });
     } catch (serverError) {
         toast({
@@ -602,7 +603,7 @@ export default function AdminPage() {
         const sensorData = snapshot.docs.map(doc => doc.data() as SensorData).sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
         if (sensorData.length < 20) {
-          toast({ variant: 'destructive', title: 'Not Enough Data', description: `Session for batch ${session.batchId} has less than 20 data points.` });
+          toast({ variant: 'destructive', title: 'Not Enough Data', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" has less than 20 data points.` });
           return;
         }
 
@@ -620,10 +621,10 @@ export default function AdminPage() {
 
         const classification = predictionValue > 0.5 ? 'LEAK' : 'DIFFUSION';
         handleSetSessionClassification(session.id, classification);
-        toast({ title: 'AI Classification Complete', description: `Session for batch ${session.batchId} classified as: ${classification}`});
+        toast({ title: 'AI Classification Complete', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification}`});
 
     } catch (e: any) {
-        toast({ variant: 'destructive', title: `AI Classification Failed for batch ${session.batchId}`, description: e.message.includes('No model found in IndexedDB') ? `A trained model named "${modelToUse.name}" was not found in your browser.` : e.message});
+        toast({ variant: 'destructive', title: `AI Classification Failed for "${session.vesselTypeName} - ${session.serialNumber}"`, description: e.message.includes('No model found in IndexedDB') ? `A trained model named "${modelToUse.name}" was not found in your browser.` : e.message});
         throw e;
     }
   };
@@ -648,7 +649,7 @@ export default function AdminPage() {
         await handleClassifyWithAI(session, bulkClassifyModelId);
         await new Promise(resolve => setTimeout(resolve, 300));
       } catch (error) {
-        console.error(`Failed to classify session ${session.id} (batch ${session.batchId}):`, error);
+        console.error(`Failed to classify session ${session.id} ("${session.vesselTypeName} - ${session.serialNumber}"):`, error);
       }
     }
     
@@ -1041,8 +1042,8 @@ export default function AdminPage() {
         filtered = filtered.filter(session => session.userId === sessionUserFilter);
     }
     
-    if (sessionBatchFilter !== 'all') {
-        filtered = filtered.filter(session => session.batchId === sessionBatchFilter);
+    if (sessionVesselTypeFilter !== 'all') {
+        filtered = filtered.filter(session => session.vesselTypeId === sessionVesselTypeFilter);
     }
     
     if (sessionTestBenchFilter !== 'all') {
@@ -1061,8 +1062,8 @@ export default function AdminPage() {
         const searchTerm = sessionSearchTerm.toLowerCase();
         if (!searchTerm) return true;
         return (
-            session.batchId.toLowerCase().includes(searchTerm) ||
-            session.numberInBatch.toLowerCase().includes(searchTerm) ||
+            session.vesselTypeName.toLowerCase().includes(searchTerm) ||
+            session.serialNumber.toLowerCase().includes(searchTerm) ||
             session.description.toLowerCase().includes(searchTerm) ||
             session.username.toLowerCase().includes(searchTerm)
         );
@@ -1074,8 +1075,8 @@ export default function AdminPage() {
                 return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
             case 'startTime-asc':
                 return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
-            case 'batchId-asc':
-                return a.batchId.localeCompare(b.batchId);
+            case 'vesselTypeName-asc':
+                return a.vesselTypeName.localeCompare(b.vesselTypeName);
              case 'username-asc':
                 return a.username.localeCompare(b.username);
             case 'testBenchName-asc': {
@@ -1088,7 +1089,7 @@ export default function AdminPage() {
         }
     });
 
-  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, testBenches]);
+  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionTestBenchFilter, sessionClassificationFilter, testBenches]);
 
     const filteredAndSortedReports = useMemo(() => {
         if (!reports) return [];
@@ -1097,8 +1098,8 @@ export default function AdminPage() {
             const searchTerm = reportSearchTerm.toLowerCase();
             if (!searchTerm) return true;
             return (
-                report.batchId.toLowerCase().includes(searchTerm) ||
-                report.numberInBatch.toLowerCase().includes(searchTerm) ||
+                report.vesselTypeName.toLowerCase().includes(searchTerm) ||
+                report.serialNumber.toLowerCase().includes(searchTerm) ||
                 report.username.toLowerCase().includes(searchTerm)
             );
         });
@@ -1109,8 +1110,8 @@ export default function AdminPage() {
                     return new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime();
                 case 'generatedAt-asc':
                     return new Date(a.generatedAt).getTime() - new Date(b.generatedAt).getTime();
-                case 'batchId-asc':
-                    return a.batchId.localeCompare(b.batchId);
+                case 'vesselTypeName-asc':
+                    return a.vesselTypeName.localeCompare(b.vesselTypeName);
                 case 'username-asc':
                     return a.username.localeCompare(b.username);
                 default:
@@ -1122,50 +1123,50 @@ export default function AdminPage() {
 
   const isFilterActive = useMemo(() => {
     return sessionUserFilter !== 'all' || 
-           sessionBatchFilter !== 'all' || 
+           sessionVesselTypeFilter !== 'all' || 
            sessionTestBenchFilter !== 'all' || 
            sessionClassificationFilter !== 'all';
-  }, [sessionUserFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter]);
+  }, [sessionUserFilter, sessionVesselTypeFilter, sessionTestBenchFilter, sessionClassificationFilter]);
 
-  const handleAddBatchProfile = () => {
-    if (!firestore || !newBatchProfile.name?.trim() || !batchProfilesCollectionRef) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Batch Profile name is required.' });
+  const handleAddVesselType = () => {
+    if (!firestore || !newVesselType.name?.trim() || !vesselTypesCollectionRef) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Vessel Type name is required.' });
       return;
     }
     const newId = doc(collection(firestore, '_')).id;
-    const docToSave: BatchProfile = {
+    const docToSave: VesselType = {
       id: newId,
-      name: newBatchProfile.name,
+      name: newVesselType.name,
       minCurve: [],
       maxCurve: []
     };
-    addDocumentNonBlocking(batchProfilesCollectionRef, docToSave);
-    toast({ title: 'Batch Profile Added', description: `Added "${docToSave.name}" to the catalog.` });
-    setNewBatchProfile({ name: '' });
+    addDocumentNonBlocking(vesselTypesCollectionRef, docToSave);
+    toast({ title: 'Vessel Type Added', description: `Added "${docToSave.name}" to the catalog.` });
+    setNewVesselType({ name: '' });
   };
 
-  const handleDeleteBatchProfile = (profileId: string) => {
+  const handleDeleteVesselType = (vesselTypeId: string) => {
     if (!firestore) return;
-    deleteDocumentNonBlocking(doc(firestore, 'batch_profiles', profileId));
-    toast({ title: 'Batch Profile Deleted' });
+    deleteDocumentNonBlocking(doc(firestore, 'vessel_types', vesselTypeId));
+    toast({ title: 'Vessel Type Deleted' });
   };
 
   const handleSaveGuidelines = () => {
-    if (!firestore || !editingBatchProfile) return;
-    const profileRef = doc(firestore, 'batch_profiles', editingBatchProfile.id);
+    if (!firestore || !editingVesselType) return;
+    const profileRef = doc(firestore, 'vessel_types', editingVesselType.id);
     updateDocumentNonBlocking(profileRef, {
         minCurve: minCurvePoints,
         maxCurve: maxCurvePoints,
     });
-    toast({ title: 'Guidelines Saved', description: `Guidelines for "${editingBatchProfile.name}" have been updated.`});
-    setEditingBatchProfile(null);
+    toast({ title: 'Guidelines Saved', description: `Guidelines for "${editingVesselType.name}" have been updated.`});
+    setEditingVesselType(null);
   };
   
-  const handleExportGuidelines = (profile?: BatchProfile) => {
-    const profilesToExport = profile ? [profile] : batchProfiles;
+  const handleExportGuidelines = (profile?: VesselType) => {
+    const profilesToExport = profile ? [profile] : vesselTypes;
 
     if (!profilesToExport || profilesToExport.length === 0) {
-        toast({ title: 'No Data', description: 'There are no batch profiles to export.' });
+        toast({ title: 'No Data', description: 'There are no vessel types to export.' });
         return;
     }
 
@@ -1185,22 +1186,22 @@ export default function AdminPage() {
     });
     
     const csvData: any[] = [];
-    for (const profileId in allPoints) {
-        const profileName = profilesToExport.find(p => p.id === profileId)?.name || profileId;
-        const sortedTimestamps = Object.keys(allPoints[profileId]).map(Number).sort((a,b) => a - b);
+    for (const vesselTypeId in allPoints) {
+        const vesselTypeName = profilesToExport.find(p => p.id === vesselTypeId)?.name || vesselTypeId;
+        const sortedTimestamps = Object.keys(allPoints[vesselTypeId]).map(Number).sort((a,b) => a - b);
         
         sortedTimestamps.forEach(timestamp => {
             csvData.push({
-                batchId: profileName,
+                vesselType: vesselTypeName,
                 timestamp: timestamp,
-                minPressure: allPoints[profileId][timestamp].min ?? '',
-                maxPressure: allPoints[profileId][timestamp].max ?? '',
+                minPressure: allPoints[vesselTypeId][timestamp].min ?? '',
+                maxPressure: allPoints[vesselTypeId][timestamp].max ?? '',
             });
         });
     }
 
     if (csvData.length === 0) {
-        toast({ title: 'No Guideline Data', description: 'The selected batch profile(s) have no guideline points to export.' });
+        toast({ title: 'No Guideline Data', description: 'The selected vessel type(s) have no guideline points to export.' });
         return;
     }
 
@@ -1219,7 +1220,7 @@ export default function AdminPage() {
   
   const handleImportGuidelines = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || !firestore || !batchProfiles) {
+    if (!file || !firestore || !vesselTypes) {
         toast({ variant: 'destructive', title: 'Import Failed', description: 'Could not prepare for import.'});
         return;
     }
@@ -1233,14 +1234,14 @@ export default function AdminPage() {
                 return;
             }
 
-            const dataByBatchName: Record<string, { minCurve: {x:number, y:number}[], maxCurve: {x:number, y:number}[] }> = {};
+            const dataByVesselTypeName: Record<string, { minCurve: {x:number, y:number}[], maxCurve: {x:number, y:number}[] }> = {};
 
             for (const row of results.data as any[]) {
-                const batchName = row.batchId;
-                if (!batchName) continue;
+                const vesselTypeName = row.vesselType;
+                if (!vesselTypeName) continue;
 
-                if (!dataByBatchName[batchName]) {
-                    dataByBatchName[batchName] = { minCurve: [], maxCurve: [] };
+                if (!dataByVesselTypeName[vesselTypeName]) {
+                    dataByVesselTypeName[vesselTypeName] = { minCurve: [], maxCurve: [] };
                 }
 
                 const timestamp = parseFloat(row.timestamp);
@@ -1248,33 +1249,33 @@ export default function AdminPage() {
 
                 if (row.minPressure) {
                     const minPressure = parseFloat(row.minPressure);
-                    if (!isNaN(minPressure)) dataByBatchName[batchName].minCurve.push({ x: timestamp, y: minPressure });
+                    if (!isNaN(minPressure)) dataByVesselTypeName[vesselTypeName].minCurve.push({ x: timestamp, y: minPressure });
                 }
                 if (row.maxPressure) {
                     const maxPressure = parseFloat(row.maxPressure);
-                    if (!isNaN(maxPressure)) dataByBatchName[batchName].maxCurve.push({ x: timestamp, y: maxPressure });
+                    if (!isNaN(maxPressure)) dataByVesselTypeName[vesselTypeName].maxCurve.push({ x: timestamp, y: maxPressure });
                 }
             }
 
             const batch = writeBatch(firestore);
             let updatedCount = 0;
-            for (const batchName in dataByBatchName) {
-                const profile = batchProfiles.find(p => p.name === batchName);
+            for (const vesselTypeName in dataByVesselTypeName) {
+                const profile = vesselTypes.find(p => p.name === vesselTypeName);
                 if (profile) {
-                    const profileRef = doc(firestore, 'batch_profiles', profile.id);
+                    const profileRef = doc(firestore, 'vessel_types', profile.id);
                     batch.update(profileRef, {
-                        minCurve: dataByBatchName[batchName].minCurve.sort((a,b) => a.x - b.x),
-                        maxCurve: dataByBatchName[batchName].maxCurve.sort((a,b) => a.x - b.x),
+                        minCurve: dataByVesselTypeName[vesselTypeName].minCurve.sort((a,b) => a.x - b.x),
+                        maxCurve: dataByVesselTypeName[vesselTypeName].maxCurve.sort((a,b) => a.x - b.x),
                     });
                     updatedCount++;
                 } else {
-                    toast({ variant: 'warning', title: 'Skipped Batch', description: `Batch profile "${batchName}" not found in catalog.`});
+                    toast({ variant: 'warning', title: 'Skipped Vessel Type', description: `Vessel Type "${vesselTypeName}" not found in catalog.`});
                 }
             }
 
             try {
                 await batch.commit();
-                toast({ title: 'Import Successful', description: `Updated guidelines for ${updatedCount} batch profiles.`});
+                toast({ title: 'Import Successful', description: `Updated guidelines for ${updatedCount} vessel types.`});
             } catch (e: any) {
                 toast({ variant: 'destructive', title: 'Import Failed', description: e.message });
             } finally {
@@ -1284,19 +1285,19 @@ export default function AdminPage() {
     });
   };
 
-    const handleGenerateBatchReport = async (profile: BatchProfile) => {
+    const handleGenerateVesselTypeReport = async (vesselType: VesselType) => {
     if (!firestore || !firebaseApp || !testSessions || !sensorConfigs) {
       toast({ variant: 'destructive', title: 'Error', description: 'Required data is not loaded.' });
       return;
     }
     
-    setGeneratingBatchReport(profile.id);
+    setGeneratingVesselTypeReport(vesselType.id);
 
     try {
-      const relevantSessions = testSessions.filter(s => s.batchId === profile.id && s.status === 'COMPLETED');
+      const relevantSessions = testSessions.filter(s => s.vesselTypeId === vesselType.id && s.status === 'COMPLETED');
       if (relevantSessions.length === 0) {
-        toast({ title: 'No Data', description: 'No completed test sessions found for this batch profile.' });
-        setGeneratingBatchReport(null);
+        toast({ title: 'No Data', description: 'No completed test sessions found for this vessel type.' });
+        setGeneratingVesselTypeReport(null);
         return;
       }
 
@@ -1311,7 +1312,7 @@ export default function AdminPage() {
       
       const blob = await pdf(
           <BatchReport 
-              batchProfile={profile} 
+              vesselType={vesselType} 
               sessions={relevantSessions}
               allSensorData={allSensorData}
               sensorConfigs={sensorConfigs}
@@ -1320,33 +1321,33 @@ export default function AdminPage() {
 
       const storage = getStorage(firebaseApp);
       const reportId = doc(collection(firestore, '_')).id;
-      const filePath = `reports/batch_reports/${profile.id}/${reportId}.pdf`;
+      const filePath = `reports/vessel_type_reports/${vesselType.id}/${reportId}.pdf`;
       const fileRef = storageRef(storage, filePath);
 
       await uploadBytes(fileRef, blob);
       const downloadUrl = await getDownloadURL(fileRef);
 
-      const reportData = {
+      const reportData: Report = {
           id: reportId,
-          testSessionId: `batch-${profile.id}`,
+          testSessionId: `vesselType-${vesselType.id}`,
           generatedAt: new Date().toISOString(),
           downloadUrl: downloadUrl,
-          batchId: profile.id,
-          numberInBatch: 'N/A',
+          vesselTypeName: vesselType.name,
+          serialNumber: 'N/A',
           username: user?.displayName || 'admin',
       };
       await setDoc(doc(firestore, 'reports', reportId), reportData);
 
       toast({
-          title: 'Batch Report Generated',
-          description: 'The unified batch report has been saved.',
+          title: 'Vessel Type Report Generated',
+          description: 'The unified vessel type report has been saved.',
       });
 
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Batch Report Failed', description: e.message });
+      toast({ variant: 'destructive', title: 'Vessel Type Report Failed', description: e.message });
       console.error(e);
     } finally {
-      setGeneratingBatchReport(null);
+      setGeneratingVesselTypeReport(null);
     }
   };
 
@@ -1440,7 +1441,7 @@ export default function AdminPage() {
   }
 
   const renderTestSessionManager = () => {
-    const uniqueBatchIds = [...new Set(testSessions?.map(s => s.batchId) || [])];
+    const uniqueVesselTypeIds = [...new Set(testSessions?.map(s => s.vesselTypeId) || [])];
 
     return (
       <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg lg:col-span-2">
@@ -1470,7 +1471,7 @@ export default function AdminPage() {
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('startTime-desc')}>Newest</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('startTime-asc')}>Oldest</DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setSessionSortOrder('batchId-asc')}>Batch ID</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setSessionSortOrder('vesselTypeName-asc')}>Vessel Type</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('username-asc')}>Username</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('testBenchName-asc')}>Test Bench</DropdownMenuItem>
                   </DropdownMenuContent>
@@ -1496,12 +1497,12 @@ export default function AdminPage() {
                                 </Select>
                             </div>
                             <div className="space-y-2">
-                                <Label>Batch ID</Label>
-                                <Select value={sessionBatchFilter} onValueChange={setSessionBatchFilter}>
+                                <Label>Vessel Type</Label>
+                                <Select value={sessionVesselTypeFilter} onValueChange={setSessionVesselTypeFilter}>
                                     <SelectTrigger><SelectValue/></SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="all">All Batches</SelectItem>
-                                        {uniqueBatchIds.map(id => <SelectItem key={id} value={id}>{batchProfiles?.find(b => b.id === id)?.name || id}</SelectItem>)}
+                                        <SelectItem value="all">All Vessel Types</SelectItem>
+                                        {uniqueVesselTypeIds.map(id => <SelectItem key={id} value={id}>{vesselTypes?.find(vt => vt.id === id)?.name || id}</SelectItem>)}
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -1589,12 +1590,11 @@ export default function AdminPage() {
                 {filteredAndSortedSessions.map(session => {
                   const bench = testBenches?.find(b => b.id === session.testBenchId);
                   const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-                  const batchProfile = batchProfiles?.find(b => b.id === session.batchId);
                   return (
                     <Card key={session.id} className={`p-4 ${session.status === 'RUNNING' ? 'border-primary' : ''} hover:bg-muted/50`}>
                         <div className="flex justify-between items-start gap-4">
                             <div className='flex-grow space-y-1'>
-                                <p className="font-semibold">{batchProfile?.name || session.batchId} <span className="text-sm text-muted-foreground">(No. {session.numberInBatch || 'N/A'})</span></p>
+                                <p className="font-semibold">{session.vesselTypeName} <span className="text-sm text-muted-foreground">(S/N: {session.serialNumber || 'N/A'})</span></p>
                                 <p className="text-sm text-muted-foreground">
                                     {new Date(session.startTime).toLocaleString()} - {session.status}
                                 </p>
@@ -1672,7 +1672,7 @@ export default function AdminPage() {
                                             <AlertDialogHeader>
                                                 <AlertDialogTitle className="text-destructive">Permanently Delete Session?</AlertDialogTitle>
                                                 <AlertDialogDescription>
-                                                    This will permanently delete the session for batch "{batchProfile?.name || session.batchId}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
+                                                    This will permanently delete the session for "{session.vesselTypeName} - S/N: {session.serialNumber}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
                                                 </AlertDialogDescription>
                                             </AlertDialogHeader>
                                             <AlertDialogFooter>
@@ -1896,7 +1896,7 @@ export default function AdminPage() {
                                 }}
                              />
                              <label htmlFor={d.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                 {batchProfiles?.find(b => b.id === d.batchId)?.name || d.batchId} (No. {d.numberInBatch}) - <span className="text-xs text-muted-foreground">{new Date(d.startTime).toLocaleDateString()}</span>
+                                 {d.vesselTypeName} (S/N: {d.serialNumber}) - <span className="text-xs text-muted-foreground">{new Date(d.startTime).toLocaleDateString()}</span>
                              </label>
                          </div>
                      ))}
@@ -1997,7 +1997,7 @@ export default function AdminPage() {
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onSelect={() => setReportSortOrder('generatedAt-desc')}>Newest</DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => setReportSortOrder('generatedAt-asc')}>Oldest</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setReportSortOrder('batchId-asc')}>Batch ID</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setReportSortOrder('vesselTypeName-asc')}>Vessel Type</DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => setReportSortOrder('username-asc')}>Username</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -2006,8 +2006,8 @@ export default function AdminPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Batch ID</TableHead>
-                    <TableHead>Batch No.</TableHead>
+                    <TableHead>Vessel Type</TableHead>
+                    <TableHead>Serial No.</TableHead>
                     <TableHead>Generated By</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -2019,8 +2019,8 @@ export default function AdminPage() {
                   ) : filteredAndSortedReports.length > 0 ? (
                     filteredAndSortedReports.map((report) => (
                       <TableRow key={report.id}>
-                        <TableCell className="font-medium">{batchProfiles?.find(b => b.id === report.batchId)?.name || report.batchId}</TableCell>
-                        <TableCell>{report.numberInBatch || 'N/A'}</TableCell>
+                        <TableCell className="font-medium">{report.vesselTypeName}</TableCell>
+                        <TableCell>{report.serialNumber || 'N/A'}</TableCell>
                         <TableCell>{report.username}</TableCell>
                         <TableCell>{new Date(report.generatedAt).toLocaleString()}</TableCell>
                         <TableCell className="text-right">
@@ -2045,24 +2045,24 @@ export default function AdminPage() {
     </Card>
   );
 
-  const renderBatchProfileManagement = () => (
+  const renderVesselTypeManagement = () => (
     <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
         <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
             <AccordionItem value="item-1">
                 <AccordionTrigger className="p-6">
                     <div className="text-left">
-                        <CardTitle>Batch Profile Management</CardTitle>
-                        <CardDescription>Create and manage batch profiles and their test guidelines.</CardDescription>
+                        <CardTitle>Vessel Type Management</CardTitle>
+                        <CardDescription>Create and manage vessel types and their test guidelines.</CardDescription>
                     </div>
                 </AccordionTrigger>
                 <AccordionContent className="p-6 pt-0">
                     <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
-                        <h3 className="font-semibold text-center">New Batch Profile</h3>
+                        <h3 className="font-semibold text-center">New Vessel Type</h3>
                         <div className="space-y-2">
-                            <Label htmlFor="new-batch-profile-name">Name</Label>
-                            <Input id="new-batch-profile-name" placeholder="e.g., A-Series V1" value={newBatchProfile.name || ''} onChange={(e) => setNewBatchProfile({ name: e.target.value })} />
+                            <Label htmlFor="new-vessel-type-name">Name</Label>
+                            <Input id="new-vessel-type-name" placeholder="e.g., A-Series V1" value={newVesselType.name || ''} onChange={(e) => setNewVesselType({ name: e.target.value })} />
                         </div>
-                        <Button onClick={handleAddBatchProfile} size="sm" className="w-full mt-2">Add Batch Profile</Button>
+                        <Button onClick={handleAddVesselType} size="sm" className="w-full mt-2">Add Vessel Type</Button>
                     </div>
                     <div className="flex justify-center gap-2 mb-4">
                         <Button onClick={() => handleExportGuidelines()} variant="outline" size="sm">
@@ -2075,10 +2075,10 @@ export default function AdminPage() {
                         </Button>
                         <input type="file" ref={guidelineImportRef} onChange={handleImportGuidelines} accept=".csv" className="hidden" />
                     </div>
-                    {isBatchProfilesLoading ? <p className="text-center pt-10">Loading batch profiles...</p> : (
+                    {isVesselTypesLoading ? <p className="text-center pt-10">Loading vessel types...</p> : (
                         <ScrollArea className="h-64 p-1">
                             <div className="space-y-2">
-                                {batchProfiles?.map(p => (
+                                {vesselTypes?.map(p => (
                                     <Card key={p.id} className='p-4 hover:bg-muted/50'>
                                         <div className='flex justify-between items-center'>
                                             <p className='font-semibold'>{p.name}</p>
@@ -2087,20 +2087,20 @@ export default function AdminPage() {
                                                 <Button 
                                                     size="sm" 
                                                     variant="outline" 
-                                                    onClick={() => handleGenerateBatchReport(p)}
-                                                    disabled={generatingBatchReport === p.id}
+                                                    onClick={() => handleGenerateVesselTypeReport(p)}
+                                                    disabled={generatingVesselTypeReport === p.id}
                                                 >
-                                                  {generatingBatchReport === p.id ? 'Generating...' : 'Report'}
+                                                  {generatingVesselTypeReport === p.id ? 'Generating...' : 'Report'}
                                                 </Button>
                                                 <Dialog>
                                                     <DialogTrigger asChild>
-                                                        <Button size="sm" variant="outline" onClick={() => setEditingBatchProfile(p)}>Edit</Button>
+                                                        <Button size="sm" variant="outline" onClick={() => setEditingVesselType(p)}>Edit</Button>
                                                     </DialogTrigger>
                                                     <DialogContent className="max-w-4xl">
                                                         <DialogHeader>
-                                                            <DialogTitle>Edit Guidelines for {editingBatchProfile?.name}</DialogTitle>
+                                                            <DialogTitle>Edit Guidelines for {editingVesselType?.name}</DialogTitle>
                                                             <DialogDescription>
-                                                                Click to set start/end points. Drag points to adjust the curve. Double-click a point to delete it.
+                                                                Click twice to set start/end points. Drag points to adjust the curve. Double-click a point to delete it.
                                                             </DialogDescription>
                                                         </DialogHeader>
                                                         <div className="grid grid-cols-2 gap-4">
@@ -2139,7 +2139,7 @@ export default function AdminPage() {
                                                         </div>
                                                         <DialogFooter>
                                                             <DialogClose asChild>
-                                                                <Button variant="ghost" onClick={() => setEditingBatchProfile(null)}>Cancel</Button>
+                                                                <Button variant="ghost" onClick={() => setEditingVesselType(null)}>Cancel</Button>
                                                             </DialogClose>
                                                             <DialogClose asChild>
                                                                 <Button onClick={handleSaveGuidelines}>Save Guidelines</Button>
@@ -2153,14 +2153,14 @@ export default function AdminPage() {
                                                     </AlertDialogTrigger>
                                                     <AlertDialogContent>
                                                         <AlertDialogHeader>
-                                                            <AlertDialogTitle className="text-destructive">Delete Batch Profile?</AlertDialogTitle>
+                                                            <AlertDialogTitle className="text-destructive">Delete Vessel Type?</AlertDialogTitle>
                                                             <AlertDialogDescription>
                                                                 Are you sure you want to delete "{p.name}"? This action cannot be undone. Associated test sessions will not be deleted.
                                                             </AlertDialogDescription>
                                                         </AlertDialogHeader>
                                                         <AlertDialogFooter>
                                                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteBatchProfile(p.id)}>Delete</AlertDialogAction>
+                                                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteVesselType(p.id)}>Delete</AlertDialogAction>
                                                         </AlertDialogFooter>
                                                     </AlertDialogContent>
                                                 </AlertDialog>
@@ -2283,7 +2283,7 @@ export default function AdminPage() {
                       </AccordionItem>
                   </Accordion>
               </Card>
-              {renderBatchProfileManagement()}
+              {renderVesselTypeManagement()}
               <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
                   <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
                       <AccordionItem value="item-1">
@@ -2364,4 +2364,3 @@ export default function AdminPage() {
     </div>
   );
 }
-

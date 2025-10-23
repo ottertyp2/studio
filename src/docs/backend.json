@@ -172,11 +172,12 @@
         "$schema": "http://json-schema.org/draft-07/schema#",
         "title": "TestSession",
         "type": "object",
-        "description": "Represents a single test session for a specific item within a batch.",
+        "description": "Represents a single test session for a specific vessel type.",
         "properties": {
             "id": { "type": "string", "description": "Unique identifier for the test session." },
-            "batchId": { "type": "string", "description": "Reference to the Batch Profile being tested." },
-            "numberInBatch": { "type": "string", "description": "The specific number or identifier of the item within the batch." },
+            "vesselTypeId": { "type": "string", "description": "Reference to the vessel type being tested." },
+            "vesselTypeName": { "type": "string", "description": "The name of the vessel type being tested." },
+            "serialNumber": { "type": "string", "description": "The serial number of the vessel type instance." },
             "description": { "type": "string", "description": "A description of the test session." },
             "startTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test started." },
             "endTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test ended." },
@@ -189,16 +190,16 @@
             "demoOwnerInstanceId": { "type": "string", "description": "A unique ID for the client instance that started a demo session." },
             "classification": { "type": "string", "enum": ["LEAK", "DIFFUSION"], "description": "The classification of the test result (e.g. Leak, Diffusion)." }
         },
-        "required": ["id", "batchId", "startTime", "status", "testBenchId", "sensorConfigurationId", "measurementType", "userId", "username"]
+        "required": ["id", "vesselTypeId", "vesselTypeName", "startTime", "status", "testBenchId", "sensorConfigurationId", "measurementType", "userId", "username"]
     },
-    "BatchProfile": {
+    "VesselType": {
         "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "BatchProfile",
+        "title": "VesselType",
         "type": "object",
-        "description": "Represents a batch profile that can be tested, including its test guidelines.",
+        "description": "Represents a vessel type that can be tested, including its test guidelines.",
         "properties": {
-            "id": { "type": "string", "description": "Unique identifier for the batch profile." },
-            "name": { "type": "string", "description": "The name of the batch profile." },
+            "id": { "type": "string", "description": "Unique identifier for the vessel type." },
+            "name": { "type": "string", "description": "The name of the vessel type." },
             "minCurve": {
                 "type": "array",
                 "description": "An array of points defining the minimum pressure curve guideline.",
@@ -276,11 +277,11 @@
             "testSessionId": { "type": "string", "description": "Reference to the test session this report is for." },
             "generatedAt": { "type": "string", "format": "date-time", "description": "Timestamp when the report was generated." },
             "downloadUrl": { "type": "string", "format": "uri", "description": "The public URL to download the report PDF from Firebase Storage." },
-            "batchId": { "type": "string", "description": "The batch ID from the session." },
-            "numberInBatch": { "type": "string", "description": "The number in batch from the session." },
+            "vesselTypeName": { "type": "string", "description": "The name of the vessel type from the session." },
+            "serialNumber": { "type": "string", "description": "The serial number from the session." },
             "username": { "type": "string", "description": "The username of the user who performed the test." }
         },
-        "required": ["id", "testSessionId", "generatedAt", "downloadUrl", "batchId", "username"]
+        "required": ["id", "testSessionId", "generatedAt", "downloadUrl", "vesselTypeName", "username"]
     }
   },
   "auth": {
@@ -347,11 +348,11 @@
         }
       },
       {
-        "path": "/batch_profiles/{batchProfileId}",
+        "path": "/vessel_types/{vesselTypeId}",
         "definition": {
-            "entityName": "BatchProfile",
-            "schema": { "$ref": "#/entities/BatchProfile" },
-            "description": "Stores all available batch profiles and their testing guidelines."
+            "entityName": "VesselType",
+            "schema": { "$ref": "#/entities/VesselType" },
+            "description": "Stores all available vessel types and their testing guidelines."
         }
       },
       {

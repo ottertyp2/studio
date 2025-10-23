@@ -19,8 +19,9 @@ type SensorConfig = {
 
 type TestSession = {
     id: string;
-    batchId: string;
-    numberInBatch: string;
+    vesselTypeId: string;
+    vesselTypeName: string;
+    serialNumber: string;
     description: string;
     startTime: string;
     endTime?: string;
@@ -33,7 +34,7 @@ type TestSession = {
     username: string;
 };
 
-type BatchProfile = {
+type VesselType = {
     id: string;
     name: string;
     minCurve: {x: number, y: number}[];
@@ -50,7 +51,7 @@ interface TestReportProps {
   data: ChartDataPoint[];
   config: SensorConfig;
   chartImage: string;
-  batchProfile?: BatchProfile;
+  vesselType?: VesselType;
 }
 
 const styles = StyleSheet.create({
@@ -180,7 +181,7 @@ const styles = StyleSheet.create({
 });
 
 
-const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartImage, batchProfile }) => {
+const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartImage, vesselType }) => {
     
     const summaryStats = data.reduce((acc, point) => {
         acc.max = Math.max(acc.max, point.value);
@@ -216,8 +217,8 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartIma
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Session Details</Text>
             <View style={styles.grid}>
-                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Batch ID: </Text>{batchProfile?.name || session.batchId}</Text></View>
-                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Number in Batch: </Text>{session.numberInBatch || 'N/A'}</Text></View>
+                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Vessel Type: </Text>{vesselType?.name || session.vesselTypeName}</Text></View>
+                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Serial Number: </Text>{session.serialNumber || 'N/A'}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Start Time: </Text>{new Date(session.startTime).toLocaleString()}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>End Time: </Text>{session.endTime ? new Date(session.endTime).toLocaleString() : 'N/A'}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Tested By: </Text>{session.username}</Text></View>

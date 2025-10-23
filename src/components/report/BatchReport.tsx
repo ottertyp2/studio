@@ -27,8 +27,9 @@ type SensorConfig = {
 
 type TestSession = {
     id: string;
-    batchId: string;
-    numberInBatch: string;
+    vesselTypeId: string;
+    vesselTypeName: string;
+    serialNumber: string;
     startTime: string;
     endTime?: string;
     classification?: 'LEAK' | 'DIFFUSION';
@@ -36,13 +37,13 @@ type TestSession = {
     sensorConfigurationId: string;
 };
 
-type BatchProfile = {
+type VesselType = {
     id: string;
     name: string;
 };
 
 interface BatchReportProps {
-  batchProfile: BatchProfile;
+  vesselType: VesselType;
   sessions: TestSession[];
   allSensorData: Record<string, SensorData[]>;
   sensorConfigs: SensorConfig[];
@@ -165,20 +166,20 @@ const getStatus = (classification?: 'LEAK' | 'DIFFUSION') => {
     }
 };
 
-const BatchReport: React.FC<BatchReportProps> = ({ batchProfile, sessions, allSensorData, sensorConfigs }) => {
+const BatchReport: React.FC<BatchReportProps> = ({ vesselType, sessions, allSensorData, sensorConfigs }) => {
 
   return (
     <Document>
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
              <Text style={{...styles.headerText, fontSize: 18}}>BioThrust</Text>
-            <Text style={styles.headerText}>Batch Test Report</Text>
+            <Text style={styles.headerText}>Vessel Type Report</Text>
         </View>
         
         <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Batch Summary</Text>
+            <Text style={styles.sectionTitle}>Summary</Text>
             <View style={{ flexDirection: 'row' }}>
-                <View style={{ width: '50%' }}><Text style={styles.text}><Text style={styles.label}>Batch Profile: </Text>{batchProfile.name}</Text></View>
+                <View style={{ width: '50%' }}><Text style={styles.text}><Text style={styles.label}>Vessel Type: </Text>{vesselType.name}</Text></View>
                 <View style={{ width: '50%' }}><Text style={styles.text}><Text style={styles.label}>Total Sessions: </Text>{sessions.length}</Text></View>
             </View>
         </View>
@@ -187,7 +188,7 @@ const BatchReport: React.FC<BatchReportProps> = ({ batchProfile, sessions, allSe
             <Text style={styles.sectionTitle}>Session Results</Text>
              <View style={styles.table}> 
                 <View style={styles.tableRow}> 
-                    <View style={{...styles.tableColHeader, width: '15%'}}><Text style={styles.tableHeader}>Batch No.</Text></View> 
+                    <View style={{...styles.tableColHeader, width: '15%'}}><Text style={styles.tableHeader}>Serial No.</Text></View> 
                     <View style={{...styles.tableColHeader, width: '25%'}}><Text style={styles.tableHeader}>Date</Text></View>
                     <View style={{...styles.tableColHeader, width: '15%'}}><Text style={styles.tableHeader}>User</Text></View>
                     <View style={{...styles.tableColHeader, width: '15%'}}><Text style={styles.tableHeader}>End Pressure</Text></View> 
@@ -202,7 +203,7 @@ const BatchReport: React.FC<BatchReportProps> = ({ batchProfile, sessions, allSe
                     
                     return (
                         <View key={session.id} style={styles.tableRow}> 
-                            <View style={{...styles.tableCol, width: '15%'}}><Text style={styles.tableCell}>{session.numberInBatch || 'N/A'}</Text></View>
+                            <View style={{...styles.tableCol, width: '15%'}}><Text style={styles.tableCell}>{session.serialNumber || 'N/A'}</Text></View>
                             <View style={{...styles.tableCol, width: '25%'}}><Text style={styles.tableCell}>{new Date(session.startTime).toLocaleString()}</Text></View>
                             <View style={{...styles.tableCol, width: '15%'}}><Text style={styles.tableCell}>{session.username}</Text></View>
                             <View style={{...styles.tableCol, width: '15%'}}><Text style={styles.tableCell}>{endPressure} {config?.unit || ''}</Text></View>
