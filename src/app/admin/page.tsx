@@ -70,7 +70,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Edit, Upload, FileSignature } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Edit, Upload, FileSignature, Layers } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
@@ -132,6 +132,7 @@ type Report = {
     generatedAt: string;
     downloadUrl: string;
     vesselTypeName: string;
+    batchId: string;
     serialNumber: string;
     username: string;
 };
@@ -149,6 +150,7 @@ type TestSession = {
     id: string;
     vesselTypeId: string;
     vesselTypeName: string;
+    batchId: string;
     serialNumber: string;
     description: string;
     startTime: string;
@@ -168,6 +170,11 @@ type VesselType = {
     name: string;
     minCurve: {x: number, y: number}[];
     maxCurve: {x: number, y: number}[];
+}
+
+type Batch = {
+    id: string;
+    name: string;
 }
 
 type AutomatedTrainingStatus = {
@@ -206,6 +213,7 @@ export default function AdminPage() {
   const [sessionSortOrder, setSessionSortOrder] = useState('startTime-desc');
   const [sessionUserFilter, setSessionUserFilter] = useState('all');
   const [sessionVesselTypeFilter, setSessionVesselTypeFilter] = useState('all');
+  const [sessionBatchFilter, setSessionBatchFilter] = useState('all');
   const [sessionTestBenchFilter, setSessionTestBenchFilter] = useState('all');
   const [sessionClassificationFilter, setSessionClassificationFilter] = useState('all');
 
@@ -226,6 +234,14 @@ export default function AdminPage() {
   const [guidelineEditorMaxY, setGuidelineEditorMaxY] = useState(1200);
 
   const [generatingVesselTypeReport, setGeneratingVesselTypeReport] = useState<string | null>(null);
+
+  // Batch State
+  const [newBatch, setNewBatch] = useState<Partial<Batch>>({ name: '' });
+  const batchesCollectionRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'batches');
+  }, [firestore]);
+  const { data: batches, isLoading: isBatchesLoading } = useCollection<Batch>(batchesCollectionRef);
 
   
   useEffect(() => {
@@ -566,7 +582,7 @@ export default function AdminPage() {
         await batch.commit();
         toast({
             title: 'Session Deleted',
-            description: `Session "${session.vesselTypeName} - ${session.serialNumber}" and ${dataDeletedCount} data points deleted.`
+            description: `Session for "${session.vesselTypeName} / ${batches?.find(b => b.id === session.batchId)?.name} / SN: ${session.serialNumber}" and ${dataDeletedCount} data points deleted.`
         });
     } catch (serverError) {
         toast({
@@ -1045,6 +1061,10 @@ export default function AdminPage() {
     if (sessionVesselTypeFilter !== 'all') {
         filtered = filtered.filter(session => session.vesselTypeId === sessionVesselTypeFilter);
     }
+
+    if (sessionBatchFilter !== 'all') {
+        filtered = filtered.filter(session => session.batchId === sessionBatchFilter);
+    }
     
     if (sessionTestBenchFilter !== 'all') {
         filtered = filtered.filter(session => session.testBenchId === sessionTestBenchFilter);
@@ -1061,8 +1081,10 @@ export default function AdminPage() {
     filtered = filtered.filter(session => {
         const searchTerm = sessionSearchTerm.toLowerCase();
         if (!searchTerm) return true;
+        const batchName = batches?.find(b => b.id === session.batchId)?.name.toLowerCase() || '';
         return (
             session.vesselTypeName.toLowerCase().includes(searchTerm) ||
+            batchName.includes(searchTerm) ||
             session.serialNumber.toLowerCase().includes(searchTerm) ||
             session.description.toLowerCase().includes(searchTerm) ||
             session.username.toLowerCase().includes(searchTerm)
@@ -1070,6 +1092,9 @@ export default function AdminPage() {
     });
 
     return filtered.sort((a, b) => {
+        const batchAName = batches?.find(bt => bt.id === a.batchId)?.name || '';
+        const batchBName = batches?.find(bt => bt.id === b.batchId)?.name || '';
+
         switch (sessionSortOrder) {
             case 'startTime-desc':
                 return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
@@ -1077,6 +1102,8 @@ export default function AdminPage() {
                 return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
             case 'vesselTypeName-asc':
                 return a.vesselTypeName.localeCompare(b.vesselTypeName);
+            case 'batchName-asc':
+                return batchAName.localeCompare(batchBName);
              case 'username-asc':
                 return a.username.localeCompare(b.username);
             case 'testBenchName-asc': {
@@ -1089,7 +1116,7 @@ export default function AdminPage() {
         }
     });
 
-  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionTestBenchFilter, sessionClassificationFilter, testBenches]);
+  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, testBenches, batches]);
 
     const filteredAndSortedReports = useMemo(() => {
         if (!reports) return [];
@@ -1124,9 +1151,10 @@ export default function AdminPage() {
   const isFilterActive = useMemo(() => {
     return sessionUserFilter !== 'all' || 
            sessionVesselTypeFilter !== 'all' || 
+           sessionBatchFilter !== 'all' ||
            sessionTestBenchFilter !== 'all' || 
            sessionClassificationFilter !== 'all';
-  }, [sessionUserFilter, sessionVesselTypeFilter, sessionTestBenchFilter, sessionClassificationFilter]);
+  }, [sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter]);
 
   const handleAddVesselType = () => {
     if (!firestore || !newVesselType.name?.trim() || !vesselTypesCollectionRef) {
@@ -1149,6 +1177,27 @@ export default function AdminPage() {
     if (!firestore) return;
     deleteDocumentNonBlocking(doc(firestore, 'vessel_types', vesselTypeId));
     toast({ title: 'Vessel Type Deleted' });
+  };
+
+  const handleAddBatch = () => {
+    if (!firestore || !newBatch.name?.trim() || !batchesCollectionRef) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Batch name is required.' });
+      return;
+    }
+    const newId = doc(collection(firestore, '_')).id;
+    const docToSave: Batch = {
+      id: newId,
+      name: newBatch.name,
+    };
+    addDocumentNonBlocking(batchesCollectionRef, docToSave);
+    toast({ title: 'Batch Added', description: `Added "${docToSave.name}" to the catalog.` });
+    setNewBatch({ name: '' });
+  };
+
+  const handleDeleteBatch = (batchId: string) => {
+    if (!firestore) return;
+    deleteDocumentNonBlocking(doc(firestore, 'batches', batchId));
+    toast({ title: 'Batch Deleted' });
   };
 
   const handleSaveGuidelines = () => {
@@ -1316,6 +1365,7 @@ export default function AdminPage() {
               sessions={relevantSessions}
               allSensorData={allSensorData}
               sensorConfigs={sensorConfigs}
+              batches={batches || []}
           />
       ).toBlob();
 
@@ -1333,6 +1383,7 @@ export default function AdminPage() {
           generatedAt: new Date().toISOString(),
           downloadUrl: downloadUrl,
           vesselTypeName: vesselType.name,
+          batchId: 'N/A',
           serialNumber: 'N/A',
           username: user?.displayName || 'admin',
       };
@@ -1442,6 +1493,7 @@ export default function AdminPage() {
 
   const renderTestSessionManager = () => {
     const uniqueVesselTypeIds = [...new Set(testSessions?.map(s => s.vesselTypeId) || [])];
+    const uniqueBatchIds = [...new Set(testSessions?.map(s => s.batchId) || [])];
 
     return (
       <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg lg:col-span-2">
@@ -1472,6 +1524,7 @@ export default function AdminPage() {
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('startTime-desc')}>Newest</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('startTime-asc')}>Oldest</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('vesselTypeName-asc')}>Vessel Type</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setSessionSortOrder('batchName-asc')}>Batch</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('username-asc')}>Username</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('testBenchName-asc')}>Test Bench</DropdownMenuItem>
                   </DropdownMenuContent>
@@ -1503,6 +1556,16 @@ export default function AdminPage() {
                                     <SelectContent>
                                         <SelectItem value="all">All Vessel Types</SelectItem>
                                         {uniqueVesselTypeIds.map(id => <SelectItem key={id} value={id}>{vesselTypes?.find(vt => vt.id === id)?.name || id}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Batch</Label>
+                                <Select value={sessionBatchFilter} onValueChange={setSessionBatchFilter}>
+                                    <SelectTrigger><SelectValue/></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All Batches</SelectItem>
+                                        {uniqueBatchIds.map(id => <SelectItem key={id} value={id}>{batches?.find(b => b.id === id)?.name || id}</SelectItem>)}
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -1590,11 +1653,12 @@ export default function AdminPage() {
                 {filteredAndSortedSessions.map(session => {
                   const bench = testBenches?.find(b => b.id === session.testBenchId);
                   const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+                  const batchName = batches?.find(b => b.id === session.batchId)?.name;
                   return (
                     <Card key={session.id} className={`p-4 ${session.status === 'RUNNING' ? 'border-primary' : ''} hover:bg-muted/50`}>
                         <div className="flex justify-between items-start gap-4">
                             <div className='flex-grow space-y-1'>
-                                <p className="font-semibold">{session.vesselTypeName} <span className="text-sm text-muted-foreground">(S/N: {session.serialNumber || 'N/A'})</span></p>
+                                <p className="font-semibold">{session.vesselTypeName} <span className="text-sm text-muted-foreground">(Batch: {batchName || 'N/A'}, S/N: {session.serialNumber || 'N/A'})</span></p>
                                 <p className="text-sm text-muted-foreground">
                                     {new Date(session.startTime).toLocaleString()} - {session.status}
                                 </p>
@@ -2177,6 +2241,61 @@ export default function AdminPage() {
     </Card>
 );
 
+const renderBatchManagement = () => (
+    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+        <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
+            <AccordionItem value="item-1">
+                <AccordionTrigger className="p-6">
+                    <div className="text-left">
+                        <CardTitle>Batch Management</CardTitle>
+                        <CardDescription>Create and manage production batches.</CardDescription>
+                    </div>
+                </AccordionTrigger>
+                <AccordionContent className="p-6 pt-0">
+                    <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
+                        <h3 className="font-semibold text-center">New Batch</h3>
+                        <div className="space-y-2">
+                            <Label htmlFor="new-batch-name">Batch Name/ID</Label>
+                            <Input id="new-batch-name" placeholder="e.g., 2024-Q3-PROD" value={newBatch.name || ''} onChange={(e) => setNewBatch({ name: e.target.value })} />
+                        </div>
+                        <Button onClick={handleAddBatch} size="sm" className="w-full mt-2">Add Batch</Button>
+                    </div>
+                    {isBatchesLoading ? <p className="text-center pt-10">Loading batches...</p> : (
+                        <ScrollArea className="h-64 p-1">
+                            <div className="space-y-2">
+                                {batches?.map(b => (
+                                    <Card key={b.id} className='p-4 hover:bg-muted/50'>
+                                        <div className='flex justify-between items-center'>
+                                            <p className='font-semibold'>{b.name}</p>
+                                            <AlertDialog>
+                                                <AlertDialogTrigger asChild>
+                                                    <Button size="sm" variant="destructive">Delete</Button>
+                                                </AlertDialogTrigger>
+                                                <AlertDialogContent>
+                                                    <AlertDialogHeader>
+                                                        <AlertDialogTitle className="text-destructive">Delete Batch?</AlertDialogTitle>
+                                                        <AlertDialogDescription>
+                                                            Are you sure you want to delete batch "{b.name}"? This action cannot be undone. Associated test sessions will not be deleted.
+                                                        </AlertDialogDescription>
+                                                    </AlertDialogHeader>
+                                                    <AlertDialogFooter>
+                                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                        <AlertDialogAction variant="destructive" onClick={() => handleDeleteBatch(b.id)}>Delete</AlertDialogAction>
+                                                    </AlertDialogFooter>
+                                                </AlertDialogContent>
+                                            </AlertDialog>
+                                        </div>
+                                    </Card>
+                                ))}
+                            </div>
+                        </ScrollArea>
+                    )}
+                </AccordionContent>
+            </AccordionItem>
+        </Accordion>
+    </Card>
+);
+
   if (isUserLoading || !user) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
@@ -2283,6 +2402,7 @@ export default function AdminPage() {
                       </AccordionItem>
                   </Accordion>
               </Card>
+              {renderBatchManagement()}
               {renderVesselTypeManagement()}
               <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
                   <Accordion type="single" collapsible className="w-full" defaultValue="item-1">

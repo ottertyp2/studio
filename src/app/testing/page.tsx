@@ -119,6 +119,7 @@ type TestSession = {
     id: string;
     vesselTypeId: string;
     vesselTypeName: string;
+    batchId: string;
     serialNumber: string;
     description: string;
     startTime: string;
@@ -140,6 +141,11 @@ type VesselType = {
     maxCurve: {x: number, y: number}[];
 }
 
+type Batch = {
+    id: string;
+    name: string;
+}
+
 type MLModel = {
     id: string;
     name: string;
@@ -154,6 +160,7 @@ type Report = {
     generatedAt: string;
     downloadUrl: string;
     vesselTypeName: string;
+    batchId: string;
     serialNumber: string;
     username: string;
 };
@@ -264,6 +271,12 @@ function TestingComponent() {
   }, [firestore, user]);
 
   const { data: vesselTypes, isLoading: isVesselTypesLoading } = useCollection<VesselType>(vesselTypesCollectionRef);
+
+  const batchesCollectionRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'batches');
+  }, [firestore]);
+  const { data: batches, isLoading: isBatchesLoading } = useCollection<Batch>(batchesCollectionRef);
   
   useEffect(() => {
     if (!isUserLoading && !user) {
@@ -467,7 +480,11 @@ function TestingComponent() {
       return;
     }
     if (!tempTestSession.vesselTypeId) {
-      toast({variant: 'destructive', title: 'Input Error', description: 'Please select a Vessel Type for the session.'});
+      toast({variant: 'destructive', title: 'Input Error', description: 'Please select a Vessel Type.'});
+      return;
+    }
+    if (!tempTestSession.batchId) {
+      toast({variant: 'destructive', title: 'Input Error', description: 'Please select a Batch.'});
       return;
     }
     if (!tempTestSession.testBenchId) {
@@ -504,6 +521,7 @@ function TestingComponent() {
       id: newSessionId,
       vesselTypeId: tempTestSession.vesselTypeId,
       vesselTypeName: vesselType?.name || 'Unknown',
+      batchId: tempTestSession.batchId,
       serialNumber: tempTestSession.serialNumber || '',
       description: tempTestSession.description || '',
       startTime: new Date().toISOString(),
@@ -526,7 +544,7 @@ function TestingComponent() {
       setSelectedSessionIds([newSessionId]);
       setShowNewSessionForm(false);
       setTempTestSession({});
-      toast({ title: 'New Test Session Started', description: `Vessel: ${newSession.vesselTypeName}, S/N: ${newSession.serialNumber}`});
+      toast({ title: 'New Test Session Started', description: `Vessel: ${newSession.vesselTypeName}, SN: ${newSession.serialNumber}`});
     } catch(e: any) {
         console.error("FirebaseError:", e);
         toast({
@@ -1076,6 +1094,11 @@ function TestingComponent() {
 
     const handleGenerateReport = useCallback(async () => {
         if (!activeTestSession || !firestore || !firebaseApp || !chartRef.current) {
+            toast({
+                variant: 'destructive',
+                title: 'Prerequisites Missing',
+                description: 'Cannot generate report. Ensure a session is selected and services are available.',
+            });
             return;
         }
 
@@ -1126,6 +1149,7 @@ function TestingComponent() {
                 generatedAt: new Date().toISOString(),
                 downloadUrl: downloadUrl,
                 vesselTypeName: activeTestSession.vesselTypeName,
+                batchId: activeTestSession.batchId,
                 serialNumber: activeTestSession.serialNumber,
                 username: activeTestSession.username,
             };
@@ -1219,8 +1243,21 @@ function TestingComponent() {
                 </SelectContent>
             </Select>
           </div>
+           <div>
+            <Label htmlFor="batchId">Batch</Label>
+             <Select value={tempTestSession.batchId || ''} onValueChange={value => handleTestSessionFieldChange('batchId', value)}>
+                <SelectTrigger id="batchId">
+                    <SelectValue placeholder="Select a Batch" />
+                </SelectTrigger>
+                <SelectContent>
+                    {isBatchesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                    batches?.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)
+                    }
+                </SelectContent>
+            </Select>
+          </div>
           <div>
-              <Label htmlFor="serialNumber">Serial Number (Number in Batch)</Label>
+              <Label htmlFor="serialNumber">Number in Batch (Serial Number)</Label>
               <Input id="serialNumber" placeholder="e.g., 5" value={tempTestSession.serialNumber || ''} onChange={e => handleTestSessionFieldChange('serialNumber', e.target.value)} />
           </div>
           <div>
@@ -1235,14 +1272,14 @@ function TestingComponent() {
                     await handleStartNewTestSession({ measurementType: 'ARDUINO' })
                   }} 
                   className="w-full btn-shine bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md"
-                  disabled={!tempTestSession?.vesselTypeId || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId || !!runningTestSession}
+                  disabled={!tempTestSession?.vesselTypeId || !tempTestSession.batchId || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId || !!runningTestSession}
               >
                   Start Test Bench Session
               </Button>
             ) : (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button variant="secondary" className="w-full btn-shine shadow-md" disabled={!!runningTestSession || isConnected || !tempTestSession.vesselTypeId || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId}>
+                    <Button variant="secondary" className="w-full btn-shine shadow-md" disabled={!!runningTestSession || isConnected || !tempTestSession.vesselTypeId || !tempTestSession.batchId || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId}>
                       Start Demo Session
                     </Button>
                   </AlertDialogTrigger>
@@ -1708,10 +1745,11 @@ function TestingComponent() {
                         <p className="text-sm text-muted-foreground">Comparing:</p>
                         {selectedSessionIds.map((id, index) => {
                             const session = testSessions?.find(s => s.id === id);
+                            const batch = batches?.find(b => b.id === session?.batchId);
                             return (
                                 <div key={id} className="flex items-center gap-2 bg-muted text-muted-foreground px-2 py-1 rounded-md text-xs">
                                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }}></div>
-                                    <span>{session?.vesselTypeName} (S/N: {session?.serialNumber})</span>
+                                    <span>{session?.vesselTypeName} (Batch: {batch?.name}, S/N: {session?.serialNumber})</span>
                                     <button onClick={() => setSelectedSessionIds(prev => prev.filter(sid => sid !== id))} className="text-muted-foreground hover:text-foreground">
                                         <XIcon className="h-3 w-3" />
                                     </button>

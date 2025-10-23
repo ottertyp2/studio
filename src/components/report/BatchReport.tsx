@@ -29,6 +29,7 @@ type TestSession = {
     id: string;
     vesselTypeId: string;
     vesselTypeName: string;
+    batchId: string;
     serialNumber: string;
     startTime: string;
     endTime?: string;
@@ -42,11 +43,17 @@ type VesselType = {
     name: string;
 };
 
+type Batch = {
+    id: string;
+    name: string;
+}
+
 interface BatchReportProps {
   vesselType: VesselType;
   sessions: TestSession[];
   allSensorData: Record<string, SensorData[]>;
   sensorConfigs: SensorConfig[];
+  batches: Batch[];
 }
 
 const styles = StyleSheet.create({
@@ -166,7 +173,7 @@ const getStatus = (classification?: 'LEAK' | 'DIFFUSION') => {
     }
 };
 
-const BatchReport: React.FC<BatchReportProps> = ({ vesselType, sessions, allSensorData, sensorConfigs }) => {
+const BatchReport: React.FC<BatchReportProps> = ({ vesselType, sessions, allSensorData, sensorConfigs, batches }) => {
 
   return (
     <Document>
@@ -188,27 +195,30 @@ const BatchReport: React.FC<BatchReportProps> = ({ vesselType, sessions, allSens
             <Text style={styles.sectionTitle}>Session Results</Text>
              <View style={styles.table}> 
                 <View style={styles.tableRow}> 
+                    <View style={{...styles.tableColHeader, width: '15%'}}><Text style={styles.tableHeader}>Batch</Text></View>
                     <View style={{...styles.tableColHeader, width: '15%'}}><Text style={styles.tableHeader}>Serial No.</Text></View> 
                     <View style={{...styles.tableColHeader, width: '25%'}}><Text style={styles.tableHeader}>Date</Text></View>
-                    <View style={{...styles.tableColHeader, width: '15%'}}><Text style={styles.tableHeader}>User</Text></View>
+                    <View style={{...styles.tableColHeader, width: '10%'}}><Text style={styles.tableHeader}>User</Text></View>
                     <View style={{...styles.tableColHeader, width: '15%'}}><Text style={styles.tableHeader}>End Pressure</Text></View> 
-                    <View style={{...styles.tableColHeader, width: '15%'}}><Text style={styles.tableHeader}>Duration (s)</Text></View> 
-                    <View style={{...styles.tableColHeader, width: '15%'}}><Text style={styles.tableHeader}>Status</Text></View> 
+                    <View style={{...styles.tableColHeader, width: '10%'}}><Text style={styles.tableHeader}>Duration (s)</Text></View> 
+                    <View style={{...styles.tableColHeader, width: '10%'}}><Text style={styles.tableHeader}>Status</Text></View> 
                 </View>
                 {sessions.map(session => {
                     const data = allSensorData[session.id] || [];
                     const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
+                    const batchName = batches.find(b => b.id === session.batchId)?.name || 'N/A';
                     const endPressure = data.length > 0 && config ? (data[data.length-1].value).toFixed(config.decimalPlaces) : 'N/A';
                     const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
                     
                     return (
                         <View key={session.id} style={styles.tableRow}> 
+                            <View style={{...styles.tableCol, width: '15%'}}><Text style={styles.tableCell}>{batchName}</Text></View>
                             <View style={{...styles.tableCol, width: '15%'}}><Text style={styles.tableCell}>{session.serialNumber || 'N/A'}</Text></View>
                             <View style={{...styles.tableCol, width: '25%'}}><Text style={styles.tableCell}>{new Date(session.startTime).toLocaleString()}</Text></View>
-                            <View style={{...styles.tableCol, width: '15%'}}><Text style={styles.tableCell}>{session.username}</Text></View>
+                            <View style={{...styles.tableCol, width: '10%'}}><Text style={styles.tableCell}>{session.username}</Text></View>
                             <View style={{...styles.tableCol, width: '15%'}}><Text style={styles.tableCell}>{endPressure} {config?.unit || ''}</Text></View>
-                            <View style={{...styles.tableCol, width: '15%'}}><Text style={styles.tableCell}>{duration}</Text></View>
-                            <View style={{...styles.tableCol, width: '15%'}}>{getStatus(session.classification)}</View>
+                            <View style={{...styles.tableCol, width: '10%'}}><Text style={styles.tableCell}>{duration}</Text></View>
+                            <View style={{...styles.tableCol, width: '10%'}}>{getStatus(session.classification)}</View>
                         </View>
                     )
                 })}

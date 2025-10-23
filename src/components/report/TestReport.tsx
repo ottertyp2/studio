@@ -1,5 +1,4 @@
 
-
 'use client';
 import React from 'react';
 import { Page, Text, View, Document, StyleSheet, Image, Line, Svg } from '@react-pdf/renderer';
@@ -21,6 +20,7 @@ type TestSession = {
     id: string;
     vesselTypeId: string;
     vesselTypeName: string;
+    batchId: string;
     serialNumber: string;
     description: string;
     startTime: string;
@@ -218,11 +218,11 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartIma
             <Text style={styles.sectionTitle}>Session Details</Text>
             <View style={styles.grid}>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Vessel Type: </Text>{vesselType?.name || session.vesselTypeName}</Text></View>
+                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Batch ID: </Text>{session.batchId}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Serial Number: </Text>{session.serialNumber || 'N/A'}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Start Time: </Text>{new Date(session.startTime).toLocaleString()}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>End Time: </Text>{session.endTime ? new Date(session.endTime).toLocaleString() : 'N/A'}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Tested By: </Text>{session.username}</Text></View>
-                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Test Bench: </Text>{session.testBenchId}</Text></View>
                  <View style={styles.gridItem}>
                     <Text style={styles.text}>
                         <Text style={styles.label}>Final Status: </Text>
