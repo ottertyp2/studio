@@ -74,7 +74,7 @@ import { signOut } from '@/firebase/non-blocking-login';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { convertRawValue } from '@/lib/utils';
 import { useTestBench } from '@/context/TestBenchContext';
-import { PDFDownloadLink } from '@react-pdf/renderer';
+import { PDFDownloadLink, pdf } from '@react-pdf/renderer';
 import TestReport from '@/components/report/TestReport';
 
 
@@ -212,6 +212,7 @@ function TestingComponent() {
   
   const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
   const [generatingReportFor, setGeneratingReportFor] = useState<string | null>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
 
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
@@ -1073,19 +1074,37 @@ function TestingComponent() {
     };
   }, [lastDataPointTimestamp, setCurrentValue]);
 
-    const handleGenerateReport = useCallback(async (blob: Blob | null) => {
-        if (!blob || !activeTestSession || !firestore || !firebaseApp) return;
-
+    const handleGenerateReport = useCallback(async () => {
+        if (!activeTestSession || !firestore || !firebaseApp || !chartRef.current) return;
+    
         setGeneratingReportFor(activeTestSession.id);
-        const storage = getStorage(firebaseApp);
-        const reportId = doc(collection(firestore, '_')).id;
-        const filePath = `reports/${activeTestSession.id}/${reportId}.pdf`;
-        const fileRef = storageRef(storage, filePath);
-
+    
         try {
+            const svgElement = chartRef.current.querySelector('svg');
+            if (!svgElement) {
+                throw new Error("Could not find chart SVG element.");
+            }
+    
+            const svgString = new XMLSerializer().serializeToString(svgElement);
+            const chartImage = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgString)))}`;
+    
+            const blob = await pdf(
+                <TestReport 
+                    session={activeTestSession} 
+                    data={chartData as any[]} 
+                    config={sensorConfig!} 
+                    chartImage={chartImage}
+                />
+            ).toBlob();
+    
+            const storage = getStorage(firebaseApp);
+            const reportId = doc(collection(firestore, '_')).id;
+            const filePath = `reports/${activeTestSession.id}/${reportId}.pdf`;
+            const fileRef = storageRef(storage, filePath);
+    
             const snapshot = await uploadBytes(fileRef, blob);
             const downloadUrl = await getDownloadURL(snapshot.ref);
-
+    
             const reportData = {
                 id: reportId,
                 testSessionId: activeTestSession.id,
@@ -1095,25 +1114,25 @@ function TestingComponent() {
                 serialNumber: activeTestSession.serialNumber,
                 username: activeTestSession.username,
             };
-
+    
             await setDoc(doc(firestore, 'reports', reportId), reportData);
-
+    
             toast({
                 title: 'Report Generated & Saved',
                 description: 'The PDF report has been successfully stored in the cloud.',
             });
-
+    
         } catch (e: any) {
             console.error("Report generation/upload failed: ", e);
             toast({
                 variant: 'destructive',
                 title: 'Report Failed',
-                description: 'Could not upload the report to Firebase Storage. Check your storage rules.',
+                description: e.message || 'Could not generate or upload the report.',
             });
         } finally {
             setGeneratingReportFor(null);
         }
-    }, [activeTestSession, firestore, firebaseApp, toast]);
+    }, [activeTestSession, firestore, firebaseApp, toast, chartData, sensorConfig]);
   
   const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
   const displayDecimals = sensorConfig?.decimalPlaces ?? 0;
@@ -1234,7 +1253,7 @@ function TestingComponent() {
   );
 
   const renderLiveTab = () => (
-    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+    <Card className="mt-4 bg-white/80 backdrop-blur-sm shadow-lg w-full">
         <CardHeader>
           <CardTitle className="text-2xl text-center">
               Live Control
@@ -1281,7 +1300,7 @@ function TestingComponent() {
   );
 
   const renderFileTab = () => (
-      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+      <Card className="mt-4 bg-white/80 backdrop-blur-sm shadow-lg w-full">
         <CardHeader>
             <CardTitle>File Operations (CSV)</CardTitle>
             <CardDescription>
@@ -1317,7 +1336,7 @@ function TestingComponent() {
   );
 
   const renderAnalysisTab = () => (
-     <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+     <Card className="mt-4 bg-white/80 backdrop-blur-sm shadow-lg w-full">
         <CardHeader>
             <CardTitle className="flex items-center gap-2">
                 <BrainCircuit className="h-6 w-6 text-primary" />
@@ -1391,21 +1410,13 @@ function TestingComponent() {
                       </Button>
                       
                     {activeTestSession && sensorConfig && (
-                        <PDFDownloadLink
-                            document={<TestReport session={activeTestSession} data={chartData as any[]} config={sensorConfig} />}
-                            fileName={`report-${activeTestSession.id}.pdf`}
+                        <Button 
+                            variant="outline" 
+                            disabled={generatingReportFor === activeTestSession.id}
+                            onClick={handleGenerateReport}
                         >
-                            {({ blob, url, loading, error }) => {
-                                if (!loading && blob) {
-                                    handleGenerateReport(blob);
-                                }
-                                return (
-                                    <Button variant="outline" disabled={loading || !!generatingReportFor}>
-                                        {generatingReportFor === activeTestSession.id ? 'Saving Report...' : loading ? 'Generating Report...' : 'Generate & Save Report'}
-                                    </Button>
-                                )
-                            }}
-                        </PDFDownloadLink>
+                            {generatingReportFor === activeTestSession.id ? 'Saving Report...' : 'Generate & Save Report'}
+                        </Button>
                     )}
                   </div>
                   {aiAnalysisResult && (
@@ -1511,18 +1522,18 @@ function TestingComponent() {
       <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
             <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-            <CardContent className="p-4">
-                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-3 bg-muted/80">
-                    <TabsTrigger value="live">Live Control</TabsTrigger>
-                    <TabsTrigger value="file">File Operations</TabsTrigger>
-                    <TabsTrigger value="analysis">Analyze &amp; Edit</TabsTrigger>
-                </TabsList>
-                <TabsContent value="live" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
-                <TabsContent value="file" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
-                <TabsContent value="analysis" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderAnalysisTab()}</TabsContent>
-                </Tabs>
-            </CardContent>
+                <CardContent className="p-4">
+                    <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                    <TabsList className="grid w-full grid-cols-3 bg-muted/80">
+                        <TabsTrigger value="live">Live Control</TabsTrigger>
+                        <TabsTrigger value="file">File Operations</TabsTrigger>
+                        <TabsTrigger value="analysis">Analyze &amp; Edit</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="live" className="data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
+                    <TabsContent value="file" className="data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
+                    <TabsContent value="analysis" className="data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderAnalysisTab()}</TabsContent>
+                    </Tabs>
+                </CardContent>
             </Card>
         </div>
                 
@@ -1695,50 +1706,54 @@ function TestingComponent() {
             </CardHeader>
             <CardContent>
                 <div 
-                ref={scrollContainerRef}
+                ref={chartRef}
                 className="h-80 w-full min-w-full"
-                style={{ cursor: (liveUpdateEnabled) ? 'default' : (isDragging ? 'grabbing' : 'grab') }}
                 >
-                <ResponsiveContainer width="100%" height="100%" minWidth={800}>
-                    <LineChart data={Array.isArray(chartData) ? chartData : undefined} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
-                    <XAxis 
-                        dataKey="name" 
-                        stroke="hsl(var(--muted-foreground))" 
-                        type="number"
-                        domain={zoomDomain || chartDomain}
-                        allowDataOverflow={true}
-                        label={{ value: "Time (seconds)", position: 'insideBottom', offset: -5 }}
-                        tickFormatter={(tick) => (tick as number).toFixed(0)}
-                        allowDuplicatedCategory={false}
-                    />
-                    <YAxis
-                        stroke="hsl(var(--muted-foreground))"
-                        domain={['dataMin', 'dataMax']}
-                        tickFormatter={(tick) => typeof tick === 'number' && sensorConfig ? tick.toFixed(sensorConfig.decimalPlaces) : tick}
-                        label={{ value: sensorConfig?.unit, angle: -90, position: 'insideLeft' }}
-                    />
-                    <Tooltip
-                        contentStyle={{
-                        backgroundColor: 'hsl(var(--background) / 0.8)',
-                        borderColor: 'hsl(var(--border))',
-                        backdropFilter: 'blur(4px)',
-                        }}
-                        formatter={(value: number, name: string, props) => [`${Number(value).toFixed(sensorConfig?.decimalPlaces ?? 2)} ${sensorConfig?.unit || ''}`, `${props.payload.name.toFixed(2)}s`]}
-                    />
-                    <Legend verticalAlign="top" height={36} />
-                    {Array.isArray(chartData) ? (
-                        <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig?.name || 'Value'} (${sensorConfig?.unit || 'N/A'})`} dot={false} strokeWidth={2} isAnimationActive={false} />
-                    ) : (
-                        Object.entries(chartData).map(([sessionId, data], index) => {
-                        const session = testSessions?.find(s => s.id === sessionId);
-                        return (
-                            <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={session?.vesselTypeName || sessionId} dot={false} strokeWidth={2} isAnimationActive={false} />
-                        )
-                        })
-                    )}
-                    </LineChart>
-                </ResponsiveContainer>
+                <div 
+                  ref={scrollContainerRef}
+                  style={{ cursor: (liveUpdateEnabled) ? 'default' : (isDragging ? 'grabbing' : 'grab'), height: '100%', width: '100%' }}
+                  >
+                  <ResponsiveContainer width="100%" height="100%" minWidth={800}>
+                      <LineChart data={Array.isArray(chartData) ? chartData : undefined} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
+                      <XAxis 
+                          dataKey="name" 
+                          stroke="hsl(var(--muted-foreground))" 
+                          type="number"
+                          domain={zoomDomain || chartDomain}
+                          allowDataOverflow={true}
+                          label={{ value: "Time (seconds)", position: 'insideBottom', offset: -5 }}
+                          tickFormatter={(tick) => (tick as number).toFixed(0)}
+                          allowDuplicatedCategory={false}
+                      />
+                      <YAxis
+                          stroke="hsl(var(--muted-foreground))"
+                          domain={['dataMin', 'dataMax']}
+                          tickFormatter={(tick) => typeof tick === 'number' && sensorConfig ? tick.toFixed(sensorConfig.decimalPlaces) : tick}
+                          label={{ value: sensorConfig?.unit, angle: -90, position: 'insideLeft' }}
+                      />
+                      <Tooltip
+                          contentStyle={{
+                          backgroundColor: 'hsl(var(--background) / 0.8)',
+                          borderColor: 'hsl(var(--border))',
+                          backdropFilter: 'blur(4px)',
+                          }}
+                          formatter={(value: number, name: string, props) => [`${Number(value).toFixed(sensorConfig?.decimalPlaces ?? 2)} ${sensorConfig?.unit || ''}`, `${props.payload.name.toFixed(2)}s`]}
+                      />
+                      <Legend verticalAlign="top" height={36} />
+                      {Array.isArray(chartData) ? (
+                          <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name={`${sensorConfig?.name || 'Value'} (${sensorConfig?.unit || 'N/A'})`} dot={false} strokeWidth={2} isAnimationActive={false} />
+                      ) : (
+                          Object.entries(chartData).map(([sessionId, data], index) => {
+                          const session = testSessions?.find(s => s.id === sessionId);
+                          return (
+                              <Line key={sessionId} type="monotone" data={data} dataKey="value" stroke={chartColors[index % chartColors.length]} name={session?.vesselTypeName || sessionId} dot={false} strokeWidth={2} isAnimationActive={false} />
+                          )
+                          })
+                      )}
+                      </LineChart>
+                  </ResponsiveContainer>
+                </div>
                 </div>
             </CardContent>
             </Card>

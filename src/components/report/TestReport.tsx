@@ -42,6 +42,7 @@ interface TestReportProps {
   session: TestSession;
   data: ChartDataPoint[];
   config: SensorConfig;
+  chartImage: string;
 }
 
 const styles = StyleSheet.create({
@@ -112,8 +113,9 @@ const styles = StyleSheet.create({
     marginTop: 10,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    height: 250, // Fixed height for chart area
+    height: 250, 
     padding: 5,
+    backgroundColor: '#FAFAFA'
   },
   table: { 
     display: 'flex', 
@@ -165,7 +167,7 @@ const styles = StyleSheet.create({
 });
 
 
-const TestReport: React.FC<TestReportProps> = ({ session, data, config }) => {
+const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartImage }) => {
     
     const summaryStats = data.reduce((acc, point) => {
         acc.max = Math.max(acc.max, point.value);
@@ -251,7 +253,11 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config }) => {
             <Text style={styles.sectionTitle}>Pressure Curve Graph</Text>
             <Text style={styles.text}>Pressure ({config.unit}) vs. Time (seconds)</Text>
              <View style={styles.chartContainer}>
-                <Text style={{textAlign: 'center', color: 'grey', paddingTop: 100}}>Chart visualization is not supported in PDF generation.</Text>
+                {chartImage ? (
+                    <Image src={chartImage} style={{ width: '100%', height: '100%' }} />
+                ) : (
+                    <Text style={{textAlign: 'center', color: 'grey', paddingTop: 100}}>Chart data unavailable.</Text>
+                )}
             </View>
         </View>
 
@@ -270,5 +276,3 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config }) => {
 };
 
 export default TestReport;
-
-    
