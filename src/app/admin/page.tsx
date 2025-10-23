@@ -1,5 +1,4 @@
 
-
 'use client';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -1800,7 +1799,7 @@ export default function AdminPage() {
                         <DialogHeader>
                             <DialogTitle>Edit Guidelines for "{editingVesselType?.name}"</DialogTitle>
                             <DialogDescription>
-                                Click to add points to create a curve. Drag points to move them. Double-click to delete a point.
+                                Double-click to clear the curve. Click twice to set start and end points, then drag all 4 points to shape the curve.
                             </DialogDescription>
                         </DialogHeader>
                         <div className="grid grid-cols-2 gap-4 py-4">
@@ -1811,6 +1810,8 @@ export default function AdminPage() {
                                     setPoints={setMinCurvePoints}
                                     className="h-64 w-full"
                                     lineColor="hsl(var(--chart-2))"
+                                    maxX={120} 
+                                    maxY={1200}
                                 />
                             </div>
                             <div className="space-y-2">
@@ -1820,6 +1821,8 @@ export default function AdminPage() {
                                     setPoints={setMaxCurvePoints}
                                     className="h-64 w-full"
                                     lineColor="hsl(var(--destructive))"
+                                    maxX={120}
+                                    maxY={1200}
                                 />
                             </div>
                         </div>
@@ -2267,8 +2270,3 @@ export default function AdminPage() {
     </div>
   );
 }
-    
-
-    
-
-    
