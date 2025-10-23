@@ -837,6 +837,14 @@ function TestingComponent() {
             // Reset sensor config if bench changes
             newState.sensorConfigurationId = undefined;
         }
+        if (field === 'batchId') {
+            const batch = batches?.find(b => b.id === value);
+            if (batch) {
+                const vesselType = vesselTypes?.find(vt => vt.id === batch.vesselTypeId);
+                newState.vesselTypeId = vesselType?.id;
+                newState.vesselTypeName = vesselType?.name;
+            }
+        }
         return newState;
     });
   };
@@ -1116,17 +1124,16 @@ function TestingComponent() {
 
         const currentSensorConfig = sensorConfigs?.find(c => c.id === activeTestSession.sensorConfigurationId);
         const currentVesselType = vesselTypes?.find(p => p.id === activeTestSession.vesselTypeId);
+        const currentBatch = batches?.find(b => b.id === activeTestSession.batchId);
         
-        if (!currentSensorConfig || !currentVesselType) {
+        if (!currentSensorConfig || !currentVesselType || !currentBatch) {
             toast({
                 variant: 'destructive',
                 title: 'Report Failed',
-                description: 'Could not find the sensor configuration or vessel type for this session.',
+                description: 'Could not find the sensor config, vessel type, or batch for this session.',
             });
             return;
         }
-
-        const currentBatch = batches?.find(b => b.id === activeTestSession.batchId);
     
         setGeneratingReportFor(activeTestSession.id);
     
@@ -1865,5 +1872,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
