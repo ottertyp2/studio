@@ -1344,7 +1344,7 @@ export default function AdminPage() {
 
     const handleGenerateVesselTypeReport = async (vesselType: VesselType) => {
     if (!firestore || !firebaseApp || !testSessions || !sensorConfigs || !batches) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Required data is not loaded.' });
+      toast({ variant: 'destructive', title: 'Error', description: 'Required data is not loaded. Please wait and try again.' });
       return;
     }
     

@@ -179,7 +179,7 @@ const BatchReport: React.FC<BatchReportProps> = ({ vesselType, sessions, allSens
       return (
           <Document>
               <Page size="A4" style={styles.page}>
-                  <Text>Error: Missing required data for report generation.</Text>
+                  <Text>Error: Missing required data for report generation. Some data collections might not have been loaded before the report was initiated.</Text>
               </Page>
           </Document>
       );
@@ -244,3 +244,5 @@ const BatchReport: React.FC<BatchReportProps> = ({ vesselType, sessions, allSens
 };
 
 export default BatchReport;
+
+    
