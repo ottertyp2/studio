@@ -217,6 +217,8 @@ export default function AdminPage() {
   const [editingVesselType, setEditingVesselType] = useState<VesselType | null>(null);
   const [minCurvePoints, setMinCurvePoints] = useState<GuidelineCurvePoint[]>([]);
   const [maxCurvePoints, setMaxCurvePoints] = useState<GuidelineCurvePoint[]>([]);
+  const [guidelineEditorMaxX, setGuidelineEditorMaxX] = useState(120);
+  const [guidelineEditorMaxY, setGuidelineEditorMaxY] = useState(1200);
   const guidelineImportRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -301,17 +303,15 @@ export default function AdminPage() {
                     [session.id]: snapshot.size,
                 }));
             }, (error) => {
-                // You can add error handling here if needed
                 console.error(`Error fetching data count for session ${session.id}:`, error);
                 setSessionDataCounts(prevCounts => ({
                     ...prevCounts,
-                    [session.id]: prevCounts[session.id] || 0, // Keep existing count or set to 0 on error
+                    [session.id]: prevCounts[session.id] || 0,
                 }));
             });
 
             unsubscribers.push(unsubscribe);
         } else {
-            // If no config found, set count to 0
             setSessionDataCounts(prevCounts => ({
                 ...prevCounts,
                 [session.id]: 0
@@ -319,7 +319,6 @@ export default function AdminPage() {
         }
     });
 
-    // Cleanup function
     return () => {
         unsubscribers.forEach(unsub => unsub());
     };
@@ -388,7 +387,7 @@ export default function AdminPage() {
     
     if (field === 'min' || field === 'max' || field === 'arduinoVoltage') {
         if (value === '') {
-            (newConfig as any)[field] = ''; // Allow empty input in the view
+            (newConfig as any)[field] = '';
         } else {
             const num = parseFloat(value);
             if (!isNaN(num)) {
@@ -412,7 +411,7 @@ export default function AdminPage() {
         return;
     }
     if (tempSensorConfig.mode === 'CUSTOM' && !tempSensorConfig.unit) {
-       tempSensorConfig.unit = 'RAW'; // Default if empty
+       tempSensorConfig.unit = 'RAW';
     }
     if (!firestore || !user) return;
 
@@ -470,23 +469,19 @@ export default function AdminPage() {
 
     const batch = writeBatch(firestore);
 
-    // 1. Find sessions associated with this sensor config
     const sessionsQuery = query(collection(firestore, 'test_sessions'), where('sensorConfigurationId', '==', configId));
     const sessionsSnapshot = await getDocs(sessionsQuery);
     const sessionsToDelete = sessionsSnapshot.docs;
     
-    // 2. Delete all sensor data for the config
     const sensorDataRef = collection(firestore, `sensor_configurations/${configId}/sensor_data`);
     const dataSnapshot = await getDocs(sensorDataRef);
     dataSnapshot.forEach(doc => {
         batch.delete(doc.ref);
     });
 
-    // 3. Delete the sensor config itself
     const configRef = doc(firestore, `sensor_configurations`, configId);
     batch.delete(configRef);
     
-    // 4. Delete the associated sessions
     sessionsToDelete.forEach(sessionDoc => {
       batch.delete(sessionDoc.ref);
     });
@@ -589,7 +584,6 @@ export default function AdminPage() {
 
         const values = sensorData.map(d => d.value);
 
-        // Simple single-point prediction for now, could be expanded to windowed prediction
         const lastValue = values[values.length -1];
         const inputTensor = tf.tensor2d([[lastValue]], [1,1]);
         const { mean, variance } = tf.moments(inputTensor);
@@ -606,7 +600,7 @@ export default function AdminPage() {
 
     } catch (e: any) {
         toast({ variant: 'destructive', title: `AI Classification Failed for ${session.vesselTypeName}`, description: e.message.includes('No model found in IndexedDB') ? `A trained model named "${modelToUse.name}" was not found in your browser.` : e.message});
-        throw e; // re-throw for bulk handler
+        throw e;
     }
   };
 
@@ -628,7 +622,6 @@ export default function AdminPage() {
     for (const session of unclassifiedSessions) {
       try {
         await handleClassifyWithAI(session, bulkClassifyModelId);
-        // Small delay to prevent overwhelming the UI thread and allow toasts to appear
         await new Promise(resolve => setTimeout(resolve, 300));
       } catch (error) {
         console.error(`Failed to classify session ${session.id} (${session.vesselTypeName}):`, error);
@@ -900,7 +893,7 @@ export default function AdminPage() {
                   const baseValue = startValue - (i * baseValueDrop);
                   data.push(baseValue + gaussianNoise(0, 2));
               }
-          } else { // DIFFUSION
+          } else {
               const startValue = 950;
               const endValue = 800;
               const tau = numPoints / 4;
@@ -917,7 +910,7 @@ export default function AdminPage() {
       const leakData = generateData('LEAK', 500);
       const diffusionData = generateData('DIFFUSION', 500);
       
-      await new Promise(res => setTimeout(res, 500)); // Simulate async work
+      await new Promise(res => setTimeout(res, 500));
 
       setAutoTrainingStatus({ step: 'Data Preparation', progress: 30, details: 'Preparing data for training...' });
 
@@ -992,7 +985,7 @@ export default function AdminPage() {
           name: modelName,
           version: '1.0-auto',
           description: `Automatically trained on ${new Date().toLocaleDateString()}. Accuracy: ${finalAccuracy.toFixed(2)}%`,
-          fileSize: 0 // Not easily retrievable from IndexedDB
+          fileSize: 0
       };
 
       addDocumentNonBlocking(mlModelsCollectionRef, modelMetaData);
@@ -1123,6 +1116,18 @@ export default function AdminPage() {
 
     const handleEditVesselGuidelines = (vesselType: VesselType) => {
         setEditingVesselType(vesselType);
+
+        const allPoints = [...(vesselType.minCurve || []), ...(vesselType.maxCurve || [])];
+        if (allPoints.length > 0) {
+            const maxX = Math.max(...allPoints.map(p => p.x));
+            const maxY = Math.max(...allPoints.map(p => p.y));
+            setGuidelineEditorMaxX(Math.ceil(maxX * 1.1));
+            setGuidelineEditorMaxY(Math.ceil(maxY * 1.1));
+        } else {
+            setGuidelineEditorMaxX(120);
+            setGuidelineEditorMaxY(1200);
+        }
+
         setMinCurvePoints(vesselType.minCurve || []);
         setMaxCurvePoints(vesselType.maxCurve || []);
     };
@@ -1799,10 +1804,18 @@ export default function AdminPage() {
                         <DialogHeader>
                             <DialogTitle>Edit Guidelines for "{editingVesselType?.name}"</DialogTitle>
                             <DialogDescription>
-                                Double-click to clear the curve. Click twice to set start and end points, then drag all 4 points to shape the curve.
+                                Double-click a point to clear the curve. Click twice to set start and end points, then drag all 4 points to shape the curve.
                             </DialogDescription>
                         </DialogHeader>
                         <div className="grid grid-cols-2 gap-4 py-4">
+                           <div className="space-y-2">
+                                <Label>Max Time (s)</Label>
+                                <Input type="number" value={guidelineEditorMaxX} onChange={e => setGuidelineEditorMaxX(Number(e.target.value))} />
+                            </div>
+                             <div className="space-y-2">
+                                <Label>Max Pressure</Label>
+                                <Input type="number" value={guidelineEditorMaxY} onChange={e => setGuidelineEditorMaxY(Number(e.target.value))} />
+                            </div>
                             <div className="space-y-2">
                                 <Label>Minimum Curve</Label>
                                 <GuidelineCurveEditor
@@ -1810,8 +1823,8 @@ export default function AdminPage() {
                                     setPoints={setMinCurvePoints}
                                     className="h-64 w-full"
                                     lineColor="hsl(var(--chart-2))"
-                                    maxX={120} 
-                                    maxY={1200}
+                                    maxX={guidelineEditorMaxX} 
+                                    maxY={guidelineEditorMaxY}
                                 />
                             </div>
                             <div className="space-y-2">
@@ -1821,8 +1834,8 @@ export default function AdminPage() {
                                     setPoints={setMaxCurvePoints}
                                     className="h-64 w-full"
                                     lineColor="hsl(var(--destructive))"
-                                    maxX={120}
-                                    maxY={1200}
+                                    maxX={guidelineEditorMaxX}
+                                    maxY={guidelineEditorMaxY}
                                 />
                             </div>
                         </div>
@@ -2270,3 +2283,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    
