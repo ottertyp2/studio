@@ -144,6 +144,7 @@ type VesselType = {
 type Batch = {
     id: string;
     name: string;
+    vesselTypeId: string;
 }
 
 type MLModel = {
@@ -492,10 +493,6 @@ function TestingComponent() {
       toast({variant: 'destructive', title: 'Initialization Error', description: 'Firestore service is not available.'});
       return;
     }
-    if (!tempTestSession.vesselTypeId) {
-      toast({variant: 'destructive', title: 'Input Error', description: 'Please select a Vessel Type.'});
-      return;
-    }
     if (!tempTestSession.batchId) {
       toast({variant: 'destructive', title: 'Input Error', description: 'Please select a Batch.'});
       return;
@@ -528,11 +525,13 @@ function TestingComponent() {
 
     const testSessionsCollectionRef = collection(firestore, 'test_sessions');
     const newSessionId = doc(testSessionsCollectionRef).id;
-    const vesselType = vesselTypes?.find(vt => vt.id === tempTestSession.vesselTypeId);
+    
+    const selectedBatch = batches?.find(b => b.id === tempTestSession.batchId);
+    const vesselType = vesselTypes?.find(vt => vt.id === selectedBatch?.vesselTypeId);
     
     const newSession: TestSession = {
       id: newSessionId,
-      vesselTypeId: tempTestSession.vesselTypeId,
+      vesselTypeId: vesselType?.id || '',
       vesselTypeName: vesselType?.name || 'Unknown',
       batchId: tempTestSession.batchId,
       serialNumber: tempTestSession.serialNumber || '',
@@ -1246,19 +1245,6 @@ function TestingComponent() {
                   </SelectContent>
               </Select>
           </div>
-          <div>
-            <Label htmlFor="vesselTypeId">Vessel Type</Label>
-             <Select value={tempTestSession.vesselTypeId || ''} onValueChange={value => handleTestSessionFieldChange('vesselTypeId', value)}>
-                <SelectTrigger id="vesselTypeId">
-                    <SelectValue placeholder="Select a Vessel Type" />
-                </SelectTrigger>
-                <SelectContent>
-                    {isVesselTypesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                    vesselTypes?.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)
-                    }
-                </SelectContent>
-            </Select>
-          </div>
            <div>
             <Label htmlFor="batchId">Batch</Label>
              <Select value={tempTestSession.batchId || ''} onValueChange={value => handleTestSessionFieldChange('batchId', value)}>
@@ -1288,14 +1274,14 @@ function TestingComponent() {
                     await handleStartNewTestSession({ measurementType: 'ARDUINO' })
                   }} 
                   className="w-full btn-shine bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md"
-                  disabled={!tempTestSession?.vesselTypeId || !tempTestSession.batchId || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId || !!runningTestSession}
+                  disabled={!tempTestSession?.batchId || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId || !!runningTestSession}
               >
                   Start Test Bench Session
               </Button>
             ) : (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button variant="secondary" className="w-full btn-shine shadow-md" disabled={!!runningTestSession || isConnected || !tempTestSession.vesselTypeId || !tempTestSession.batchId || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId}>
+                    <Button variant="secondary" className="w-full btn-shine shadow-md" disabled={!!runningTestSession || isConnected || !tempTestSession.batchId || !tempTestSession.testBenchId || !tempTestSession.sensorConfigurationId}>
                       Start Demo Session
                     </Button>
                   </AlertDialogTrigger>
@@ -1879,3 +1865,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    

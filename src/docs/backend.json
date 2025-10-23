@@ -177,8 +177,7 @@
             "id": { "type": "string", "description": "Unique identifier for the test session." },
             "vesselTypeId": { "type": "string", "description": "Reference to the vessel type being tested." },
             "vesselTypeName": { "type": "string", "description": "The name of the vessel type being tested." },
-            "batchId": { "type": "string", "description": "Reference to the batch." },
-            "serialNumber": { "type": "string", "description": "The serial number of the vessel type instance within the batch." },
+            "serialNumber": { "type": "string", "description": "The serial number of the vessel type instance." },
             "description": { "type": "string", "description": "A description of the test session." },
             "startTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test started." },
             "endTime": { "type": "string", "format": "date-time", "description": "Timestamp when the test ended." },
@@ -189,9 +188,10 @@
             "userId": { "type": "string", "description": "The ID of the user who started the session." },
             "username": { "type": "string", "description": "The username of the user who started the session." },
             "demoOwnerInstanceId": { "type": "string", "description": "A unique ID for the client instance that started a demo session." },
-            "classification": { "type": "string", "enum": ["LEAK", "DIFFUSION"], "description": "The classification of the test result (e.g. Leak, Diffusion)." }
+            "classification": { "type": "string", "enum": ["LEAK", "DIFFUSION"], "description": "The classification of the test result (e.g. Leak, Diffusion)." },
+            "batchId": { "type": "string", "description": "The batch this test belongs to." }
         },
-        "required": ["id", "vesselTypeId", "vesselTypeName", "batchId", "startTime", "status", "testBenchId", "sensorConfigurationId", "measurementType", "userId", "username"]
+        "required": ["id", "vesselTypeId", "vesselTypeName", "startTime", "status", "testBenchId", "sensorConfigurationId", "measurementType", "userId", "username", "batchId"]
     },
     "VesselType": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -232,12 +232,13 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Batch",
       "type": "object",
-      "description": "Represents a production batch.",
+      "description": "Represents a production batch, associated with a Vessel Type.",
       "properties": {
         "id": { "type": "string", "description": "Unique identifier for the batch." },
-        "name": { "type": "string", "description": "The name or identifier of the batch." }
+        "name": { "type": "string", "description": "The name or identifier of the batch." },
+        "vesselTypeId": { "type": "string", "description": "Reference to the Vessel Type this batch belongs to." }
       },
-      "required": ["id", "name"]
+      "required": ["id", "name", "vesselTypeId"]
     },
     "TestBench": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -290,11 +291,10 @@
             "generatedAt": { "type": "string", "format": "date-time", "description": "Timestamp when the report was generated." },
             "downloadUrl": { "type": "string", "format": "uri", "description": "The public URL to download the report PDF from Firebase Storage." },
             "vesselTypeName": { "type": "string", "description": "The name of the vessel type from the session." },
-            "batchId": { "type": "string", "description": "The batch ID from the session." },
             "serialNumber": { "type": "string", "description": "The serial number from the session." },
             "username": { "type": "string", "description": "The username of the user who performed the test." }
         },
-        "required": ["id", "testSessionId", "generatedAt", "downloadUrl", "vesselTypeName", "batchId", "username"]
+        "required": ["id", "testSessionId", "generatedAt", "downloadUrl", "vesselTypeName", "username"]
     }
   },
   "auth": {
@@ -365,15 +365,15 @@
         "definition": {
             "entityName": "VesselType",
             "schema": { "$ref": "#/entities/VesselType" },
-            "description": "Stores all available vessel types and their testing guidelines."
+            "description": "Stores all available vessel types."
         }
       },
-      {
+       {
         "path": "/batches/{batchId}",
         "definition": {
-            "entityName": "Batch",
-            "schema": { "$ref": "#/entities/Batch" },
-            "description": "Stores all available batches."
+          "entityName": "Batch",
+          "schema": { "$ref": "#/entities/Batch" },
+          "description": "Stores all production batches."
         }
       },
       {
@@ -404,3 +404,5 @@
     "reasoning": "This Firestore data structure is designed for a single-user or public-access model. All data is stored in global collections, removing any user-specific paths or ownership. This simplifies data access as there is no user authentication or authorization layer to manage. It's suitable for local testing or a fully public dashboard."
   }
 }
+
+    

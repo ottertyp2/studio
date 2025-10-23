@@ -174,6 +174,7 @@ type VesselType = {
 type Batch = {
     id: string;
     name: string;
+    vesselTypeId: string;
 }
 
 type AutomatedTrainingStatus = {
@@ -1179,24 +1180,32 @@ export default function AdminPage() {
   };
 
   const handleAddBatch = () => {
-    if (!firestore || !newBatch.name?.trim() || !batchesCollectionRef) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Batch name is required.' });
+    if (!firestore || !newBatch.name?.trim() || !newBatch.vesselTypeId || !batchesCollectionRef) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Batch name and Vessel Type are required.' });
       return;
     }
     const newId = doc(collection(firestore, '_')).id;
     const docToSave: Batch = {
       id: newId,
       name: newBatch.name,
+      vesselTypeId: newBatch.vesselTypeId,
     };
     addDocumentNonBlocking(batchesCollectionRef, docToSave);
     toast({ title: 'Batch Added', description: `Added "${docToSave.name}" to the catalog.` });
-    setNewBatch({ name: '' });
+    setNewBatch({ name: '', vesselTypeId: '' });
   };
 
   const handleDeleteBatch = (batchId: string) => {
     if (!firestore) return;
     deleteDocumentNonBlocking(doc(firestore, 'batches', batchId));
     toast({ title: 'Batch Deleted' });
+  };
+  
+  const handleUpdateBatchVesselType = (batchId: string, newVesselTypeId: string) => {
+    if (!firestore || !batchId || !newVesselTypeId) return;
+    const batchRef = doc(firestore, 'batches', batchId);
+    updateDocumentNonBlocking(batchRef, { vesselTypeId: newVesselTypeId });
+    toast({ title: 'Batch Updated', description: 'The associated vessel type has been changed.' });
   };
 
   const handleSaveGuidelines = () => {
@@ -1334,7 +1343,7 @@ export default function AdminPage() {
   };
 
     const handleGenerateVesselTypeReport = async (vesselType: VesselType) => {
-    if (!firestore || !firebaseApp || !testSessions || !sensorConfigs) {
+    if (!firestore || !firebaseApp || !testSessions || !sensorConfigs || !batches) {
       toast({ variant: 'destructive', title: 'Error', description: 'Required data is not loaded.' });
       return;
     }
@@ -1364,7 +1373,7 @@ export default function AdminPage() {
               sessions={relevantSessions}
               allSensorData={allSensorData}
               sensorConfigs={sensorConfigs}
-              batches={batches || []}
+              batches={batches}
           />
       ).toBlob();
 
@@ -1382,7 +1391,7 @@ export default function AdminPage() {
           generatedAt: new Date().toISOString(),
           downloadUrl: downloadUrl,
           vesselTypeName: vesselType.name,
-          serialNumber: 'N/A',
+          serialNumber: 'N/A', // This is a batch report, not for a single serial
           username: user?.displayName || 'admin',
       };
       await setDoc(doc(firestore, 'reports', reportId), reportData);
@@ -2246,7 +2255,7 @@ const renderBatchManagement = () => (
                 <AccordionTrigger className="p-6">
                     <div className="text-left">
                         <CardTitle>Batch Management</CardTitle>
-                        <CardDescription>Create and manage production batches.</CardDescription>
+                        <CardDescription>Create and manage production batches and assign them to vessel types.</CardDescription>
                     </div>
                 </AccordionTrigger>
                 <AccordionContent className="p-6 pt-0">
@@ -2254,34 +2263,56 @@ const renderBatchManagement = () => (
                         <h3 className="font-semibold text-center">New Batch</h3>
                         <div className="space-y-2">
                             <Label htmlFor="new-batch-name">Batch Name/ID</Label>
-                            <Input id="new-batch-name" placeholder="e.g., 2024-Q3-PROD" value={newBatch.name || ''} onChange={(e) => setNewBatch({ name: e.target.value })} />
+                            <Input id="new-batch-name" placeholder="e.g., 2024-Q3-PROD" value={newBatch.name || ''} onChange={(e) => setNewBatch(p => ({ ...p, name: e.target.value }))} />
                         </div>
-                        <Button onClick={handleAddBatch} size="sm" className="w-full mt-2">Add Batch</Button>
+                        <div className="space-y-2">
+                            <Label htmlFor="new-batch-vessel-type">Vessel Type</Label>
+                            <Select onValueChange={(value) => setNewBatch(p => ({ ...p, vesselTypeId: value }))}>
+                                <SelectTrigger id="new-batch-vessel-type">
+                                    <SelectValue placeholder="Select a vessel type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {isVesselTypesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                                    vesselTypes?.map(vt => <SelectItem key={vt.id} value={vt.id}>{vt.name}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <Button onClick={handleAddBatch} size="sm" className="w-full mt-2" disabled={!newBatch.name || !newBatch.vesselTypeId}>Add Batch</Button>
                     </div>
                     {isBatchesLoading ? <p className="text-center pt-10">Loading batches...</p> : (
                         <ScrollArea className="h-64 p-1">
                             <div className="space-y-2">
                                 {batches?.map(b => (
                                     <Card key={b.id} className='p-4 hover:bg-muted/50'>
-                                        <div className='flex justify-between items-center'>
+                                        <div className='flex justify-between items-center gap-2'>
                                             <p className='font-semibold'>{b.name}</p>
-                                            <AlertDialog>
-                                                <AlertDialogTrigger asChild>
-                                                    <Button size="sm" variant="destructive">Delete</Button>
-                                                </AlertDialogTrigger>
-                                                <AlertDialogContent>
-                                                    <AlertDialogHeader>
-                                                        <AlertDialogTitle className="text-destructive">Delete Batch?</AlertDialogTitle>
-                                                        <AlertDialogDescription>
-                                                            Are you sure you want to delete batch "{b.name}"? This action cannot be undone. Associated test sessions will not be deleted.
-                                                        </AlertDialogDescription>
-                                                    </AlertDialogHeader>
-                                                    <AlertDialogFooter>
-                                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                        <AlertDialogAction variant="destructive" onClick={() => handleDeleteBatch(b.id)}>Delete</AlertDialogAction>
-                                                    </AlertDialogFooter>
-                                                </AlertDialogContent>
-                                            </AlertDialog>
+                                            <div className="flex items-center gap-2">
+                                                <Select value={b.vesselTypeId} onValueChange={(newVesselTypeId) => handleUpdateBatchVesselType(b.id, newVesselTypeId)}>
+                                                    <SelectTrigger className="w-[180px] bg-background">
+                                                        <SelectValue placeholder="Assign Vessel Type" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {vesselTypes?.map(vt => <SelectItem key={vt.id} value={vt.id}>{vt.name}</SelectItem>)}
+                                                    </SelectContent>
+                                                </Select>
+                                                <AlertDialog>
+                                                    <AlertDialogTrigger asChild>
+                                                        <Button size="sm" variant="destructive">Delete</Button>
+                                                    </AlertDialogTrigger>
+                                                    <AlertDialogContent>
+                                                        <AlertDialogHeader>
+                                                            <AlertDialogTitle className="text-destructive">Delete Batch?</AlertDialogTitle>
+                                                            <AlertDialogDescription>
+                                                                Are you sure you want to delete batch "{b.name}"? This action cannot be undone. Associated test sessions will not be deleted.
+                                                            </AlertDialogDescription>
+                                                        </AlertDialogHeader>
+                                                        <AlertDialogFooter>
+                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteBatch(b.id)}>Delete</AlertDialogAction>
+                                                        </AlertDialogFooter>
+                                                    </AlertDialogContent>
+                                                </AlertDialog>
+                                            </div>
                                         </div>
                                     </Card>
                                 ))}
@@ -2482,3 +2513,5 @@ const renderBatchManagement = () => (
     </div>
   );
 }
+
+    
