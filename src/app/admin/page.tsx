@@ -298,7 +298,7 @@ export default function AdminPage() {
                 }));
             });
 
-            unscribers.push(unsubscribe);
+            unsubscribers.push(unsubscribe);
         } else {
             // If no config found, set count to 0
             setSessionDataCounts(prevCounts => ({
@@ -2066,3 +2066,5 @@ export default function AdminPage() {
     </div>
   );
 }
+
+    
