@@ -2,7 +2,7 @@
 'use client';
 import { createContext, useContext } from 'react';
 
-type SensorData = {
+export type SensorData = {
   id?: string;
   timestamp: string;
   value: number; 
@@ -20,7 +20,7 @@ export interface TestBenchContextType {
   currentValue: number | null;
   setCurrentValue: React.Dispatch<React.SetStateAction<number | null>>;
   lastDataPointTimestamp: number | null;
-  handleNewDataPoint: (newDataPoint: Omit<SensorData, 'testBenchId'>) => void;
+  handleNewDataPoint: (newDataPoint: SensorData) => void;
   baudRate: number;
   setBaudRate: (rate: number) => void;
   valve1Status: ValveStatus;

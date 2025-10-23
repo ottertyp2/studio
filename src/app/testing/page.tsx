@@ -62,7 +62,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Cog, LogOut, X as XIcon, UserPlus, BrainCircuit, Trash2, PackagePlus, FileText } from 'lucide-react';
+import { Cog, LogOut, X as XIcon, UserPlus, BrainCircuit, Trash2, PackagePlus, FileText, FileSignature, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
@@ -187,7 +187,7 @@ function TestingComponent() {
     currentValue,
     setCurrentValue,
     lastDataPointTimestamp,
-    handleNewDataPoint,
+    handleNewDataPoint: contextHandleNewDataPoint,
     baudRate,
     setBaudRate,
   } = useTestBench();
@@ -277,6 +277,19 @@ function TestingComponent() {
     return collection(firestore, 'batches');
   }, [firestore]);
   const { data: batches, isLoading: isBatchesLoading } = useCollection<Batch>(batchesCollectionRef);
+  
+  const handleNewDataPoint = useCallback((newDataPoint: Omit<SensorData, 'testBenchId' | 'testSessionId'>) => {
+    if (!activeTestBenchId) return;
+    const currentRunningSession = runningTestSessionRef.current;
+  
+    const dataPointWithSession: SensorData = {
+      ...newDataPoint,
+      testBenchId: activeTestBenchId,
+      testSessionId: currentRunningSession?.id
+    };
+  
+    contextHandleNewDataPoint(dataPointWithSession);
+  }, [contextHandleNewDataPoint, activeTestBenchId]);
   
   useEffect(() => {
     if (!isUserLoading && !user) {
@@ -661,7 +674,7 @@ function TestingComponent() {
           const inputTensor = tf.tensor2d(featureMatrix, [featureMatrix.length, 1]);
 
           const { mean, variance } = tf.moments(inputTensor);
-          const normalizedInput = inputTensor.sub(mean).div(tf.sqrt(variance));
+          const normalizedInput = inputTensor.sub(mean).div(variance.sqrt());
 
           const prediction = model.predict(normalizedInput) as tf.Tensor;
           const predictionValue = (await prediction.data())[0];

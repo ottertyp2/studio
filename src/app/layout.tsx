@@ -21,16 +21,16 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <FirebaseClientProvider
-          firebaseApp={firebaseApp}
-          auth={auth}
-          firestore={firestore}
-          storage={storage}
-        >
-          <TestBenchProvider>
+        <TestBenchProvider>
+          <FirebaseClientProvider
+            firebaseApp={firebaseApp}
+            auth={auth}
+            firestore={firestore}
+            storage={storage}
+          >
             {children}
-          </TestBenchProvider>
-        </FirebaseClientProvider>
+          </FirebaseClientProvider>
+        </TestBenchProvider>
         <Toaster />
         <div className="fixed bottom-2 right-2 text-xs text-muted-foreground bg-background/50 backdrop-blur-sm px-2 py-1 rounded-md z-50">
           v{version}
