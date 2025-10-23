@@ -8,16 +8,13 @@ import { doc, onSnapshot, updateDoc, setDoc } from 'firebase/firestore';
 
 export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
-  const { firestore } = useFirebase(); // Use firestore
-  const [isConnected, setIsConnected] = useState(false); // Represents if we are listening to a bench
-  const [baudRate, setBaudRate] = useState<number>(9600); // Kept for type compatibility, but unused
+  const { firestore } = useFirebase();
+  const [isConnected, setIsConnected] = useState(false);
   const [localDataLog, setLocalDataLog] = useState<SensorData[]>([]);
   const [currentValue, setCurrentValue] = useState<number | null>(null);
   const [lastDataPointTimestamp, setLastDataPointTimestamp] = useState<number | null>(null);
-
   const [valve1Status, setValve1Status] = useState<ValveStatus>('OFF');
   const [valve2Status, setValve2Status] = useState<ValveStatus>('OFF');
-
   const activeTestBenchIdRef = useRef<string | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   
@@ -54,7 +51,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   }, [firestore, toast]);
   
   const connectToTestBench = useCallback((testBenchId: string | null) => {
-    // Disconnect from previous listener if it exists
     if (unsubscribeRef.current) {
         unsubscribeRef.current();
         unsubscribeRef.current = null;
@@ -75,14 +71,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             setIsConnected(true);
             const data = snapshot.data();
             
-            // Update sensor value
             if (data.liveSensorValue !== undefined && data.liveSensorValue !== currentValue) {
-                // This is a live data point for UI, not for logging. Logging is done via TestSession
                  setCurrentValue(data.liveSensorValue);
                  setLastDataPointTimestamp(Date.now());
             }
 
-            // Update valve statuses
             if (data.valves?.VALVE1 && data.valves.VALVE1 !== valve1Status) {
                 setValve1Status(data.valves.VALVE1);
             }
@@ -104,18 +97,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     
   }, [firestore, toast, currentValue, valve1Status, valve2Status]);
 
-
-  // Deprecated handleConnect function for compatibility
-  const handleConnect = useCallback(async () => {
-    toast({ title: "Connection Changed", description: "Test bench connection is now managed by selecting a bench from the dropdown on the Testing page."});
-  }, [toast]);
-
-
   useEffect(() => {
     let timeoutId: NodeJS.Timeout | null = null;
     if (lastDataPointTimestamp) {
         timeoutId = setTimeout(() => {
-            if (Date.now() - lastDataPointTimestamp >= 5000) { // Increased timeout for WiFi
+            if (Date.now() - lastDataPointTimestamp >= 5000) {
                 setCurrentValue(null);
             }
         }, 5000);
@@ -129,15 +115,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   const value = {
     isConnected,
-    handleConnect,
     localDataLog,
     setLocalDataLog,
     currentValue,
     setCurrentValue,
     lastDataPointTimestamp,
     handleNewDataPoint,
-    baudRate,
-    setBaudRate,
     valve1Status,
     valve2Status,
     sendValveCommand,
