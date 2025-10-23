@@ -4,19 +4,18 @@ import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { TestBenchContext, ValveStatus, SensorData } from './TestBenchContext';
 import { useFirebase } from '@/firebase';
-import { doc, onSnapshot, updateDoc, setDoc } from 'firebase/firestore';
+import { ref, onValue, set } from 'firebase/database';
 
 export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
-  const { firestore } = useFirebase();
+  const { database } = useFirebase();
   const [isConnected, setIsConnected] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [localDataLog, setLocalDataLog] = useState<SensorData[]>([]);
   const [currentValue, setCurrentValue] = useState<number | null>(null);
   const [lastDataPointTimestamp, setLastDataPointTimestamp] = useState<number | null>(null);
   const [valve1Status, setValve1Status] = useState<ValveStatus>('OFF');
   const [valve2Status, setValve2Status] = useState<ValveStatus>('OFF');
-  const activeTestBenchIdRef = useRef<string | null>(null);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
   
   const handleNewDataPoint = useCallback((newDataPoint: SensorData) => {
     setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
@@ -25,85 +24,84 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
-    if (!firestore || !activeTestBenchIdRef.current) {
-        toast({ variant: 'destructive', title: 'Not Connected', description: 'No test bench is being monitored.' });
+    if (!database) {
+        toast({ variant: 'destructive', title: 'Not Connected', description: 'Database service is not available.' });
         return;
     }
-
+    const commandPath = valve === 'VALVE1' ? 'commands/valve1' : 'commands/valve2';
+    
     // Optimistic UI update
-    if (valve === 'VALVE1') {
-      setValve1Status(state);
-    } else {
-      setValve2Status(state);
-    }
+    if (valve === 'VALVE1') setValve1Status(state);
+    else setValve2Status(state);
 
     try {
-        const benchRef = doc(firestore, 'testbenches', activeTestBenchIdRef.current);
-        const commandPath = `commands.${valve}`;
-        await updateDoc(benchRef, { [commandPath]: state });
+        await set(ref(database, commandPath), state === 'ON');
     } catch (error: any) {
         console.error('Failed to send command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
-         // Revert UI on failure
+        // Revert UI on failure
         if (valve === 'VALVE1') setValve1Status(state === 'ON' ? 'OFF' : 'ON');
         else setValve2Status(state === 'ON' ? 'OFF' : 'ON');
     }
-  }, [firestore, toast]);
-  
-  const connectToTestBench = useCallback((testBenchId: string | null) => {
-    if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-        unsubscribeRef.current = null;
-    }
-    
-    activeTestBenchIdRef.current = null;
-    setIsConnected(false);
-    setCurrentValue(null);
-    setLastDataPointTimestamp(null);
-    
-    if (!firestore || !testBenchId) {
+  }, [database, toast]);
+
+  const sendRecordingCommand = useCallback(async (shouldRecord: boolean) => {
+      if (!database) {
+        toast({ variant: 'destructive', title: 'Not Connected', description: 'Database service is not available.' });
         return;
-    }
+      }
+      try {
+        await set(ref(database, 'commands/recording'), shouldRecord);
+        toast({ title: `Recording ${shouldRecord ? 'started' : 'stopped'}` });
+      } catch (error: any) {
+        console.error('Failed to send recording command:', error);
+        toast({ variant: 'destructive', title: 'Recording Command Failed', description: error.message });
+      }
+  }, [database, toast]);
+
+  useEffect(() => {
+    if (!database) return;
+
+    const unsubscribers: (() => void)[] = [];
     
-    activeTestBenchIdRef.current = testBenchId;
-    const benchRef = doc(firestore, 'testbenches', testBenchId);
+    // Firebase connection status
+    const connectedRef = ref(database, '.info/connected');
+    unsubscribers.push(onValue(connectedRef, (snap) => {
+        const connected = snap.val() === true;
+        setIsConnected(connected);
+    }));
 
-    const unsubscribe = onSnapshot(benchRef, (snapshot) => {
-        if (snapshot.exists()) {
-            setIsConnected(true);
-            const data = snapshot.data();
-            
-            if (data.liveSensorValue !== undefined) {
-                 // Create a full SensorData object to pass to handleNewDataPoint
-                 const newDataPoint: SensorData = {
-                    value: data.liveSensorValue,
-                    timestamp: new Date().toISOString(),
-                    testBenchId: testBenchId,
-                    // testSessionId will be added in the testing page if a session is running
-                 };
-                 handleNewDataPoint(newDataPoint);
-            }
-
-            if (data.valves?.VALVE1 && data.valves.VALVE1 !== valve1Status) {
-                setValve1Status(data.valves.VALVE1);
-            }
-             if (data.valves?.VALVE2 && data.valves.VALVE2 !== valve2Status) {
-                setValve2Status(data.valves.VALVE2);
-            }
-
-        } else {
-            setIsConnected(false);
-            toast({ variant: 'destructive', title: 'Connection Lost', description: 'The selected test bench does not exist.' });
+    // Live sensor data
+    const liveSensorRef = ref(database, 'live/sensor');
+    unsubscribers.push(onValue(liveSensorRef, (snap) => {
+        const sensorValue = snap.val();
+        if (sensorValue !== null) {
+            handleNewDataPoint({ value: sensorValue, timestamp: new Date().toISOString() });
         }
-    }, (error) => {
-        console.error("Firestore snapshot error:", error);
-        setIsConnected(false);
-        toast({ variant: 'destructive', title: 'Connection Error', description: 'Could not listen to test bench updates.' });
-    });
+    }));
 
-    unsubscribeRef.current = unsubscribe;
-    
-  }, [firestore, toast, handleNewDataPoint, valve1Status, valve2Status]);
+    // Live valve statuses
+    const valve1Ref = ref(database, 'live/valve1');
+    unsubscribers.push(onValue(valve1Ref, (snap) => {
+        setValve1Status(snap.val() ? 'ON' : 'OFF');
+    }));
+
+    const valve2Ref = ref(database, 'live/valve2');
+    unsubscribers.push(onValue(valve2Ref, (snap) => {
+        setValve2Status(snap.val() ? 'ON' : 'OFF');
+    }));
+
+    // Live recording status
+    const recordingRef = ref(database, 'live/recording');
+    unsubscribers.push(onValue(recordingRef, (snap) => {
+        setIsRecording(snap.val() === true);
+    }));
+
+    return () => {
+        unsubscribers.forEach(unsub => unsub());
+    };
+  }, [database, handleNewDataPoint]);
+
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout | null = null;
@@ -123,6 +121,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   const value = {
     isConnected,
+    isRecording,
     localDataLog,
     setLocalDataLog,
     currentValue,
@@ -132,7 +131,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     valve1Status,
     valve2Status,
     sendValveCommand,
-    connectToTestBench
+    sendRecordingCommand,
   };
 
   return (

@@ -6,6 +6,7 @@ import { FirebaseApp } from 'firebase/app';
 import { Firestore } from 'firebase/firestore';
 import { Auth } from 'firebase/auth';
 import { FirebaseStorage } from 'firebase/storage';
+import { Database } from 'firebase/database';
 import { FirebaseProvider } from './provider';
 
 interface FirebaseClientProviderProps {
@@ -14,6 +15,7 @@ interface FirebaseClientProviderProps {
   firestore: Firestore;
   auth: Auth;
   storage: FirebaseStorage;
+  database: Database;
 }
 
 /**
@@ -26,6 +28,7 @@ export const FirebaseClientProvider: React.FC<FirebaseClientProviderProps> = ({
   firestore,
   auth,
   storage,
+  database,
 }) => {
   return (
     <FirebaseProvider
@@ -33,6 +36,7 @@ export const FirebaseClientProvider: React.FC<FirebaseClientProviderProps> = ({
       firestore={firestore}
       auth={auth}
       storage={storage}
+      database={database}
     >
       {children}
     </FirebaseProvider>

@@ -7,13 +7,13 @@ export type SensorData = {
   timestamp: string;
   value: number; 
   testSessionId?: string;
-  testBenchId: string;
 };
 
 export type ValveStatus = 'ON' | 'OFF';
 
 export interface TestBenchContextType {
   isConnected: boolean;
+  isRecording: boolean;
   localDataLog: SensorData[];
   setLocalDataLog: React.Dispatch<React.SetStateAction<SensorData[]>>;
   currentValue: number | null;
@@ -23,7 +23,7 @@ export interface TestBenchContextType {
   valve1Status: ValveStatus;
   valve2Status: ValveStatus;
   sendValveCommand: (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => Promise<void>;
-  connectToTestBench: (testBenchId: string | null) => void; // Manages Firestore connection
+  sendRecordingCommand: (shouldRecord: boolean) => Promise<void>;
 }
 
 export const TestBenchContext = createContext<TestBenchContextType | undefined>(undefined);

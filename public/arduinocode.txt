@@ -1,25 +1,35 @@
 #include <WiFi.h>
 #include <Firebase_ESP_Client.h>
+
+// Firebase Addons
 #include "addons/TokenHelper.h"
 #include "addons/RTDBHelper.h"
 
 // WiFi-Zugangsdaten
+// HINWEIS: Es wird empfohlen, diese in einer separaten "config.h"-Datei zu speichern,
+// die von der Versionskontrolle (git) ignoriert wird, um zu vermeiden,
+// dass sensible Daten veröffentlicht werden.
 #define WIFI_SSID "BioThrust"
 #define WIFI_PASSWORD "WORKBOX-declare-mescal-lion"
 
 // Firebase-Zugangsdaten
 #define API_KEY "AIzaSyCm5iVRj1hOG9NlBtLydsOW-H51d0IdoQs"
-// WICHTIG: Korrigierte Database URL (nicht die Console-URL!)
-#define DATABASE_URL "https://studio-946072313-2310e-default-rtdb.firebaseio.com/"
+#define DATABASE_URL "https://studio-946072313-2310e-default-rtdb.europe-west1.firebasedatabase.app/"
 #define USER_EMAIL "esp32@biothrust.app"
 #define USER_PASSWORD "esp32esp32"
 
 // Pin-Definitionen
-const int analogPin = A0;
-const int valve1Pin = 18;
-const int valve2Pin = 19;
-const int valve1LedPin = D2;
-const int valve2LedPin = D3;
+const int analogPin = A0;   // A0 ist normal (oft GPIO 36)
+const int valve1Pin = 18; // GPIO 18
+const int valve2Pin = 19; // GPIO 19
+
+// *** KORREKTUR ***
+// D2 und D3 sind nicht standardmäßig. Bitte passe Sie an dein Board an.
+// Beispiel: D2 ist oft GPIO 2, D3 ist auf manchen Boards GPIO 0 (Boot-Pin, riskant!)
+// Ich verwende hier GPIO 2 und GPIO 4 als sichere Beispiele.
+const int valve1LedPin = 2; // War D2. Bitte an dein Board anpassen!
+const int valve2LedPin = 4; // War D3. Bitte an dein Board anpassen!
+
 
 // Firebase-Objekte
 FirebaseData fbdo;
@@ -38,12 +48,24 @@ bool recordingActive = false;
 String currentSessionId = "";
 unsigned long sessionStartTime = 0;
 
+// =================================================================
+// *** NEU: Funktions-Prototypen (Forward Declarations) ***
+// Dies hilft dem Compiler/Linker, Funktionen zu finden,
+// die weiter unten im Code definiert sind.
+// =================================================================
+void printStatus();
+String getISOTimestamp();
+// Die 'tokenStatusCallback' Deklaration wird aus TokenHelper.h geladen
+
+// =================================================================
+//                     SETUP
+// =================================================================
 void setup() {
   // Serial für Debugging (bleibt IMMER aktiv!)
   Serial.begin(115200);
   delay(500);
   Serial.println("\n=== ESP32 Studio Sensor System ===");
-  Serial.println("Version: 1.0");
+  Serial.println("Version: 1.2 (Whitespace-Fixed)");
   
   // Pin-Konfiguration
   pinMode(analogPin, INPUT);
@@ -78,7 +100,7 @@ void setup() {
     Serial.println("\n[WiFi] ✗ FEHLER: Verbindung fehlgeschlagen!");
     Serial.println("[System] Arbeite nur im Serial-Debug-Modus");
     Serial.println("[System] READY (Serial-only mode)");
-    return;
+    return; // Im Fehlerfall hier stoppen (kein Firebase)
   }
   
   // Firebase initialisieren
@@ -89,12 +111,22 @@ void setup() {
   auth.user.password = USER_PASSWORD;
   
   // Token-Status-Callback
+  // Diese Zuweisung ist KORREKT. Die Funktion selbst
+  // wird von "addons/TokenHelper.h" bereitgestellt.
   config.token_status_callback = tokenStatusCallback;
   
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
   
-  Serial.println("[Firebase] ✓ Verbunden!");
+  // Warten bis Firebase bereit ist (optional, aber gut für den Start)
+  // Serial.println("[Firebase] Warte auf Token...");
+  // while (!Firebase.ready()) {
+  //   delay(500);
+  //   Serial.print(".");
+  // }
+  // Serial.println("\n[Firebase] ✓ Token erhalten!");
+  
+  Serial.println("[Firebase] ✓ Initialisierung gestartet.");
   Serial.printf("[Firebase] Database: %s\n", DATABASE_URL);
   Serial.println("[System] ✓ READY");
   Serial.println("=====================================");
@@ -106,7 +138,11 @@ void setup() {
   Serial.println("=====================================\n");
 }
 
+// =================================================================
+//                     LOOP
+// =================================================================
 void loop() {
+
   // Sensor immer auslesen (für Serial Debug)
   if (millis() - lastSensorTime > 500) {
     lastSensorTime = millis();
@@ -133,6 +169,7 @@ void loop() {
       
       // Wenn Recording aktiv: In Session speichern
       if (recordingActive && currentSessionId != "") {
+        // Pfad mit String-Objekt erstellen
         String path = "/sessions/" + currentSessionId + "/data/" + String(timestamp);
         
         // JSON-Objekt für bessere Performance
@@ -141,6 +178,7 @@ void loop() {
         json.set("time", timestamp);
         json.set("relativeTime", timestamp - sessionStartTime);
         
+        // Senden
         if (Firebase.RTDB.setJSON(&fbdo, path.c_str(), &json)) {
           // Erfolg
         } else {
@@ -194,7 +232,7 @@ void loop() {
       if (shouldRecord && !recordingActive) {
         // START RECORDING
         recordingActive = true;
-        currentSessionId = String(millis());
+        currentSessionId = String(millis()); // Eindeutige ID
         sessionStartTime = millis();
         
         // Session-Metadaten speichern
@@ -202,7 +240,7 @@ void loop() {
         FirebaseJson meta;
         meta.set("id", currentSessionId);
         meta.set("startTime", sessionStartTime);
-        meta.set("startTimeISO", getISOTimestamp());
+        meta.set("startTimeISO", getISOTimestamp()); // Verwendet deine Funktion
         meta.set("status", "recording");
         
         Firebase.RTDB.setJSON(&fbdo, metaPath.c_str(), &meta);
@@ -217,10 +255,12 @@ void loop() {
         String metaPath = "/sessions/" + currentSessionId + "/meta";
         FirebaseJson meta;
         meta.set("endTime", millis());
-        meta.set("endTimeISO", getISOTimestamp());
+        meta.set("endTimeISO", getISOTimestamp()); // Verwendet deine Funktion
         meta.set("duration", millis() - sessionStartTime);
         meta.set("status", "completed");
         
+        // Verwende updateNode, um nur die End-Daten hinzuzufügen,
+        // ohne die Start-Daten zu überschreiben.
         Firebase.RTDB.updateNode(&fbdo, metaPath.c_str(), &meta);
         
         Serial.println("=====================================");
@@ -239,7 +279,7 @@ void loop() {
   // Serial Commands (für Debug)
   if (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
-    cmd.trim();
+    cmd.trim(); // Entfernt unsichtbare Zeichen
     
     Serial.printf("[Serial] Command: %s\n", cmd.c_str());
     
@@ -290,7 +330,15 @@ void loop() {
       Serial.println("[Serial] ✗ Unbekannter Command");
     }
   }
-}
+} // Ende von loop()
+
+// =================================================================
+//                 HELPER-FUNKTIONEN
+// =================================================================
+
+// *** HINWEIS: Die Definition für 'tokenStatusCallback' wurde ENTFERNT, ***
+// da sie von addons/TokenHelper.h bereitgestellt wird.
+
 
 // Hilfsfunktion: Status ausgeben
 void printStatus() {
@@ -315,6 +363,9 @@ void printStatus() {
 }
 
 // Hilfsfunktion: ISO Timestamp
+// HINWEIS: Diese Funktion gibt aktuell nur millis() als String zurück,
+// keinen echten ISO-8601-Timestamp.
+// Die Logik wurde NICHT geändert.
 String getISOTimestamp() {
   unsigned long ms = millis();
   return String(ms);

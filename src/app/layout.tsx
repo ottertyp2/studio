@@ -15,7 +15,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const { firebaseApp, firestore, auth, storage } = initializeFirebase();
+  const { firebaseApp, firestore, auth, storage, database } = initializeFirebase();
   const version = packageJson.version;
 
   return (
@@ -26,6 +26,7 @@ export default function RootLayout({
           auth={auth}
           firestore={firestore}
           storage={storage}
+          database={database}
         >
           <TestBenchProvider>
             {children}
