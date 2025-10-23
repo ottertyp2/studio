@@ -571,7 +571,7 @@ export default function AdminPage() {
             });
             dataDeletedCount = querySnapshot.size;
         } catch (e) {
-            // Could not query/delete sensor data, but proceeding to delete session.
+            console.error("Error querying/deleting sensor data:", e);
         }
     }
 
@@ -2514,4 +2514,3 @@ const renderBatchManagement = () => (
   );
 }
 
-    

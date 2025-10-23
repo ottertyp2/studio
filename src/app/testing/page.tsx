@@ -182,12 +182,11 @@ function TestingComponent() {
 
   const {
     isConnected,
-    isRecording,
     localDataLog,
     setLocalDataLog,
     currentValue,
     sendValveCommand,
-    sendRecordingCommand,
+    setRunningTestSession,
   } = useTestBench();
 
   const preselectedSessionId = searchParams.get('sessionId');
@@ -203,7 +202,6 @@ function TestingComponent() {
 
   const [chartInterval, setChartInterval] = useState<string>("60");
   
-  const runningTestSessionRef = useRef<TestSession | null>(null);
   const instanceId = useRef(crypto.randomUUID()).current;
 
   const importFileRef = useRef<HTMLInputElement>(null);
@@ -304,7 +302,6 @@ function TestingComponent() {
       setEditingSessionId(preselectedSessionId);
       setSelectedSessionIds([preselectedSessionId]);
       setChartInterval('all');
-      setActiveTab('analysis');
     }
   }, [preselectedSessionId]);
 
@@ -325,9 +322,9 @@ function TestingComponent() {
 
   const runningTestSession = useMemo(() => {
     const session = testSessions?.find(s => s.status === 'RUNNING') || null;
-    runningTestSessionRef.current = session;
+    setRunningTestSession(session ? { id: session.id, sensorConfigurationId: session.sensorConfigurationId } : null);
     return session;
-  }, [testSessions]);
+  }, [testSessions, setRunningTestSession]);
 
   const stopDemoMode = useCallback(() => {
     if (demoIntervalRef.current) {
@@ -347,7 +344,6 @@ function TestingComponent() {
       
       const sessionRef = doc(firestore, `test_sessions`, sessionId);
       await updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
-      runningTestSessionRef.current = null;
   
       toast({ title: 'Test Session Ended' });
   }, [firestore, stopDemoMode, testSessions, toast]);
@@ -384,7 +380,10 @@ function TestingComponent() {
   }, [sensorConfigs, activeSensorConfigId, runningTestSession]);
 
     useEffect(() => {
-    if (!firestore || selectedSessionIds.length === 0) return;
+    if (!firestore || selectedSessionIds.length === 0) {
+      setSessionData({});
+      return;
+    };
 
     const unsubscribers = selectedSessionIds.map(sessionId => {
       const configId = testSessions?.find(s => s.id === sessionId)?.sensorConfigurationId;
@@ -587,7 +586,9 @@ function TestingComponent() {
     let value = 950;
     
     demoIntervalRef.current = setInterval(() => {
-        if (!runningTestSessionRef.current || runningTestSessionRef.current.id !== session.id || runningTestSessionRef.current.status !== 'RUNNING') {
+        // This check is now redundant because `setRunningTestSession` in `runningTestSession` useMemo will clear the session
+        // However, it's good defensive programming
+        if (!runningTestSession || runningTestSession.status !== 'RUNNING') {
             stopDemoMode();
             return;
         }
@@ -607,8 +608,8 @@ function TestingComponent() {
             testSessionId: session.id,
         };
 
-        if (firestore && runningTestSessionRef.current) {
-            const dataRef = collection(firestore, `sensor_configurations/${runningTestSessionRef.current.sensorConfigurationId}/sensor_data`);
+        if (firestore) {
+            const dataRef = collection(firestore, `sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
             addDocumentNonBlocking(dataRef, newDataPoint);
         }
 
@@ -662,12 +663,12 @@ function TestingComponent() {
   
     let visibleData: SensorData[];
     if (runningTestSession) {
-      visibleData = allChronologicalData;
+      visibleData = localDataLog;
     } else {
       if (selectedSessionIds.length === 1) {
         visibleData = sessionData[selectedSessionIds[0]] || [];
       } else {
-        visibleData = localDataLog;
+        visibleData = [];
       }
     }
   
@@ -829,6 +830,77 @@ function TestingComponent() {
     return 'Offline';
   }, [isConnected, currentValue, runningTestSession]);
 
+  const handleGenerateReport = async () => {
+    if (!activeTestSession || !sensorConfig || !firebaseApp) {
+        toast({variant: 'destructive', title: 'Cannot Generate Report', description: 'Missing session or configuration data.'});
+        return;
+    }
+
+    if (!Array.isArray(chartData) || chartData.length === 0) {
+        toast({variant: 'destructive', title: 'Cannot Generate Report', description: 'No data points available for this session.'});
+        return;
+    }
+
+    const currentVesselType = vesselTypes?.find(vt => vt.id === activeTestSession.vesselTypeId);
+    const currentBatch = batches?.find(b => b.id === activeTestSession.batchId);
+
+    setGeneratingReportFor(activeTestSession.id);
+    
+    try {
+        const svgElement = chartRef.current?.querySelector('svg');
+        if (!svgElement) {
+            toast({variant: 'destructive', title: 'Report Generation Failed', description: 'Could not find the chart SVG to include in the report.'});
+            setGeneratingReportFor(null);
+            return;
+        }
+        
+        const svgString = new XMLSerializer().serializeToString(svgElement);
+        const chartImage = `data:image/svg+xml;base64,${btoa(svgString)}`;
+
+        const blob = await pdf(
+            <TestReport 
+                session={activeTestSession} 
+                data={chartData}
+                config={sensorConfig}
+                chartImage={chartImage}
+                vesselType={currentVesselType}
+                batch={currentBatch}
+            />
+        ).toBlob();
+        
+        const storage = getStorage(firebaseApp);
+        const reportId = doc(collection(firestore, '_')).id;
+        const filePath = `reports/${activeTestSession.id}/${reportId}.pdf`;
+        const fileRef = storageRef(storage, filePath);
+        
+        await uploadBytes(fileRef, blob);
+        const downloadUrl = await getDownloadURL(fileRef);
+
+        const reportData = {
+            id: reportId,
+            testSessionId: activeTestSession.id,
+            generatedAt: new Date().toISOString(),
+            downloadUrl: downloadUrl,
+            vesselTypeName: activeTestSession.vesselTypeName,
+            batchId: activeTestSession.batchId,
+            serialNumber: activeTestSession.serialNumber,
+            username: activeTestSession.username,
+        };
+
+        if (firestore) {
+            await setDoc(doc(firestore, 'reports', reportId), reportData);
+        }
+        
+        toast({title: 'Report Generated', description: 'The PDF report has been created and saved.'});
+
+    } catch (e: any) {
+        toast({variant: 'destructive', title: 'Report Generation Failed', description: e.message});
+    } finally {
+        setGeneratingReportFor(null);
+    }
+  };
+
+
     const renderSessionControl = () => {
         if (runningTestSession) {
             return (
@@ -927,23 +999,15 @@ function TestingComponent() {
         <CardContent className="space-y-4">
             <div className="flex flex-wrap items-center justify-center gap-4">
               <Button onClick={handleExportCSV} variant="outline" disabled={isSyncing}>Export Chart Data (CSV)</Button>
-              <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                  <Button variant="destructive" className="ml-4" disabled={!runningTestSession}>Clear Live Data</Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                  <AlertDialogHeader>
-                      <AlertDialogTitle className="text-destructive">Clear Live Data?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                      This will only clear the temporary live data buffer from your screen. It will not affect saved sessions.
-                      </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction variant="destructive" onClick={handleClearData}>Confirm Clear</AlertDialogAction>
-                  </AlertDialogFooter>
-                  </AlertDialogContent>
-              </AlertDialog>
+              {activeTestSession && activeTestSession.status === 'COMPLETED' && (
+                <Button 
+                    onClick={handleGenerateReport}
+                    disabled={generatingReportFor === activeTestSession.id}
+                >
+                    <FileSignature className="mr-2 h-4 w-4" />
+                    {generatingReportFor === activeTestSession.id ? 'Generating...' : 'Generate Report'}
+                </Button>
+              )}
             </div>
             <div className="border-t pt-4">
                 <h3 className="text-lg font-semibold text-center mb-2">Past Sessions</h3>
@@ -1199,7 +1263,7 @@ function TestingComponent() {
                         </TableRow>
                         </TableHeader>
                         <TableBody>
-                        {[...dataLog].reverse().slice(0, 100).map((entry: any, index: number) => (
+                        {(runningTestSession ? localDataLog : dataLog).reverse().slice(0, 100).map((entry: any, index: number) => (
                             <TableRow key={entry.id || index}>
                             <TableCell>{new Date(entry.timestamp).toLocaleTimeString('en-US')}</TableCell>
                             <TableCell className="text-right">{sensorConfig ? convertRawValue(entry.value, sensorConfig).toFixed(sensorConfig.decimalPlaces) : entry.value}</TableCell>

@@ -5,13 +5,12 @@ import { useToast } from '@/hooks/use-toast';
 import { TestBenchContext, ValveStatus, SensorData } from './TestBenchContext';
 import { useFirebase, addDocumentNonBlocking } from '@/firebase';
 import { ref, onValue, set } from 'firebase/database';
-import { collection, doc } from 'firebase/firestore';
+import { collection } from 'firebase/firestore';
 
 export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
   const { database, firestore } = useFirebase();
   const [isConnected, setIsConnected] = useState(false);
-  const [isRecording, setIsRecording] = useState(false); // This will be derived from runningTestSession now
   const [localDataLog, setLocalDataLog] = useState<SensorData[]>([]);
   const [currentValue, setCurrentValue] = useState<number | null>(null);
   const [lastDataPointTimestamp, setLastDataPointTimestamp] = useState<number | null>(null);
@@ -25,21 +24,17 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setLastDataPointTimestamp(Date.now());
     
     // If a session is running, add to its local log and save to Firestore
-    if (runningTestSessionRef.current) {
+    if (runningTestSessionRef.current && firestore) {
         const sessionPoint = { ...newDataPoint, testSessionId: runningTestSessionRef.current.id };
         setLocalDataLog(prevLog => [sessionPoint, ...prevLog].slice(0, 1000));
         
-        if (firestore) {
-            const dataRef = collection(firestore, `sensor_configurations/${runningTestSessionRef.current.sensorConfigurationId}/sensor_data`);
-            addDocumentNonBlocking(dataRef, sessionPoint);
-        }
+        const dataRef = collection(firestore, `sensor_configurations/${runningTestSessionRef.current.sensorConfigurationId}/sensor_data`);
+        addDocumentNonBlocking(dataRef, sessionPoint);
     }
   }, [firestore]);
   
-  // This effect will be triggered by an external component (testing page) now
   const setRunningTestSession = (session: {id: string, sensorConfigurationId: string} | null) => {
       runningTestSessionRef.current = session;
-      setIsRecording(!!session);
       if (session) {
           setLocalDataLog([]); // Clear log for new session
       }
@@ -68,9 +63,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [database, toast]);
 
-  // This function is no longer needed as recording is tied to Firestore sessions
   const sendRecordingCommand = useCallback(async (shouldRecord: boolean) => {
       console.warn("sendRecordingCommand is deprecated. Recording is now handled via Firestore test sessions.");
+      // This function is kept for type safety but is no longer used for core logic.
   }, []);
 
   useEffect(() => {
@@ -104,12 +99,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     unsubscribers.push(onValue(valve2Ref, (snap) => {
         setValve2Status(snap.val() ? 'ON' : 'OFF');
     }));
-
-    // The RTDB recording status is no longer the source of truth, but we can listen to it for debug/info
-    const recordingRef = ref(database, 'live/recording');
-    unsubscribers.push(onValue(recordingRef, (snap) => {
-        // We don't set our internal `isRecording` state from this anymore.
-    }));
     
 
     return () => {
@@ -136,7 +125,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   const value = {
     isConnected,
-    isRecording,
+    isRecording: !!runningTestSessionRef.current, // isRecording is derived from whether a session is running
     localDataLog,
     setLocalDataLog,
     currentValue,
@@ -147,7 +136,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     valve2Status,
     sendValveCommand,
     sendRecordingCommand,
-    setRunningTestSession, // Expose this to the testing page
+    setRunningTestSession,
   };
 
   return (

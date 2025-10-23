@@ -24,7 +24,7 @@ export interface TestBenchContextType {
   valve1Status: ValveStatus;
   valve2Status: ValveStatus;
   sendValveCommand: (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => Promise<void>;
-  sendRecordingCommand: (shouldRecord: boolean) => Promise<void>; // Kept for type safety, but deprecated
+  sendRecordingCommand: (shouldRecord: boolean) => Promise<void>;
   setRunningTestSession: (session: {id: string, sensorConfigurationId: string} | null) => void;
 }
 
