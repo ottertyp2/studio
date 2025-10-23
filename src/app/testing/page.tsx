@@ -62,17 +62,20 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Cog, LogOut, X as XIcon, UserPlus, BrainCircuit, Trash2, PackagePlus } from 'lucide-react';
+import { Cog, LogOut, X as XIcon, UserPlus, BrainCircuit, Trash2, PackagePlus, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
 import * as tf from '@tensorflow/tfjs';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc, useUser } from '@/firebase';
 import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc, orderBy, deleteDoc } from 'firebase/firestore';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { signOut } from '@/firebase/non-blocking-login';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { convertRawValue } from '@/lib/utils';
 import { useTestBench } from '@/context/TestBenchContext';
+import { PDFDownloadLink } from '@react-pdf/renderer';
+import TestReport from '@/components/report/TestReport';
 
 
 type SensorData = {
@@ -153,7 +156,7 @@ function TestingComponent() {
   const { toast } = useToast();
   
   const { user, userRole, isUserLoading } = useUser();
-  const { firestore, auth } = useFirebase();
+  const { firestore, auth, firebaseApp } = useFirebase();
 
   const {
     isConnected,
@@ -208,6 +211,7 @@ function TestingComponent() {
   const frozenDataRef = useRef<SensorData[]>();
   
   const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
+  const [generatingReportFor, setGeneratingReportFor] = useState<string | null>(null);
 
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
@@ -1069,6 +1073,47 @@ function TestingComponent() {
     };
   }, [lastDataPointTimestamp, setCurrentValue]);
 
+    const handleGenerateReport = useCallback(async (blob: Blob | null) => {
+        if (!blob || !activeTestSession || !firestore || !firebaseApp) return;
+
+        setGeneratingReportFor(activeTestSession.id);
+        const storage = getStorage(firebaseApp);
+        const reportId = doc(collection(firestore, '_')).id;
+        const filePath = `reports/${activeTestSession.id}/${reportId}.pdf`;
+        const fileRef = storageRef(storage, filePath);
+
+        try {
+            const snapshot = await uploadBytes(fileRef, blob);
+            const downloadUrl = await getDownloadURL(snapshot.ref);
+
+            const reportData = {
+                id: reportId,
+                testSessionId: activeTestSession.id,
+                generatedAt: new Date().toISOString(),
+                downloadUrl: downloadUrl,
+                vesselTypeName: activeTestSession.vesselTypeName,
+                serialNumber: activeTestSession.serialNumber,
+                username: activeTestSession.username,
+            };
+
+            await setDoc(doc(firestore, 'reports', reportId), reportData);
+
+            toast({
+                title: 'Report Generated & Saved',
+                description: 'The PDF report has been successfully stored in the cloud.',
+            });
+
+        } catch (e: any) {
+            console.error("Report generation/upload failed: ", e);
+            toast({
+                variant: 'destructive',
+                title: 'Report Failed',
+                description: 'Could not upload the report to Firebase Storage. Check your storage rules.',
+            });
+        } finally {
+            setGeneratingReportFor(null);
+        }
+    }, [activeTestSession, firestore, firebaseApp, toast]);
   
   const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
   const displayDecimals = sensorConfig?.decimalPlaces ?? 0;
@@ -1344,6 +1389,24 @@ function TestingComponent() {
                       <Button onClick={handleAiAnalysis} disabled={isAnalyzing || !selectedAnalysisModelName || dataLog.length === 0} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
                           {isAnalyzing ? 'Analyzing...' : 'Analyze with AI'}
                       </Button>
+                      
+                    {activeTestSession && sensorConfig && (
+                        <PDFDownloadLink
+                            document={<TestReport session={activeTestSession} data={chartData as any[]} config={sensorConfig} />}
+                            fileName={`report-${activeTestSession.id}.pdf`}
+                        >
+                            {({ blob, url, loading, error }) => {
+                                if (!loading && blob) {
+                                    handleGenerateReport(blob);
+                                }
+                                return (
+                                    <Button variant="outline" disabled={loading || !!generatingReportFor}>
+                                        {generatingReportFor === activeTestSession.id ? 'Saving Report...' : loading ? 'Generating Report...' : 'Generate & Save Report'}
+                                    </Button>
+                                )
+                            }}
+                        </PDFDownloadLink>
+                    )}
                   </div>
                   {aiAnalysisResult && (
                     <div className="text-center text-muted-foreground pt-4">
@@ -1445,98 +1508,96 @@ function TestingComponent() {
         </Card>
       </header>
 
-      <main className="w-full max-w-7xl mx-auto grid grid-cols-1 gap-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-                <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
-                <CardContent className="p-4">
-                    <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                    <TabsList className="grid w-full grid-cols-3 bg-muted/80">
-                        <TabsTrigger value="live">Live Control</TabsTrigger>
-                        <TabsTrigger value="file">File Operations</TabsTrigger>
-                        <TabsTrigger value="analysis">Analyze &amp; Edit</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="live" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
-                    <TabsContent value="file" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
-                    <TabsContent value="analysis" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderAnalysisTab()}</TabsContent>
-                    </Tabs>
-                </CardContent>
-                </Card>
-            </div>
+      <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+            <CardContent className="p-4">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-3 bg-muted/80">
+                    <TabsTrigger value="live">Live Control</TabsTrigger>
+                    <TabsTrigger value="file">File Operations</TabsTrigger>
+                    <TabsTrigger value="analysis">Analyze &amp; Edit</TabsTrigger>
+                </TabsList>
+                <TabsContent value="live" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderLiveTab()}</TabsContent>
+                <TabsContent value="file" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderFileTab()}</TabsContent>
+                <TabsContent value="analysis" className="mt-4 data-[state=active]:animate-[keyframes-enter_0.3s_ease-out]">{renderAnalysisTab()}</TabsContent>
+                </Tabs>
+            </CardContent>
+            </Card>
+        </div>
                 
-            <div className="lg:col-span-1 space-y-6">
-                {runningTestSession && (
-                    <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg'>
-                        <CardHeader className='p-2'>
-                            <CardTitle>Session in Progress</CardTitle>
-                        </CardHeader>
-                        <CardContent className='p-2'>
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <p className="font-semibold">{runningTestSession.vesselTypeName}</p>
-                                    <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString()}</p>
-                                    <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.classification ? `(${runningTestSession.classification})` : ''}</p>
-                                </div>
-                                <div className="flex gap-2">
-                                    <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
-                                </div>
+        <div className="lg:col-span-1 space-y-6">
+            {runningTestSession && (
+                <Card className='p-4 border-primary bg-white/70 backdrop-blur-sm shadow-lg'>
+                    <CardHeader className='p-2'>
+                        <CardTitle>Session in Progress</CardTitle>
+                    </CardHeader>
+                    <CardContent className='p-2'>
+                        <div className="flex justify-between items-center">
+                            <div>
+                                <p className="font-semibold">{runningTestSession.vesselTypeName}</p>
+                                <p className="text-sm text-muted-foreground">{new Date(runningTestSession.startTime).toLocaleString()}</p>
+                                <p className="text-xs font-mono text-primary">{runningTestSession.measurementType} {runningTestSession.classification ? `(${runningTestSession.classification})` : ''}</p>
                             </div>
-                        </CardContent>
-                    </Card>
-                )}
-                <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-                    <CardHeader>
-                    <CardTitle className="text-lg">Current Value</CardTitle>
-                    </CardHeader>
-                    <CardContent className="flex flex-col items-center">
-                    <div className="text-center">
-                        <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                        {displayValue !== null ? displayValue.toFixed(displayDecimals) : 'N/A'}
+                            <div className="flex gap-2">
+                                <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(runningTestSession.id)}>Stop Session</Button>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+            <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+                <CardHeader>
+                <CardTitle className="text-lg">Current Value</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col items-center">
+                <div className="text-center">
+                    <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
+                    {displayValue !== null ? displayValue.toFixed(displayDecimals) : 'N/A'}
+                    </p>
+                    <p className="text-lg text-muted-foreground">{displayValue !== null ? sensorConfig?.unit : ''}</p>
+                    <div className="mt-2 text-xs text-muted-foreground space-y-1">
+                        <p>
+                            Sensor: <span className="font-semibold text-foreground">{sensorConfig?.name ?? 'N/A'}</span>
                         </p>
-                        <p className="text-lg text-muted-foreground">{displayValue !== null ? sensorConfig?.unit : ''}</p>
-                        <div className="mt-2 text-xs text-muted-foreground space-y-1">
+                        {runningTestSession && (
                             <p>
-                                Sensor: <span className="font-semibold text-foreground">{sensorConfig?.name ?? 'N/A'}</span>
+                                Source: <span className="font-semibold text-foreground">
+                                    {runningTestSession.measurementType === 'DEMO' ? 'Virtual Sensor' : 'Live Sensor'}
+                                </span>
                             </p>
-                            {runningTestSession && (
-                                <p>
-                                    Source: <span className="font-semibold text-foreground">
-                                        {runningTestSession.measurementType === 'DEMO' ? 'Virtual Sensor' : 'Live Sensor'}
-                                    </span>
-                                </p>
-                            )}
-                        </div>
-
-                        {(isLiveSessionActive) && (
-                        <div className="text-xs text-green-600 mt-1 flex items-center justify-center gap-1">
-                            <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
-                            </span>
-                            <span>Live</span>
-                        </div>
                         )}
-                        {dataSourceStatus && <p className="text-xs text-muted-foreground mt-1">{dataSourceStatus}</p>}
                     </div>
-                    </CardContent>
-                </Card>
-                <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
-                    <CardHeader>
-                    <CardTitle className="text-xl">Settings</CardTitle>
-                    <CardDescription>
-                        Configure sensors and devices on the management page.
-                    </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                    <Button
-                        onClick={() => router.push('/admin')}
-                        className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
-                    >
-                        <Cog className="mr-2 h-4 w-4" /> Go to Management
-                    </Button>
-                    </CardContent>
-                </Card>
-            </div>
+
+                    {(isLiveSessionActive) && (
+                    <div className="text-xs text-green-600 mt-1 flex items-center justify-center gap-1">
+                        <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
+                        </span>
+                        <span>Live</span>
+                    </div>
+                    )}
+                    {dataSourceStatus && <p className="text-xs text-muted-foreground mt-1">{dataSourceStatus}</p>}
+                </div>
+                </CardContent>
+            </Card>
+            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+                <CardHeader>
+                <CardTitle className="text-xl">Settings</CardTitle>
+                <CardDescription>
+                    Configure sensors and devices on the management page.
+                </CardDescription>
+                </CardHeader>
+                <CardContent>
+                <Button
+                    onClick={() => router.push('/admin')}
+                    className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
+                >
+                    <Cog className="mr-2 h-4 w-4" /> Go to Management
+                </Button>
+                </CardContent>
+            </Card>
         </div>
 
         <div className="lg:col-span-3">
@@ -1732,5 +1793,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    

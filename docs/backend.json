@@ -122,7 +122,8 @@
       "required": [
         "id",
         "mode",
-        "testBenchId"
+        "testBenchId",
+        "adcBitResolution"
       ]
     },
     "AnalysisResult": {
@@ -241,6 +242,22 @@
         "storagePath": { "type": "string", "description": "Path to the dataset file in Firebase Storage, or a reference URL." }
       },
       "required": ["id", "name", "storagePath"]
+    },
+    "Report": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "Report",
+        "type": "object",
+        "description": "Represents metadata for a generated PDF test report.",
+        "properties": {
+            "id": { "type": "string", "description": "Unique identifier for the report." },
+            "testSessionId": { "type": "string", "description": "Reference to the test session this report is for." },
+            "generatedAt": { "type": "string", "format": "date-time", "description": "Timestamp when the report was generated." },
+            "downloadUrl": { "type": "string", "format": "uri", "description": "The public URL to download the report PDF from Firebase Storage." },
+            "vesselTypeName": { "type": "string", "description": "The name of the vessel type from the session." },
+            "serialNumber": { "type": "string", "description": "The serial number from the session." },
+            "username": { "type": "string", "description": "The username of the user who performed the test." }
+        },
+        "required": ["id", "testSessionId", "generatedAt", "downloadUrl", "vesselTypeName", "username"]
     }
   },
   "auth": {
@@ -329,10 +346,16 @@
             "schema": { "$ref": "#/entities/TrainDataSet" },
             "description": "Stores metadata for training datasets."
         }
+      },
+      {
+        "path": "/reports/{reportId}",
+        "definition": {
+            "entityName": "Report",
+            "schema": { "$ref": "#/entities/Report" },
+            "description": "Stores metadata for generated PDF reports."
+        }
       }
     ],
     "reasoning": "This Firestore data structure is designed for a single-user or public-access model. All data is stored in global collections, removing any user-specific paths or ownership. This simplifies data access as there is no user authentication or authorization layer to manage. It's suitable for local testing or a fully public dashboard."
   }
 }
-
-    

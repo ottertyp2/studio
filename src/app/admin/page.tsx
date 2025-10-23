@@ -68,7 +68,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
@@ -123,6 +123,17 @@ type TrainDataSet = {
     description: string;
     storagePath: string;
 };
+
+type Report = {
+    id: string;
+    testSessionId: string;
+    generatedAt: string;
+    downloadUrl: string;
+    vesselTypeName: string;
+    serialNumber: string;
+    username: string;
+};
+
 
 type SensorData = {
   id: string;
@@ -194,6 +205,8 @@ export default function AdminPage() {
   const [bulkClassifyModelId, setBulkClassifyModelId] = useState<string | null>(null);
   const [trainingProgress, setTrainingProgress] = useState(0);
 
+  const [reportSearchTerm, setReportSearchTerm] = useState('');
+  const [reportSortOrder, setReportSortOrder] = useState('generatedAt-desc');
 
   useEffect(() => {
     if (!isUserLoading) {
@@ -252,6 +265,13 @@ export default function AdminPage() {
 
   const { data: trainDataSets, isLoading: isTrainDataSetsLoading } = useCollection<TrainDataSet>(trainDataSetsCollectionRef);
 
+  const reportsCollectionRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'reports');
+  }, [firestore, user]);
+
+  const { data: reports, isLoading: isReportsLoading } = useCollection<Report>(reportsCollectionRef);
+
 
   useEffect(() => {
     if (!firestore || !testSessions || !sensorConfigs) return;
@@ -278,7 +298,7 @@ export default function AdminPage() {
                 }));
             });
 
-            unsubscribers.push(unsubscribe);
+            unscribers.push(unsubscribe);
         } else {
             // If no config found, set count to 0
             setSessionDataCounts(prevCounts => ({
@@ -1042,6 +1062,36 @@ export default function AdminPage() {
 
   }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionTestBenchFilter, sessionClassificationFilter, testBenches]);
 
+    const filteredAndSortedReports = useMemo(() => {
+        if (!reports) return [];
+
+        let filtered = reports.filter(report => {
+            const searchTerm = reportSearchTerm.toLowerCase();
+            if (!searchTerm) return true;
+            return (
+                report.vesselTypeName.toLowerCase().includes(searchTerm) ||
+                report.serialNumber.toLowerCase().includes(searchTerm) ||
+                report.username.toLowerCase().includes(searchTerm)
+            );
+        });
+
+        return filtered.sort((a, b) => {
+            switch (reportSortOrder) {
+                case 'generatedAt-desc':
+                    return new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime();
+                case 'generatedAt-asc':
+                    return new Date(a.generatedAt).getTime() - new Date(b.generatedAt).getTime();
+                case 'vesselTypeName-asc':
+                    return a.vesselTypeName.localeCompare(b.vesselTypeName);
+                case 'username-asc':
+                    return a.username.localeCompare(b.username);
+                default:
+                    return 0;
+            }
+        });
+    }, [reports, reportSearchTerm, reportSortOrder]);
+
+
     const handleAddVesselType = () => {
     if (!newVesselTypeName.trim()) {
         toast({ variant: 'destructive', title: 'Invalid Input', description: 'Vessel type name cannot be empty.' });
@@ -1753,6 +1803,82 @@ export default function AdminPage() {
     </Card>
   );
 
+  const renderReportManagement = () => (
+    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
+      <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
+        <AccordionItem value="item-1">
+          <AccordionTrigger className="p-6">
+            <div className="text-left">
+              <CardTitle>Report Management</CardTitle>
+              <CardDescription>View, sort, and download generated PDF reports.</CardDescription>
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="p-6 pt-0">
+            <div className="flex flex-col sm:flex-row gap-4 mb-4">
+              <Input
+                placeholder="Search reports..."
+                value={reportSearchTerm}
+                onChange={(e) => setReportSearchTerm(e.target.value)}
+                className="flex-grow"
+              />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="w-full sm:w-auto">
+                    <ListTree className="mr-2 h-4 w-4" />
+                    Sort by
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => setReportSortOrder('generatedAt-desc')}>Newest</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setReportSortOrder('generatedAt-asc')}>Oldest</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setReportSortOrder('vesselTypeName-asc')}>Vessel Type Name</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setReportSortOrder('username-asc')}>Username</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <ScrollArea className="h-96">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Vessel Type</TableHead>
+                    <TableHead>Serial Number</TableHead>
+                    <TableHead>Generated By</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {isReportsLoading ? (
+                    <TableRow><TableCell colSpan={5} className="text-center">Loading reports...</TableCell></TableRow>
+                  ) : filteredAndSortedReports.length > 0 ? (
+                    filteredAndSortedReports.map((report) => (
+                      <TableRow key={report.id}>
+                        <TableCell className="font-medium">{report.vesselTypeName}</TableCell>
+                        <TableCell>{report.serialNumber || 'N/A'}</TableCell>
+                        <TableCell>{report.username}</TableCell>
+                        <TableCell>{new Date(report.generatedAt).toLocaleString()}</TableCell>
+                        <TableCell className="text-right">
+                          <a href={report.downloadUrl} target="_blank" rel="noopener noreferrer">
+                            <Button variant="outline" size="sm">
+                              <Download className="mr-2 h-4 w-4" />
+                              Download
+                            </Button>
+                          </a>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">No reports found.</TableCell></TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+    </Card>
+  );
+
   if (isUserLoading || !user) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
@@ -1922,6 +2048,9 @@ export default function AdminPage() {
           <div className="lg:col-span-2 space-y-6">
               {renderTestSessionManager()}
           </div>
+          <div className="lg:col-span-3">
+              {renderReportManagement()}
+          </div>
           {userRole === 'superadmin' && (
             <div className="lg:col-span-3">
                 {renderUserManagement()}
@@ -1937,5 +2066,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-    
