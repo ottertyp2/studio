@@ -1329,12 +1329,27 @@ export default function AdminPage() {
                 allSensorData[session.id] = data;
             }
 
-             // Pre-generation validation and logging
+            // Pre-generation validation and logging as requested
             console.log('=== Batch Report Generation Debug ===');
             console.log('Vessel Type:', vesselType);
-            console.log('Relevant Sessions Count:', relevantSessions.length);
-            console.log('All Sensor Configs:', sensorConfigs);
-            console.log('All Batches:', batches);
+            console.log('Relevant Sessions:', relevantSessions);
+            console.log('Sensor Configs:', sensorConfigs);
+            console.log('Batches:', batches);
+            console.log('All Sensor Data:', allSensorData);
+
+            const missingConfigIds = relevantSessions
+                .map(s => s.sensorConfigurationId)
+                .filter(id => !sensorConfigs.some(c => c.id === id));
+            const missingBatchIds = relevantSessions
+                .map(s => s.batchId)
+                .filter(id => !batches.some(b => b.id === id));
+            const missingSensorData = relevantSessions
+                .map(s => s.id)
+                .filter(id => !(id in allSensorData));
+            
+            console.log("Missing SensorConfig IDs from Sessions:", missingConfigIds);
+            console.log("Missing Batch IDs from Sessions:", missingBatchIds);
+            console.log("Sessions without SensorData:", missingSensorData);
 
             const validationErrors: string[] = [];
             if (!vesselType) validationErrors.push('VesselType is missing.');
@@ -1342,6 +1357,8 @@ export default function AdminPage() {
             if (!allSensorData) validationErrors.push('Sensor data object is missing.');
             if (!sensorConfigs) validationErrors.push('Sensor configs are missing.');
             if (!batches) validationErrors.push('Batches data is missing.');
+            if (missingConfigIds.length > 0) validationErrors.push(`Found sessions with missing SensorConfig IDs: ${missingConfigIds.join(', ')}`);
+            if (missingBatchIds.length > 0) validationErrors.push(`Found sessions with missing Batch IDs: ${missingBatchIds.join(', ')}`);
             
             if (validationErrors.length > 0) {
               console.error('Validation Errors:', validationErrors);
@@ -2414,5 +2431,3 @@ const renderBatchManagement = () => (
   );
 }
 
-
-    

@@ -155,13 +155,9 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   statusPassed: {
-    fontSize: 8,
-    fontWeight: 'bold',
     color: '#16A34A',
   },
   statusNotPassed: {
-    fontSize: 8,
-    fontWeight: 'bold',
     color: '#DC2626',
   }
 });
@@ -169,9 +165,9 @@ const styles = StyleSheet.create({
 const getStatus = (classification?: 'LEAK' | 'DIFFUSION') => {
     switch(classification) {
         case 'DIFFUSION':
-            return <Text style={styles.statusPassed}>Passed</Text>;
+            return <Text style={{...styles.statusText, ...styles.statusPassed}}>Passed</Text>;
         case 'LEAK':
-            return <Text style={styles.statusNotPassed}>Not Passed</Text>;
+            return <Text style={{...styles.statusText, ...styles.statusNotPassed}}>Not Passed</Text>;
         default:
             return <Text style={styles.statusText}>Undetermined</Text>;
     }
@@ -253,6 +249,3 @@ const BatchReport: React.FC<BatchReportProps> = ({ vesselType, sessions, allSens
 };
 
 export default BatchReport;
-
-
-    
