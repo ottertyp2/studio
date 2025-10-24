@@ -224,7 +224,7 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartIma
             <Text style={styles.sectionTitle}>Session Details</Text>
             <View style={styles.grid}>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Vessel Type: </Text>{vesselType?.name || session.vesselTypeName}</Text></View>
-                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Batch ID: </Text>{batch?.name || session.batchId}</Text></View>
+                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Batch ID: </Text>{batch?.name || 'N/A'}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Serial Number: </Text>{session.serialNumber || 'N/A'}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Start Time: </Text>{new Date(session.startTime).toLocaleString()}</Text></View>
                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>End Time: </Text>{session.endTime ? new Date(session.endTime).toLocaleString() : 'N/A'}</Text></View>

@@ -481,6 +481,11 @@ function TestingComponent() {
         toast({ variant: 'destructive', title: 'Report Generation Failed', description: 'Chart or session data is missing.' });
         return;
       }
+
+      if (!session.batchId) {
+        toast({ variant: 'destructive', title: 'Report Generation Failed', description: 'The selected session is missing a Batch ID, which is required for the report.' });
+        return;
+      }
       
       const dataForReport = comparisonData[session.id];
       const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
@@ -577,8 +582,8 @@ function TestingComponent() {
   };
   
   const xAxisDomain = useMemo((): [number | 'dataMin' | 'dataMax', number | 'dataMin' | 'dataMax'] => {
-    if (brushDomain && brushDomain.startIndex !== undefined && brushDomain.endIndex !== undefined && chartData[brushDomain.startIndex] && chartData[brushDomain.endIndex]) {
-        return [chartData[brushDomain.startIndex].name, chartData[brushDomain.endIndex].name];
+    if (brushDomain && chartData.length > (brushDomain.endIndex ?? -1) && chartData[brushDomain.startIndex??0]) {
+        return [chartData[brushDomain.startIndex??0].name, chartData[brushDomain.endIndex??0].name];
     }
     if (isLive) {
         const maxTime = chartData.length > 0 ? chartData[chartData.length - 1].name : 0;
