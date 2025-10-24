@@ -642,29 +642,30 @@ function TestingComponent() {
     // Handle incoming sessionId from URL
     useEffect(() => {
         const sessionId = searchParams.get('sessionId');
-        if (sessionId && firestore && sessionHistory.length > 0) {
-            const sessionToSelect = sessionHistory.find(s => s.id === sessionId);
-            if (sessionToSelect) {
-                // Check if it's not already selected to avoid infinite loops
-                if (!comparisonSessions.some(cs => cs.id === sessionId)) {
-                    setComparisonSessions([sessionToSelect]);
-                }
-            } else {
-                 // It might not be in the history yet if the page is loading, try fetching it directly
-                const fetchSession = async () => {
+        if (sessionId && firestore) {
+            // Only run if the session isn't already selected
+            if (!comparisonSessions.some(cs => cs.id === sessionId)) {
+                const fetchAndSetSession = async () => {
                     const sessionDocRef = doc(firestore, 'test_sessions', sessionId);
-                    const sessionDoc = await getDoc(sessionDocRef);
-                    if (sessionDoc.exists()) {
-                        const sessionData = {id: sessionDoc.id, ...sessionDoc.data()} as WithId<TestSession>;
-                        if (!comparisonSessions.some(cs => cs.id === sessionId)) {
-                            setComparisonSessions([sessionData]);
+                    try {
+                        const sessionDoc = await getDoc(sessionDocRef);
+                        if (sessionDoc.exists()) {
+                            const sessionData = {id: sessionDoc.id, ...sessionDoc.data()} as WithId<TestSession>;
+                            // Check again inside async to avoid race condition
+                            if (!comparisonSessions.some(cs => cs.id === sessionId)) {
+                                setComparisonSessions([sessionData]);
+                            }
+                        } else {
+                            toast({variant: 'destructive', title: 'Session not found', description: `Could not find a session with ID: ${sessionId}`});
                         }
+                    } catch (error: any) {
+                         toast({variant: 'destructive', title: 'Failed to fetch session', description: error.message});
                     }
                 };
-                fetchSession();
+                fetchAndSetSession();
             }
         }
-    }, [searchParams, firestore, sessionHistory, comparisonSessions]);
+    }, [searchParams, firestore, comparisonSessions, toast]); // Rerun if comparisonSessions changes
 
   const handleToggleComparison = (session: WithId<TestSession>) => {
     setComparisonSessions(prev => {
