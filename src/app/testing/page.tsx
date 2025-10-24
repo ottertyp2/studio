@@ -56,6 +56,7 @@ import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlo
 import { signOut } from '@/firebase/non-blocking-login';
 import { useTestBench } from '@/context/TestBenchContext';
 import { collection, query, where, getDocs, doc, onSnapshot, writeBatch, orderBy, limit } from 'firebase/firestore';
+import { ref, set } from 'firebase/database';
 import { formatDistanceToNow } from 'date-fns';
 import { convertRawValue } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
@@ -143,7 +144,7 @@ function TestingComponent() {
   const { toast } = useToast();
   
   const { user, userRole, isUserLoading } = useUser();
-  const { firestore, auth } = useFirebase();
+  const { firestore, auth, database } = useFirebase();
 
   const { 
     isConnected, 
@@ -174,7 +175,7 @@ function TestingComponent() {
 
   const [isLive, setIsLive] = useState(true);
   const [timeframe, setTimeframe] = useState('all');
-  const [brushDomain, setBrushDomain] = useState<[number, number] | null>(null);
+  const [brushDomain, setBrushDomain] = useState<{ startIndex: number; endIndex: number } | null>(null);
 
 
   // Data fetching hooks
@@ -221,7 +222,6 @@ function TestingComponent() {
         const runningSessionDoc = querySnapshot.docs[0];
         const session = { id: runningSessionDoc.id, ...runningSessionDoc.data() } as WithId<TestSession>;
         setRunningTestSession(session);
-        // Automatically add running session to comparison view
         setComparisonSessions(prev => {
             if (prev.some(s => s.id === session.id)) return prev;
             return [...prev, session];
@@ -234,7 +234,7 @@ function TestingComponent() {
   }, [firestore, user]);
 
   const handleStartSession = async () => {
-    if (!user || !firestore || !activeTestBench || !activeSensorConfig || !newSessionData.vesselTypeId || !newSessionData.batchId) {
+    if (!user || !firestore || !database || !activeTestBench || !activeSensorConfig || !newSessionData.vesselTypeId || !newSessionData.batchId) {
       toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select a test bench, sensor, vessel type, and batch.' });
       return;
     }
@@ -266,7 +266,7 @@ function TestingComponent() {
 
     try {
       await addDocumentNonBlocking(collection(firestore, 'test_sessions'), newSessionDoc);
-      // The onSnapshot listener will pick up the new running session
+      await set(ref(database, 'commands/recording'), true);
       toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
       setIsNewSessionDialogOpen(false);
       setNewSessionData({ vesselTypeId: '', batchId: '', serialNumber: '', description: '' });
@@ -276,12 +276,13 @@ function TestingComponent() {
   };
   
   const handleStopSession = async () => {
-    if (!firestore || !runningTestSession) return;
+    if (!firestore || !database || !runningTestSession) return;
     const sessionRef = doc(firestore, 'test_sessions', runningTestSession.id);
     await updateDocumentNonBlocking(sessionRef, {
       status: 'COMPLETED',
       endTime: new Date().toISOString(),
     });
+    await set(ref(database, 'commands/recording'), false);
     toast({ title: 'Session Stopped', description: 'Data recording has ended.' });
   };
   
@@ -294,40 +295,39 @@ function TestingComponent() {
   
     const unsubscribers: (() => void)[] = [];
     setIsLoadingComparisonData(true);
+    let loadedCount = 0;
   
+    const checkAllLoaded = () => {
+        loadedCount++;
+        if (loadedCount === comparisonSessions.length) {
+            setIsLoadingComparisonData(false);
+        }
+    };
+
     comparisonSessions.forEach(session => {
-      const isRunning = session.status === 'RUNNING';
-      const sensorDataRef = collection(firestore, 'test_sessions', session.id, 'sensor_data');
-      const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
-  
-      const handleSnapshot = (snapshot: any) => {
-        const data = snapshot.docs.map((doc:any) => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
-        setComparisonData(prev => ({ ...prev, [session.id]: data }));
-        
-        const allLoaded = comparisonSessions.every(s => 
-            (s.status === 'COMPLETED' && comparisonData[s.id]) || (s.status === 'RUNNING')
-        );
-        if (allLoaded) setIsLoadingComparisonData(false);
-      };
+        const sensorDataRef = collection(firestore, 'test_sessions', session.id, 'sensor_data');
+        const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
 
-      const handleError = (error: Error) => {
-        console.error(`Error fetching data for ${session.id}:`, error);
-        toast({ variant: 'destructive', title: `Data Error for ${session.serialNumber}`, description: error.message });
-      };
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const data = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
+            setComparisonData(prev => ({ ...prev, [session.id]: data }));
+            if (session.status === 'COMPLETED' && !isLoadingComparisonData) {
+                checkAllLoaded();
+            } else if (session.status === 'RUNNING') {
+                setIsLoadingComparisonData(false);
+            }
+        }, (error) => {
+            console.error(`Error fetching data for ${session.id}:`, error);
+            toast({ variant: 'destructive', title: `Data Error for ${session.serialNumber}`, description: error.message });
+            checkAllLoaded();
+        });
 
-      if (isRunning) {
-        const unsubscribe = onSnapshot(q, handleSnapshot, handleError);
         unsubscribers.push(unsubscribe);
-      } else {
-        // Fetch completed session data once
-        getDocs(q).then(handleSnapshot).catch(handleError);
-      }
     });
   
     return () => {
       unsubscribers.forEach(unsub => unsub());
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firestore, comparisonSessions, toast]);
 
 
@@ -351,7 +351,6 @@ function TestingComponent() {
 
         toast({ title: 'Session Deleted', description: `Session and ${snapshot.size} data points were removed.` });
 
-        // Update local state
         setSessionHistory(prev => prev.filter(s => s.id !== sessionId));
         setComparisonSessions(prev => prev.filter(s => s.id !== sessionId));
     } catch (e: any) {
@@ -406,7 +405,7 @@ function TestingComponent() {
   
     const sortedData = Object.values(allDataPoints).sort((a, b) => a.name - b.name);
     
-    if (timeframe === 'all') return sortedData;
+    if (timeframe === 'all' || isNaN(parseInt(timeframe))) return sortedData;
 
     const now = maxTime;
     const duration = parseInt(timeframe, 10) * 60;
@@ -479,7 +478,7 @@ function TestingComponent() {
       const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
       const batch = batches?.find(b => b.id === session.batchId);
 
-      if (!chartRef.current || !session || !firestore || !dataForReport || dataForReport.length === 0 || !config || !vesselType || !batch) {
+      if (!chartRef.current || !session || !dataForReport || dataForReport.length === 0 || !config || !vesselType || !batch) {
           toast({ variant: 'destructive', title: 'Report Generation Failed', description: 'Required report data is missing. Ensure the session, its config, vessel type, and batch are all available.' });
           return;
       }
@@ -565,8 +564,8 @@ function TestingComponent() {
   }
 
   const handleBrushChange = (newDomain: any) => {
-    if (newDomain) {
-      setBrushDomain([newDomain.startIndex, newDomain.endIndex]);
+    if (newDomain && (newDomain.startIndex !== null && newDomain.endIndex !== null)) {
+      setBrushDomain({ startIndex: newDomain.startIndex, endIndex: newDomain.endIndex });
       setIsLive(false);
     }
   };
@@ -574,6 +573,18 @@ function TestingComponent() {
   const resetZoom = () => {
     setBrushDomain(null);
   };
+  
+  const xAxisDomain = useMemo((): [number | 'dataMin' | 'dataMax', number | 'dataMin' | 'dataMax'] => {
+    if (brushDomain && chartData.length > brushDomain.startIndex && chartData.length > brushDomain.endIndex) {
+        return [chartData[brushDomain.startIndex].name, chartData[brushDomain.endIndex].name];
+    }
+    if (isLive) {
+        const maxTime = chartData.length > 0 ? chartData[chartData.length - 1].name : 0;
+        return [Math.max(0, maxTime - 60), 'dataMax'];
+    }
+    return ['dataMin', 'dataMax'];
+  }, [brushDomain, chartData, isLive]);
+
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
@@ -815,7 +826,7 @@ function TestingComponent() {
                             type="number"
                             dataKey="name" 
                             stroke="hsl(var(--muted-foreground))"
-                            domain={isLive && !brushDomain ? ['dataMax - 60', 'dataMax'] : (brushDomain ? [chartData[brushDomain[0]].name, chartData[brushDomain[1]].name] : ['dataMin', 'dataMax'])}
+                            domain={xAxisDomain}
                             allowDataOverflow
                             label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -10 }}
                         />
@@ -860,8 +871,8 @@ function TestingComponent() {
                             dataKey="name" 
                             height={30} 
                             stroke="hsl(var(--primary))"
-                            startIndex={brushDomain?.[0]}
-                            endIndex={brushDomain?.[1]}
+                            startIndex={brushDomain?.startIndex}
+                            endIndex={brushDomain?.endIndex}
                             onChange={handleBrushChange}
                          />
                       </LineChart>
