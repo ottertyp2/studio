@@ -146,7 +146,7 @@ function TestingComponent() {
   const { toast } = useToast();
   
   const { user, userRole, isUserLoading } = useUser();
-  const { firestore, auth, database } = useFirebase();
+  const { firestore, auth, database, areServicesAvailable } = useFirebase();
 
   const { 
     isConnected, 
@@ -381,25 +381,55 @@ function TestingComponent() {
     let maxTime = 0;
   
     comparisonSessions.forEach(session => {
-      const sessionData = comparisonData[session.id];
-      if (!sessionData || sessionData.length === 0) return;
-  
-      if (!firstSessionWithGuidelines) {
-        firstSessionWithGuidelines = session;
-      }
-  
-      const startTime = new Date(session.startTime).getTime();
-      const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-  
-      sessionData.forEach(d => {
-        const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
-        if (time > maxTime) maxTime = time;
+        const sessionData = comparisonData[session.id] || [];
+        if (sessionData.length === 0) return;
 
-        if (!allDataPoints[time]) {
-          allDataPoints[time] = { name: time };
+        if (!firstSessionWithGuidelines) {
+            firstSessionWithGuidelines = session;
         }
-        allDataPoints[time][session.id] = parseFloat(convertRawValue(d.value, config || null).toFixed(config?.decimalPlaces || 2));
-      });
+
+        const startTime = new Date(session.startTime).getTime();
+        const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+
+        let processedData: { time: number, value: number }[] = sessionData.map(d => {
+            const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
+            const value = parseFloat(convertRawValue(d.value, config || null).toFixed(config?.decimalPlaces || 2));
+            return { time, value };
+        });
+
+        // Interpolate if few data points
+        if (processedData.length > 1 && processedData.length < 20) {
+            const interpolated = [];
+            for (let i = 0; i < processedData.length - 1; i++) {
+                const startPoint = processedData[i];
+                const endPoint = processedData[i + 1];
+                interpolated.push(startPoint);
+                
+                const timeDiff = endPoint.time - startPoint.time;
+                const valueDiff = endPoint.value - startPoint.value;
+                const steps = Math.max(2, Math.floor(timeDiff / 5)); // Add a point every ~5s
+
+                for (let j = 1; j < steps; j++) {
+                    const t = j / steps;
+                    interpolated.push({
+                        time: startPoint.time + t * timeDiff,
+                        value: startPoint.value + t * valueDiff,
+                    });
+                }
+            }
+            interpolated.push(processedData[processedData.length - 1]);
+            processedData = interpolated;
+        }
+
+
+        processedData.forEach(p => {
+            const time = p.time;
+            if (time > maxTime) maxTime = time;
+            if (!allDataPoints[time]) {
+                allDataPoints[time] = { name: time };
+            }
+            allDataPoints[time][session.id] = p.value;
+        });
     });
   
     const vesselTypeForGuidelines = vesselTypes?.find(vt => vt.id === firstSessionWithGuidelines?.vesselTypeId);
@@ -755,15 +785,19 @@ function TestingComponent() {
                         <CardTitle>Live Data Visualization</CardTitle>
                         {comparisonSessions.length > 0 ? (
                              <div className="flex flex-wrap items-center gap-2 mt-2">
-                                {comparisonSessions.map((session, index) => (
-                                    <Badge key={session.id} variant="outline" className="flex items-center gap-2" style={{borderColor: CHART_COLORS[index % CHART_COLORS.length]}}>
-                                       <div className="h-2 w-2 rounded-full" style={{backgroundColor: CHART_COLORS[index % CHART_COLORS.length]}}></div>
-                                        <span>{session.vesselTypeName} - {session.serialNumber || 'N/A'}</span>
-                                        <button onClick={() => handleToggleComparison(session)} className="opacity-50 hover:opacity-100">
-                                            <XIcon className="h-3 w-3" />
-                                        </button>
-                                    </Badge>
-                                ))}
+                                {comparisonSessions.map((session, index) => {
+                                     const isInterpolated = (comparisonData[session.id] || []).length < 20;
+                                     const legendText = `${session.vesselTypeName} - ${session.serialNumber || 'N/A'}${isInterpolated ? ' (interpolated)' : ''}`;
+                                    return (
+                                        <Badge key={session.id} variant="outline" className="flex items-center gap-2" style={{borderColor: CHART_COLORS[index % CHART_COLORS.length]}}>
+                                           <div className="h-2 w-2 rounded-full" style={{backgroundColor: CHART_COLORS[index % CHART_COLORS.length]}}></div>
+                                            <span>{legendText}</span>
+                                            <button onClick={() => handleToggleComparison(session)} className="opacity-50 hover:opacity-100">
+                                                <XIcon className="h-3 w-3" />
+                                            </button>
+                                        </Badge>
+                                    )
+                                })}
                             </div>
                         ) : (
                             <CardDescription>
@@ -883,7 +917,16 @@ function TestingComponent() {
                             }}
                             labelFormatter={(label) => `Time: ${label}s`}
                         />
-                        <Legend verticalAlign="top" height={36} />
+                        <Legend
+                            verticalAlign="top"
+                            height={36}
+                            formatter={(value, entry) => {
+                                const session = comparisonSessions.find(s => s.id === value);
+                                if (!session) return value;
+                                const isInterpolated = (comparisonData[session.id] || []).length < 20;
+                                return `${session.vesselTypeName} - ${session.serialNumber || 'N/A'}${isInterpolated ? ' (interpolated)' : ''}`;
+                            }}
+                        />
                         
                         {comparisonSessions.map((session, index) => (
                            <Line 
@@ -920,10 +963,10 @@ function TestingComponent() {
 }
 
 export default function TestingPage() {
-    const { user, isUserLoading } = useUser();
-    const { firestore, database } = useFirebase();
+    const { isUserLoading } = useUser();
+    const { areServicesAvailable } = useFirebase();
 
-    if (isUserLoading || !firestore || !database) {
+    if (isUserLoading || !areServicesAvailable) {
         return (
             <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
                 <p className="text-lg">Loading Dashboard...</p>
