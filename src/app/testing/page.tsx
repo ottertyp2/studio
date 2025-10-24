@@ -465,12 +465,13 @@ function TestingComponent() {
 
   const setTimeframe = (frame: '1m' | '5m' | 'all') => {
       setActiveTimeframe(frame);
+      const maxTime = chartData.length > 0 ? chartData[chartData.length - 1].name : 0;
+      
       if (frame === 'all') {
           setXAxisDomain(['dataMin', 'dataMax']);
           return;
       }
 
-      const maxTime = chartData.length > 0 ? chartData[chartData.length - 1].name : 0;
       let duration = 0;
       if (frame === '1m') duration = 60;
       if (frame === '5m') duration = 300;
@@ -577,9 +578,10 @@ function TestingComponent() {
           
           const startTime = new Date(session.startTime).getTime();
           const singleChartData = dataForReport.map(d => {
+              if (!config) return { name: 0, value: 0 }; // Should not happen due to guard
               const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
-              if (!config) return { name: time, value: d.value }; // Fallback
-              return { name: time, value: parseFloat(convertRawValue(d.value, config).toFixed(config.decimalPlaces)) };
+              const value = parseFloat(convertRawValue(d.value, config).toFixed(config.decimalPlaces));
+              return { name: time, value };
           });
           console.log("Processing PDF document...");
 
@@ -936,9 +938,7 @@ function TestingComponent() {
                             labelFormatter={(label) => `Time: ${label}s`}
                         />
                         <Legend
-                            verticalAlign="top"
-                            height={36}
-                            content={<></>} // Hide default legend
+                            content={() => null}
                         />
                         
                         {comparisonSessions.map((session, index) => (
