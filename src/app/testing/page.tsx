@@ -181,6 +181,7 @@ function TestingComponent() {
 
   const [xAxisDomain, setXAxisDomain] = useState<[number | 'dataMin' | 'dataMax', number | 'dataMin' | 'dataMax']>(['dataMin', 'dataMax']);
   const [activeTimeframe, setActiveTimeframe] = useState('all');
+  const [samplingRate, setSamplingRate] = useState<number>(0);
 
 
   // Data fetching hooks
@@ -332,11 +333,11 @@ function TestingComponent() {
             checkAllLoaded();
         });
 
-        unsubscribers.push(unsubscribe);
+        unscribers.push(unsubscribe);
     });
   
     return () => {
-      unsubscribers.forEach(unsub => unsub());
+      unscribers.forEach(unsub => unsub());
     };
   }, [firestore, comparisonSessions, toast]);
 
@@ -403,7 +404,6 @@ function TestingComponent() {
                 const timeDiff = endPoint.time - startPoint.time;
                 // Interpolate if the gap is larger than 90s (longer than the 60s standby update)
                 if (timeDiff > 90) {
-                    const valueDiff = endPoint.value - startPoint.value;
                     const steps = Math.floor(timeDiff / 60); // Add a point every ~60s
                     for (let j = 1; j < steps; j++) {
                         const t = j / steps;
@@ -502,6 +502,23 @@ function TestingComponent() {
     return () => clearInterval(interval);
   }, [lastDataPointTimestamp]);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (isDeviceConnected && lastDataPointTimestamp) {
+        const timeDiff = (Date.now() - lastDataPointTimestamp) / 1000; // in seconds
+        if (timeDiff > 0) {
+          setSamplingRate(1 / timeDiff);
+        } else {
+          setSamplingRate(0);
+        }
+      } else {
+        setSamplingRate(0);
+      }
+    }, 1000); // Update every second
+
+    return () => clearInterval(interval);
+  }, [isDeviceConnected, lastDataPointTimestamp]);
+
   const convertedValue = useMemo(() => {
       if (currentValue === null) return null;
       const config = runningTestSession 
@@ -532,10 +549,10 @@ function TestingComponent() {
 
   const dataSourceStatus = useMemo(() => {
     if (isDeviceConnected) {
-      return `Sampling: ${isRecording ? "1/s" : "1/min"}`;
+      return `Sampling: ${samplingRate.toFixed(1)} Hz`;
     }
     return offlineMessage;
-  }, [isDeviceConnected, isRecording, offlineMessage]);
+  }, [isDeviceConnected, samplingRate, offlineMessage]);
 
 
     const generateReport = async (session: WithId<TestSession>) => {
@@ -555,13 +572,12 @@ function TestingComponent() {
             vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
             batch = batches?.find(b => b.id === session.batchId);
     
-            const missingItems = [];
-            if (!dataForReport) missingItems.push('session data');
-            if (!config) missingItems.push('sensor config');
-            if (!vesselType) missingItems.push('vessel type');
-            if (!batch) missingItems.push('batch info');
-    
-            if (missingItems.length > 0) {
+            if (!dataForReport || !config || !vesselType || !batch) {
+                const missingItems = [];
+                if (!dataForReport) missingItems.push('session data');
+                if (!config) missingItems.push('sensor config');
+                if (!vesselType) missingItems.push('vessel type');
+                if (!batch) missingItems.push('batch info');
                 throw new Error(`Could not find: ${missingItems.join(', ')}.`);
             }
     
@@ -608,7 +624,7 @@ function TestingComponent() {
     
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            link.download = `report-${session.vesselTypeName}-${session.serialNumber || session.id}.pdf`;
+            link.download = `report-${session.vesselTypeName.replace(/\s+/g, '_')}-${session.serialNumber || session.id}.pdf`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -652,6 +668,7 @@ function TestingComponent() {
                     if (sessionDoc.exists()) {
                         const sessionData = {id: sessionDoc.id, ...sessionDoc.data()} as WithId<TestSession>;
                         setComparisonSessions([sessionData]);
+                        // Clear the URL parameter after loading the session
                         router.replace('/testing', { scroll: false });
                     } else {
                         toast({variant: 'destructive', title: 'Session not found', description: `Could not find a session with ID: ${sessionId}`});
