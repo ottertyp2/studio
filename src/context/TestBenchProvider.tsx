@@ -5,7 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 import { TestBenchContext, ValveStatus, SensorData } from './TestBenchContext';
 import { useFirebase, addDocumentNonBlocking } from '@/firebase';
 import { ref, onValue, set, remove } from 'firebase/database';
-import { collection, doc, query, where, getDocs, writeBatch, updateDoc } from 'firebase/firestore';
+import { collection, doc, query, where, getDocs, writeBatch, updateDoc, onSnapshot } from 'firebase/firestore';
 
 export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
@@ -37,10 +37,32 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const setRunningTestSession = (session: {id: string, sensorConfigurationId: string} | null) => {
       runningTestSessionRef.current = session;
       if (session) {
+          setIsRecording(true); // Directly link session status to recording state
           setLocalDataLog([]); // Clear log for new session
+      } else {
+          setIsRecording(false);
       }
-      // The ESP32 now derives recording state from the presence of a RUNNING session, so direct command is not needed.
   };
+
+  useEffect(() => {
+    if (!firestore) return;
+    
+    // Check for a running session on startup to sync state
+    const sessionsQuery = query(collection(firestore, 'test_sessions'), where('status', '==', 'RUNNING'));
+    const unsubscribe = onSnapshot(sessionsQuery, (snapshot) => {
+      if (!snapshot.empty) {
+        const runningSessionDoc = snapshot.docs[0];
+        const runningSession = runningSessionDoc.data();
+        setRunningTestSession({ id: runningSession.id, sensorConfigurationId: runningSession.sensorConfigurationId });
+      } else {
+        setRunningTestSession(null);
+      }
+    }, (error) => {
+      console.error("Failed to listen for running sessions:", error);
+    });
+
+    return () => unsubscribe();
+  }, [firestore]);
 
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
@@ -95,12 +117,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const valve2Ref = ref(database, 'live/valve2');
     unsubscribers.push(onValue(valve2Ref, (snap) => {
         setValve2Status(snap.val() ? 'ON' : 'OFF');
-    }));
-
-    // Live recording status
-    const recordingRef = ref(database, 'live/recording');
-    unsubscribers.push(onValue(recordingRef, (snap) => {
-        setIsRecording(snap.val() === true);
     }));
     
 
