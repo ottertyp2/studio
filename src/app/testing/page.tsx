@@ -577,8 +577,10 @@ function TestingComponent() {
         try {
             const startTime = new Date(session.startTime).getTime();
             const singleChartData = dataForReport.map(d => {
+                 const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+                 if (!config) return { name: 0, value: 0 }; // Should not happen if guard works
                 const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
-                const value = parseFloat(convertRawValue(d.value, config!).toFixed(config!.decimalPlaces));
+                const value = parseFloat(convertRawValue(d.value, config).toFixed(config.decimalPlaces));
                 return { name: time, value };
             });
 
@@ -793,7 +795,7 @@ function TestingComponent() {
                 </div>
                 </CardContent>
             </Card>
-            <ValveControl />
+            {isDeviceConnected && <ValveControl />}
         </div>
 
         <div className="lg:col-span-3">
@@ -977,5 +979,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
