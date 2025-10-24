@@ -113,6 +113,18 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
         if (status) {
             setIsConnected(true);
+            
+            // Reset the offline timer whenever data is received
+            if (offlineTimeoutRef.current) {
+                clearTimeout(offlineTimeoutRef.current);
+            }
+
+            // Set a timer to mark as offline if no new data comes in 2 seconds
+            offlineTimeoutRef.current = setTimeout(() => {
+                setIsConnected(false);
+                setCurrentValue(null);
+                setLatency(null);
+            }, 2000);
 
             // Process the live data payload
             if (status.sensor !== undefined && status.timestamp !== undefined && status.timestamp > 0) {
@@ -135,6 +147,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     
     return () => {
         unsubscribe();
+        if (offlineTimeoutRef.current) {
+            clearTimeout(offlineTimeoutRef.current);
+        }
     };
   }, [database, handleNewDataPoint]);
 
