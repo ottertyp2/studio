@@ -218,19 +218,24 @@ const BatchReport: React.FC<BatchReportProps> = ({ vesselType, sessions, allSens
                     <View style={{...styles.tableColHeader, width: '10%'}}><Text style={styles.tableHeader}>Status</Text></View> 
                 </View>
                 {(sessions || []).map(session => {
-                    const data = allSensorData?.[session.id] || [];
-                    const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-                    const batchName = batches?.find(b => b.id === session.batchId)?.name || 'N/A';
-                    const endPressure = data.length > 0 && config ? (data[data.length-1].value).toFixed(config.decimalPlaces) : 'N/A';
+                    const data = allSensorData?.[session.id] ?? [];
+                    const config = session.sensorConfigurationId ? sensorConfigs?.find(c => c.id === session.sensorConfigurationId) : undefined;
+                    const batchName = session.batchId ? batches?.find(b => b.id === session.batchId)?.name : 'N/A';
+                    
+                    const endValue = data.length > 0 ? data[data.length-1].value : undefined;
+                    const endPressure = (endValue !== undefined && config && typeof config.decimalPlaces === 'number')
+                        ? endValue.toFixed(config.decimalPlaces)
+                        : 'N/A';
+
                     const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
                     
                     return (
                         <View key={session.id} style={styles.tableRow}> 
-                            <View style={{...styles.tableCol, width: '15%'}}><Text style={styles.tableCell}>{batchName}</Text></View>
+                            <View style={{...styles.tableCol, width: '15%'}}><Text style={styles.tableCell}>{batchName ?? 'N/A'}</Text></View>
                             <View style={{...styles.tableCol, width: '15%'}}><Text style={styles.tableCell}>{session.serialNumber || 'N/A'}</Text></View>
                             <View style={{...styles.tableCol, width: '25%'}}><Text style={styles.tableCell}>{new Date(session.startTime).toLocaleString()}</Text></View>
-                            <View style={{...styles.tableCol, width: '10%'}}><Text style={styles.tableCell}>{session.username}</Text></View>
-                            <View style={{...styles.tableCol, width: '15%'}}><Text style={styles.tableCell}>{endPressure} {config?.unit || ''}</Text></View>
+                            <View style={{...styles.tableCol, width: '10%'}}><Text style={styles.tableCell}>{session.username ?? 'N/A'}</Text></View>
+                            <View style={{...styles.tableCol, width: '15%'}}><Text style={styles.tableCell}>{endPressure} {config?.unit ?? ''}</Text></View>
                             <View style={{...styles.tableCol, width: '10%'}}><Text style={styles.tableCell}>{duration}</Text></View>
                             <View style={{...styles.tableCol, width: '10%'}}>{getStatus(session.classification)}</View>
                         </View>
@@ -248,3 +253,6 @@ const BatchReport: React.FC<BatchReportProps> = ({ vesselType, sessions, allSens
 };
 
 export default BatchReport;
+
+
+    

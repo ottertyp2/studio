@@ -1,3 +1,4 @@
+
 'use client';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -197,7 +198,7 @@ export default function AdminPage() {
   // ML State
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [selectedDataSetIds, setSelectedDataSetIds] = useState<string[]>([]);
-  const [isTraining, setIsTraining] = useState(false);
+  const [isTraining, setIsTraining] = useState(isTraining);
   const [trainingStatus, setTrainingStatus] = useState({ epoch: 0, loss: 0, accuracy: 0, val_loss: 0, val_acc: 0 });
   
   const [newMlModel, setNewMlModel] = useState<Partial<MLModel>>({name: '', version: '1.0', description: '', fileSize: 0});
@@ -339,11 +340,11 @@ export default function AdminPage() {
             }));
         });
 
-        unsubscribers.push(unsubscribe);
+        unscribers.push(unsubscribe);
     });
 
     return () => {
-        unsubscribers.forEach(unsub => unsub());
+        unscribers.forEach(unsub => unsub());
     };
 }, [firestore, testSessions]);
 
@@ -1085,7 +1086,7 @@ export default function AdminPage() {
 
         switch (sessionSortOrder) {
             case 'startTime-desc':
-                return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
+                return new Date(b.startTime).getTime() - new Date(b.startTime).getTime();
             case 'startTime-asc':
                 return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
             case 'vesselTypeName-asc':
@@ -1327,6 +1328,29 @@ export default function AdminPage() {
                 const data = snapshot.docs.map(doc => doc.data() as SensorData).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
                 allSensorData[session.id] = data;
             }
+
+             // Pre-generation validation and logging
+            console.log('=== Batch Report Generation Debug ===');
+            console.log('Vessel Type:', vesselType);
+            console.log('Relevant Sessions Count:', relevantSessions.length);
+            console.log('All Sensor Configs:', sensorConfigs);
+            console.log('All Batches:', batches);
+
+            const validationErrors: string[] = [];
+            if (!vesselType) validationErrors.push('VesselType is missing.');
+            if (!relevantSessions) validationErrors.push('Sessions data is missing.');
+            if (!allSensorData) validationErrors.push('Sensor data object is missing.');
+            if (!sensorConfigs) validationErrors.push('Sensor configs are missing.');
+            if (!batches) validationErrors.push('Batches data is missing.');
+            
+            if (validationErrors.length > 0) {
+              console.error('Validation Errors:', validationErrors);
+              toast({ variant: 'destructive', title: 'Report Validation Failed', description: validationErrors.join(' ') });
+              setGeneratingVesselTypeReport(null);
+              return;
+            }
+
+
         } catch (e: any) {
             console.error("Report Generation Error (Data Gathering):", e);
             toast({ variant: 'destructive', title: 'Report Failed: Data Gathering', description: `Could not collect session data. ${e.message}` });
@@ -2389,3 +2413,6 @@ const renderBatchManagement = () => (
     </div>
   );
 }
+
+
+    
