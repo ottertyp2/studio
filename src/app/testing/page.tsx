@@ -1032,7 +1032,6 @@ function TestingComponent() {
 export default function TestingPage() {
     const { user, isUserLoading } = useUser();
     const { areServicesAvailable } = useFirebase();
-    const searchParams = useSearchParams(); // Moved here
 
     if (isUserLoading || !areServicesAvailable) {
         return (
