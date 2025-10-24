@@ -442,11 +442,11 @@ function TestingComponent() {
   
     const sortedData = Object.values(allDataPoints).sort((a, b) => a.name - b.name);
     
-    if (timeframe === 'all' || isNaN(parseInt(timeframe))) return sortedData;
+    if (timeframe === 'all' || isNaN(parseInt(timeframe, 10))) return sortedData;
 
-    const now = maxTime;
-    const duration = parseInt(timeframe, 10) * 60;
-    const startTime = Math.max(0, now - duration);
+    const currentMaxTime = sortedData.length > 0 ? sortedData[sortedData.length - 1].name : 0;
+    const durationInSeconds = parseInt(timeframe, 10) * 60;
+    const startTime = Math.max(0, currentMaxTime - durationInSeconds);
 
     return sortedData.filter(d => d.name >= startTime);
 
@@ -931,16 +931,7 @@ function TestingComponent() {
                         <Legend
                             verticalAlign="top"
                             height={36}
-                            formatter={(value, entry) => {
-                                const session = comparisonSessions.find(s => s.id === value);
-                                if (!session) return value;
-                                const isInterpolated = (comparisonData[session.id] || []).length > 1 && (comparisonData[session.id] || []).some((_, i, arr) => {
-                                    if (i === 0) return false;
-                                    const timeDiff = new Date(arr[i].timestamp).getTime() - new Date(arr[i-1].timestamp).getTime();
-                                    return timeDiff > 90000;
-                                });
-                                return `${session.vesselTypeName} - ${session.serialNumber || 'N/A'}${isInterpolated ? ' (interpolated)' : ''}`;
-                            }}
+                            content={<></>} // Hide default legend
                         />
                         
                         {comparisonSessions.map((session, index) => (
