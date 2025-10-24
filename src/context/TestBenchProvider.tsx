@@ -110,8 +110,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     
     const unsubscribe = onValue(liveRef, (snap) => {
         const status = snap.val();
-        
-        if (status) {
+
+        if (status && status.heartbeat) {
             // Data has been received, so device is online.
             setIsConnected(true);
 
