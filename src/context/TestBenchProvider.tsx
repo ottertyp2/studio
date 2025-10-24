@@ -37,7 +37,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       if (!querySnapshot.empty) {
         const runningSessionDoc = querySnapshot.docs[0];
         runningTestSessionRef.current = { id: runningSessionDoc.id, ...runningSessionDoc.data() };
-        // This is now the source of truth for recording status in the provider
       } else {
         runningTestSessionRef.current = null;
       }
@@ -51,7 +50,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const newTimestamp = new Date(newDataPoint.timestamp).getTime();
     setLastDataPointTimestamp(newTimestamp);
     
-    // Only add to log if it's a new timestamp to prevent duplicates from /live updates
     setLocalDataLog(prevLog => {
         if(prevLog.length > 0 && prevLog[0].timestamp === newDataPoint.timestamp) {
             return prevLog;
@@ -59,7 +57,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         return [newDataPoint, ...prevLog].slice(0, 1000)
     });
 
-    // If a session is running (based on our Firestore listener), save the data.
     if (runningTestSessionRef.current && firestore && isRecording) {
       const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
       const dataToSave = {
@@ -78,7 +75,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
     const commandPath = valve === 'VALVE1' ? 'commands/valve1' : 'commands/valve2';
     
-    // Optimistic UI update
     if (valve === 'VALVE1') setValve1Status(state);
     else setValve2Status(state);
 
@@ -87,7 +83,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     } catch (error: any) {
         console.error('Failed to send command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
-        // Revert UI on failure
         if (valve === 'VALVE1') setValve1Status(state === 'ON' ? 'OFF' : 'ON');
         else setValve2Status(state === 'ON' ? 'OFF' : 'ON');
     }
@@ -116,7 +111,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const unsubscribe = onValue(liveRef, (snap) => {
         const status = snap.val();
         if(status) {
-            // Update the last heartbeat timestamp. This is our primary connection signal.
+            // The heartbeat is now part of the main status object.
             if (status.heartbeat) {
                 lastHeartbeatTimestamp.current = status.heartbeat;
             }
@@ -136,15 +131,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         }
     });
     
-    // Dead man's switch timer for heartbeat
     const heartbeatCheckInterval = setInterval(() => {
         if (lastHeartbeatTimestamp.current && (Date.now() - lastHeartbeatTimestamp.current > 2000)) {
-            // If it's been more than 2 seconds since the last heartbeat, assume disconnected
             setIsConnected(false);
             setCurrentValue(null);
             setLatency(null);
         } else if (lastHeartbeatTimestamp.current) {
-            // If we have a recent heartbeat, we are connected.
             setIsConnected(true);
         }
     }, 1000);
