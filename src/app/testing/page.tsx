@@ -433,7 +433,7 @@ function TestingComponent() {
         if (!curve || curve.length === 0) return undefined;
         // Find the two points surrounding x
         let p1 = null, p2 = null;
-        for(let i=0; i<curve.length; i++) {
+        for(let i = 0; i < curve.length; i++) {
             if (curve[i].x <= x) {
                 p1 = curve[i];
             }
@@ -537,84 +537,76 @@ function TestingComponent() {
   }, [isDeviceConnected, isRecording]);
 
 
-  const generateReport = async (session: WithId<TestSession>) => {
-      console.log("--- Starting PDF Generation ---");
+    const generateReport = async (session: WithId<TestSession>) => {
+        setIsGeneratingReport(true);
 
-      if (!chartRef.current) {
-        const errorMsg = "PDF Generation Failed: Chart reference is missing.";
-        console.error(errorMsg);
-        toast({ variant: 'destructive', title: 'Error', description: errorMsg });
-        return;
-      }
-      
-      if (!session.batchId) {
-        toast({ variant: 'destructive', title: 'Report Failed', description: 'Session is missing a Batch ID. Cannot generate report.'});
-        return;
-      }
+        const dataForReport = comparisonData[session.id];
+        const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+        const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+        const batch = batches?.find(b => b.id === session.batchId);
 
-      const dataForReport = comparisonData[session.id];
-      const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-      const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-      const batch = batches?.find(b => b.id === session.batchId);
-      
-      console.log("Session:", session ? JSON.stringify(session, null, 2) : 'undefined');
-      console.log("Data for report:", dataForReport ? `${dataForReport.length} points` : "undefined");
-      console.log("Config:", config ? JSON.stringify(config, null, 2) : "undefined");
-      console.log("Vessel Type:", vesselType ? JSON.stringify(vesselType, null, 2) : "undefined");
-      console.log("Batch:", batch ? JSON.stringify(batch, null, 2) : "undefined");
-      
-      if (!dataForReport || !config || !vesselType || !batch) {
-          const errorMsg = 'Required report data is missing. Ensure all catalog items (config, vessel type, batch) are present.';
-          console.error(errorMsg, {dataForReport: !!dataForReport, config: !!config, vesselType: !!vesselType, batch: !!batch});
-          toast({ variant: 'destructive', title: 'Report Generation Failed', description: errorMsg });
-          return;
-      }
+        if (!dataForReport || !config || !vesselType || !batch) {
+            let missingItems = [];
+            if (!dataForReport) missingItems.push('session data');
+            if (!config) missingItems.push('sensor config');
+            if (!vesselType) missingItems.push('vessel type');
+            if (!batch) missingItems.push('batch info');
+            toast({ variant: 'destructive', title: 'Report Failed: Missing Data', description: `Could not find: ${missingItems.join(', ')}.` });
+            setIsGeneratingReport(false);
+            return;
+        }
 
-      setIsGeneratingReport(true);
-      try {
-          console.log("Generating chart image...");
-          const dataUrl = await toPng(chartRef.current, { quality: 0.95, pixelRatio: 2 });
-          console.log("Chart image generated, length:", dataUrl.length);
-          
-          const startTime = new Date(session.startTime).getTime();
-          const singleChartData = dataForReport.map(d => {
-              if (!config) return { name: 0, value: 0 }; // Should not happen due to guard
-              const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
-              const value = parseFloat(convertRawValue(d.value, config).toFixed(config.decimalPlaces));
-              return { name: time, value };
-          });
-          console.log("Processing PDF document...");
+        if (!chartRef.current) {
+            toast({ variant: 'destructive', title: 'Report Failed: Chart Error', description: 'Chart component reference is not available.' });
+            setIsGeneratingReport(false);
+            return;
+        }
 
-          const blob = await pdf(
-              <TestReport 
-                  session={session} 
-                  data={singleChartData} 
-                  config={config} 
-                  chartImage={dataUrl}
-                  vesselType={vesselType}
-                  batch={batch}
-              />
-          ).toBlob();
-          console.log("PDF Blob created, size:", blob.size);
+        let dataUrl;
+        try {
+            dataUrl = await toPng(chartRef.current, { quality: 0.95, pixelRatio: 2 });
+        } catch (e: any) {
+            console.error("PDF Generation Error (Chart to PNG):", e);
+            toast({ variant: 'destructive', title: 'Report Failed: Chart Image', description: `Could not render chart to image. ${e.message}` });
+            setIsGeneratingReport(false);
+            return;
+        }
 
-          const link = document.createElement('a');
-          link.href = URL.createObjectURL(blob);
-          link.download = `report-${session.vesselTypeName}-${session.serialNumber || session.id}.pdf`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          
-          console.log("--- PDF Generation Complete ---");
-          toast({ title: 'Report Generated', description: 'Your PDF report has been downloaded.' });
+        try {
+            const startTime = new Date(session.startTime).getTime();
+            const singleChartData = dataForReport.map(d => {
+                const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
+                // We already verified config exists above, so this should be safe.
+                const value = parseFloat(convertRawValue(d.value, config!).toFixed(config!.decimalPlaces));
+                return { name: time, value };
+            });
 
-      } catch (e: any) {
-          console.error("--- PDF Generation FAILED ---");
-          console.error("Error during PDF generation:", e);
-          toast({ variant: 'destructive', title: 'Report Generation Failed', description: e.message });
-      } finally {
-          setIsGeneratingReport(false);
-      }
-  };
+            const blob = await pdf(
+                <TestReport
+                    session={session}
+                    data={singleChartData}
+                    config={config}
+                    chartImage={dataUrl}
+                    vesselType={vesselType}
+                    batch={batch}
+                />
+            ).toBlob();
+
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `report-${session.vesselTypeName}-${session.serialNumber || session.id}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            toast({ title: 'Report Generated', description: 'Your PDF report has been downloaded.' });
+        } catch (e: any) {
+            console.error("PDF Generation Error (Rendering):", e);
+            toast({ variant: 'destructive', title: 'Report Failed: PDF Rendering', description: `Could not generate the final PDF document. ${e.message}` });
+        } finally {
+            setIsGeneratingReport(false);
+        }
+    };
 
   useEffect(() => {
     if (!user || !firestore) return;
@@ -937,9 +929,7 @@ function TestingComponent() {
                             }}
                             labelFormatter={(label) => `Time: ${label}s`}
                         />
-                        <Legend
-                            content={() => null}
-                        />
+                        <Legend content={() => null} />
                         
                         {comparisonSessions.map((session, index) => (
                            <Line 

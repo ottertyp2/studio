@@ -1342,71 +1342,90 @@ export default function AdminPage() {
   };
 
     const handleGenerateVesselTypeReport = async (vesselType: VesselType) => {
-    if (!firestore || !firebaseApp || !testSessions || !sensorConfigs || !batches) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Required data is not loaded. Please wait and try again.' });
-      return;
-    }
-    
-    setGeneratingVesselTypeReport(vesselType.id);
+        if (!firestore || !firebaseApp || !testSessions || !sensorConfigs || !batches) {
+            toast({ variant: 'destructive', title: 'Report Failed', description: 'Required data is not loaded. Please wait and try again.' });
+            return;
+        }
 
-    try {
-      const relevantSessions = testSessions.filter(s => s.vesselTypeId === vesselType.id && s.status === 'COMPLETED');
-      if (relevantSessions.length === 0) {
-        toast({ title: 'No Data', description: 'No completed test sessions found for this vessel type.' });
-        setGeneratingVesselTypeReport(null);
-        return;
-      }
+        setGeneratingVesselTypeReport(vesselType.id);
 
-      const allSensorData: Record<string, SensorData[]> = {};
-      for (const session of relevantSessions) {
-          const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
-          const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
-          const snapshot = await getDocs(q);
-          const data = snapshot.docs.map(doc => doc.data() as SensorData).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-          allSensorData[session.id] = data;
-      }
-      
-      const blob = await pdf(
-          <BatchReport 
-              vesselType={vesselType} 
-              sessions={relevantSessions}
-              allSensorData={allSensorData}
-              sensorConfigs={sensorConfigs}
-              batches={batches}
-          />
-      ).toBlob();
+        let relevantSessions, allSensorData: Record<string, SensorData[]>;
 
-      const storage = getStorage(firebaseApp);
-      const reportId = doc(collection(firestore, '_')).id;
-      const filePath = `reports/vessel_type_reports/${vesselType.id}/${reportId}.pdf`;
-      const fileRef = storageRef(storage, filePath);
+        try {
+            // Step 1: Gather Data
+            relevantSessions = testSessions.filter(s => s.vesselTypeId === vesselType.id && s.status === 'COMPLETED');
+            if (relevantSessions.length === 0) {
+                toast({ title: 'No Data', description: 'No completed test sessions found for this vessel type.' });
+                setGeneratingVesselTypeReport(null);
+                return;
+            }
 
-      await uploadBytes(fileRef, blob);
-      const downloadUrl = await getDownloadURL(fileRef);
+            allSensorData = {};
+            for (const session of relevantSessions) {
+                const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+                const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
+                const snapshot = await getDocs(q);
+                const data = snapshot.docs.map(doc => doc.data() as SensorData).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+                allSensorData[session.id] = data;
+            }
+        } catch (e: any) {
+            console.error("Report Generation Error (Data Gathering):", e);
+            toast({ variant: 'destructive', title: 'Report Failed: Data Gathering', description: `Could not collect session data. ${e.message}` });
+            setGeneratingVesselTypeReport(null);
+            return;
+        }
 
-      const reportData: Report = {
-          id: reportId,
-          testSessionId: `vesselType-${vesselType.id}`,
-          generatedAt: new Date().toISOString(),
-          downloadUrl: downloadUrl,
-          vesselTypeName: vesselType.name,
-          serialNumber: 'N/A', // This is a batch report, not for a single serial
-          username: user?.displayName || 'admin',
-      };
-      await setDoc(doc(firestore, 'reports', reportId), reportData);
+        let blob;
+        try {
+            // Step 2: Render PDF to blob
+            blob = await pdf(
+                <BatchReport 
+                    vesselType={vesselType} 
+                    sessions={relevantSessions}
+                    allSensorData={allSensorData}
+                    sensorConfigs={sensorConfigs}
+                    batches={batches}
+                />
+            ).toBlob();
+        } catch (e: any) {
+            console.error("Report Generation Error (PDF Rendering):", e);
+            toast({ variant: 'destructive', title: 'Report Failed: PDF Rendering', description: `Could not render the PDF document. ${e.message}` });
+            setGeneratingVesselTypeReport(null);
+            return;
+        }
 
-      toast({
-          title: 'Vessel Type Report Generated',
-          description: 'The unified vessel type report has been saved.',
-      });
+        try {
+            // Step 3: Upload and save metadata
+            const storage = getStorage(firebaseApp);
+            const reportId = doc(collection(firestore, '_')).id;
+            const filePath = `reports/vessel_type_reports/${vesselType.id}/${reportId}.pdf`;
+            const fileRef = storageRef(storage, filePath);
 
-    } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Vessel Type Report Failed', description: e.message });
-      console.error(e);
-    } finally {
-      setGeneratingVesselTypeReport(null);
-    }
-  };
+            await uploadBytes(fileRef, blob);
+            const downloadUrl = await getDownloadURL(fileRef);
+
+            const reportData: Report = {
+                id: reportId,
+                testSessionId: `vesselType-${vesselType.id}`,
+                generatedAt: new Date().toISOString(),
+                downloadUrl: downloadUrl,
+                vesselTypeName: vesselType.name,
+                serialNumber: 'N/A', // This is a batch report, not for a single serial
+                username: user?.displayName || 'admin',
+            };
+            await setDoc(doc(firestore, 'reports', reportId), reportData);
+
+            toast({
+                title: 'Vessel Type Report Generated',
+                description: 'The unified vessel type report has been saved.',
+            });
+        } catch (e: any) {
+            console.error("Report Generation Error (Upload/Save):", e);
+            toast({ variant: 'destructive', title: 'Report Failed: Uploading', description: `Could not save the generated report. ${e.message}` });
+        } finally {
+            setGeneratingVesselTypeReport(null);
+        }
+    };
 
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
@@ -2513,5 +2532,3 @@ const renderBatchManagement = () => (
   );
 }
 
-
-    
