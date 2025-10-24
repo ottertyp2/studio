@@ -639,33 +639,31 @@ function TestingComponent() {
     return () => unsubscribe();
   }, [firestore, user, toast]);
 
-    // Handle incoming sessionId from URL
+    // Handle incoming sessionId from URL as a one-time operation
     useEffect(() => {
         const sessionId = searchParams.get('sessionId');
         if (sessionId && firestore) {
-            // Only run if the session isn't already selected
-            if (!comparisonSessions.some(cs => cs.id === sessionId)) {
-                const fetchAndSetSession = async () => {
-                    const sessionDocRef = doc(firestore, 'test_sessions', sessionId);
-                    try {
-                        const sessionDoc = await getDoc(sessionDocRef);
-                        if (sessionDoc.exists()) {
-                            const sessionData = {id: sessionDoc.id, ...sessionDoc.data()} as WithId<TestSession>;
-                            // Check again inside async to avoid race condition
-                            if (!comparisonSessions.some(cs => cs.id === sessionId)) {
-                                setComparisonSessions([sessionData]);
-                            }
-                        } else {
-                            toast({variant: 'destructive', title: 'Session not found', description: `Could not find a session with ID: ${sessionId}`});
-                        }
-                    } catch (error: any) {
-                         toast({variant: 'destructive', title: 'Failed to fetch session', description: error.message});
+            const fetchAndSetSession = async () => {
+                const sessionDocRef = doc(firestore, 'test_sessions', sessionId);
+                try {
+                    const sessionDoc = await getDoc(sessionDocRef);
+                    if (sessionDoc.exists()) {
+                        const sessionData = {id: sessionDoc.id, ...sessionDoc.data()} as WithId<TestSession>;
+                        setComparisonSessions([sessionData]);
+                        // Clean the URL
+                        router.replace('/testing', { scroll: false });
+                    } else {
+                        toast({variant: 'destructive', title: 'Session not found', description: `Could not find a session with ID: ${sessionId}`});
+                         router.replace('/testing', { scroll: false });
                     }
-                };
-                fetchAndSetSession();
-            }
+                } catch (error: any) {
+                     toast({variant: 'destructive', title: 'Failed to fetch session', description: error.message});
+                     router.replace('/testing', { scroll: false });
+                }
+            };
+            fetchAndSetSession();
         }
-    }, [searchParams, firestore, comparisonSessions, toast]); // Rerun if comparisonSessions changes
+    }, [searchParams, firestore, router, toast]); // Removed comparisonSessions from deps
 
   const handleToggleComparison = (session: WithId<TestSession>) => {
     setComparisonSessions(prev => {
@@ -900,7 +898,7 @@ function TestingComponent() {
                                                 <div className="flex gap-2">
                                                     {comparisonSessions.length === 1 && comparisonSessions[0].id === session.id && session.status === 'COMPLETED' && (
                                                         <Button size="sm" onClick={() => generateReport(session)} disabled={isGeneratingReport}>
-                                                            <Download className="h-4 w-4"/>
+                                                            {isGeneratingReport ? '...' : <Download className="h-4 w-4"/>}
                                                         </Button>
                                                     )}
                                                     <AlertDialog>
