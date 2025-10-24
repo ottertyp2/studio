@@ -55,8 +55,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, setDocumentNonBlocking, deleteDocumentNonBlocking, WithId } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
 import { useTestBench } from '@/context/TestBenchContext';
-import { collection, query, where, getDocs, doc, onSnapshot, writeBatch, orderBy, limit } from 'firebase/firestore';
-import { ref, set } from 'firebase/database';
+import { collection, query, where, getDocs, doc, onSnapshot, writeBatch, orderBy, limit, serverTimestamp } from 'firebase/firestore';
+import { ref, set, remove } from 'firebase/database';
 import { formatDistanceToNow } from 'date-fns';
 import { convertRawValue } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
@@ -146,6 +146,15 @@ function TestingComponent() {
   const { user, userRole, isUserLoading } = useUser();
   const { firestore, auth, database } = useFirebase();
 
+  // This early return prevents the "change in order of hooks" error
+  if (isUserLoading || !user || !firestore || !database) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
+        <p className="text-lg">Loading Dashboard...</p>
+      </div>
+    );
+  }
+
   const { 
     isConnected, 
     currentValue,
@@ -179,16 +188,16 @@ function TestingComponent() {
 
 
   // Data fetching hooks
-  const testBenchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'testbenches') : null, [firestore]);
+  const testBenchesCollectionRef = useMemoFirebase(() => collection(firestore, 'testbenches'), [firestore]);
   const { data: testBenches, isLoading: isTestBenchesLoading } = useCollection<TestBench>(testBenchesCollectionRef);
 
-  const sensorConfigsCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'sensor_configurations') : null, [firestore]);
+  const sensorConfigsCollectionRef = useMemoFirebase(() => collection(firestore, 'sensor_configurations'), [firestore]);
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
   
-  const vesselTypesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'vessel_types') : null, [firestore]);
+  const vesselTypesCollectionRef = useMemoFirebase(() => collection(firestore, 'vessel_types'), [firestore]);
   const { data: vesselTypes, isLoading: isVesselTypesLoading } = useCollection<VesselType>(vesselTypesCollectionRef);
   
-  const batchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'batches') : null, [firestore]);
+  const batchesCollectionRef = useMemoFirebase(() => collection(firestore, 'batches'), [firestore]);
   const { data: batches, isLoading: isBatchesLoading } = useCollection<Batch>(batchesCollectionRef);
 
 
@@ -224,7 +233,7 @@ function TestingComponent() {
         setRunningTestSession(session);
         setComparisonSessions(prev => {
             if (prev.some(s => s.id === session.id)) return prev;
-            return [...prev, session];
+            return [session, ...prev];
         });
       } else {
         setRunningTestSession(null);
@@ -266,6 +275,7 @@ function TestingComponent() {
 
     try {
       await addDocumentNonBlocking(collection(firestore, 'test_sessions'), newSessionDoc);
+      // Command the ESP32 to start recording
       await set(ref(database, 'commands/recording'), true);
       toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
       setIsNewSessionDialogOpen(false);
@@ -282,6 +292,7 @@ function TestingComponent() {
       status: 'COMPLETED',
       endTime: new Date().toISOString(),
     });
+     // Command the ESP32 to stop recording
     await set(ref(database, 'commands/recording'), false);
     toast({ title: 'Session Stopped', description: 'Data recording has ended.' });
   };
@@ -305,16 +316,20 @@ function TestingComponent() {
     };
 
     comparisonSessions.forEach(session => {
-        const sensorDataRef = collection(firestore, 'test_sessions', session.id, 'sensor_data');
-        const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
+        const dataQuery = query(
+          collection(firestore, 'test_sessions', session.id, 'sensor_data'),
+          orderBy('timestamp', 'asc')
+        );
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
+        const unsubscribe = onSnapshot(dataQuery, (snapshot) => {
             const data = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
             setComparisonData(prev => ({ ...prev, [session.id]: data }));
+            
+            // This logic ensures loading state is false once initial data for all completed sessions is loaded
             if (session.status === 'COMPLETED' && !isLoadingComparisonData) {
                 checkAllLoaded();
-            } else if (session.status === 'RUNNING') {
-                setIsLoadingComparisonData(false);
+            } else if(session.status === 'RUNNING') {
+                 setIsLoadingComparisonData(false); // For running sessions, data comes in a stream, so we are "loaded" immediately
             }
         }, (error) => {
             console.error(`Error fetching data for ${session.id}:`, error);
@@ -415,14 +430,7 @@ function TestingComponent() {
 
   }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes, timeframe]);
 
-  useEffect(() => {
-    if (!isUserLoading && !user) {
-      router.replace('/login');
-    }
-  }, [user, isUserLoading, router]);
-
   const handleSignOut = () => {
-    if (!user) return;
     signOut(auth);
     router.push('/login');
   };
@@ -537,14 +545,6 @@ function TestingComponent() {
     );
     return () => unsubscribe();
   }, [firestore, user, toast]);
-
-  if (isUserLoading || !user) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
-        <p className="text-lg">Loading Dashboard...</p>
-      </div>
-    );
-  }
 
   const handleToggleComparison = (session: WithId<TestSession>) => {
     setComparisonSessions(prev => {
