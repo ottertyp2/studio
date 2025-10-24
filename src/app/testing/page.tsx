@@ -206,13 +206,18 @@ function TestingComponent() {
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       if (!querySnapshot.empty) {
         const runningSessionDoc = querySnapshot.docs[0];
-        setRunningTestSession({ id: runningSessionDoc.id, ...runningSessionDoc.data() } as WithId<TestSession>);
+        const session = { id: runningSessionDoc.id, ...runningSessionDoc.data() } as WithId<TestSession>;
+        setRunningTestSession(session);
+        setSelectedSessionForView(session); // View the running session live
       } else {
         setRunningTestSession(null);
+        if (selectedSessionForView?.status === 'RUNNING') {
+          setSelectedSessionForView(null);
+        }
       }
     });
     return () => unsubscribe();
-  }, [firestore, user]);
+  }, [firestore, user, selectedSessionForView?.status]);
 
   // Load session from URL
   const sessionIdFromUrl = searchParams.get('sessionId');
@@ -260,7 +265,7 @@ function TestingComponent() {
     try {
       const docRef = await addDocumentNonBlocking(collection(firestore, 'test_sessions'), newSessionDoc);
       if (docRef) {
-        setRunningTestSession({ id: docRef.id, ...newSessionDoc } as WithId<TestSession>);
+        // The onSnapshot listener will pick up the new running session
         toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
         setIsNewSessionDialogOpen(false);
         setNewSessionData({ vesselTypeId: '', batchId: '', serialNumber: '', description: '' });
@@ -277,30 +282,75 @@ function TestingComponent() {
       status: 'COMPLETED',
       endTime: new Date().toISOString(),
     });
-    handleViewSession(runningTestSession); // Immediately view the session we just stopped
-    setRunningTestSession(null);
+    // handleViewSession is now implicitly handled by the running session listener
     toast({ title: 'Session Stopped', description: 'Data recording has ended.' });
   };
   
   const handleViewSession = async (session: WithId<TestSession>) => {
-    setSelectedSessionForView(session);
-    setSessionDataForView([]);
-    setIsLoadingSessionData(true);
-    if (!firestore) return;
+    if (session.status === 'RUNNING') {
+        setSelectedSessionForView(session); // Let the live listener handle data
+    } else {
+        setSelectedSessionForView(session);
+        setSessionDataForView([]);
+        setIsLoadingSessionData(true);
+        if (!firestore) return;
 
-    const sensorDataRef = collection(firestore, 'test_sessions', session.id, 'sensor_data');
-    const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
+        const sensorDataRef = collection(firestore, 'test_sessions', session.id, 'sensor_data');
+        const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
 
-    try {
-        const snapshot = await getDocs(q);
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
-        setSessionDataForView(data);
-    } catch (e: any) {
-        toast({ variant: 'destructive', title: 'Error Loading Session Data', description: e.message });
-    } finally {
-        setIsLoadingSessionData(false);
+        try {
+            const snapshot = await getDocs(q);
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
+            setSessionDataForView(data);
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Error Loading Session Data', description: e.message });
+        } finally {
+            setIsLoadingSessionData(false);
+        }
     }
   };
+
+  // Real-time data listener for the selected session
+  useEffect(() => {
+    if (!firestore || !selectedSessionForView) {
+        setSessionDataForView([]);
+        return;
+    }
+    
+    // For completed sessions, we fetch once. For running, we listen.
+    if (selectedSessionForView.status === 'COMPLETED' || selectedSessionForView.status === 'SCRAPPED') {
+        setIsLoadingSessionData(true);
+        const sensorDataRef = collection(firestore, 'test_sessions', selectedSessionForView.id, 'sensor_data');
+        const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
+        getDocs(q).then(snapshot => {
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
+            setSessionDataForView(data);
+            setIsLoadingSessionData(false);
+        }).catch(e => {
+            toast({ variant: 'destructive', title: 'Error Loading Session Data', description: e.message });
+            setIsLoadingSessionData(false);
+        });
+        return; // No need to subscribe for completed sessions
+    }
+
+    // For RUNNING sessions
+    setIsLoadingSessionData(true);
+    const sensorDataRef = collection(firestore, 'test_sessions', selectedSessionForView.id, 'sensor_data');
+    const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
+        setSessionDataForView(data);
+        setIsLoadingSessionData(false);
+    }, (error) => {
+        console.error("Error fetching live session data:", error);
+        toast({ variant: 'destructive', title: 'Live Data Error', description: error.message });
+        setIsLoadingSessionData(false);
+    });
+
+    return () => unsubscribe();
+  }, [firestore, selectedSessionForView]);
+
 
   const handleDeleteSession = async (sessionId: string) => {
     if (!firestore) return;
@@ -334,13 +384,15 @@ function TestingComponent() {
   };
 
   const chartData = useMemo(() => {
-    const data = selectedSessionForView ? sessionDataForView : [];
-    if (!data || data.length === 0) return [];
+    const data = sessionDataForView;
+    const session = selectedSessionForView;
+
+    if (!data || data.length === 0 || !session) return [];
     
-    const startTime = new Date(selectedSessionForView?.startTime || 0).getTime();
-    const configToUse = sensorConfigs?.find(c => c.id === selectedSessionForView?.sensorConfigurationId);
+    const startTime = new Date(session.startTime).getTime();
+    const configToUse = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
     
-    const vesselTypeForChart = vesselTypes?.find(vt => vt.id === selectedSessionForView?.vesselTypeId);
+    const vesselTypeForChart = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
 
     return data.map(d => {
         const time = (new Date(d.timestamp).getTime() - startTime) / 1000;
@@ -363,7 +415,7 @@ function TestingComponent() {
 
         return point;
     });
-  }, [selectedSessionForView, sessionDataForView, sensorConfigs, vesselTypes]);
+  }, [sessionDataForView, selectedSessionForView, sensorConfigs, vesselTypes]);
 
   useEffect(() => {
     if (!isUserLoading && !user) {
@@ -676,7 +728,7 @@ function TestingComponent() {
             <CardHeader>
                 <div className="flex justify-between items-center flex-wrap gap-4">
                   <CardTitle>{selectedSessionForView ? `Viewing Session: ${selectedSessionForView.vesselTypeName} - ${selectedSessionForView.serialNumber || 'N/A'}` : 'Live Data Visualization'}</CardTitle>
-                   {selectedSessionForView && (
+                   {selectedSessionForView && selectedSessionForView.status !== 'RUNNING' && (
                      <div className="flex gap-2">
                         <Button variant="outline" size="sm" onClick={() => setSelectedSessionForView(null)}>
                             <XIcon className="mr-2 h-4 w-4"/>
@@ -727,7 +779,7 @@ function TestingComponent() {
                             labelFormatter={(label) => `Time: ${label}s`}
                         />
                         <Legend verticalAlign="top" height={36} />
-                        <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name="Sensor Value" dot={false} strokeWidth={2} isAnimationActive={!isLoadingSessionData} />
+                        <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name="Sensor Value" dot={false} strokeWidth={2} isAnimationActive={!isLoadingSessionData && selectedSessionForView?.status !== 'RUNNING'} />
                         <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
                       </LineChart>
@@ -749,3 +801,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
