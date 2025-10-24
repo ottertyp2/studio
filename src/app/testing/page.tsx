@@ -177,9 +177,9 @@ function TestingComponent() {
   const [sessionHistory, setSessionHistory] = useState<WithId<TestSession>[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
 
-  const [isLive, setIsLive] = useState(true);
-  const [timeframe, setTimeframe] = useState('all');
-  const [brushDomain, setBrushDomain] = useState<{ startIndex?: number; endIndex?: number } | null>(null);
+  const [xAxisDomain, setXAxisDomain] = useState<[number | 'dataMin' | 'dataMax', number | 'dataMin' | 'dataMax']>(['dataMin', 'dataMax']);
+  const [activeTimeframe, setActiveTimeframe] = useState('all');
+
 
   // Data fetching hooks
   const testBenchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'testbenches') : null, [firestore]);
@@ -441,17 +441,24 @@ function TestingComponent() {
       }
     });
   
-    const sortedData = Object.values(allDataPoints).sort((a, b) => a.name - b.name);
-    
-    if (timeframe === 'all' || isNaN(parseInt(timeframe, 10))) return sortedData;
+    return Object.values(allDataPoints).sort((a, b) => a.name - b.name);
+  }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
-    const currentMaxTime = sortedData.length > 0 ? sortedData[sortedData.length - 1].name : 0;
-    const durationInSeconds = parseInt(timeframe, 10) * 60;
-    const startTime = Math.max(0, currentMaxTime - durationInSeconds);
+  const setTimeframe = (frame: '1m' | '5m' | 'all') => {
+      setActiveTimeframe(frame);
+      if (frame === 'all') {
+          setXAxisDomain(['dataMin', 'dataMax']);
+          return;
+      }
 
-    return sortedData.filter(d => d.name >= startTime);
+      const maxTime = chartData.length > 0 ? chartData[chartData.length - 1].name : 0;
+      let duration = 0;
+      if (frame === '1m') duration = 60;
+      if (frame === '5m') duration = 300;
 
-  }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes, timeframe]);
+      setXAxisDomain([Math.max(0, maxTime - duration), 'dataMax']);
+  };
+
 
   const handleSignOut = () => {
       if(!auth) return;
@@ -461,8 +468,6 @@ function TestingComponent() {
 
   const isDeviceConnected = useMemo(() => {
     if (!lastDataPointTimestamp) return false;
-    // If the last data point is older than 65 seconds, assume device is offline.
-    // This allows for the 60-second standby update interval plus a 5-second buffer.
     return (Date.now() - lastDataPointTimestamp) < 65000;
   }, [lastDataPointTimestamp]);
 
@@ -618,32 +623,6 @@ function TestingComponent() {
         }
     });
   };
-
-  const handleBrushChange = (newDomain: any) => {
-    if (newDomain && (newDomain.startIndex !== null && newDomain.endIndex !== null)) {
-      setBrushDomain({ startIndex: newDomain.startIndex, endIndex: newDomain.endIndex });
-      setIsLive(false);
-    }
-  };
-
-  const resetZoom = () => {
-    setBrushDomain(null);
-  };
-  
-  const xAxisDomain = useMemo((): [number | 'dataMin' | 'dataMax', number | 'dataMin' | 'dataMax'] => {
-    if (brushDomain && chartData.length > (brushDomain.endIndex ?? -1) && (brushDomain.startIndex ?? -1) >= 0) {
-        const start = chartData[brushDomain.startIndex ?? 0]?.name;
-        const end = chartData[brushDomain.endIndex ?? chartData.length - 1]?.name;
-        if (start !== undefined && end !== undefined) {
-           return [start, end];
-        }
-    }
-    if (isLive) {
-        const maxTime = chartData.length > 0 ? chartData[chartData.length - 1].name : 0;
-        return [Math.max(0, maxTime - 60), 'dataMax'];
-    }
-    return ['dataMin', 'dataMax'];
-  }, [brushDomain, chartData, isLive]);
 
   const getLatencyColor = (ping: number | null) => {
     if (ping === null) return 'text-muted-foreground';
@@ -887,18 +866,10 @@ function TestingComponent() {
                             </div>
                             </SheetContent>
                         </Sheet>
-                        <Button variant={timeframe === '1' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('1')}>1m</Button>
-                        <Button variant={timeframe === '5' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('5')}>5m</Button>
-                        <Button variant={timeframe === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('all')}>All</Button>
-                        <Button variant={isLive ? 'default' : 'outline'} size="sm" onClick={() => setIsLive(!isLive)}>
-                            {isLive ? '🔴 Live' : '⚫ Live Off'}
-                        </Button>
-                         {brushDomain && (
-                            <Button variant="outline" size="sm" onClick={resetZoom}>
-                                <Redo className="mr-2 h-4 w-4" />
-                                Reset Zoom
-                            </Button>
-                        )}
+                        <Button variant={activeTimeframe === '1m' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('1m')}>1m</Button>
+                        <Button variant={activeTimeframe === '5m' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('5m')}>5m</Button>
+                        <Button variant={activeTimeframe === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('all')}>All</Button>
+                        
                         {comparisonSessions.length === 1 && comparisonSessions[0].status === 'COMPLETED' && (
                             <Button size="sm" onClick={() => generateReport(comparisonSessions[0])} disabled={isGeneratingReport}>
                                 <Download className="mr-2 h-4 w-4"/>
@@ -964,15 +935,6 @@ function TestingComponent() {
 
                         <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
-
-                        <Brush 
-                            dataKey="name" 
-                            height={30} 
-                            stroke="hsl(var(--primary))"
-                            startIndex={brushDomain?.startIndex}
-                            endIndex={brushDomain?.endIndex}
-                            onChange={handleBrushChange}
-                         />
                       </LineChart>
                   </ResponsiveContainer>
                 </div>
