@@ -31,6 +31,7 @@ export interface TestBenchContextType {
   lastDataPointTimestamp: number | null;
   valve1Status: ValveStatus;
   valve2Status: ValveStatus;
+  disconnectCount: number;
   sessions: Record<string, Session> | null;
   sendValveCommand: (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => Promise<void>;
   sendRecordingCommand: (shouldRecord: boolean) => Promise<void>;

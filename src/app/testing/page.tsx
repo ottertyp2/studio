@@ -149,10 +149,11 @@ function TestingComponent() {
   const { firestore, auth, database } = useFirebase();
 
   const { 
-    isConnected: isFirebaseConnected, 
+    isRecording,
     currentValue,
     lastDataPointTimestamp,
-    isRecording,
+    disconnectCount,
+    sendRecordingCommand,
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
@@ -259,14 +260,14 @@ function TestingComponent() {
       status: 'RUNNING',
       testBenchId: activeTestBench.id,
       sensorConfigurationId: activeSensorConfig.id,
-      measurementType: isFirebaseConnected ? 'ARDUINO' : 'DEMO',
+      measurementType: 'ARDUINO', // Assume ARDUINO, can be changed based on connection status later
       userId: user.uid,
       username: user.displayName || user.email || 'Unknown User',
     };
 
     try {
       await addDocumentNonBlocking(collection(firestore, 'test_sessions'), newSessionDoc);
-      await set(ref(database, 'commands/recording'), true);
+      await sendRecordingCommand(true); // Send command to RTDB
       toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
       setIsNewSessionDialogOpen(false);
       setNewSessionData({ vesselTypeId: '', batchId: '', serialNumber: '', description: '' });
@@ -278,7 +279,7 @@ function TestingComponent() {
   const handleStopSession = async () => {
     if (!runningTestSession || !database || !firestore) return;
     
-    await set(ref(database, 'commands/recording'), false);
+    await sendRecordingCommand(false); // Send command to RTDB
 
     const sessionRef = doc(firestore, 'test_sessions', runningTestSession.id);
     await updateDocumentNonBlocking(sessionRef, {
@@ -628,7 +629,7 @@ function TestingComponent() {
   };
   
   const xAxisDomain = useMemo((): [number | 'dataMin' | 'dataMax', number | 'dataMin' | 'dataMax'] => {
-    if (brushDomain && chartData.length > (brushDomain.endIndex ?? -1) && chartData.length > (brushDomain.startIndex ?? -1)) {
+    if (brushDomain && chartData.length > (brushDomain.endIndex ?? -1) && (brushDomain.startIndex ?? -1) >= 0) {
         const start = chartData[brushDomain.startIndex ?? 0]?.name;
         const end = chartData[brushDomain.endIndex ?? chartData.length - 1]?.name;
         if (start !== undefined && end !== undefined) {
@@ -762,9 +763,9 @@ function TestingComponent() {
                 <CardContent className="flex flex-col items-center">
                 <div className="text-center">
                     <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                    {isDeviceConnected ? (convertedValue?.value ?? 'N/A') : 'Offline'}
+                    {isDeviceConnected && currentValue !== null ? (convertedValue?.value ?? 'N/A') : 'Offline'}
                     </p>
-                    <p className="text-lg text-muted-foreground">{isDeviceConnected ? (convertedValue?.unit ?? '') : ''}</p>
+                    <p className="text-lg text-muted-foreground">{isDeviceConnected && currentValue !== null ? (convertedValue?.unit ?? '') : ''}</p>
                      <p className="text-xs text-muted-foreground h-4 mt-1">
                         {isDeviceConnected && currentValue !== null && lastDataPointTimestamp ? `(Updated ${timeSinceLastUpdate})` : ''}
                     </p>
@@ -773,6 +774,9 @@ function TestingComponent() {
                         {isDeviceConnected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
                         <span>{dataSourceStatus}</span>
                     </div>
+                    {isDeviceConnected && (
+                      <p className="text-xs text-muted-foreground mt-1">Disconnects: {disconnectCount}</p>
+                    )}
                 </div>
                 </CardContent>
             </Card>
@@ -990,5 +994,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    

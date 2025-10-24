@@ -19,6 +19,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [lastDataPointTimestamp, setLastDataPointTimestamp] = useState<number | null>(null);
   const [valve1Status, setValve1Status] = useState<ValveStatus>('OFF');
   const [valve2Status, setValve2Status] = useState<ValveStatus>('OFF');
+  const [disconnectCount, setDisconnectCount] = useState<number>(0);
   
   const runningTestSessionRef = useRef<WithId<DocumentData> | null>(null);
 
@@ -82,6 +83,19 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [database, isConnected, toast]);
 
+    const sendRecordingCommand = useCallback(async (shouldRecord: boolean) => {
+    if (!database) {
+        toast({ variant: 'destructive', title: 'Not Connected', description: 'Database service is not available.' });
+        return;
+    }
+    try {
+        await set(ref(database, 'commands/recording'), shouldRecord);
+    } catch (error: any) {
+        console.error('Failed to send recording command:', error);
+        toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
+    }
+  }, [database, toast]);
+
 
   useEffect(() => {
     if (!database) return;
@@ -101,19 +115,15 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         }
     }));
     
-    const valve1Ref = ref(database, 'live/valve1');
-    unsubscribers.push(onValue(valve1Ref, (snap) => {
-        setValve1Status(snap.val() ? 'ON' : 'OFF');
-    }));
-
-    const valve2Ref = ref(database, 'live/valve2');
-    unsubscribers.push(onValue(valve2Ref, (snap) => {
-        setValve2Status(snap.val() ? 'ON' : 'OFF');
-    }));
-
-    const recordingRef = ref(database, 'live/recording');
-    unsubscribers.push(onValue(recordingRef, (snap) => {
-      setIsRecording(snap.val() === true);
+    const liveStatusRef = ref(database, 'live');
+    unsubscribers.push(onValue(liveStatusRef, (snap) => {
+        const status = snap.val();
+        if(status) {
+            setValve1Status(status.valve1 ? 'ON' : 'OFF');
+            setValve2Status(status.valve2 ? 'ON' : 'OFF');
+            setIsRecording(status.recording === true);
+            setDisconnectCount(status.disconnectCount || 0);
+        }
     }));
 
     return () => {
@@ -147,9 +157,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     lastDataPointTimestamp,
     valve1Status,
     valve2Status,
+    disconnectCount,
     sessions: null,
     sendValveCommand,
-    sendRecordingCommand: async () => {},
+    sendRecordingCommand,
     deleteSession: async () => {},
   };
 
@@ -159,5 +170,3 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
-
-    
