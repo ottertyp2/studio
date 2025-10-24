@@ -789,7 +789,7 @@ function TestingComponent() {
                         <div className="flex items-center justify-center gap-1 mt-1">
                             <Timer className={`h-4 w-4 ${getLatencyColor(latency)}`} />
                             <span className={`text-xs font-semibold ${getLatencyColor(latency)}`}>
-                                Latenz: {latency !== null ? `${latency} ms` : 'N/A'}
+                                Latency: {latency !== null ? `${latency} ms` : 'N/A'}
                             </span>
                         </div>
                       </>
