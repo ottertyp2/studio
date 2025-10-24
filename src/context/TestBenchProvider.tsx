@@ -22,6 +22,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [disconnectCount, setDisconnectCount] = useState<number>(0);
   const [latency, setLatency] = useState<number | null>(null);
   
+  const lastHeartbeatTimestamp = useRef<number | null>(null);
   const runningTestSessionRef = useRef<WithId<DocumentData> | null>(null);
 
   // Monitor running sessions from Firestore
@@ -47,8 +48,16 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   const handleNewDataPoint = useCallback((newDataPoint: RtdbSensorData) => {
     setCurrentValue(newDataPoint.value);
-    setLastDataPointTimestamp(new Date(newDataPoint.timestamp).getTime());
-    setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
+    const newTimestamp = new Date(newDataPoint.timestamp).getTime();
+    setLastDataPointTimestamp(newTimestamp);
+    
+    // Only add to log if it's a new timestamp to prevent duplicates from /live updates
+    setLocalDataLog(prevLog => {
+        if(prevLog.length > 0 && prevLog[0].timestamp === newDataPoint.timestamp) {
+            return prevLog;
+        }
+        return [newDataPoint, ...prevLog].slice(0, 1000)
+    });
 
     // If a session is running (based on our Firestore listener), save the data.
     if (runningTestSessionRef.current && firestore) {
@@ -103,17 +112,19 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
     const unsubscribers: (() => void)[] = [];
     
-    const connectedRef = ref(database, '.info/connected');
-    unsubscribers.push(onValue(connectedRef, (snap) => {
-        setIsConnected(snap.val() === true);
-    }));
-    
     const liveStatusRef = ref(database, 'live');
     unsubscribers.push(onValue(liveStatusRef, (snap) => {
         const status = snap.val();
         if(status) {
-            if (status.sensor !== undefined) {
-                 handleNewDataPoint({ value: status.sensor, timestamp: new Date().toISOString() });
+            // Heartbeat is handled separately now for connection status
+            if (status.heartbeat) {
+                lastHeartbeatTimestamp.current = Date.now();
+                setIsConnected(true);
+            }
+            
+            if (status.sensor !== undefined && status.timestamp !== undefined) {
+                 const timestampISO = new Date(status.timestamp).toISOString();
+                 handleNewDataPoint({ value: status.sensor, timestamp: timestampISO });
             }
             setValve1Status(status.valve1 ? 'ON' : 'OFF');
             setValve2Status(status.valve2 ? 'ON' : 'OFF');
@@ -124,30 +135,24 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             }
         }
     }));
+    
+    // Dead man's switch timer for heartbeat
+    const heartbeatCheckInterval = setInterval(() => {
+        if (lastHeartbeatTimestamp.current && (Date.now() - lastHeartbeatTimestamp.current > 2000)) {
+            // If it's been more than 2 seconds since the last heartbeat, assume disconnected
+            setIsConnected(false);
+            setCurrentValue(null);
+            setLatency(null);
+        }
+    }, 1000);
+
+    unsubscribers.push(() => clearInterval(heartbeatCheckInterval));
 
     return () => {
         unsubscribers.forEach(unsub => unsub());
     };
   }, [database, handleNewDataPoint]);
 
-
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout | null = null;
-    if (lastDataPointTimestamp) {
-        const timeoutDuration = 65000; // ~65 seconds
-        timeoutId = setTimeout(() => {
-            const now = Date.now();
-            if (now - lastDataPointTimestamp >= timeoutDuration) {
-                setCurrentValue(null); // Clear value if data is stale
-            }
-        }, timeoutDuration + (Date.now() - lastDataPointTimestamp) % 1000 );
-    }
-    return () => {
-        if (timeoutId) {
-            clearTimeout(timeoutId);
-        }
-    };
-  }, [lastDataPointTimestamp]);
 
   const value = {
     isConnected,
