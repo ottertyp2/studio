@@ -198,7 +198,7 @@ export default function AdminPage() {
   // ML State
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [selectedDataSetIds, setSelectedDataSetIds] = useState<string[]>([]);
-  const [isTraining, setIsTraining] = useState(isTraining);
+  const [isTraining, setIsTraining] = useState(false);
   const [trainingStatus, setTrainingStatus] = useState({ epoch: 0, loss: 0, accuracy: 0, val_loss: 0, val_acc: 0 });
   
   const [newMlModel, setNewMlModel] = useState<Partial<MLModel>>({name: '', version: '1.0', description: '', fileSize: 0});
@@ -340,11 +340,11 @@ export default function AdminPage() {
             }));
         });
 
-        unscribers.push(unsubscribe);
+        unsubscribers.push(unsubscribe);
     });
 
     return () => {
-        unscribers.forEach(unsub => unsub());
+        unsubscribers.forEach(unsub => unsub());
     };
 }, [firestore, testSessions]);
 
