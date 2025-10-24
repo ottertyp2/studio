@@ -79,8 +79,10 @@ import { signOut, adminCreateUser } from '@/firebase/non-blocking-login';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import GuidelineCurveEditor from '@/components/admin/GuidelineCurveEditor';
-import { PDFDownloadLink, pdf } from '@react-pdf/renderer';
-import BatchReport from '@/components/report/BatchReport';
+import pdfMake from 'pdfmake/build/pdfmake';
+import pdfFonts from 'pdfmake/build/vfs_fonts';
+
+pdfMake.vfs = pdfFonts.pdfMake.vfs;
 
 
 type SensorConfig = {
@@ -1304,109 +1306,130 @@ export default function AdminPage() {
     });
   };
 
-    const handleGenerateVesselTypeReport = async (vesselType: VesselType) => {
-        if (!firestore || !firebaseApp || !testSessions || !sensorConfigs || !batches) {
-            toast({ variant: 'destructive', title: 'Report Failed', description: 'Required data is not loaded. Please wait and try again.' });
-            return;
-        }
+  const handleGenerateVesselTypeReport = async (vesselType: VesselType) => {
+    if (!firestore || !firebaseApp || !testSessions || !sensorConfigs || !batches) {
+      toast({ variant: 'destructive', title: 'Report Failed', description: 'Required data is not loaded. Please wait and try again.' });
+      return;
+    }
 
-        setGeneratingVesselTypeReport(vesselType.id);
+    setGeneratingVesselTypeReport(vesselType.id);
+    toast({ title: 'Generating Report...', description: 'Please wait while we prepare the data.' });
 
-        let relevantSessions: TestSession[], allSensorData: Record<string, SensorData[]>;
+    try {
+      const relevantSessions = testSessions.filter(s => s.vesselTypeId === vesselType.id && s.status === 'COMPLETED') as TestSession[];
+      if (relevantSessions.length === 0) {
+        toast({ title: 'No Data', description: 'No completed test sessions found for this vessel type.' });
+        setGeneratingVesselTypeReport(null);
+        return;
+      }
 
-        try {
-            // Step 1: Gather Data
-            relevantSessions = testSessions.filter(s => s.vesselTypeId === vesselType.id && s.status === 'COMPLETED') as TestSession[];
-            if (relevantSessions.length === 0) {
-                toast({ title: 'No Data', description: 'No completed test sessions found for this vessel type.' });
-                setGeneratingVesselTypeReport(null);
-                return;
+      const allSensorData: Record<string, SensorData[]> = {};
+      for (const session of relevantSessions) {
+        const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+        const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
+        const snapshot = await getDocs(q);
+        const data = snapshot.docs.map(doc => doc.data() as SensorData);
+        allSensorData[session.id] = data;
+      }
+
+      // Pre-generation validation and logging as requested
+      console.log('=== Batch Report Generation Debug ===');
+      console.log('Vessel Type:', vesselType);
+      console.log('Relevant Sessions:', relevantSessions);
+      console.log('Sensor Configs:', sensorConfigs);
+      console.log('Batches:', batches);
+      console.log('All Sensor Data:', allSensorData);
+
+      const missingConfigIds = relevantSessions.map(s => s.sensorConfigurationId).filter(id => !sensorConfigs.some(c => c.id === id));
+      const missingBatchIds = relevantSessions.map(s => s.batchId).filter(id => !batches.some(b => b.id === id));
+      const missingSensorData = relevantSessions.map(s => s.id).filter(id => !(id in allSensorData));
+      
+      console.log("Missing SensorConfig IDs from Sessions:", missingConfigIds);
+      console.log("Missing Batch IDs from Sessions:", missingBatchIds);
+      console.log("Sessions without SensorData:", missingSensorData);
+
+      const validationErrors: string[] = [];
+      if (!vesselType) validationErrors.push('VesselType is missing.');
+      if (!relevantSessions) validationErrors.push('Sessions data is missing.');
+      if (!allSensorData) validationErrors.push('Sensor data object is missing.');
+      if (!sensorConfigs) validationErrors.push('Sensor configs are missing.');
+      if (!batches) validationErrors.push('Batches data is missing.');
+      if (missingConfigIds.length > 0) validationErrors.push(`Found sessions with missing SensorConfig IDs: ${missingConfigIds.join(', ')}`);
+      if (missingBatchIds.length > 0) validationErrors.push(`Found sessions with missing Batch IDs: ${missingBatchIds.join(', ')}`);
+      
+      if (validationErrors.length > 0) {
+        console.error('Validation Errors:', validationErrors);
+        toast({ variant: 'destructive', title: 'Report Validation Failed', description: validationErrors.join(' ') });
+        setGeneratingVesselTypeReport(null);
+        return;
+      }
+
+      // Build document definition for pdfmake
+      const tableBody = relevantSessions.map(session => {
+        const data = allSensorData[session.id] ?? [];
+        const config = session.sensorConfigurationId ? sensorConfigs.find(c => c.id === session.sensorConfigurationId) : undefined;
+        const batchName = session.batchId ? batches.find(b => b.id === session.batchId)?.name : 'N/A';
+        
+        const endValue = data.length > 0 ? data[data.length-1].value : undefined;
+        const endPressure = (endValue !== undefined && config && typeof config.decimalPlaces === 'number')
+            ? endValue.toFixed(config.decimalPlaces) + ' ' + (config.unit || '')
+            : 'N/A';
+
+        const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
+
+        const getStatusText = (classification?: 'LEAK' | 'DIFFUSION') => {
+          switch(classification) {
+              case 'DIFFUSION': return 'Passed';
+              case 'LEAK': return 'Not Passed';
+              default: return 'Undetermined';
+          }
+        };
+        
+        return [
+          batchName ?? 'N/A',
+          session.serialNumber || 'N/A',
+          new Date(session.startTime).toLocaleString(),
+          session.username ?? 'N/A',
+          endPressure,
+          duration,
+          getStatusText(session.classification)
+        ];
+      });
+
+      const docDefinition = {
+        content: [
+          { text: 'Vessel Type Report', style: 'header' },
+          { text: `Vessel Type: ${vesselType.name}`, style: 'subheader' },
+          { text: `Total Sessions: ${relevantSessions.length}`, style: 'subheader' },
+          {
+            style: 'tableExample',
+            table: {
+              headerRows: 1,
+              widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'],
+              body: [
+                ['Batch', 'Serial No.', 'Date', 'User', 'End Pressure', 'Duration (s)', 'Status'],
+                ...tableBody
+              ]
             }
-
-            allSensorData = {};
-            for (const session of relevantSessions) {
-                const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
-                const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
-                const snapshot = await getDocs(q);
-                const data = snapshot.docs.map(doc => doc.data() as SensorData).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-                allSensorData[session.id] = data;
-            }
-
-            // Pre-generation validation and logging as requested
-            console.log('=== Batch Report Generation Debug ===');
-            console.log('Vessel Type:', vesselType);
-            console.log('Relevant Sessions:', relevantSessions);
-            console.log('Sensor Configs:', sensorConfigs);
-            console.log('Batches:', batches);
-            console.log('All Sensor Data:', allSensorData);
-
-            const missingConfigIds = relevantSessions
-                .map(s => s.sensorConfigurationId)
-                .filter(id => !sensorConfigs.some(c => c.id === id));
-            const missingBatchIds = relevantSessions
-                .map(s => s.batchId)
-                .filter(id => !batches.some(b => b.id === id));
-            const missingSensorData = relevantSessions
-                .map(s => s.id)
-                .filter(id => !(id in allSensorData));
-            
-            console.log("Missing SensorConfig IDs from Sessions:", missingConfigIds);
-            console.log("Missing Batch IDs from Sessions:", missingBatchIds);
-            console.log("Sessions without SensorData:", missingSensorData);
-
-            const validationErrors: string[] = [];
-            if (!vesselType) validationErrors.push('VesselType is missing.');
-            if (!relevantSessions) validationErrors.push('Sessions data is missing.');
-            if (!allSensorData) validationErrors.push('Sensor data object is missing.');
-            if (!sensorConfigs) validationErrors.push('Sensor configs are missing.');
-            if (!batches) validationErrors.push('Batches data is missing.');
-            if (missingConfigIds.length > 0) validationErrors.push(`Found sessions with missing SensorConfig IDs: ${missingConfigIds.join(', ')}`);
-            if (missingBatchIds.length > 0) validationErrors.push(`Found sessions with missing Batch IDs: ${missingBatchIds.join(', ')}`);
-            
-            if (validationErrors.length > 0) {
-              console.error('Validation Errors:', validationErrors);
-              toast({ variant: 'destructive', title: 'Report Validation Failed', description: validationErrors.join(' ') });
-              setGeneratingVesselTypeReport(null);
-              return;
-            }
-
-
-        } catch (e: any) {
-            console.error("Report Generation Error (Data Gathering):", e);
-            toast({ variant: 'destructive', title: 'Report Failed: Data Gathering', description: `Could not collect session data. ${e.message}` });
-            setGeneratingVesselTypeReport(null);
-            return;
+          }
+        ],
+        styles: {
+          header: { fontSize: 18, bold: true, margin: [0, 0, 0, 10] },
+          subheader: { fontSize: 14, bold: false, margin: [0, 10, 0, 5] },
+          tableExample: { margin: [0, 5, 0, 15] },
         }
+      };
 
-        try {
-            // Step 2: Render PDF to blob
-            const blob = await pdf(
-                <BatchReport 
-                    vesselType={vesselType} 
-                    sessions={relevantSessions}
-                    allSensorData={allSensorData}
-                    sensorConfigs={sensorConfigs}
-                    batches={batches}
-                />
-            ).toBlob();
-            
-            // Step 3: Trigger local download
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `report-batch-${vesselType.name.replace(/\s+/g, '_')}.pdf`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+      pdfMake.createPdf(docDefinition).download(`report-batch-${vesselType.name.replace(/\s+/g, '_')}.pdf`);
+      toast({ title: 'Vessel Type Report Generated', description: 'The batch report PDF is downloading.' });
 
-            toast({ title: 'Vessel Type Report Generated', description: 'The batch report PDF is downloading.' });
-
-        } catch (e: any) {
-            console.error("Report Generation Error (PDF Rendering):", e);
-            toast({ variant: 'destructive', title: 'Report Failed: PDF Rendering', description: `Could not render the PDF document. ${e.message}` });
-        } finally {
-            setGeneratingVesselTypeReport(null);
-        }
-    };
+    } catch (e: any) {
+      console.error("Report Generation Error:", e);
+      toast({ variant: 'destructive', title: 'Report Failed', description: `An unexpected error occurred. ${e.message}` });
+    } finally {
+      setGeneratingVesselTypeReport(null);
+    }
+  };
 
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
@@ -1696,7 +1719,7 @@ export default function AdminPage() {
                                   <DropdownMenuContent align="end">
                                      <DropdownMenuItem onClick={() => router.push(`/testing?sessionId=${session.id}`)}>
                                         <FileSignature className="mr-2 h-4 w-4" />
-                                        <span>View &amp; Generate Report</span>
+                                        <span>View & Generate Report</span>
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuSub>
@@ -2433,4 +2456,3 @@ const renderBatchManagement = () => (
     </div>
   );
 }
-

@@ -61,13 +61,14 @@ import { convertRawValue } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { PDFDownloadLink, pdf } from '@react-pdf/renderer';
-import TestReport from '@/components/report/TestReport';
-import { toPng } from 'html-to-image';
 import ValveControl from '@/components/dashboard/ValveControl';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
+import pdfMake from 'pdfmake/build/pdfmake';
+import pdfFonts from 'pdfmake/build/vfs_fonts';
+
+pdfMake.vfs = pdfFonts.pdfMake.vfs;
 
 
 type SensorConfig = {
@@ -557,88 +558,94 @@ function TestingComponent() {
   }, [isDeviceConnected, samplingRate, offlineMessage]);
 
 
-    const generateReport = async (session: WithId<TestSession>) => {
-        if (!firestore || !firebaseApp) {
-            toast({ variant: 'destructive', title: 'Report Failed', description: 'Firebase services not available.' });
-            return;
-        }
-    
-        setIsGeneratingReport(true);
-    
-        let dataForReport, config, vesselType, batch, chartImage;
-    
-        // Step 1: Gather all necessary data with validation
-        try {
-            dataForReport = comparisonData[session.id];
-            config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-            vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-            batch = batches?.find(b => b.id === session.batchId);
-    
-            if (!dataForReport || !config || !vesselType || !batch) {
-                const missingItems = [];
-                if (!dataForReport) missingItems.push('session data');
-                if (!config) missingItems.push('sensor config');
-                if (!vesselType) missingItems.push('vessel type');
-                if (!batch) missingItems.push('batch info');
-                throw new Error(`Could not find: ${missingItems.join(', ')}.`);
+  const generateReport = async (session: WithId<TestSession>) => {
+    if (!firestore) {
+      toast({ variant: 'destructive', title: 'Report Failed', description: 'Firebase services not available.' });
+      return;
+    }
+  
+    setIsGeneratingReport(true);
+    toast({ title: 'Generating Report...', description: 'Please wait...' });
+  
+    try {
+      const dataForReport = comparisonData[session.id];
+      const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+      const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+      const batch = batches?.find(b => b.id === session.batchId);
+  
+      if (!dataForReport || !config || !vesselType || !batch) {
+        throw new Error(`Could not find all required data. Missing: ${!dataForReport ? 'session data' : ''} ${!config ? 'sensor config' : ''} ${!vesselType ? 'vessel type' : ''} ${!batch ? 'batch info' : ''}`);
+      }
+  
+      const startTime = new Date(session.startTime).getTime();
+      const singleChartData = dataForReport.map(d => {
+        const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
+        const value = parseFloat(convertRawValue(d.value, config).toFixed(config.decimalPlaces));
+        return { name: time, value };
+      });
+  
+      const summaryStats = (singleChartData || []).reduce((acc, point) => {
+          acc.max = Math.max(acc.max, point.value);
+          acc.min = Math.min(acc.min, point.value);
+          acc.sum += point.value;
+          return acc;
+      }, { max: -Infinity, min: Infinity, sum: 0 });
+      const avg = singleChartData?.length > 0 ? summaryStats.sum / singleChartData.length : 0;
+  
+      const getStatusText = (classification?: 'LEAK' | 'DIFFUSION') => {
+          switch(classification) {
+              case 'DIFFUSION': return 'Passed';
+              case 'LEAK': return 'Not Passed';
+              default: return 'Undetermined';
+          }
+      };
+
+      const tableBody = [
+        ['Number of Data Points', singleChartData.length],
+        ['Maximum Value', `${summaryStats.max.toFixed(config.decimalPlaces)} ${config.unit}`],
+        ['Minimum Value', `${summaryStats.min.toFixed(config.decimalPlaces)} ${config.unit}`],
+        ['Average Value', `${avg.toFixed(config.decimalPlaces)} ${config.unit}`],
+      ];
+  
+      const docDefinition = {
+        content: [
+          { text: 'Test Session Report', style: 'header' },
+          { text: `Vessel: ${vesselType.name} (S/N: ${session.serialNumber || 'N/A'})`, style: 'subheader' },
+          { text: `Batch: ${batch.name}`, style: 'subheader' },
+          '\n',
+          { text: `Tested By: ${session.username}` },
+          { text: `Start Time: ${new Date(session.startTime).toLocaleString()}` },
+          { text: `End Time: ${session.endTime ? new Date(session.endTime).toLocaleString() : 'N/A'}` },
+          { text: `Final Status: ${getStatusText(session.classification)}`, bold: true, margin: [0, 5, 0, 15] },
+          
+          { text: 'Summary of Results', style: 'subheader' },
+          {
+            style: 'tableExample',
+            table: {
+              widths: ['*', 'auto'],
+              body: tableBody
             }
-    
-        } catch (e: any) {
-            toast({ variant: 'destructive', title: 'Report Failed: Data Gathering', description: e.message });
-            setIsGeneratingReport(false);
-            return;
+          },
+          { text: 'Notes', style: 'subheader' },
+          { text: session.description || 'No notes provided.', margin: [0, 0, 0, 15] },
+        ],
+        styles: {
+          header: { fontSize: 18, bold: true, margin: [0, 0, 0, 10] },
+          subheader: { fontSize: 14, bold: true, margin: [0, 10, 0, 5] },
+          tableExample: { margin: [0, 5, 0, 15] },
         }
-        
-        // Step 2: Render Chart to Image
-        try {
-            if (!chartRef.current) {
-                throw new Error('Chart component reference is not available.');
-            }
-            chartImage = await toPng(chartRef.current, { quality: 0.95, pixelRatio: 2 });
-        } catch (e: any) {
-            console.error("PDF Generation Error (Chart to PNG):", e);
-            toast({ variant: 'destructive', title: 'Report Failed: Chart Image', description: `Could not render chart to image. ${e.message}` });
-            setIsGeneratingReport(false);
-            return;
-        }
-    
-        // Step 3: Render PDF
-        try {
-            const startTime = new Date(session.startTime).getTime();
-            const singleChartData = dataForReport.map(d => {
-                const chartConfig = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-                if (!chartConfig) return { name: 0, value: 0 }; 
-                const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
-                const value = parseFloat(convertRawValue(d.value, chartConfig).toFixed(chartConfig.decimalPlaces));
-                return { name: time, value };
-            });
-    
-            const blob = await pdf(
-                <TestReport
-                    session={session}
-                    data={singleChartData}
-                    config={config!}
-                    chartImage={chartImage}
-                    vesselType={vesselType!}
-                    batch={batch!}
-                />
-            ).toBlob();
-    
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `report-${session.vesselTypeName.replace(/\s+/g, '_')}-${session.serialNumber || session.id}.pdf`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            toast({ title: 'Report Generated', description: 'Your PDF report has been downloaded.' });
-        } catch (e: any) {
-            console.error("PDF Generation Error (Rendering):", e);
-            toast({ variant: 'destructive', title: 'Report Failed: PDF Rendering', description: `Could not generate the final PDF document. ${e.message}` });
-        } finally {
-            setIsGeneratingReport(false);
-        }
-    };
+      };
+  
+      pdfMake.createPdf(docDefinition).download(`report-${session.vesselTypeName.replace(/\s+/g, '_')}-${session.serialNumber || session.id}.pdf`);
+      toast({ title: 'Report Generated', description: 'Your PDF report is downloading.' });
+  
+    } catch (e: any) {
+      console.error("PDF Generation Error:", e);
+      toast({ variant: 'destructive', title: 'Report Failed', description: `Could not generate the PDF. ${e.message}` });
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
 
   useEffect(() => {
     if (!user || !firestore) return;
@@ -1032,5 +1039,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
