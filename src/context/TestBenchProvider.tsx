@@ -111,26 +111,30 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const unsubscribe = onValue(liveRef, (snap) => {
         const status = snap.val();
 
-        if (status) {
+        if (status && status.timestamp) { // Use device timestamp for data, but server timestamp for heartbeat
             setIsConnected(true);
             
-            // Reset the offline timer whenever data is received
+            // Clear any existing offline timeout
             if (offlineTimeoutRef.current) {
                 clearTimeout(offlineTimeoutRef.current);
             }
 
-            // Set a timer to mark as offline if no new data comes in 2 seconds
+            // Set a new timeout to declare the device offline if no new data comes in
             offlineTimeoutRef.current = setTimeout(() => {
                 setIsConnected(false);
                 setCurrentValue(null);
                 setLatency(null);
-            }, 2000);
+                 toast({
+                    variant: 'destructive',
+                    title: 'Device Offline',
+                    description: 'No data received from the device for over 2.5 seconds.',
+                });
+            }, 2500); // 2.5 seconds threshold
 
             // Process the live data payload
-            if (status.sensor !== undefined && status.timestamp !== undefined && status.timestamp > 0) {
-                 const timestampISO = new Date(status.timestamp).toISOString();
-                 handleNewDataPoint({ value: status.sensor, timestamp: timestampISO });
-            }
+            const timestampISO = new Date(status.timestamp).toISOString();
+            handleNewDataPoint({ value: status.sensor, timestamp: timestampISO });
+
             setValve1Status(status.valve1 ? 'ON' : 'OFF');
             setValve2Status(status.valve2 ? 'ON' : 'OFF');
             setIsRecording(status.recording === true);
@@ -139,9 +143,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
               setLatency(status.latency);
             }
         } else {
+            // This case handles initial load or if the `/live` node is completely empty
             setIsConnected(false);
-            setCurrentValue(null);
-            setLatency(null);
         }
     });
     
@@ -151,7 +154,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             clearTimeout(offlineTimeoutRef.current);
         }
     };
-  }, [database, handleNewDataPoint]);
+  }, [database, handleNewDataPoint, toast]);
 
 
   const value = {
