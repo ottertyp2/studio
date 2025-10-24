@@ -3,9 +3,9 @@
 import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { TestBenchContext, ValveStatus, SensorData as RtdbSensorData } from './TestBenchContext';
-import { useFirebase, useUser, addDocumentNonBlocking } from '@/firebase';
+import { useFirebase, useUser, addDocumentNonBlocking, WithId } from '@/firebase';
 import { ref, onValue, set, remove } from 'firebase/database';
-import { collection, query, where, onSnapshot, limit, doc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, limit, doc, DocumentData } from 'firebase/firestore';
 
 export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
@@ -20,7 +20,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [valve1Status, setValve1Status] = useState<ValveStatus>('OFF');
   const [valve2Status, setValve2Status] = useState<ValveStatus>('OFF');
   
-  const runningTestSessionRef = useRef<any>(null);
+  const runningTestSessionRef = useRef<WithId<DocumentData> | null>(null);
 
   // Monitor running sessions from Firestore
   useEffect(() => {
@@ -49,16 +49,16 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setLastDataPointTimestamp(Date.now());
     setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
 
-    // If a session is running, save the data to its subcollection in Firestore
+    // If a session is running (based on our Firestore listener), save the data.
     if (runningTestSessionRef.current && firestore) {
       const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
-      addDocumentNonBlocking(sessionDataRef, {
+      const dataToSave = {
         value: newDataPoint.value,
         timestamp: newDataPoint.timestamp,
-        testSessionId: runningTestSessionRef.current.id,
-        testBenchId: runningTestSessionRef.current.testBenchId,
-        sensorConfigId: runningTestSessionRef.current.sensorConfigurationId,
-      });
+      };
+      
+      // Use addDocumentNonBlocking for fire-and-forget write
+      addDocumentNonBlocking(sessionDataRef, dataToSave);
     }
   }, [firestore]);
 
@@ -113,6 +113,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         setValve2Status(snap.val() ? 'ON' : 'OFF');
     }));
 
+    const recordingRef = ref(database, 'live/recording');
+    unsubscribers.push(onValue(recordingRef, (snap) => {
+      setIsRecording(snap.val() === true);
+    }));
+
     return () => {
         unsubscribers.forEach(unsub => unsub());
     };
@@ -122,7 +127,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     let timeoutId: NodeJS.Timeout | null = null;
     if (lastDataPointTimestamp) {
-        // Use the isRecording state (derived from Firestore) to set the timeout
+        // Use the isRecording state (derived from RTDB) to set the timeout
         const timeoutDuration = isRecording ? 5000 : 65000;
         timeoutId = setTimeout(() => {
             if (Date.now() - lastDataPointTimestamp >= timeoutDuration) {

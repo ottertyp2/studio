@@ -328,42 +328,34 @@ export default function AdminPage() {
 
 
   useEffect(() => {
-    if (!firestore || !testSessions || !sensorConfigs) return;
+    if (!firestore || !testSessions) return;
 
     const unsubscribers: (() => void)[] = [];
 
     testSessions.forEach(session => {
-        const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
-        if (config) {
-            const sensorDataRef = collection(firestore, `sensor_configurations/${config.id}/sensor_data`);
-            const q = query(sensorDataRef, where('testSessionId', '==', session.id));
-            
-            const unsubscribe = onSnapshot(q, (snapshot) => {
-                setSessionDataCounts(prevCounts => ({
-                    ...prevCounts,
-                    [session.id]: snapshot.size,
-                }));
-            }, (error) => {
-                console.error(`Error fetching data count for session ${session.id}:`, error);
-                setSessionDataCounts(prevCounts => ({
-                    ...prevCounts,
-                    [session.id]: prevCounts[session.id] || 0,
-                }));
-            });
-
-            unsubscribers.push(unsubscribe);
-        } else {
+        // Correctly query the subcollection for each session
+        const sensorDataRef = collection(firestore, 'test_sessions', session.id, 'sensor_data');
+        
+        const unsubscribe = onSnapshot(sensorDataRef, (snapshot) => {
             setSessionDataCounts(prevCounts => ({
                 ...prevCounts,
-                [session.id]: 0
+                [session.id]: snapshot.size,
             }));
-        }
+        }, (error) => {
+            console.error(`Error fetching data count for session ${session.id}:`, error);
+            setSessionDataCounts(prevCounts => ({
+                ...prevCounts,
+                [session.id]: prevCounts[session.id] || 0,
+            }));
+        });
+
+        unsubscribers.push(unsubscribe);
     });
 
     return () => {
         unsubscribers.forEach(unsub => unsub());
     };
-}, [firestore, testSessions, sensorConfigs]);
+}, [firestore, testSessions]);
 
 
   useEffect(() => {
@@ -510,28 +502,31 @@ export default function AdminPage() {
 
     const batch = writeBatch(firestore);
 
+    // Find sessions that use this config
     const sessionsQuery = query(collection(firestore, 'test_sessions'), where('sensorConfigurationId', '==', configId));
     const sessionsSnapshot = await getDocs(sessionsQuery);
     const sessionsToDelete = sessionsSnapshot.docs;
-    
-    const sensorDataRef = collection(firestore, `sensor_configurations/${configId}/sensor_data`);
-    const dataSnapshot = await getDocs(sensorDataRef);
-    dataSnapshot.forEach(doc => {
-        batch.delete(doc.ref);
-    });
 
+    // For each session, find and delete its sensor_data subcollection documents
+    for (const sessionDoc of sessionsToDelete) {
+        const sensorDataRef = collection(firestore, 'test_sessions', sessionDoc.id, 'sensor_data');
+        const dataSnapshot = await getDocs(sensorDataRef);
+        dataSnapshot.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+        // Also delete the session document itself
+        batch.delete(sessionDoc.ref);
+    }
+
+    // Delete the sensor configuration itself
     const configRef = doc(firestore, `sensor_configurations`, configId);
     batch.delete(configRef);
-    
-    sessionsToDelete.forEach(sessionDoc => {
-      batch.delete(sessionDoc.ref);
-    });
 
     try {
         await batch.commit();
         toast({ 
           title: "Cleanup Complete", 
-          description: `Configuration, ${dataSnapshot.size} data points, and ${sessionsToDelete.length} associated sessions were deleted.` 
+          description: `Configuration and its associated data and sessions were deleted.` 
         });
         if (activeSensorConfigId === configId) {
             setActiveSensorConfigId(sensorConfigs?.[0]?.id || null);
@@ -557,22 +552,17 @@ export default function AdminPage() {
     if (!firestore) return;
     const batch = writeBatch(firestore);
 
-    const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
     let dataDeletedCount = 0;
 
-    if (config) {
-        try {
-            const sensorDataRef = collection(firestore, `sensor_configurations/${config.id}/sensor_data`);
-            const q = query(sensorDataRef, where("testSessionId", "==", session.id));
-            const querySnapshot = await getDocs(q);
-
-            querySnapshot.forEach(doc => {
-                batch.delete(doc.ref);
-            });
-            dataDeletedCount = querySnapshot.size;
-        } catch (e) {
-            console.error("Error querying/deleting sensor data:", e);
-        }
+    const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+    try {
+        const querySnapshot = await getDocs(sensorDataRef);
+        querySnapshot.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+        dataDeletedCount = querySnapshot.size;
+    } catch (e) {
+        console.error("Error querying/deleting sensor data:", e);
     }
 
     const sessionRef = doc(firestore, `test_sessions`, session.id);
@@ -613,10 +603,10 @@ export default function AdminPage() {
     try {
         const model = await tf.loadLayersModel(`indexeddb://${modelToUse.name}`);
 
-        const sensorDataRef = collection(firestore, `sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
-        const q = query(sensorDataRef, where('testSessionId', '==', session.id));
+        const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+        const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
         const snapshot = await getDocs(q);
-        const sensorData = snapshot.docs.map(doc => doc.data() as SensorData).sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
 
         if (sensorData.length < 20) {
           toast({ variant: 'destructive', title: 'Not Enough Data', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" has less than 20 data points.` });
@@ -816,12 +806,10 @@ export default function AdminPage() {
                 continue;
             }
 
-            const sensorDataRef = collection(firestore, `sensor_configurations/${trainingSession.sensorConfigurationId}/sensor_data`);
-            const q = query(sensorDataRef, where('testSessionId', '==', sessionId));
+            const sensorDataRef = collection(firestore, `test_sessions/${trainingSession.id}/sensor_data`);
+            const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
             const snapshot = await getDocs(q);
-            const sensorData = snapshot.docs
-                .map(doc => doc.data() as SensorData)
-                .sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+            const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
 
             if (sensorData.length < windowSize) continue;
 
@@ -1360,8 +1348,8 @@ export default function AdminPage() {
 
       const allSensorData: Record<string, SensorData[]> = {};
       for (const session of relevantSessions) {
-          const sensorDataRef = collection(firestore, `sensor_configurations/${session.sensorConfigurationId}/sensor_data`);
-          const q = query(sensorDataRef, where('testSessionId', '==', session.id));
+          const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+          const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
           const snapshot = await getDocs(q);
           const data = snapshot.docs.map(doc => doc.data() as SensorData).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
           allSensorData[session.id] = data;

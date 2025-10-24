@@ -175,20 +175,20 @@ function TestingComponent() {
 
   const [isLive, setIsLive] = useState(true);
   const [timeframe, setTimeframe] = useState('all');
-  const [brushDomain, setBrushDomain] = useState<{ startIndex: number; endIndex: number } | null>(null);
+  const [brushDomain, setBrushDomain] = useState<{ startIndex?: number; endIndex?: number } | null>(null);
 
 
   // Data fetching hooks
-  const testBenchesCollectionRef = useMemoFirebase(() => collection(firestore, 'testbenches'), [firestore]);
+  const testBenchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'testbenches') : null, [firestore]);
   const { data: testBenches, isLoading: isTestBenchesLoading } = useCollection<TestBench>(testBenchesCollectionRef);
 
-  const sensorConfigsCollectionRef = useMemoFirebase(() => collection(firestore, 'sensor_configurations'), [firestore]);
+  const sensorConfigsCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'sensor_configurations') : null, [firestore]);
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
   
-  const vesselTypesCollectionRef = useMemoFirebase(() => collection(firestore, 'vessel_types'), [firestore]);
+  const vesselTypesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'vessel_types') : null, [firestore]);
   const { data: vesselTypes, isLoading: isVesselTypesLoading } = useCollection<VesselType>(vesselTypesCollectionRef);
   
-  const batchesCollectionRef = useMemoFirebase(() => collection(firestore, 'batches'), [firestore]);
+  const batchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'batches') : null, [firestore]);
   const { data: batches, isLoading: isBatchesLoading } = useCollection<Batch>(batchesCollectionRef);
 
 
@@ -211,7 +211,7 @@ function TestingComponent() {
 
   // Find and subscribe to a running session on load
   useEffect(() => {
-    if (!user) return;
+    if (!user || !firestore) return;
     const q = query(
       collection(firestore, 'test_sessions'),
       where('status', '==', 'RUNNING'),
@@ -267,7 +267,9 @@ function TestingComponent() {
     try {
       await addDocumentNonBlocking(collection(firestore, 'test_sessions'), newSessionDoc);
       // Command the ESP32 to start recording
-      await set(ref(database, 'commands/recording'), true);
+      if (database) {
+        await set(ref(database, 'commands/recording'), true);
+      }
       toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
       setIsNewSessionDialogOpen(false);
       setNewSessionData({ vesselTypeId: '', batchId: '', serialNumber: '', description: '' });
@@ -283,14 +285,16 @@ function TestingComponent() {
       status: 'COMPLETED',
       endTime: new Date().toISOString(),
     });
-     // Command the ESP32 to stop recording
-    await set(ref(database, 'commands/recording'), false);
+    // Command the ESP32 to stop recording
+    if (database) {
+        await set(ref(database, 'commands/recording'), false);
+    }
     toast({ title: 'Session Stopped', description: 'Data recording has ended.' });
   };
   
   // Real-time data listener for comparison sessions
   useEffect(() => {
-    if (comparisonSessions.length === 0) {
+    if (comparisonSessions.length === 0 || !firestore) {
       setComparisonData({});
       return;
     }
@@ -301,30 +305,32 @@ function TestingComponent() {
   
     const checkAllLoaded = () => {
         loadedCount++;
-        if (loadedCount === comparisonSessions.length) {
+        if (loadedCount >= comparisonSessions.length) {
             setIsLoadingComparisonData(false);
         }
     };
 
     comparisonSessions.forEach(session => {
+        // Correct path to the sensor_data subcollection
         const dataQuery = query(
           collection(firestore, 'test_sessions', session.id, 'sensor_data'),
           orderBy('timestamp', 'asc')
         );
 
         const unsubscribe = onSnapshot(dataQuery, (snapshot) => {
-            const data = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
+            const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
             setComparisonData(prev => ({ ...prev, [session.id]: data }));
             
-            if (session.status === 'COMPLETED' && !isLoadingComparisonData) {
+            // Only consider it "loaded" if the session is completed. Running sessions are never fully loaded.
+            if (session.status === 'COMPLETED') {
                 checkAllLoaded();
-            } else if(session.status === 'RUNNING') {
-                 setIsLoadingComparisonData(false);
+            } else {
+                 setIsLoadingComparisonData(false); // For running sessions, stop loading immediately
             }
         }, (error) => {
             console.error(`Error fetching data for ${session.id}:`, error);
             toast({ variant: 'destructive', title: `Data Error for ${session.serialNumber}`, description: error.message });
-            checkAllLoaded();
+            checkAllLoaded(); // Still count it to unblock the loading state
         });
 
         unsubscribers.push(unsubscribe);
@@ -421,6 +427,7 @@ function TestingComponent() {
   }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes, timeframe]);
 
   const handleSignOut = () => {
+      if(!auth) return;
     signOut(auth);
     router.push('/login');
   };
@@ -464,22 +471,27 @@ function TestingComponent() {
   
   const dataSourceStatus = useMemo(() => {
     if (isConnected) {
-        if (isRecording) return 'Recording (1/s)';
-        return 'Connected (1/min)';
+        return `Sampling: ${isRecording ? "1/s" : "1/min"}`;
     }
     return 'Offline';
   }, [isConnected, isRecording]);
 
   const generateReport = async (session: WithId<TestSession>) => {
+      if (!chartRef.current || !session) {
+        toast({ variant: 'destructive', title: 'Report Generation Failed', description: 'Chart or session data is missing.' });
+        return;
+      }
+      
       const dataForReport = comparisonData[session.id];
       const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
       const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
       const batch = batches?.find(b => b.id === session.batchId);
-
-      if (!chartRef.current || !session || !dataForReport || !config || !vesselType || !batch) {
-          toast({ variant: 'destructive', title: 'Report Generation Failed', description: 'Required report data is missing. Ensure the session, its config, vessel type, and batch are all available.' });
+      
+      if (!dataForReport || !config || !vesselType || !batch) {
+          toast({ variant: 'destructive', title: 'Report Generation Failed', description: 'Required report data is missing (config, vessel type, or batch). Please ensure all catalog items are present.' });
           return;
       }
+
       setIsGeneratingReport(true);
       try {
           const dataUrl = await toPng(chartRef.current, { quality: 0.95, pixelRatio: 2 });
@@ -518,7 +530,7 @@ function TestingComponent() {
   };
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !firestore) return;
     setIsHistoryLoading(true);
     const q = query(collection(firestore, 'test_sessions'), orderBy('startTime', 'desc'));
     const unsubscribe = onSnapshot(q, 
@@ -565,7 +577,7 @@ function TestingComponent() {
   };
   
   const xAxisDomain = useMemo((): [number | 'dataMin' | 'dataMax', number | 'dataMin' | 'dataMax'] => {
-    if (brushDomain && chartData.length > brushDomain.startIndex && chartData.length > brushDomain.endIndex) {
+    if (brushDomain && brushDomain.startIndex !== undefined && brushDomain.endIndex !== undefined && chartData[brushDomain.startIndex] && chartData[brushDomain.endIndex]) {
         return [chartData[brushDomain.startIndex].name, chartData[brushDomain.endIndex].name];
     }
     if (isLive) {
@@ -822,7 +834,7 @@ function TestingComponent() {
                         />
                         <YAxis
                             stroke="hsl(var(--muted-foreground))"
-                            domain={['dataMin - 10', 'dataMax + 10']}
+                            domain={[0, 'dataMax + 10']}
                             allowDataOverflow
                             label={{ value: activeSensorConfig?.unit || 'Value', angle: -90, position: 'insideLeft' }}
                         />
@@ -879,11 +891,9 @@ function TestingComponent() {
 
 export default function TestingPage() {
     const { user, isUserLoading } = useUser();
-    const { areServicesAvailable } = useFirebase();
+    const { areServicesAvailable, firestore, database } = useFirebase();
 
-    // This component now acts as a gatekeeper.
-    // It shows a loading screen until both user auth and firebase services are ready.
-    if (isUserLoading || !areServicesAvailable) {
+    if (isUserLoading || !areServicesAvailable || !firestore || !database) {
         return (
             <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
                 <p className="text-lg">Loading Dashboard...</p>
@@ -891,7 +901,6 @@ export default function TestingPage() {
         );
     }
     
-    // Once everything is loaded, render the main component inside the Suspense boundary.
     return (
         <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
             <TestingComponent />
