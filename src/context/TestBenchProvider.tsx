@@ -22,8 +22,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [disconnectCount, setDisconnectCount] = useState<number>(0);
   const [latency, setLatency] = useState<number | null>(null);
   
-  const lastHeartbeatTimestamp = useRef<number | null>(null);
   const runningTestSessionRef = useRef<WithId<DocumentData> | null>(null);
+  const offlineTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
 
   // Monitor running sessions from Firestore
   useEffect(() => {
@@ -105,18 +106,28 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!database) return;
 
-    // Listen to the entire /live object to get all data at once
     const liveRef = ref(database, 'live');
     
     const unsubscribe = onValue(liveRef, (snap) => {
         const status = snap.val();
-        if(status) {
-            // The heartbeat is now part of the main status object.
-            if (status.heartbeat) {
-                lastHeartbeatTimestamp.current = status.heartbeat;
+        
+        if (status) {
+            // Data has been received, so device is online.
+            setIsConnected(true);
+
+            // Clear any existing offline timeout.
+            if (offlineTimeoutRef.current) {
+                clearTimeout(offlineTimeoutRef.current);
             }
-            
-            // Process the rest of the live data
+
+            // Set a new timeout to mark the device as offline after 2 seconds of inactivity.
+            offlineTimeoutRef.current = setTimeout(() => {
+                setIsConnected(false);
+                setCurrentValue(null);
+                setLatency(null);
+            }, 2000);
+
+            // Process the live data payload
             if (status.sensor !== undefined && status.timestamp !== undefined && status.timestamp > 0) {
                  const timestampISO = new Date(status.timestamp).toISOString();
                  handleNewDataPoint({ value: status.sensor, timestamp: timestampISO });
@@ -131,19 +142,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         }
     });
     
-    const heartbeatCheckInterval = setInterval(() => {
-        if (lastHeartbeatTimestamp.current && (Date.now() - lastHeartbeatTimestamp.current > 2000)) {
-            setIsConnected(false);
-            setCurrentValue(null);
-            setLatency(null);
-        } else if (lastHeartbeatTimestamp.current) {
-            setIsConnected(true);
-        }
-    }, 1000);
-
     return () => {
         unsubscribe();
-        clearInterval(heartbeatCheckInterval);
+        if (offlineTimeoutRef.current) {
+            clearTimeout(offlineTimeoutRef.current);
+        }
     };
   }, [database, handleNewDataPoint]);
 
