@@ -333,11 +333,11 @@ function TestingComponent() {
             checkAllLoaded();
         });
 
-        unscribers.push(unsubscribe);
+        unsubscribers.push(unsubscribe);
     });
   
     return () => {
-      unscribers.forEach(unsub => unsub());
+      unsubscribers.forEach(unsub => unsub());
     };
   }, [firestore, comparisonSessions, toast]);
 
@@ -402,6 +402,8 @@ function TestingComponent() {
                 interpolated.push(startPoint);
                 
                 const timeDiff = endPoint.time - startPoint.time;
+                const valueDiff = endPoint.value - startPoint.value;
+
                 // Interpolate if the gap is larger than 90s (longer than the 60s standby update)
                 if (timeDiff > 90) {
                     const steps = Math.floor(timeDiff / 60); // Add a point every ~60s
@@ -1030,3 +1032,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
