@@ -383,10 +383,10 @@ function TestingComponent() {
         const startTime = new Date(session.startTime).getTime();
         const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
 
-        let processedData: { time: number, value: number }[] = sessionData.map(d => {
+        let processedData: { time: number, value: number, originalTimestamp: string }[] = sessionData.map(d => {
             const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
             const value = parseFloat(convertRawValue(d.value, config || null).toFixed(config?.decimalPlaces || 2));
-            return { time, value };
+            return { time, value, originalTimestamp: d.timestamp };
         });
 
         // Interpolate if few data points (large time gaps)
@@ -407,6 +407,7 @@ function TestingComponent() {
                         interpolated.push({
                             time: startPoint.time + t * timeDiff,
                             value: startPoint.value + t * valueDiff,
+                            originalTimestamp: "interpolated"
                         });
                     }
                 }

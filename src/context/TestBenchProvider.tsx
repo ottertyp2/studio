@@ -46,7 +46,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   const handleNewDataPoint = useCallback((newDataPoint: RtdbSensorData) => {
     setCurrentValue(newDataPoint.value);
-    setLastDataPointTimestamp(Date.now());
+    setLastDataPointTimestamp(new Date(newDataPoint.timestamp).getTime());
     setLocalDataLog(prevLog => [newDataPoint, ...prevLog].slice(0, 1000));
 
     // If a session is running (based on our Firestore listener), save the data.
@@ -106,19 +106,14 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     unsubscribers.push(onValue(connectedRef, (snap) => {
         setIsConnected(snap.val() === true);
     }));
-
-    const liveSensorRef = ref(database, 'live/sensor');
-    unsubscribers.push(onValue(liveSensorRef, (snap) => {
-        const sensorValue = snap.val();
-        if (sensorValue !== null) {
-            handleNewDataPoint({ value: sensorValue, timestamp: new Date().toISOString() });
-        }
-    }));
     
     const liveStatusRef = ref(database, 'live');
     unsubscribers.push(onValue(liveStatusRef, (snap) => {
         const status = snap.val();
         if(status) {
+            if (status.sensor !== undefined) {
+                 handleNewDataPoint({ value: status.sensor, timestamp: new Date().toISOString() });
+            }
             setValve1Status(status.valve1 ? 'ON' : 'OFF');
             setValve2Status(status.valve2 ? 'ON' : 'OFF');
             setIsRecording(status.recording === true);
@@ -137,10 +132,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     if (lastDataPointTimestamp) {
         const timeoutDuration = 65000; // ~65 seconds
         timeoutId = setTimeout(() => {
-            if (Date.now() - lastDataPointTimestamp >= timeoutDuration) {
+            const now = Date.now();
+            if (now - lastDataPointTimestamp >= timeoutDuration) {
                 setCurrentValue(null); // Clear value if data is stale
             }
-        }, timeoutDuration);
+        }, timeoutDuration + (Date.now() - lastDataPointTimestamp) % 1000 );
     }
     return () => {
         if (timeoutId) {
