@@ -155,17 +155,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   statusPassed: {
-    color: '#16A34A',
-  },
-  statusNotPassed: {
-    color: '#DC2626',
-  },
-  finalStatusPassed: {
     fontSize: 8,
     fontWeight: 'bold',
     color: '#16A34A',
   },
-  finalStatusNotPassed: {
+  statusNotPassed: {
     fontSize: 8,
     fontWeight: 'bold',
     color: '#DC2626',
@@ -175,9 +169,9 @@ const styles = StyleSheet.create({
 const getStatus = (classification?: 'LEAK' | 'DIFFUSION') => {
     switch(classification) {
         case 'DIFFUSION':
-            return <Text style={styles.finalStatusPassed}>Passed</Text>;
+            return <Text style={styles.statusPassed}>Passed</Text>;
         case 'LEAK':
-            return <Text style={styles.finalStatusNotPassed}>Not Passed</Text>;
+            return <Text style={styles.statusNotPassed}>Not Passed</Text>;
         default:
             return <Text style={styles.statusText}>Undetermined</Text>;
     }
@@ -206,8 +200,8 @@ const BatchReport: React.FC<BatchReportProps> = ({ vesselType, sessions, allSens
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Summary</Text>
             <View style={{ flexDirection: 'row' }}>
-                <View style={{ width: '50%' }}><Text style={styles.text}><Text style={styles.label}>Vessel Type: </Text>{vesselType.name}</Text></View>
-                <View style={{ width: '50%' }}><Text style={styles.text}><Text style={styles.label}>Total Sessions: </Text>{sessions.length}</Text></View>
+                <View style={{ width: '50%' }}><Text style={styles.text}><Text style={styles.label}>Vessel Type: </Text>{vesselType?.name ?? 'N/A'}</Text></View>
+                <View style={{ width: '50%' }}><Text style={styles.text}><Text style={styles.label}>Total Sessions: </Text>{sessions?.length ?? 0}</Text></View>
             </View>
         </View>
 
@@ -223,10 +217,10 @@ const BatchReport: React.FC<BatchReportProps> = ({ vesselType, sessions, allSens
                     <View style={{...styles.tableColHeader, width: '10%'}}><Text style={styles.tableHeader}>Duration (s)</Text></View> 
                     <View style={{...styles.tableColHeader, width: '10%'}}><Text style={styles.tableHeader}>Status</Text></View> 
                 </View>
-                {sessions.map(session => {
-                    const data = allSensorData[session.id] || [];
-                    const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
-                    const batchName = batches.find(b => b.id === session.batchId)?.name || 'N/A';
+                {(sessions || []).map(session => {
+                    const data = allSensorData?.[session.id] || [];
+                    const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+                    const batchName = batches?.find(b => b.id === session.batchId)?.name || 'N/A';
                     const endPressure = data.length > 0 && config ? (data[data.length-1].value).toFixed(config.decimalPlaces) : 'N/A';
                     const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
                     

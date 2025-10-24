@@ -56,8 +56,8 @@ interface TestReportProps {
   data: ChartDataPoint[];
   config: SensorConfig;
   chartImage: string;
-  vesselType?: VesselType;
-  batch?: Batch;
+  vesselType: VesselType;
+  batch: Batch;
 }
 
 const styles = StyleSheet.create({
@@ -179,41 +179,35 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   statusPassed: {
+    fontSize: 11,
+    fontWeight: 'bold',
     color: '#16A34A', // green-600
   },
   statusNotPassed: {
+    fontSize: 11,
+    fontWeight: 'bold',
     color: '#DC2626', // red-600
-  },
-  finalStatusPassed: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: '#16A34A',
-  },
-  finalStatusNotPassed: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: '#DC2626',
   }
 });
 
 
 const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartImage, vesselType, batch }) => {
     
-    const summaryStats = data.reduce((acc, point) => {
+    const summaryStats = (data || []).reduce((acc, point) => {
         acc.max = Math.max(acc.max, point.value);
         acc.min = Math.min(acc.min, point.value);
         acc.sum += point.value;
         return acc;
     }, { max: -Infinity, min: Infinity, sum: 0 });
 
-    const avg = data.length > 0 ? summaryStats.sum / data.length : 0;
+    const avg = data?.length > 0 ? summaryStats.sum / data.length : 0;
 
     const getStatus = () => {
-        switch(session.classification) {
+        switch(session?.classification) {
             case 'DIFFUSION':
-                return <Text style={styles.finalStatusPassed}>Passed</Text>;
+                return <Text style={styles.statusPassed}>Passed</Text>;
             case 'LEAK':
-                return <Text style={styles.finalStatusNotPassed}>Not Passed</Text>;
+                return <Text style={styles.statusNotPassed}>Not Passed</Text>;
             default:
                 return <Text style={styles.statusText}>Undetermined</Text>;
         }
@@ -233,12 +227,12 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartIma
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Session Details</Text>
             <View style={styles.grid}>
-                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Vessel Type: </Text>{vesselType?.name || session.vesselTypeName}</Text></View>
-                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Batch ID: </Text>{batch?.name || 'N/A'}</Text></View>
-                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Serial Number: </Text>{session.serialNumber || 'N/A'}</Text></View>
-                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Start Time: </Text>{new Date(session.startTime).toLocaleString()}</Text></View>
-                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>End Time: </Text>{session.endTime ? new Date(session.endTime).toLocaleString() : 'N/A'}</Text></View>
-                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Tested By: </Text>{session.username}</Text></View>
+                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Vessel Type: </Text>{vesselType?.name ?? session.vesselTypeName ?? 'N/A'}</Text></View>
+                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Batch ID: </Text>{batch?.name ?? 'N/A'}</Text></View>
+                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Serial Number: </Text>{session?.serialNumber || 'N/A'}</Text></View>
+                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Start Time: </Text>{session?.startTime ? new Date(session.startTime).toLocaleString() : 'N/A'}</Text></View>
+                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>End Time: </Text>{session?.endTime ? new Date(session.endTime).toLocaleString() : 'N/A'}</Text></View>
+                <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Tested By: </Text>{session?.username ?? 'N/A'}</Text></View>
                  <View style={styles.gridItem}>
                     <Text style={styles.text}>
                         <Text style={styles.label}>Final Status: </Text>
@@ -251,8 +245,8 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartIma
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Sensor Configuration</Text>
             <View style={styles.grid}>
-                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Name: </Text>{config.name}</Text></View>
-                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Unit: </Text>{config.unit}</Text></View>
+                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Name: </Text>{config?.name ?? 'N/A'}</Text></View>
+                 <View style={styles.gridItem}><Text style={styles.text}><Text style={styles.label}>Unit: </Text>{config?.unit ?? 'N/A'}</Text></View>
             </View>
         </View>
 
@@ -265,26 +259,26 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartIma
                 </View>
                 <View style={styles.tableRow}> 
                     <View style={styles.tableCol}><Text style={styles.tableCell}>Number of Data Points</Text></View> 
-                    <View style={styles.tableCol}><Text style={styles.tableCell}>{data.length}</Text></View> 
+                    <View style={styles.tableCol}><Text style={styles.tableCell}>{data?.length ?? 0}</Text></View> 
                 </View>
                  <View style={styles.tableRow}> 
                     <View style={styles.tableCol}><Text style={styles.tableCell}>Maximum Value</Text></View> 
-                    <View style={styles.tableCol}><Text style={styles.tableCell}>{data.length > 0 ? summaryStats.max.toFixed(config.decimalPlaces) : 'N/A'} {config.unit}</Text></View> 
+                    <View style={styles.tableCol}><Text style={styles.tableCell}>{data?.length > 0 ? summaryStats.max.toFixed(config?.decimalPlaces ?? 2) : 'N/A'} {config?.unit ?? ''}</Text></View> 
                 </View>
                  <View style={styles.tableRow}> 
                     <View style={styles.tableCol}><Text style={styles.tableCell}>Minimum Value</Text></View> 
-                    <View style={styles.tableCol}><Text style={styles.tableCell}>{data.length > 0 ? summaryStats.min.toFixed(config.decimalPlaces) : 'N/A'} {config.unit}</Text></View> 
+                    <View style={styles.tableCol}><Text style={styles.tableCell}>{data?.length > 0 ? summaryStats.min.toFixed(config?.decimalPlaces ?? 2) : 'N/A'} {config?.unit ?? ''}</Text></View> 
                 </View>
                 <View style={styles.tableRow}> 
                     <View style={styles.tableCol}><Text style={styles.tableCell}>Average Value</Text></View> 
-                    <View style={styles.tableCol}><Text style={styles.tableCell}>{data.length > 0 ? avg.toFixed(config.decimalPlaces) : 'N/A'} {config.unit}</Text></View> 
+                    <View style={styles.tableCol}><Text style={styles.tableCell}>{data?.length > 0 ? avg.toFixed(config?.decimalPlaces ?? 2) : 'N/A'} {config?.unit ?? ''}</Text></View> 
                 </View>
             </View>
         </View>
 
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Pressure Curve Graph</Text>
-            <Text style={styles.text}>Pressure ({config.unit}) vs. Time (seconds)</Text>
+            <Text style={styles.text}>Pressure ({config?.unit ?? 'N/A'}) vs. Time (seconds)</Text>
              <View style={styles.chartContainer}>
                 {chartImage ? (
                     <Image src={chartImage} style={{ width: '100%', height: '100%' }} />
@@ -296,7 +290,7 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartIma
 
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>Notes / Comments</Text>
-            <Text style={styles.text}>{session.description || 'No notes or comments were provided for this test session.'}</Text>
+            <Text style={styles.text}>{session?.description || 'No notes or comments were provided for this test session.'}</Text>
         </View>
 
 

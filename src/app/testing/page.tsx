@@ -543,26 +543,28 @@ function TestingComponent() {
             toast({ variant: 'destructive', title: 'Report Failed', description: 'Firebase services not available.' });
             return;
         }
-
+    
         setIsGeneratingReport(true);
-
+    
         let dataForReport, config, vesselType, batch, chartImage;
-
-        // Step 1: Gather all necessary data
+    
+        // Step 1: Gather all necessary data with validation
         try {
             dataForReport = comparisonData[session.id];
             config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
             vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
             batch = batches?.find(b => b.id === session.batchId);
-
-            if (!dataForReport || !config || !vesselType || !batch) {
-                let missingItems = [];
-                if (!dataForReport) missingItems.push('session data');
-                if (!config) missingItems.push('sensor config');
-                if (!vesselType) missingItems.push('vessel type');
-                if (!batch) missingItems.push('batch info');
+    
+            const missingItems = [];
+            if (!dataForReport) missingItems.push('session data');
+            if (!config) missingItems.push('sensor config');
+            if (!vesselType) missingItems.push('vessel type');
+            if (!batch) missingItems.push('batch info');
+    
+            if (missingItems.length > 0) {
                 throw new Error(`Could not find: ${missingItems.join(', ')}.`);
             }
+    
         } catch (e: any) {
             toast({ variant: 'destructive', title: 'Report Failed: Data Gathering', description: e.message });
             setIsGeneratingReport(false);
@@ -581,29 +583,29 @@ function TestingComponent() {
             setIsGeneratingReport(false);
             return;
         }
-
+    
         // Step 3: Render PDF
         try {
             const startTime = new Date(session.startTime).getTime();
             const singleChartData = dataForReport.map(d => {
-                 const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-                 if (!config) return { name: 0, value: 0 }; // Should not happen if guard works
+                const chartConfig = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+                if (!chartConfig) return { name: 0, value: 0 }; 
                 const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
-                const value = parseFloat(convertRawValue(d.value, config).toFixed(config.decimalPlaces));
+                const value = parseFloat(convertRawValue(d.value, chartConfig).toFixed(chartConfig.decimalPlaces));
                 return { name: time, value };
             });
-
+    
             const blob = await pdf(
                 <TestReport
                     session={session}
                     data={singleChartData}
-                    config={config}
+                    config={config!}
                     chartImage={chartImage}
-                    vesselType={vesselType}
-                    batch={batch}
+                    vesselType={vesselType!}
+                    batch={batch!}
                 />
             ).toBlob();
-
+    
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             link.download = `report-${session.vesselTypeName}-${session.serialNumber || session.id}.pdf`;
@@ -650,7 +652,6 @@ function TestingComponent() {
                     if (sessionDoc.exists()) {
                         const sessionData = {id: sessionDoc.id, ...sessionDoc.data()} as WithId<TestSession>;
                         setComparisonSessions([sessionData]);
-                        // Clean the URL
                         router.replace('/testing', { scroll: false });
                     } else {
                         toast({variant: 'destructive', title: 'Session not found', description: `Could not find a session with ID: ${sessionId}`});
@@ -663,7 +664,7 @@ function TestingComponent() {
             };
             fetchAndSetSession();
         }
-    }, [searchParams, firestore, router, toast]); // Removed comparisonSessions from deps
+    }, [searchParams, firestore, router, toast]);
 
   const handleToggleComparison = (session: WithId<TestSession>) => {
     setComparisonSessions(prev => {
