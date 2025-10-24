@@ -60,7 +60,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     });
 
     // If a session is running (based on our Firestore listener), save the data.
-    if (runningTestSessionRef.current && firestore) {
+    if (runningTestSessionRef.current && firestore && isRecording) {
       const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
       const dataToSave = {
         value: newDataPoint.value,
@@ -69,7 +69,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       
       addDocumentNonBlocking(sessionDataRef, dataToSave);
     }
-  }, [firestore]);
+  }, [firestore, isRecording]);
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!database || !isConnected) {
@@ -116,13 +116,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     unsubscribers.push(onValue(liveStatusRef, (snap) => {
         const status = snap.val();
         if(status) {
-            // Heartbeat is handled separately now for connection status
             if (status.heartbeat) {
                 lastHeartbeatTimestamp.current = Date.now();
                 setIsConnected(true);
             }
             
-            if (status.sensor !== undefined && status.timestamp !== undefined) {
+            if (status.sensor !== undefined && status.timestamp !== undefined && status.timestamp > 0) {
                  const timestampISO = new Date(status.timestamp).toISOString();
                  handleNewDataPoint({ value: status.sensor, timestamp: timestampISO });
             }
