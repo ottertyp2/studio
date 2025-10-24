@@ -12,7 +12,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import {
   Card,
@@ -67,7 +66,7 @@ import { useToast } from '@/hooks/use-toast';
 import { analyzePressureTrendForLeaks, AnalyzePressureTrendForLeaksInput } from '@/ai/flows/analyze-pressure-trend-for-leaks';
 import Papa from 'papaparse';
 import * as tf from '@tensorflow/tfjs';
-import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc, useUser, getDocument } from '@/firebase';
+import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useDoc, useUser } from '@/firebase';
 import { collection, writeBatch, getDocs, query, doc, where, CollectionReference, updateDoc, setDoc, orderBy, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { signOut } from '@/firebase/non-blocking-login';
@@ -77,7 +76,8 @@ import { useTestBench } from '@/context/TestBenchContext';
 import { pdf } from '@react-pdf/renderer';
 import TestReport from '@/components/report/TestReport';
 import ValveControl from '@/components/dashboard/ValveControl';
-import { ref, onValue, remove } from 'firebase/database';
+import { ref, onValue, remove, set } from 'firebase/database';
+import { formatDistanceToNow } from 'date-fns';
 
 
 type SensorData = {
@@ -182,11 +182,13 @@ function TestingComponent() {
 
   const {
     isConnected,
+    isRecording,
     localDataLog,
     setLocalDataLog,
     currentValue,
     sendValveCommand,
     setRunningTestSession,
+    lastDataPointTimestamp
   } = useTestBench();
 
   const preselectedSessionId = searchParams.get('sessionId');
@@ -230,6 +232,8 @@ function TestingComponent() {
   const [generatingReportFor, setGeneratingReportFor] = useState<string | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
   const [sessionData, setSessionData] = useState<Record<string, SensorData[]>>({});
+
+  const [timeSinceLastUpdate, setTimeSinceLastUpdate] = useState<string>('');
 
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
@@ -812,6 +816,27 @@ function TestingComponent() {
     }
   }, [liveUpdateEnabled, dataLog, runningTestSession]);
   
+    useEffect(() => {
+    if (!lastDataPointTimestamp) {
+      setTimeSinceLastUpdate('');
+      return;
+    }
+
+    const update = () => {
+      const now = Date.now();
+      if (now - lastDataPointTimestamp > 60000) { // If over a minute, show static time
+         setTimeSinceLastUpdate(formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true }));
+      } else { // otherwise, keep it ticking
+         setTimeSinceLastUpdate(formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true, includeSeconds: true }));
+      }
+    };
+    
+    update();
+    const interval = setInterval(update, 5000); // update every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [lastDataPointTimestamp]);
+
   const displayValue = sensorConfig && currentValue !== null ? convertRawValue(currentValue, sensorConfig) : null;
   const displayDecimals = sensorConfig?.decimalPlaces ?? 0;
   
@@ -835,7 +860,7 @@ function TestingComponent() {
         toast({variant: 'destructive', title: 'Cannot Generate Report', description: 'Missing session or configuration data.'});
         return;
     }
-
+    
     if (!Array.isArray(chartData) || chartData.length === 0) {
         toast({variant: 'destructive', title: 'Cannot Generate Report', description: 'No data points available for this session.'});
         return;
@@ -1107,9 +1132,15 @@ function TestingComponent() {
                     {displayValue !== null ? displayValue.toFixed(displayDecimals) : 'N/A'}
                     </p>
                     <p className="text-lg text-muted-foreground">{displayValue !== null ? sensorConfig?.unit : ''}</p>
+                     <p className="text-xs text-muted-foreground h-4 mt-1">
+                        {currentValue !== null && lastDataPointTimestamp ? `(Updated ${timeSinceLastUpdate})` : ''}
+                    </p>
                     <div className="mt-2 text-xs text-muted-foreground space-y-1">
                         <p>
                             Sensor: <span className="font-semibold text-foreground">{sensorConfig?.name ?? 'N/A'}</span>
+                        </p>
+                        <p>
+                            Rate: <span className="font-semibold text-foreground">{isRecording ? '1/s' : '1/min'}</span>
                         </p>
                     </div>
 

@@ -11,6 +11,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
   const { database, firestore } = useFirebase();
   const [isConnected, setIsConnected] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [localDataLog, setLocalDataLog] = useState<SensorData[]>([]);
   const [currentValue, setCurrentValue] = useState<number | null>(null);
   const [lastDataPointTimestamp, setLastDataPointTimestamp] = useState<number | null>(null);
@@ -38,6 +39,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       if (session) {
           setLocalDataLog([]); // Clear log for new session
       }
+      if (database) {
+          // Tell the ESP32 to start/stop recording session data
+          set(ref(database, 'commands/recording'), !!session);
+      }
   };
 
 
@@ -62,11 +67,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         else setValve2Status(state === 'ON' ? 'OFF' : 'ON');
     }
   }, [database, toast]);
-
-  const sendRecordingCommand = useCallback(async (shouldRecord: boolean) => {
-      console.warn("sendRecordingCommand is deprecated. Recording is now handled via Firestore test sessions.");
-      // This function is kept for type safety but is no longer used for core logic.
-  }, []);
 
   useEffect(() => {
     if (!database) return;
@@ -99,6 +99,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     unsubscribers.push(onValue(valve2Ref, (snap) => {
         setValve2Status(snap.val() ? 'ON' : 'OFF');
     }));
+
+    // Live recording status
+    const recordingRef = ref(database, 'live/recording');
+    unsubscribers.push(onValue(recordingRef, (snap) => {
+        setIsRecording(snap.val() === true);
+    }));
     
 
     return () => {
@@ -125,7 +131,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   const value = {
     isConnected,
-    isRecording: !!runningTestSessionRef.current, // isRecording is derived from whether a session is running
+    isRecording,
     localDataLog,
     setLocalDataLog,
     currentValue,
@@ -135,7 +141,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     valve1Status,
     valve2Status,
     sendValveCommand,
-    sendRecordingCommand,
     setRunningTestSession,
   };
 
