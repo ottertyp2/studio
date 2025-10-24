@@ -48,7 +48,6 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  Brush,
 } from 'recharts';
 import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, BarChartHorizontal, ZoomIn, ZoomOut, Redo, Timer } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -148,7 +147,7 @@ function TestingComponent() {
   const { toast } = useToast();
   
   const { user, userRole, isUserLoading } = useUser();
-  const { firestore, auth, database, areServicesAvailable } = useFirebase();
+  const { firestore, auth, database, areServicesAvailable, firebaseApp } = useFirebase();
 
   const { 
     isRecording,
@@ -225,13 +224,12 @@ function TestingComponent() {
         const runningSessionDoc = querySnapshot.docs[0];
         const session = { id: runningSessionDoc.id, ...runningSessionDoc.data() } as WithId<TestSession>;
         setRunningTestSession(session);
-        // Automatically add running session to comparison view
-        setComparisonSessions(prev => {
-            if (prev.some(s => s.id === session.id)) return prev;
-            return [session, ...prev];
-        });
+        // Automatically display the running session, replacing any other comparisons.
+        setComparisonSessions([session]);
       } else {
         setRunningTestSession(null);
+        // Optional: clear comparison sessions when no session is running.
+        // setComparisonSessions([]); 
       }
     });
     return () => unsubscribe();
@@ -252,6 +250,10 @@ function TestingComponent() {
         toast({ variant: 'destructive', title: 'Error', description: 'Selected vessel type not found.' });
         return;
     }
+
+    // Clear previous data for a fresh start
+    setComparisonData({});
+    setComparisonSessions([]);
 
     const newSessionDoc: Omit<TestSession, 'id'> = {
       vesselTypeId: newSessionData.vesselTypeId,
@@ -428,28 +430,20 @@ function TestingComponent() {
   
     const vesselTypeForGuidelines = vesselTypes?.find(vt => vt.id === firstSessionWithGuidelines?.vesselTypeId);
     
-    // Function to interpolate guideline curves
     const interpolateCurve = (curve: {x: number, y: number}[], x: number) => {
         if (!curve || curve.length === 0) return undefined;
-        // Find the two points surrounding x
-        let p1 = null, p2 = null;
-        for(let i = 0; i < curve.length; i++) {
-            if (curve[i].x <= x) {
-                p1 = curve[i];
-            }
-            if (curve[i].x >= x) {
-                p2 = curve[i];
-                break;
+        for(let i = 0; i < curve.length - 1; i++) {
+            if (x >= curve[i].x && x <= curve[i+1].x) {
+                const x1 = curve[i].x;
+                const y1 = curve[i].y;
+                const x2 = curve[i+1].x;
+                const y2 = curve[i+1].y;
+                const t = (x - x1) / (x2 - x1);
+                return y1 + t * (y2 - y1);
             }
         }
-        if (p1 && p2) {
-             if (p1.x === p2.x) return p1.y; // Exactly on a point
-            // Linear interpolation
-            const t = (x - p1.x) / (p2.x - p1.x);
-            return p1.y + t * (p2.y - p1.y);
-        }
-        if (p1) return p1.y; // Before the first point
-        if (p2) return p2.y; // After the last point
+        if (x < curve[0]?.x) return curve[0].y;
+        if (x > curve[curve.length - 1]?.x) return curve[curve.length - 1].y;
         return undefined;
     };
   
@@ -538,33 +532,42 @@ function TestingComponent() {
 
 
     const generateReport = async (session: WithId<TestSession>) => {
+        if (!firestore || !firebaseApp) {
+            toast({ variant: 'destructive', title: 'Report Failed', description: 'Firebase services not available.' });
+            return;
+        }
+
         setIsGeneratingReport(true);
 
-        const dataForReport = comparisonData[session.id];
-        const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-        const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-        const batch = batches?.find(b => b.id === session.batchId);
+        let dataForReport, config, vesselType, batch, chartImage;
 
-        if (!dataForReport || !config || !vesselType || !batch) {
-            let missingItems = [];
-            if (!dataForReport) missingItems.push('session data');
-            if (!config) missingItems.push('sensor config');
-            if (!vesselType) missingItems.push('vessel type');
-            if (!batch) missingItems.push('batch info');
-            toast({ variant: 'destructive', title: 'Report Failed: Missing Data', description: `Could not find: ${missingItems.join(', ')}.` });
-            setIsGeneratingReport(false);
-            return;
-        }
-
-        if (!chartRef.current) {
-            toast({ variant: 'destructive', title: 'Report Failed: Chart Error', description: 'Chart component reference is not available.' });
-            setIsGeneratingReport(false);
-            return;
-        }
-
-        let dataUrl;
+        // Step 1: Gather all necessary data
         try {
-            dataUrl = await toPng(chartRef.current, { quality: 0.95, pixelRatio: 2 });
+            dataForReport = comparisonData[session.id];
+            config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+            vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+            batch = batches?.find(b => b.id === session.batchId);
+
+            if (!dataForReport || !config || !vesselType || !batch) {
+                let missingItems = [];
+                if (!dataForReport) missingItems.push('session data');
+                if (!config) missingItems.push('sensor config');
+                if (!vesselType) missingItems.push('vessel type');
+                if (!batch) missingItems.push('batch info');
+                throw new Error(`Could not find: ${missingItems.join(', ')}.`);
+            }
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Report Failed: Data Gathering', description: e.message });
+            setIsGeneratingReport(false);
+            return;
+        }
+        
+        // Step 2: Render Chart to Image
+        try {
+            if (!chartRef.current) {
+                throw new Error('Chart component reference is not available.');
+            }
+            chartImage = await toPng(chartRef.current, { quality: 0.95, pixelRatio: 2 });
         } catch (e: any) {
             console.error("PDF Generation Error (Chart to PNG):", e);
             toast({ variant: 'destructive', title: 'Report Failed: Chart Image', description: `Could not render chart to image. ${e.message}` });
@@ -572,11 +575,11 @@ function TestingComponent() {
             return;
         }
 
+        // Step 3: Render PDF
         try {
             const startTime = new Date(session.startTime).getTime();
             const singleChartData = dataForReport.map(d => {
                 const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
-                // We already verified config exists above, so this should be safe.
                 const value = parseFloat(convertRawValue(d.value, config!).toFixed(config!.decimalPlaces));
                 return { name: time, value };
             });
@@ -586,7 +589,7 @@ function TestingComponent() {
                     session={session}
                     data={singleChartData}
                     config={config}
-                    chartImage={dataUrl}
+                    chartImage={chartImage}
                     vesselType={vesselType}
                     batch={batch}
                 />
@@ -644,6 +647,8 @@ function TestingComponent() {
     if (ping < 1000) return 'text-yellow-500';
     return 'text-red-600';
   };
+
+  const renderLegendContent = () => null;
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
@@ -929,7 +934,7 @@ function TestingComponent() {
                             }}
                             labelFormatter={(label) => `Time: ${label}s`}
                         />
-                        <Legend content={() => null} />
+                        <Legend content={renderLegendContent} />
                         
                         {comparisonSessions.map((session, index) => (
                            <Line 
@@ -974,3 +979,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
