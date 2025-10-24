@@ -143,8 +143,8 @@ function TestingComponent() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   
-  const { user, userRole } = useUser();
-  const { firestore, auth, database } = useFirebase();
+  const { user, userRole, isUserLoading } = useUser();
+  const { firestore, auth, database, areServicesAvailable } = useFirebase();
 
   const { 
     isConnected, 
@@ -177,7 +177,6 @@ function TestingComponent() {
   const [timeframe, setTimeframe] = useState('all');
   const [brushDomain, setBrushDomain] = useState<{ startIndex?: number; endIndex?: number } | null>(null);
 
-
   // Data fetching hooks
   const testBenchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'testbenches') : null, [firestore]);
   const { data: testBenches, isLoading: isTestBenchesLoading } = useCollection<TestBench>(testBenchesCollectionRef);
@@ -190,7 +189,6 @@ function TestingComponent() {
   
   const batchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'batches') : null, [firestore]);
   const { data: batches, isLoading: isBatchesLoading } = useCollection<Batch>(batchesCollectionRef);
-
 
   // Set initial active bench and config
   useEffect(() => {
@@ -207,7 +205,6 @@ function TestingComponent() {
         setActiveSensorConfig(null);
     }
   }, [activeTestBench, sensorConfigs]);
-
 
   // Find and subscribe to a running session on load
   useEffect(() => {
@@ -234,7 +231,7 @@ function TestingComponent() {
   }, [firestore, user]);
 
   const handleStartSession = async () => {
-    if (!user || !activeTestBench || !activeSensorConfig || !newSessionData.vesselTypeId || !newSessionData.batchId) {
+    if (!user || !activeTestBench || !activeSensorConfig || !newSessionData.vesselTypeId || !newSessionData.batchId || !database) {
       toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select a test bench, sensor, vessel type, and batch.' });
       return;
     }
@@ -266,10 +263,7 @@ function TestingComponent() {
 
     try {
       await addDocumentNonBlocking(collection(firestore, 'test_sessions'), newSessionDoc);
-      // Command the ESP32 to start recording
-      if (database) {
-        await set(ref(database, 'commands/recording'), true);
-      }
+      await set(ref(database, 'commands/recording'), true);
       toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
       setIsNewSessionDialogOpen(false);
       setNewSessionData({ vesselTypeId: '', batchId: '', serialNumber: '', description: '' });
@@ -279,16 +273,13 @@ function TestingComponent() {
   };
   
   const handleStopSession = async () => {
-    if (!runningTestSession) return;
+    if (!runningTestSession || !database) return;
     const sessionRef = doc(firestore, 'test_sessions', runningTestSession.id);
     await updateDocumentNonBlocking(sessionRef, {
       status: 'COMPLETED',
       endTime: new Date().toISOString(),
     });
-    // Command the ESP32 to stop recording
-    if (database) {
-        await set(ref(database, 'commands/recording'), false);
-    }
+    await set(ref(database, 'commands/recording'), false);
     toast({ title: 'Session Stopped', description: 'Data recording has ended.' });
   };
   
@@ -311,7 +302,6 @@ function TestingComponent() {
     };
 
     comparisonSessions.forEach(session => {
-        // Correct path to the sensor_data subcollection
         const dataQuery = query(
           collection(firestore, 'test_sessions', session.id, 'sensor_data'),
           orderBy('timestamp', 'asc')
@@ -321,16 +311,15 @@ function TestingComponent() {
             const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
             setComparisonData(prev => ({ ...prev, [session.id]: data }));
             
-            // Only consider it "loaded" if the session is completed. Running sessions are never fully loaded.
             if (session.status === 'COMPLETED') {
                 checkAllLoaded();
             } else {
-                 setIsLoadingComparisonData(false); // For running sessions, stop loading immediately
+                 setIsLoadingComparisonData(false);
             }
         }, (error) => {
             console.error(`Error fetching data for ${session.id}:`, error);
             toast({ variant: 'destructive', title: `Data Error for ${session.serialNumber}`, description: error.message });
-            checkAllLoaded(); // Still count it to unblock the loading state
+            checkAllLoaded();
         });
 
         unsubscribers.push(unsubscribe);
@@ -340,7 +329,6 @@ function TestingComponent() {
       unsubscribers.forEach(unsub => unsub());
     };
   }, [firestore, comparisonSessions, toast]);
-
 
   const handleDeleteSession = async (sessionId: string) => {
     if (!firestore) return;
@@ -477,35 +465,52 @@ function TestingComponent() {
   }, [isConnected, isRecording]);
 
   const generateReport = async (session: WithId<TestSession>) => {
-      if (!chartRef.current || !session) {
-        toast({ variant: 'destructive', title: 'Report Generation Failed', description: 'Chart or session data is missing.' });
+      console.log("--- Starting PDF Generation ---");
+
+      if (!chartRef.current) {
+        const errorMsg = "PDF Generation Failed: Chart reference is missing.";
+        console.error(errorMsg);
+        toast({ variant: 'destructive', title: 'Error', description: errorMsg });
         return;
       }
-
-      if (!session.batchId) {
-        toast({ variant: 'destructive', title: 'Report Generation Failed', description: 'The selected session is missing a Batch ID, which is required for the report.' });
+      if (!session) {
+        const errorMsg = "PDF Generation Failed: Session data is missing.";
+        console.error(errorMsg);
+        toast({ variant: 'destructive', title: 'Error', description: errorMsg });
         return;
       }
       
+      console.log("Session:", session);
+
       const dataForReport = comparisonData[session.id];
       const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
       const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
       const batch = batches?.find(b => b.id === session.batchId);
       
+      console.log("Data for report:", dataForReport);
+      console.log("Config:", config);
+      console.log("Vessel Type:", vesselType);
+      console.log("Batch:", batch);
+      
       if (!dataForReport || !config || !vesselType || !batch) {
-          toast({ variant: 'destructive', title: 'Report Generation Failed', description: 'Required report data is missing (config, vessel type, or batch). Please ensure all catalog items are present.' });
+          const errorMsg = 'Required report data is missing. Please ensure all catalog items (config, vessel type, batch) are present.';
+          console.error(errorMsg, {dataForReport, config, vesselType, batch});
+          toast({ variant: 'destructive', title: 'Report Generation Failed', description: errorMsg });
           return;
       }
 
       setIsGeneratingReport(true);
       try {
+          console.log("Generating chart image...");
           const dataUrl = await toPng(chartRef.current, { quality: 0.95, pixelRatio: 2 });
+          console.log("Chart image generated, length:", dataUrl.length);
           
           const startTime = new Date(session.startTime).getTime();
           const singleChartData = dataForReport.map(d => {
               const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
               return { name: time, value: parseFloat(convertRawValue(d.value, config).toFixed(config.decimalPlaces)) };
           });
+          console.log("Processing PDF document...");
 
           const blob = await pdf(
               <TestReport 
@@ -517,6 +522,7 @@ function TestingComponent() {
                   batch={batch}
               />
           ).toBlob();
+          console.log("PDF Blob created, size:", blob.size);
 
           const link = document.createElement('a');
           link.href = URL.createObjectURL(blob);
@@ -525,9 +531,12 @@ function TestingComponent() {
           link.click();
           document.body.removeChild(link);
           
+          console.log("--- PDF Generation Complete ---");
           toast({ title: 'Report Generated', description: 'Your PDF report has been downloaded.' });
 
       } catch (e: any) {
+          console.error("--- PDF Generation FAILED ---");
+          console.error("Error during PDF generation:", e);
           toast({ variant: 'destructive', title: 'Report Generation Failed', description: e.message });
       } finally {
           setIsGeneratingReport(false);
@@ -591,7 +600,6 @@ function TestingComponent() {
     }
     return ['dataMin', 'dataMax'];
   }, [brushDomain, chartData, isLive]);
-
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
@@ -812,7 +820,7 @@ function TestingComponent() {
                                 Clear
                             </Button>
                         )}
-                        {comparisonSessions.length === 1 && (
+                        {comparisonSessions.length === 1 && comparisonSessions[0].status === 'COMPLETED' && (
                             <Button size="sm" onClick={() => generateReport(comparisonSessions[0])} disabled={isGeneratingReport}>
                                 <Download className="mr-2 h-4 w-4"/>
                                 {isGeneratingReport ? 'Generating...' : 'PDF'}
@@ -888,7 +896,6 @@ function TestingComponent() {
             </CardContent>
             </Card>
         </div>
-
       </main>
     </div>
   );
@@ -912,3 +919,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
