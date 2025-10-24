@@ -111,6 +111,8 @@ type SensorData = {
 
 type ChartDataPoint = {
   name: number; // time in seconds
+  minGuideline?: number;
+  maxGuideline?: number;
   [key: string]: number | undefined; // SessionID as key for value
 };
 
@@ -371,7 +373,6 @@ function TestingComponent() {
   
     const allDataPoints: Record<number, ChartDataPoint> = {};
     let firstSessionWithGuidelines: WithId<TestSession> | undefined = undefined;
-    let maxTime = 0;
   
     comparisonSessions.forEach(session => {
         const sessionData = comparisonData[session.id] || [];
@@ -384,13 +385,13 @@ function TestingComponent() {
         const startTime = new Date(session.startTime).getTime();
         const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
 
-        let processedData: { time: number, value: number, originalTimestamp: string }[] = sessionData.map(d => {
+        let processedData: { time: number, value: number }[] = sessionData.map(d => {
             const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
             const value = parseFloat(convertRawValue(d.value, config || null).toFixed(config?.decimalPlaces || 2));
-            return { time, value, originalTimestamp: d.timestamp };
+            return { time, value };
         });
 
-        // Interpolate if few data points (large time gaps)
+        // Interpolate if large time gaps are detected (standby mode)
         if (processedData.length > 1) {
             const interpolated = [];
             for (let i = 0; i < processedData.length - 1; i++) {
@@ -408,7 +409,6 @@ function TestingComponent() {
                         interpolated.push({
                             time: startPoint.time + t * timeDiff,
                             value: startPoint.value + t * valueDiff,
-                            originalTimestamp: "interpolated"
                         });
                     }
                 }
@@ -419,7 +419,6 @@ function TestingComponent() {
 
         processedData.forEach(p => {
             const time = p.time;
-            if (time > maxTime) maxTime = time;
             if (!allDataPoints[time]) {
                 allDataPoints[time] = { name: time };
             }
@@ -428,16 +427,36 @@ function TestingComponent() {
     });
   
     const vesselTypeForGuidelines = vesselTypes?.find(vt => vt.id === firstSessionWithGuidelines?.vesselTypeId);
+    
+    // Function to interpolate guideline curves
+    const interpolateCurve = (curve: {x: number, y: number}[], x: number) => {
+        if (!curve || curve.length === 0) return undefined;
+        // Find the two points surrounding x
+        let p1 = null, p2 = null;
+        for(let i=0; i<curve.length; i++) {
+            if (curve[i].x <= x) {
+                p1 = curve[i];
+            }
+            if (curve[i].x >= x) {
+                p2 = curve[i];
+                break;
+            }
+        }
+        if (p1 && p2) {
+             if (p1.x === p2.x) return p1.y; // Exactly on a point
+            // Linear interpolation
+            const t = (x - p1.x) / (p2.x - p1.x);
+            return p1.y + t * (p2.y - p1.y);
+        }
+        if (p1) return p1.y; // Before the first point
+        if (p2) return p2.y; // After the last point
+        return undefined;
+    };
   
     Object.values(allDataPoints).forEach(point => {
       if (vesselTypeForGuidelines) {
-        const findY = (curve: {x: number, y: number}[], x: number) => {
-            if (!curve || curve.length === 0) return undefined;
-            const point = curve.find(p => p.x >= x);
-            return point ? point.y : undefined;
-        };
-        point.minGuideline = findY(vesselTypeForGuidelines.minCurve, point.name);
-        point.maxGuideline = findY(vesselTypeForGuidelines.maxCurve, point.name);
+        point.minGuideline = interpolateCurve(vesselTypeForGuidelines.minCurve, point.name);
+        point.maxGuideline = interpolateCurve(vesselTypeForGuidelines.maxCurve, point.name);
       }
     });
   
@@ -559,6 +578,7 @@ function TestingComponent() {
           const startTime = new Date(session.startTime).getTime();
           const singleChartData = dataForReport.map(d => {
               const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
+              if (!config) return { name: time, value: d.value }; // Fallback
               return { name: time, value: parseFloat(convertRawValue(d.value, config).toFixed(config.decimalPlaces)) };
           });
           console.log("Processing PDF document...");

@@ -41,9 +41,12 @@ const GuidelineCurveEditor: React.FC<GuidelineCurveEditorProps> = ({
     const fromCanvasPos = useCallback((p: Point, canvas: HTMLCanvasElement): Point => {
         const plotWidth = canvas.width - padding.left - padding.right;
         const plotHeight = canvas.height - padding.top - padding.bottom;
+        const xVal = ((p.x - padding.left) / plotWidth) * maxX;
+        const yVal = ((padding.top + plotHeight - p.y) / plotHeight) * maxY;
+
         return {
-            x: Math.round(((p.x - padding.left) / plotWidth) * maxX),
-            y: Math.round(((padding.top + plotHeight - p.y) / plotHeight) * maxY)
+            x: parseFloat(xVal.toFixed(2)),
+            y: parseFloat(yVal.toFixed(2))
         };
     }, [maxX, maxY, padding]);
 
@@ -105,7 +108,7 @@ const GuidelineCurveEditor: React.FC<GuidelineCurveEditorProps> = ({
             const y = padding.top + plotHeight - (plotHeight / yTicks) * i;
             ctx.moveTo(padding.left, y);
             ctx.lineTo(padding.left + plotWidth, y);
-            ctx.fillText(yVal.toString(), padding.left - 5, y);
+            ctx.fillText(yVal.toFixed(0), padding.left - 5, y);
         }
         ctx.save();
         ctx.translate(15, padding.top + plotHeight / 2);
@@ -121,15 +124,27 @@ const GuidelineCurveEditor: React.FC<GuidelineCurveEditorProps> = ({
             
             ctx.beginPath();
             ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
-            ctx.bezierCurveTo(canvasPoints[1].x, canvasPoints[1].y, canvasPoints[2].x, canvasPoints[2].y, canvasPoints[3].x, canvasPoints[3].y);
+            // If we have bezier control points, use them
+            if (canvasPoints.length === 4) {
+                 ctx.bezierCurveTo(canvasPoints[1].x, canvasPoints[1].y, canvasPoints[2].x, canvasPoints[2].y, canvasPoints[3].x, canvasPoints[3].y);
+            } else {
+                // Otherwise, draw straight lines
+                 for(let i = 1; i < canvasPoints.length; i++) {
+                    ctx.lineTo(canvasPoints[i].x, canvasPoints[i].y);
+                 }
+            }
             ctx.strokeStyle = lineColor;
             ctx.lineWidth = 2;
             ctx.stroke();
             
-            drawPoint(ctx, canvasPoints[0], '#4CAF50', 8);
-            drawPoint(ctx, canvasPoints[3], '#F44336', 8);
-            drawPoint(ctx, canvasPoints[1], '#FF9800', 6);
-            drawPoint(ctx, canvasPoints[2], '#FF9800', 6);
+            // Draw all points
+            canvasPoints.forEach((p, i) => {
+                 let color = '#FF9800'; // orange for control points
+                 let radius = 6;
+                 if (i === 0) { color = '#4CAF50'; radius = 8; } // green start
+                 if (i === points.length - 1) { color = '#F44336'; radius = 8; } // red end
+                 drawPoint(ctx, p, color, radius);
+            })
         }
     
         // Draw mouse position
@@ -139,7 +154,7 @@ const GuidelineCurveEditor: React.FC<GuidelineCurveEditorProps> = ({
                 ctx.fillStyle = 'hsl(var(--foreground))';
                 ctx.font = '12px sans-serif';
                 ctx.textAlign = 'left';
-                ctx.fillText(`(${dataPos.x}, ${dataPos.y})`, mousePos.x + 10, mousePos.y - 10);
+                ctx.fillText(`(${dataPos.x.toFixed(2)}, ${dataPos.y.toFixed(2)})`, mousePos.x + 10, mousePos.y - 10);
             }
         }
     }, [points, lineColor, toCanvasPos, fromCanvasPos, mousePos, maxX, maxY, padding]);
@@ -197,7 +212,14 @@ const GuidelineCurveEditor: React.FC<GuidelineCurveEditorProps> = ({
                 x: Math.max(0, Math.min(maxX, dataPos.x)), 
                 y: Math.max(0, Math.min(maxY, dataPos.y))
             };
-            setPoints(newPoints);
+            
+            // Ensure points remain ordered by time (x-value) for bezier curves
+            if (newPoints.length === 4) {
+                 if (draggingPointIndex === 0 && newPoints[0].x > newPoints[3].x) newPoints[0].x = newPoints[3].x;
+                 if (draggingPointIndex === 3 && newPoints[3].x < newPoints[0].x) newPoints[3].x = newPoints[0].x;
+            }
+
+            setPoints(newPoints.sort((a,b) => a.x - b.x));
         } else {
             const pointIndex = findNearestPoint(pos, canvas);
             canvas.style.cursor = pointIndex !== -1 ? 'grab' : 'crosshair';
@@ -238,13 +260,19 @@ const GuidelineCurveEditor: React.FC<GuidelineCurveEditorProps> = ({
         } else if (points.length === 1) {
              const start = points[0];
              const end = dataPos;
+             // Ensure end is after start
+             if (end.x < start.x) {
+                toast({ variant: 'destructive', title: 'Invalid Point', description: 'End point must be after start point.' });
+                return;
+             }
+
              const control1 = {
-                x: Math.round(start.x + (end.x - start.x) / 3),
-                y: Math.round(start.y + (end.y - start.y) / 3),
+                x: parseFloat((start.x + (end.x - start.x) / 3).toFixed(2)),
+                y: parseFloat((start.y + (end.y - start.y) / 3).toFixed(2)),
              };
              const control2 = {
-                x: Math.round(start.x + 2 * (end.x - start.x) / 3),
-                y: Math.round(start.y + 2 * (end.y - start.y) / 3),
+                x: parseFloat((start.x + 2 * (end.x - start.x) / 3).toFixed(2)),
+                y: parseFloat((start.y + 2 * (end.y - start.y) / 3).toFixed(2)),
              };
              setPoints([start, control1, control2, end]);
         }
