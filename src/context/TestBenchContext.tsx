@@ -3,28 +3,38 @@
 import { createContext, useContext } from 'react';
 
 export type SensorData = {
-  id?: string;
   timestamp: string;
   value: number; 
-  testSessionId?: string;
 };
 
 export type ValveStatus = 'ON' | 'OFF';
+
+export type SessionMeta = {
+    id: string;
+    startTime: number;
+    endTime?: number;
+    status: 'recording' | 'completed';
+    duration?: number;
+};
+
+export type Session = {
+    meta: SessionMeta;
+    data: Record<string, {value: number, time: number, relativeTime: number}>
+}
 
 
 export interface TestBenchContextType {
   isConnected: boolean;
   isRecording: boolean;
   localDataLog: SensorData[];
-  setLocalDataLog: React.Dispatch<React.SetStateAction<SensorData[]>>;
   currentValue: number | null;
-  setCurrentValue: React.Dispatch<React.SetStateAction<number | null>>;
   lastDataPointTimestamp: number | null;
-  handleNewDataPoint: (newDataPoint: SensorData) => void;
   valve1Status: ValveStatus;
   valve2Status: ValveStatus;
+  sessions: Record<string, Session> | null;
   sendValveCommand: (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => Promise<void>;
-  setRunningTestSession: (session: {id: string, sensorConfigurationId: string} | null) => void;
+  sendRecordingCommand: (shouldRecord: boolean) => Promise<void>;
+  deleteSession: (sessionId: string) => Promise<void>;
 }
 
 export const TestBenchContext = createContext<TestBenchContextType | undefined>(undefined);
