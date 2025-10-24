@@ -870,6 +870,11 @@ function TestingComponent() {
                                                     </div>
                                                 </div>
                                                 <div className="flex gap-2">
+                                                    {comparisonSessions.length === 1 && comparisonSessions[0].id === session.id && session.status === 'COMPLETED' && (
+                                                        <Button size="sm" onClick={() => generateReport(session)} disabled={isGeneratingReport}>
+                                                            <Download className="h-4 w-4"/>
+                                                        </Button>
+                                                    )}
                                                     <AlertDialog>
                                                         <AlertDialogTrigger asChild>
                                                             <Button size="sm" variant="destructive"><Trash2 className="h-4 w-4"/></Button>
@@ -897,13 +902,6 @@ function TestingComponent() {
                         <Button variant={activeTimeframe === '1m' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('1m')}>1m</Button>
                         <Button variant={activeTimeframe === '5m' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('5m')}>5m</Button>
                         <Button variant={activeTimeframe === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('all')}>All</Button>
-                        
-                        {comparisonSessions.length === 1 && comparisonSessions[0].status === 'COMPLETED' && (
-                            <Button size="sm" onClick={() => generateReport(comparisonSessions[0])} disabled={isGeneratingReport}>
-                                <Download className="mr-2 h-4 w-4"/>
-                                {isGeneratingReport ? 'Generating...' : 'PDF'}
-                            </Button>
-                        )}
                    </div>
                 </div>
             </CardHeader>
