@@ -250,7 +250,8 @@
         "name": { "type": "string", "description": "The name of the model." },
         "version": { "type": "string", "description": "Model version string." },
         "description": { "type": "string", "description": "A brief description of the model." },
-        "fileSize": { "type": "number", "description": "The size of the model file in bytes." }
+        "fileSize": { "type": "number", "description": "The size of the model file in bytes." },
+        "storagePath": { "type": "string", "description": "Path to the model file in Firebase Storage (e.g. gs://bucket/path/to/model.json)." }
       },
       "required": ["id", "name", "version"]
     },

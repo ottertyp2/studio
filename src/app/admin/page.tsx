@@ -117,6 +117,7 @@ type MLModel = {
     version: string;
     description: string;
     fileSize: number;
+    storagePath?: string;
 };
 
 type TrainDataSet = {
@@ -599,9 +600,14 @@ export default function AdminPage() {
       toast({ variant: 'destructive', title: 'AI Classification Failed', description: `Model with ID ${modelId} not found.` });
       return;
     }
+    
+    if (!modelToUse.storagePath) {
+        toast({ variant: 'destructive', title: 'AI Classification Failed', description: `Model "${modelToUse.name}" is missing a storage path. It may need to be retrained.` });
+        return;
+    }
 
     try {
-        const model = await tf.loadLayersModel(`indexeddb://${modelToUse.name}`);
+        const model = await tf.loadLayersModel(modelToUse.storagePath);
 
         const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
         const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
@@ -743,7 +749,8 @@ export default function AdminPage() {
         name: newMlModel.name,
         version: newMlModel.version,
         description: newMlModel.description || '',
-        fileSize: 0
+        fileSize: 0,
+        storagePath: ''
     };
     addDocumentNonBlocking(mlModelsCollectionRef, docToSave);
     toast({title: 'Model Added', description: `Added "${docToSave.name} v${docToSave.version}" to the catalog.`});
@@ -780,7 +787,7 @@ export default function AdminPage() {
   };
 
   const handleTrainModel = async () => {
-    if (selectedDataSetIds.length === 0 || !firestore || !selectedModelId) {
+    if (selectedDataSetIds.length === 0 || !firestore || !selectedModelId || !firebaseApp) {
         toast({variant: 'destructive', title: 'Training Error', description: 'Please select a model and at least one training dataset.'});
         return;
     }
@@ -876,18 +883,20 @@ export default function AdminPage() {
           }]
         });
 
-        toast({ title: 'Training Complete!', description: 'Model has been trained in the browser.' });
+        toast({ title: 'Training Complete!', description: 'Now saving model to cloud...' });
 
-        await model.save(`indexeddb://${selectedModel.name}`);
+        const storage = getStorage(firebaseApp);
+        const saveResult = await model.save(`firebase-storage://${storage.app.options.storageBucket}/models/${selectedModel.name}`);
         
         const modelRef = doc(firestore, 'mlModels', selectedModelId);
         await updateDoc(modelRef, {
             description: `Manually trained on ${new Date().toLocaleDateString()}. Final Val Acc: ${finalValAcc.toFixed(2)}%`,
             version: `${selectedModel.version.split('-')[0]}-trained`,
+            storagePath: `gs://${storage.app.options.storageBucket}/models/${selectedModel.name}/model.json`,
+            fileSize: saveResult.modelArtifactsInfo.weightData.byteLength,
         });
 
-        toast({ title: 'Model Saved', description: `Model "${selectedModel.name}" updated in catalog and saved locally.` });
-
+        toast({ title: 'Model Saved', description: `Model "${selectedModel.name}" updated in catalog and saved to Firebase Storage.` });
 
     } catch (e: any) {
         toast({variant: 'destructive', title: 'Training Failed', description: e.message});
@@ -906,7 +915,7 @@ export default function AdminPage() {
   }
 
   const handleAutomatedTraining = async () => {
-    if (!mlModelsCollectionRef || !firestore) return;
+    if (!mlModelsCollectionRef || !firestore || !firebaseApp) return;
 
     setIsAutoTraining(true);
     setAutoTrainingStatus({ step: 'Initializing', progress: 0, details: 'Starting pipeline...' });
@@ -1003,10 +1012,11 @@ export default function AdminPage() {
           }
       });
       
-      setAutoTrainingStatus({ step: 'Saving Model', progress: 90, details: 'Saving model to browser and Firestore...' });
+      setAutoTrainingStatus({ step: 'Saving Model', progress: 90, details: 'Saving model to cloud storage...' });
 
       const modelName = `auto-model-${autoModelSize}-${new Date().toISOString().split('T')[0]}`;
-      await model.save(`indexeddb://${modelName}`);
+      const storage = getStorage(firebaseApp);
+      const saveResult = await model.save(`firebase-storage://${storage.app.options.storageBucket}/models/${modelName}`);
       
       const newId = doc(collection(firestore, '_')).id;
       const modelMetaData: MLModel = {
@@ -1014,7 +1024,8 @@ export default function AdminPage() {
           name: modelName,
           version: '1.0-auto',
           description: `Automatically trained on ${new Date().toLocaleDateString()}. Accuracy: ${finalAccuracy.toFixed(2)}%`,
-          fileSize: 0
+          fileSize: saveResult.modelArtifactsInfo.weightData.byteLength,
+          storagePath: `gs://${storage.app.options.storageBucket}/models/${modelName}/model.json`
       };
 
       addDocumentNonBlocking(mlModelsCollectionRef, modelMetaData);
@@ -2502,3 +2513,5 @@ const renderBatchManagement = () => (
   );
 }
 
+
+    
