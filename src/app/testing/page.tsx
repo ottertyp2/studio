@@ -146,7 +146,7 @@ function TestingComponent() {
   const { toast } = useToast();
   
   const { user, userRole, isUserLoading } = useUser();
-  const { firestore, auth, database, areServicesAvailable } = useFirebase();
+  const { firestore, auth, database } = useFirebase();
 
   const { 
     isConnected, 
@@ -177,7 +177,7 @@ function TestingComponent() {
 
   const [isLive, setIsLive] = useState(true);
   const [timeframe, setTimeframe] = useState('all');
-  const [brushDomain, setBrushDomain] = useState<{ startIndex?: number; endIndex?: number } | null>(null);
+  const [brushDomain, setBrushDomain] = useState<{ startIndex: number; endIndex: number } | null>(null);
 
   // Data fetching hooks
   const testBenchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'testbenches') : null, [firestore]);
@@ -221,6 +221,7 @@ function TestingComponent() {
         const runningSessionDoc = querySnapshot.docs[0];
         const session = { id: runningSessionDoc.id, ...runningSessionDoc.data() } as WithId<TestSession>;
         setRunningTestSession(session);
+        // Automatically add running session to comparison view
         setComparisonSessions(prev => {
             if (prev.some(s => s.id === session.id)) return prev;
             return [session, ...prev];
@@ -264,8 +265,12 @@ function TestingComponent() {
     };
 
     try {
+      // First, create the session in Firestore. The useEffect above will pick it up.
       await addDocumentNonBlocking(collection(firestore, 'test_sessions'), newSessionDoc);
+      
+      // Then, send the command to the device via RTDB
       await set(ref(database, 'commands/recording'), true);
+
       toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
       setIsNewSessionDialogOpen(false);
       setNewSessionData({ vesselTypeId: '', batchId: '', serialNumber: '', description: '' });
@@ -276,12 +281,17 @@ function TestingComponent() {
   
   const handleStopSession = async () => {
     if (!runningTestSession || !database || !firestore) return;
+    
+    // First, send the command to the device to stop high-frequency sending
+    await set(ref(database, 'commands/recording'), false);
+
+    // Then, update the session status in Firestore
     const sessionRef = doc(firestore, 'test_sessions', runningTestSession.id);
     await updateDocumentNonBlocking(sessionRef, {
       status: 'COMPLETED',
       endTime: new Date().toISOString(),
     });
-    await set(ref(database, 'commands/recording'), false);
+
     toast({ title: 'Session Stopped', description: 'Data recording has ended.' });
   };
   
@@ -304,12 +314,6 @@ function TestingComponent() {
     };
 
     comparisonSessions.forEach(session => {
-        // If data for this session is already loaded and the session is complete, don't refetch
-        if (comparisonData[session.id] && session.status === 'COMPLETED') {
-            checkAllLoaded();
-            return;
-        }
-
         const dataQuery = query(
           collection(firestore, 'test_sessions', session.id, 'sensor_data'),
           orderBy('timestamp', 'asc')
@@ -319,6 +323,8 @@ function TestingComponent() {
             const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
             setComparisonData(prev => ({ ...prev, [session.id]: data }));
             
+            // Only consider it "loaded" for the loading spinner if the session is complete.
+            // Running sessions are always loading new data.
             if (session.status === 'COMPLETED') {
                 checkAllLoaded();
             } else {
@@ -428,6 +434,13 @@ function TestingComponent() {
     router.push('/login');
   };
 
+  const isDeviceConnected = useMemo(() => {
+    if (!isConnected) return false;
+    if (lastDataPointTimestamp === null) return true; // Assume connected until first data point proves otherwise
+    return (Date.now() - lastDataPointTimestamp) < 65000;
+  }, [isConnected, lastDataPointTimestamp]);
+
+
   useEffect(() => {
     if (!lastDataPointTimestamp) {
       setTimeSinceLastUpdate('');
@@ -466,11 +479,12 @@ function TestingComponent() {
   }, [currentValue, activeSensorConfig, runningTestSession, sensorConfigs]);
   
   const dataSourceStatus = useMemo(() => {
-    if (isConnected) {
+    if (isDeviceConnected) {
         return `Sampling: ${isRecording ? "1/s" : "1/min"}`;
     }
     return 'Offline';
-  }, [isConnected, isRecording]);
+  }, [isDeviceConnected, isRecording]);
+
 
   const generateReport = async (session: WithId<TestSession>) => {
       console.log("--- Starting PDF Generation ---");
@@ -482,21 +496,20 @@ function TestingComponent() {
         return;
       }
 
-      console.log("Session:", JSON.stringify(session, null, 2));
-
       const dataForReport = comparisonData[session.id];
       const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
       const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
       const batch = batches?.find(b => b.id === session.batchId);
       
+      console.log("Session:", session ? JSON.stringify(session, null, 2) : 'undefined');
       console.log("Data for report:", dataForReport ? `${dataForReport.length} points` : "undefined");
       console.log("Config:", config ? JSON.stringify(config, null, 2) : "undefined");
       console.log("Vessel Type:", vesselType ? JSON.stringify(vesselType, null, 2) : "undefined");
       console.log("Batch:", batch ? JSON.stringify(batch, null, 2) : "undefined");
       
-      if (!dataForReport || !config || !vesselType || !batch || !session.batchId) {
-          const errorMsg = 'Required report data is missing. Ensure all catalog items (config, vessel type, batch) are present and the session has a batch ID.';
-          console.error(errorMsg, {dataForReport: !!dataForReport, config: !!config, vesselType: !!vesselType, batch: !!batch, batchId: session.batchId});
+      if (!dataForReport || !config || !vesselType || !batch) {
+          const errorMsg = 'Required report data is missing. Ensure all catalog items (config, vessel type, batch) are present.';
+          console.error(errorMsg, {dataForReport: !!dataForReport, config: !!config, vesselType: !!vesselType, batch: !!batch});
           toast({ variant: 'destructive', title: 'Report Generation Failed', description: errorMsg });
           return;
       }
@@ -724,8 +737,8 @@ function TestingComponent() {
                         {currentValue !== null && lastDataPointTimestamp ? `(Updated ${timeSinceLastUpdate})` : ''}
                     </p>
                     
-                    <div className={`text-sm mt-2 flex items-center justify-center gap-1 ${isConnected ? 'text-green-600' : 'text-destructive'}`}>
-                        {isConnected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
+                    <div className={`text-sm mt-2 flex items-center justify-center gap-1 ${isDeviceConnected ? 'text-green-600' : 'text-destructive'}`}>
+                        {isDeviceConnected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
                         <span>{dataSourceStatus}</span>
                     </div>
                 </div>
@@ -908,9 +921,9 @@ function TestingComponent() {
 
 export default function TestingPage() {
     const { user, isUserLoading } = useUser();
-    const { areServicesAvailable, firestore, database } = useFirebase();
+    const { firestore, database } = useFirebase();
 
-    if (isUserLoading || !areServicesAvailable || !firestore || !database) {
+    if (isUserLoading || !firestore || !database) {
         return (
             <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
                 <p className="text-lg">Loading Dashboard...</p>
