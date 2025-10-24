@@ -12,7 +12,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const { database, firestore } = useFirebase();
   const { user } = useUser();
 
-  const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(false); // Default to offline
   const [isRecording, setIsRecording] = useState(false);
   const [localDataLog, setLocalDataLog] = useState<RtdbSensorData[]>([]);
   const [currentValue, setCurrentValue] = useState<number | null>(null);
@@ -111,7 +111,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const unsubscribe = onValue(liveRef, (snap) => {
         const status = snap.val();
 
-        if (status && status.heartbeat) {
+        if (status) {
             // Data has been received, so device is online.
             setIsConnected(true);
 
