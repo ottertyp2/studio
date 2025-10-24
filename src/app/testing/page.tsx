@@ -146,10 +146,10 @@ function TestingComponent() {
   const { toast } = useToast();
   
   const { user, userRole, isUserLoading } = useUser();
-  const { firestore, auth, database, areServicesAvailable } = useFirebase();
+  const { firestore, auth, database } = useFirebase();
 
   const { 
-    isConnected, 
+    isConnected: isFirebaseConnected, 
     currentValue,
     lastDataPointTimestamp,
     isRecording,
@@ -177,7 +177,7 @@ function TestingComponent() {
 
   const [isLive, setIsLive] = useState(true);
   const [timeframe, setTimeframe] = useState('all');
-  const [brushDomain, setBrushDomain] = useState<{ startIndex: number; endIndex: number } | null>(null);
+  const [brushDomain, setBrushDomain] = useState<{ startIndex?: number; endIndex?: number } | null>(null);
 
   // Data fetching hooks
   const testBenchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'testbenches') : null, [firestore]);
@@ -259,18 +259,14 @@ function TestingComponent() {
       status: 'RUNNING',
       testBenchId: activeTestBench.id,
       sensorConfigurationId: activeSensorConfig.id,
-      measurementType: isConnected ? 'ARDUINO' : 'DEMO',
+      measurementType: isFirebaseConnected ? 'ARDUINO' : 'DEMO',
       userId: user.uid,
       username: user.displayName || user.email || 'Unknown User',
     };
 
     try {
-      // First, create the session in Firestore. The useEffect above will pick it up.
       await addDocumentNonBlocking(collection(firestore, 'test_sessions'), newSessionDoc);
-      
-      // Then, send the command to the device via RTDB
       await set(ref(database, 'commands/recording'), true);
-
       toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
       setIsNewSessionDialogOpen(false);
       setNewSessionData({ vesselTypeId: '', batchId: '', serialNumber: '', description: '' });
@@ -282,10 +278,8 @@ function TestingComponent() {
   const handleStopSession = async () => {
     if (!runningTestSession || !database || !firestore) return;
     
-    // First, send the command to the device to stop high-frequency sending
     await set(ref(database, 'commands/recording'), false);
 
-    // Then, update the session status in Firestore
     const sessionRef = doc(firestore, 'test_sessions', runningTestSession.id);
     await updateDocumentNonBlocking(sessionRef, {
       status: 'COMPLETED',
@@ -322,9 +316,6 @@ function TestingComponent() {
         const unsubscribe = onSnapshot(dataQuery, (snapshot) => {
             const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
             setComparisonData(prev => ({ ...prev, [session.id]: data }));
-            
-            // Only consider it "loaded" for the loading spinner if the session is complete.
-            // Running sessions are always loading new data.
             if (session.status === 'COMPLETED') {
                 checkAllLoaded();
             } else {
@@ -397,8 +388,8 @@ function TestingComponent() {
             return { time, value };
         });
 
-        // Interpolate if few data points
-        if (processedData.length > 1 && processedData.length < 20) {
+        // Interpolate if few data points (large time gaps)
+        if (processedData.length > 1) {
             const interpolated = [];
             for (let i = 0; i < processedData.length - 1; i++) {
                 const startPoint = processedData[i];
@@ -406,21 +397,22 @@ function TestingComponent() {
                 interpolated.push(startPoint);
                 
                 const timeDiff = endPoint.time - startPoint.time;
-                const valueDiff = endPoint.value - startPoint.value;
-                const steps = Math.max(2, Math.floor(timeDiff / 5)); // Add a point every ~5s
-
-                for (let j = 1; j < steps; j++) {
-                    const t = j / steps;
-                    interpolated.push({
-                        time: startPoint.time + t * timeDiff,
-                        value: startPoint.value + t * valueDiff,
-                    });
+                // Interpolate if the gap is larger than 90s (longer than the 60s standby update)
+                if (timeDiff > 90) {
+                    const valueDiff = endPoint.value - startPoint.value;
+                    const steps = Math.floor(timeDiff / 60); // Add a point every ~60s
+                    for (let j = 1; j < steps; j++) {
+                        const t = j / steps;
+                        interpolated.push({
+                            time: startPoint.time + t * timeDiff,
+                            value: startPoint.value + t * valueDiff,
+                        });
+                    }
                 }
             }
             interpolated.push(processedData[processedData.length - 1]);
             processedData = interpolated;
         }
-
 
         processedData.forEach(p => {
             const time = p.time;
@@ -465,10 +457,11 @@ function TestingComponent() {
   };
 
   const isDeviceConnected = useMemo(() => {
-    if (!isConnected) return false;
-    if (lastDataPointTimestamp === null) return true; // Assume connected until first data point proves otherwise
+    if (!lastDataPointTimestamp) return false;
+    // If the last data point is older than 65 seconds, assume device is offline.
+    // This allows for the 60-second standby update interval plus a 5-second buffer.
     return (Date.now() - lastDataPointTimestamp) < 65000;
-  }, [isConnected, lastDataPointTimestamp]);
+  }, [lastDataPointTimestamp]);
 
 
   useEffect(() => {
@@ -510,7 +503,7 @@ function TestingComponent() {
   
   const dataSourceStatus = useMemo(() => {
     if (isDeviceConnected) {
-        return `Sampling: ${isRecording ? "1/s" : "1/min"}`;
+      return `Sampling: ${isRecording ? "1/s" : "1/min"}`;
     }
     return 'Offline';
   }, [isDeviceConnected, isRecording]);
@@ -523,6 +516,11 @@ function TestingComponent() {
         const errorMsg = "PDF Generation Failed: Chart reference is missing.";
         console.error(errorMsg);
         toast({ variant: 'destructive', title: 'Error', description: errorMsg });
+        return;
+      }
+      
+      if (!session.batchId) {
+        toast({ variant: 'destructive', title: 'Report Failed', description: 'Session is missing a Batch ID. Cannot generate report.'});
         return;
       }
 
@@ -630,8 +628,12 @@ function TestingComponent() {
   };
   
   const xAxisDomain = useMemo((): [number | 'dataMin' | 'dataMax', number | 'dataMin' | 'dataMax'] => {
-    if (brushDomain && chartData.length > (brushDomain.endIndex ?? -1) && chartData[brushDomain.startIndex??0]) {
-        return [chartData[brushDomain.startIndex??0].name, chartData[brushDomain.endIndex??0].name];
+    if (brushDomain && chartData.length > (brushDomain.endIndex ?? -1) && chartData.length > (brushDomain.startIndex ?? -1)) {
+        const start = chartData[brushDomain.startIndex ?? 0]?.name;
+        const end = chartData[brushDomain.endIndex ?? chartData.length - 1]?.name;
+        if (start !== undefined && end !== undefined) {
+           return [start, end];
+        }
     }
     if (isLive) {
         const maxTime = chartData.length > 0 ? chartData[chartData.length - 1].name : 0;
@@ -760,11 +762,11 @@ function TestingComponent() {
                 <CardContent className="flex flex-col items-center">
                 <div className="text-center">
                     <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                    {convertedValue?.value ?? 'N/A'}
+                    {isDeviceConnected ? (convertedValue?.value ?? 'N/A') : 'Offline'}
                     </p>
-                    <p className="text-lg text-muted-foreground">{convertedValue?.unit ?? ''}</p>
+                    <p className="text-lg text-muted-foreground">{isDeviceConnected ? (convertedValue?.unit ?? '') : ''}</p>
                      <p className="text-xs text-muted-foreground h-4 mt-1">
-                        {currentValue !== null && lastDataPointTimestamp ? `(Updated ${timeSinceLastUpdate})` : ''}
+                        {isDeviceConnected && currentValue !== null && lastDataPointTimestamp ? `(Updated ${timeSinceLastUpdate})` : ''}
                     </p>
                     
                     <div className={`text-sm mt-2 flex items-center justify-center gap-1 ${isDeviceConnected ? 'text-green-600' : 'text-destructive'}`}>
@@ -786,7 +788,11 @@ function TestingComponent() {
                         {comparisonSessions.length > 0 ? (
                              <div className="flex flex-wrap items-center gap-2 mt-2">
                                 {comparisonSessions.map((session, index) => {
-                                     const isInterpolated = (comparisonData[session.id] || []).length < 20;
+                                     const isInterpolated = (comparisonData[session.id] || []).length > 1 && (comparisonData[session.id] || []).some((_, i, arr) => {
+                                         if (i === 0) return false;
+                                         const timeDiff = new Date(arr[i].timestamp).getTime() - new Date(arr[i-1].timestamp).getTime();
+                                         return timeDiff > 90000;
+                                     });
                                      const legendText = `${session.vesselTypeName} - ${session.serialNumber || 'N/A'}${isInterpolated ? ' (interpolated)' : ''}`;
                                     return (
                                         <Badge key={session.id} variant="outline" className="flex items-center gap-2" style={{borderColor: CHART_COLORS[index % CHART_COLORS.length]}}>
@@ -923,7 +929,11 @@ function TestingComponent() {
                             formatter={(value, entry) => {
                                 const session = comparisonSessions.find(s => s.id === value);
                                 if (!session) return value;
-                                const isInterpolated = (comparisonData[session.id] || []).length < 20;
+                                const isInterpolated = (comparisonData[session.id] || []).length > 1 && (comparisonData[session.id] || []).some((_, i, arr) => {
+                                    if (i === 0) return false;
+                                    const timeDiff = new Date(arr[i].timestamp).getTime() - new Date(arr[i-1].timestamp).getTime();
+                                    return timeDiff > 90000;
+                                });
                                 return `${session.vesselTypeName} - ${session.serialNumber || 'N/A'}${isInterpolated ? ' (interpolated)' : ''}`;
                             }}
                         />
@@ -963,7 +973,7 @@ function TestingComponent() {
 }
 
 export default function TestingPage() {
-    const { isUserLoading } = useUser();
+    const { user, isUserLoading } = useUser();
     const { areServicesAvailable } = useFirebase();
 
     if (isUserLoading || !areServicesAvailable) {
@@ -980,3 +990,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    

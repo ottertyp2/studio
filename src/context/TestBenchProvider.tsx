@@ -34,10 +34,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       if (!querySnapshot.empty) {
         const runningSessionDoc = querySnapshot.docs[0];
         runningTestSessionRef.current = { id: runningSessionDoc.id, ...runningSessionDoc.data() };
-        setIsRecording(true);
+        // This is now the source of truth for recording status in the provider
       } else {
         runningTestSessionRef.current = null;
-        setIsRecording(false);
       }
     });
     return () => unsubscribe();
@@ -57,7 +56,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         timestamp: newDataPoint.timestamp,
       };
       
-      // Use addDocumentNonBlocking for fire-and-forget write
       addDocumentNonBlocking(sessionDataRef, dataToSave);
     }
   }, [firestore]);
@@ -127,11 +125,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     let timeoutId: NodeJS.Timeout | null = null;
     if (lastDataPointTimestamp) {
-        // Use the isRecording state (derived from RTDB) to set the timeout
-        const timeoutDuration = isRecording ? 5000 : 65000;
+        const timeoutDuration = 65000; // ~65 seconds
         timeoutId = setTimeout(() => {
             if (Date.now() - lastDataPointTimestamp >= timeoutDuration) {
-                setCurrentValue(null);
+                setCurrentValue(null); // Clear value if data is stale
             }
         }, timeoutDuration);
     }
@@ -140,7 +137,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             clearTimeout(timeoutId);
         }
     };
-  }, [lastDataPointTimestamp, isRecording]);
+  }, [lastDataPointTimestamp]);
 
   const value = {
     isConnected,
@@ -150,10 +147,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     lastDataPointTimestamp,
     valve1Status,
     valve2Status,
-    sessions: null, // This is now handled locally in the testing page
+    sessions: null,
     sendValveCommand,
-    sendRecordingCommand: async () => {}, // Deprecated
-    deleteSession: async () => {}, // Deprecated
+    sendRecordingCommand: async () => {},
+    deleteSession: async () => {},
   };
 
   return (
@@ -162,3 +159,5 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
+
+    
