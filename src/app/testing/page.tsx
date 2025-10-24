@@ -50,7 +50,7 @@ import {
   ResponsiveContainer,
   Brush,
 } from 'recharts';
-import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, BarChartHorizontal, ZoomIn, ZoomOut, Redo } from 'lucide-react';
+import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, BarChartHorizontal, ZoomIn, ZoomOut, Redo, Timer } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, setDocumentNonBlocking, deleteDocumentNonBlocking, WithId } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
@@ -146,7 +146,7 @@ function TestingComponent() {
   const { toast } = useToast();
   
   const { user, userRole, isUserLoading } = useUser();
-  const { firestore, auth, database } = useFirebase();
+  const { firestore, auth, database, areServicesAvailable } = useFirebase();
 
   const { 
     isRecording,
@@ -154,6 +154,7 @@ function TestingComponent() {
     lastDataPointTimestamp,
     disconnectCount,
     sendRecordingCommand,
+    latency,
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
@@ -644,6 +645,13 @@ function TestingComponent() {
     return ['dataMin', 'dataMax'];
   }, [brushDomain, chartData, isLive]);
 
+  const getLatencyColor = (ping: number | null) => {
+    if (ping === null) return 'text-muted-foreground';
+    if (ping <= 500) return 'text-green-600';
+    if (ping < 1000) return 'text-yellow-500';
+    return 'text-red-600';
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
       <header className="w-full max-w-7xl mx-auto mb-6">
@@ -776,7 +784,15 @@ function TestingComponent() {
                         <span>{dataSourceStatus}</span>
                     </div>
                     {isDeviceConnected && (
-                      <p className="text-xs text-muted-foreground mt-1">Disconnects: {disconnectCount}</p>
+                      <>
+                        <p className="text-xs text-muted-foreground mt-1">Disconnects: {disconnectCount}</p>
+                        <div className="flex items-center justify-center gap-1 mt-1">
+                            <Timer className={`h-4 w-4 ${getLatencyColor(latency)}`} />
+                            <span className={`text-xs font-semibold ${getLatencyColor(latency)}`}>
+                                {latency !== null ? `${latency} ms` : 'N/A'}
+                            </span>
+                        </div>
+                      </>
                     )}
                 </div>
                 </CardContent>
@@ -986,5 +1002,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    

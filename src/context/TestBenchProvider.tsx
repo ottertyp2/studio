@@ -20,6 +20,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [valve1Status, setValve1Status] = useState<ValveStatus>('OFF');
   const [valve2Status, setValve2Status] = useState<ValveStatus>('OFF');
   const [disconnectCount, setDisconnectCount] = useState<number>(0);
+  const [latency, setLatency] = useState<number | null>(null);
   
   const runningTestSessionRef = useRef<WithId<DocumentData> | null>(null);
 
@@ -118,6 +119,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             setValve2Status(status.valve2 ? 'ON' : 'OFF');
             setIsRecording(status.recording === true);
             setDisconnectCount(status.disconnectCount || 0);
+            if (status.latency !== undefined) {
+              setLatency(status.latency);
+            }
         }
     }));
 
@@ -154,6 +158,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     valve1Status,
     valve2Status,
     disconnectCount,
+    latency,
     sessions: null,
     sendValveCommand,
     sendRecordingCommand,
