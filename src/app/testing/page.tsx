@@ -205,7 +205,11 @@ function TestingComponent() {
 
   const [chartInterval, setChartInterval] = useState<string>("60");
   
-  const instanceId = useRef(crypto.randomUUID()).current;
+  const instanceIdRef = useRef<string>();
+  if (!instanceIdRef.current) {
+    instanceIdRef.current = crypto.randomUUID();
+  }
+  const instanceId = instanceIdRef.current;
 
   const importFileRef = useRef<HTMLInputElement>(null);
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
