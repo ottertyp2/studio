@@ -12,7 +12,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const { database, firestore } = useFirebase();
   const { user } = useUser();
 
-  const [isConnected, setIsConnected] = useState(false); // Default to offline
+  const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [localDataLog, setLocalDataLog] = useState<RtdbSensorData[]>([]);
   const [currentValue, setCurrentValue] = useState<number | null>(null);
@@ -112,20 +112,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         const status = snap.val();
 
         if (status) {
-            // Data has been received, so device is online.
             setIsConnected(true);
-
-            // Clear any existing offline timeout.
-            if (offlineTimeoutRef.current) {
-                clearTimeout(offlineTimeoutRef.current);
-            }
-
-            // Set a new timeout to mark the device as offline after 2 seconds of inactivity.
-            offlineTimeoutRef.current = setTimeout(() => {
-                setIsConnected(false);
-                setCurrentValue(null);
-                setLatency(null);
-            }, 2000);
 
             // Process the live data payload
             if (status.sensor !== undefined && status.timestamp !== undefined && status.timestamp > 0) {
@@ -139,14 +126,15 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             if (status.latency !== undefined) {
               setLatency(status.latency);
             }
+        } else {
+            setIsConnected(false);
+            setCurrentValue(null);
+            setLatency(null);
         }
     });
     
     return () => {
         unsubscribe();
-        if (offlineTimeoutRef.current) {
-            clearTimeout(offlineTimeoutRef.current);
-        }
     };
   }, [database, handleNewDataPoint]);
 
