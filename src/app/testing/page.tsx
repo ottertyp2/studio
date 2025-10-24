@@ -12,7 +12,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import {
   Dialog,
@@ -48,9 +47,8 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  ReferenceArea,
 } from 'recharts';
-import { Cog, LogOut, Wifi, WifiOff, PlusCircle, Save, FileText, Trash2, Search, XIcon, Download } from 'lucide-react';
+import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, BarChartHorizontal } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, setDocumentNonBlocking, deleteDocumentNonBlocking, WithId } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
@@ -65,6 +63,8 @@ import { PDFDownloadLink, pdf } from '@react-pdf/renderer';
 import TestReport from '@/components/report/TestReport';
 import { toPng } from 'html-to-image';
 import ValveControl from '@/components/dashboard/ValveControl';
+import { Checkbox } from '@/components/ui/checkbox';
+
 
 type SensorConfig = {
     id: string;
@@ -106,9 +106,7 @@ type SensorData = {
 
 type ChartDataPoint = {
   name: number; // time in seconds
-  value: number;
-  minGuideline?: number;
-  maxGuideline?: number;
+  [key: string]: number | undefined; // SessionID as key for value
 };
 
 type VesselType = {
@@ -128,6 +126,14 @@ type TestBench = {
     id: string;
     name: string;
 }
+
+const CHART_COLORS = [
+  'hsl(var(--chart-1))',
+  'hsl(var(--chart-2))',
+  'hsl(var(--chart-3))',
+  'hsl(var(--chart-4))',
+  'hsl(var(--chart-5))',
+];
 
 function TestingComponent() {
   const router = useRouter();
@@ -153,9 +159,9 @@ function TestingComponent() {
   const [newSessionData, setNewSessionData] = useState({ vesselTypeId: '', batchId: '', serialNumber: '', description: '' });
   const [runningTestSession, setRunningTestSession] = useState<WithId<TestSession> | null>(null);
   
-  const [selectedSessionForView, setSelectedSessionForView] = useState<WithId<TestSession> | null>(null);
-  const [sessionDataForView, setSessionDataForView] = useState<WithId<SensorData>[]>([]);
-  const [isLoadingSessionData, setIsLoadingSessionData] = useState(false);
+  const [comparisonSessions, setComparisonSessions] = useState<WithId<TestSession>[]>([]);
+  const [comparisonData, setComparisonData] = useState<Record<string, WithId<SensorData>[]>>({});
+  const [isLoadingComparisonData, setIsLoadingComparisonData] = useState(false);
 
   const chartRef = useRef<HTMLDivElement>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
@@ -208,28 +214,17 @@ function TestingComponent() {
         const runningSessionDoc = querySnapshot.docs[0];
         const session = { id: runningSessionDoc.id, ...runningSessionDoc.data() } as WithId<TestSession>;
         setRunningTestSession(session);
-        setSelectedSessionForView(session); // View the running session live
+        // Automatically add running session to comparison view
+        setComparisonSessions(prev => {
+            if (prev.some(s => s.id === session.id)) return prev;
+            return [...prev, session];
+        });
       } else {
         setRunningTestSession(null);
-        if (selectedSessionForView?.status === 'RUNNING') {
-          setSelectedSessionForView(null);
-        }
       }
     });
     return () => unsubscribe();
-  }, [firestore, user, selectedSessionForView?.status]);
-
-  // Load session from URL
-  const sessionIdFromUrl = searchParams.get('sessionId');
-  useEffect(() => {
-      if (sessionIdFromUrl && firestore && sessionHistory.length > 0) {
-          const sessionToLoad = sessionHistory.find(s => s.id === sessionIdFromUrl);
-          if (sessionToLoad) {
-              handleViewSession(sessionToLoad);
-              setIsHistoryPanelOpen(true);
-          }
-      }
-  }, [sessionIdFromUrl, firestore, sessionHistory]);
+  }, [firestore, user]);
 
   const handleStartSession = async () => {
     if (!user || !firestore || !activeTestBench || !activeSensorConfig || !newSessionData.vesselTypeId || !newSessionData.batchId) {
@@ -263,13 +258,11 @@ function TestingComponent() {
     };
 
     try {
-      const docRef = await addDocumentNonBlocking(collection(firestore, 'test_sessions'), newSessionDoc);
-      if (docRef) {
-        // The onSnapshot listener will pick up the new running session
-        toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
-        setIsNewSessionDialogOpen(false);
-        setNewSessionData({ vesselTypeId: '', batchId: '', serialNumber: '', description: '' });
-      }
+      await addDocumentNonBlocking(collection(firestore, 'test_sessions'), newSessionDoc);
+      // The onSnapshot listener will pick up the new running session
+      toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
+      setIsNewSessionDialogOpen(false);
+      setNewSessionData({ vesselTypeId: '', batchId: '', serialNumber: '', description: '' });
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Failed to Start Session', description: error.message });
     }
@@ -282,74 +275,55 @@ function TestingComponent() {
       status: 'COMPLETED',
       endTime: new Date().toISOString(),
     });
-    // handleViewSession is now implicitly handled by the running session listener
     toast({ title: 'Session Stopped', description: 'Data recording has ended.' });
   };
   
-  const handleViewSession = async (session: WithId<TestSession>) => {
-    if (session.status === 'RUNNING') {
-        setSelectedSessionForView(session); // Let the live listener handle data
-    } else {
-        setSelectedSessionForView(session);
-        setSessionDataForView([]);
-        setIsLoadingSessionData(true);
-        if (!firestore) return;
-
-        const sensorDataRef = collection(firestore, 'test_sessions', session.id, 'sensor_data');
-        const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
-
-        try {
-            const snapshot = await getDocs(q);
-            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
-            setSessionDataForView(data);
-        } catch (e: any) {
-            toast({ variant: 'destructive', title: 'Error Loading Session Data', description: e.message });
-        } finally {
-            setIsLoadingSessionData(false);
-        }
-    }
-  };
-
-  // Real-time data listener for the selected session
+  // Real-time data listener for comparison sessions
   useEffect(() => {
-    if (!firestore || !selectedSessionForView) {
-        setSessionDataForView([]);
-        return;
+    if (!firestore || comparisonSessions.length === 0) {
+      setComparisonData({});
+      return;
     }
-    
-    // For completed sessions, we fetch once. For running, we listen.
-    if (selectedSessionForView.status === 'COMPLETED' || selectedSessionForView.status === 'SCRAPPED') {
-        setIsLoadingSessionData(true);
-        const sensorDataRef = collection(firestore, 'test_sessions', selectedSessionForView.id, 'sensor_data');
-        const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
-        getDocs(q).then(snapshot => {
-            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
-            setSessionDataForView(data);
-            setIsLoadingSessionData(false);
-        }).catch(e => {
-            toast({ variant: 'destructive', title: 'Error Loading Session Data', description: e.message });
-            setIsLoadingSessionData(false);
+  
+    const unsubscribers: (() => void)[] = [];
+    setIsLoadingComparisonData(true);
+  
+    comparisonSessions.forEach(session => {
+      const isRunning = session.status === 'RUNNING';
+      const sensorDataRef = collection(firestore, 'test_sessions', session.id, 'sensor_data');
+      const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
+  
+      if (isRunning) {
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
+          setComparisonData(prev => ({ ...prev, [session.id]: data }));
+          setIsLoadingComparisonData(false); // At least one session has data
+        }, (error) => {
+          console.error(`Error fetching live data for ${session.id}:`, error);
+          toast({ variant: 'destructive', title: `Live Data Error for ${session.serialNumber}`, description: error.message });
         });
-        return; // No need to subscribe for completed sessions
-    }
-
-    // For RUNNING sessions
-    setIsLoadingSessionData(true);
-    const sensorDataRef = collection(firestore, 'test_sessions', selectedSessionForView.id, 'sensor_data');
-    const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
-        setSessionDataForView(data);
-        setIsLoadingSessionData(false);
-    }, (error) => {
-        console.error("Error fetching live session data:", error);
-        toast({ variant: 'destructive', title: 'Live Data Error', description: error.message });
-        setIsLoadingSessionData(false);
+        unsubscribers.push(unsubscribe);
+      } else {
+        // Fetch completed session data once
+        getDocs(q).then(snapshot => {
+          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
+          setComparisonData(prev => ({ ...prev, [session.id]: data }));
+        }).catch(error => {
+          console.error(`Error fetching data for ${session.id}:`, error);
+          toast({ variant: 'destructive', title: `Data Load Error for ${session.serialNumber}`, description: error.message });
+        }).finally(() => {
+            // Check if all non-running sessions are loaded
+            if (Object.keys(comparisonData).length === comparisonSessions.length) {
+                setIsLoadingComparisonData(false);
+            }
+        });
+      }
     });
-
-    return () => unsubscribe();
-  }, [firestore, selectedSessionForView]);
+  
+    return () => {
+      unsubscribers.forEach(unsub => unsub());
+    };
+  }, [firestore, comparisonSessions, toast]);
 
 
   const handleDeleteSession = async (sessionId: string) => {
@@ -374,48 +348,56 @@ function TestingComponent() {
 
         // Update local state
         setSessionHistory(prev => prev.filter(s => s.id !== sessionId));
-        if (selectedSessionForView?.id === sessionId) {
-            setSelectedSessionForView(null);
-            setSessionDataForView([]);
-        }
+        setComparisonSessions(prev => prev.filter(s => s.id !== sessionId));
     } catch (e: any) {
         toast({ variant: 'destructive', title: 'Deletion Failed', description: e.message });
     }
   };
 
   const chartData = useMemo(() => {
-    const data = sessionDataForView;
-    const session = selectedSessionForView;
-
-    if (!data || data.length === 0 || !session) return [];
-    
-    const startTime = new Date(session.startTime).getTime();
-    const configToUse = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-    
-    const vesselTypeForChart = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-
-    return data.map(d => {
-        const time = (new Date(d.timestamp).getTime() - startTime) / 1000;
-        const converted = convertRawValue(d.value, configToUse || null);
-        
-        let point: ChartDataPoint = {
-            name: parseFloat(time.toFixed(2)),
-            value: parseFloat(converted.toFixed(configToUse?.decimalPlaces || 2)),
-        };
-
-        if (vesselTypeForChart) {
-            const findY = (curve: {x:number, y:number}[], x: number) => {
-                if (!curve || curve.length === 0) return undefined;
-                const point = curve.find(p => p.x >= x);
-                return point ? point.y : undefined;
-            };
-            point.minGuideline = findY(vesselTypeForChart.minCurve, time);
-            point.maxGuideline = findY(vesselTypeForChart.maxCurve, time);
+    if (comparisonSessions.length === 0 || Object.keys(comparisonData).length === 0) {
+      return [];
+    }
+  
+    const allDataPoints: Record<number, ChartDataPoint> = {};
+    let firstSessionWithGuidelines: WithId<TestSession> | undefined = undefined;
+  
+    comparisonSessions.forEach(session => {
+      const sessionData = comparisonData[session.id];
+      if (!sessionData || sessionData.length === 0) return;
+  
+      if (!firstSessionWithGuidelines) {
+        firstSessionWithGuidelines = session;
+      }
+  
+      const startTime = new Date(session.startTime).getTime();
+      const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+  
+      sessionData.forEach(d => {
+        const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
+        if (!allDataPoints[time]) {
+          allDataPoints[time] = { name: time };
         }
-
-        return point;
+        allDataPoints[time][session.id] = parseFloat(convertRawValue(d.value, config || null).toFixed(config?.decimalPlaces || 2));
+      });
     });
-  }, [sessionDataForView, selectedSessionForView, sensorConfigs, vesselTypes]);
+  
+    const vesselTypeForGuidelines = vesselTypes?.find(vt => vt.id === firstSessionWithGuidelines?.vesselTypeId);
+  
+    Object.values(allDataPoints).forEach(point => {
+      if (vesselTypeForGuidelines) {
+        const findY = (curve: {x: number, y: number}[], x: number) => {
+            if (!curve || curve.length === 0) return undefined;
+            const point = curve.find(p => p.x >= x);
+            return point ? point.y : undefined;
+        };
+        point.minGuideline = findY(vesselTypeForGuidelines.minCurve, point.name);
+        point.maxGuideline = findY(vesselTypeForGuidelines.maxCurve, point.name);
+      }
+    });
+  
+    return Object.values(allDataPoints).sort((a, b) => a.name - b.name);
+  }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
   useEffect(() => {
     if (!isUserLoading && !user) {
@@ -474,29 +456,36 @@ function TestingComponent() {
     return 'Offline';
   }, [isConnected, isRecording]);
 
-  const generateReport = async () => {
-      if (!chartRef.current || !selectedSessionForView || !firestore) {
+  const generateReport = async (session: WithId<TestSession>) => {
+      const dataForReport = comparisonData[session.id];
+      if (!chartRef.current || !session || !firestore || !dataForReport || dataForReport.length === 0) {
           toast({ variant: 'destructive', title: 'Report Generation Failed', description: 'Required report data is missing or not loaded.' });
           return;
       }
       setIsGeneratingReport(true);
       try {
-          const dataUrl = await toPng(chartRef.current, { quality: 0.95 });
+          const dataUrl = await toPng(chartRef.current, { quality: 0.95, pixelRatio: 2 });
           
-          const config = sensorConfigs?.find(c => c.id === selectedSessionForView.sensorConfigurationId);
-          const vesselType = vesselTypes?.find(vt => vt.id === selectedSessionForView.vesselTypeId);
-          const batch = batches?.find(b => b.id === selectedSessionForView.batchId);
+          const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+          const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+          const batch = batches?.find(b => b.id === session.batchId);
           
-          if (!config || !vesselType || !batch || !chartData || chartData.length === 0) {
-              toast({ variant: 'destructive', title: 'Report Generation Failed', description: 'One or more required data items (config, vessel type, batch, or chart data) are missing.' });
+          if (!config || !vesselType || !batch) {
+              toast({ variant: 'destructive', title: 'Report Generation Failed', description: 'One or more required metadata items (config, vessel type, batch) are missing.' });
               setIsGeneratingReport(false);
               return;
           }
 
+          const startTime = new Date(session.startTime).getTime();
+          const singleChartData = dataForReport.map(d => {
+              const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
+              return { name: time, value: parseFloat(convertRawValue(d.value, config).toFixed(config.decimalPlaces)) };
+          });
+
           const blob = await pdf(
               <TestReport 
-                  session={selectedSessionForView} 
-                  data={chartData} 
+                  session={session} 
+                  data={singleChartData} 
                   config={config} 
                   chartImage={dataUrl}
                   vesselType={vesselType}
@@ -506,7 +495,7 @@ function TestingComponent() {
 
           const link = document.createElement('a');
           link.href = URL.createObjectURL(blob);
-          link.download = `report-${selectedSessionForView.vesselTypeName}-${selectedSessionForView.serialNumber || selectedSessionForView.id}.pdf`;
+          link.download = `report-${session.vesselTypeName}-${session.serialNumber || session.id}.pdf`;
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
@@ -547,6 +536,23 @@ function TestingComponent() {
     );
   }
 
+  const handleToggleComparison = (session: WithId<TestSession>) => {
+    setComparisonSessions(prev => {
+        const isSelected = prev.some(s => s.id === session.id);
+        if (isSelected) {
+            return prev.filter(s => s.id !== session.id);
+        } else {
+            return [...prev, session];
+        }
+    });
+  };
+
+  const getChartTitle = () => {
+    if (comparisonSessions.length === 0) return 'Live Data Visualization';
+    if (comparisonSessions.length === 1) return `Viewing Session: ${comparisonSessions[0].vesselTypeName} - ${comparisonSessions[0].serialNumber || 'N/A'}`;
+    return `Comparing ${comparisonSessions.length} Sessions`;
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
       <header className="w-full max-w-7xl mx-auto mb-6">
@@ -585,7 +591,7 @@ function TestingComponent() {
                   <CardTitle>Session Control</CardTitle>
                   <Button variant="outline" size="sm" onClick={() => setIsHistoryPanelOpen(!isHistoryPanelOpen)}>
                       <Search className="mr-2 h-4 w-4" />
-                      View History
+                      View & Compare Sessions
                   </Button>
                 </div>
               </CardHeader>
@@ -665,20 +671,26 @@ function TestingComponent() {
                 <DialogContent className="max-w-3xl h-[80vh]">
                     <DialogHeader>
                         <DialogTitle>Test Session History</DialogTitle>
-                        <DialogDescription>Review and manage past test sessions.</DialogDescription>
+                        <DialogDescription>Select sessions to view and compare on the chart.</DialogDescription>
                     </DialogHeader>
                     <div className="h-full overflow-y-auto pt-4">
                         {isHistoryLoading ? <p className="text-center text-muted-foreground">Loading history...</p> : sessionHistory.length > 0 ? (
                           <div className="space-y-2">
                             {sessionHistory.map(session => (
-                                <Card key={session.id} className={`p-3 ${selectedSessionForView?.id === session.id ? 'border-primary' : ''}`}>
+                                <Card key={session.id} className={`p-3 transition-colors ${comparisonSessions.some(s => s.id === session.id) ? 'border-primary' : 'hover:bg-muted/50'}`}>
                                     <div className="flex justify-between items-center gap-2">
-                                        <div className="flex-grow">
-                                            <p className="font-semibold">{session.vesselTypeName} - {session.serialNumber || 'N/A'}</p>
-                                            <p className="text-xs text-muted-foreground">{new Date(session.startTime).toLocaleString()} by {session.username}</p>
+                                        <div className="flex items-center gap-4 flex-grow">
+                                            <Checkbox
+                                                checked={comparisonSessions.some(s => s.id === session.id)}
+                                                onCheckedChange={() => handleToggleComparison(session)}
+                                                aria-label={`Select session ${session.serialNumber}`}
+                                            />
+                                            <div className="flex-grow">
+                                                <p className="font-semibold">{session.vesselTypeName} - {session.serialNumber || 'N/A'}</p>
+                                                <p className="text-xs text-muted-foreground">{new Date(session.startTime).toLocaleString()} by {session.username}</p>
+                                            </div>
                                         </div>
                                         <div className="flex gap-2">
-                                            <Button size="sm" variant="outline" onClick={() => { handleViewSession(session); setIsHistoryPanelOpen(false); }}>View</Button>
                                             <AlertDialog>
                                                 <AlertDialogTrigger asChild>
                                                     <Button size="sm" variant="destructive"><Trash2 className="h-4 w-4"/></Button>
@@ -735,22 +747,24 @@ function TestingComponent() {
             <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
             <CardHeader>
                 <div className="flex justify-between items-center flex-wrap gap-4">
-                  <CardTitle>{selectedSessionForView ? `Viewing Session: ${selectedSessionForView.vesselTypeName} - ${selectedSessionForView.serialNumber || 'N/A'}` : 'Live Data Visualization'}</CardTitle>
-                   {selectedSessionForView && selectedSessionForView.status !== 'RUNNING' && (
+                  <CardTitle>{getChartTitle()}</CardTitle>
+                   {comparisonSessions.length > 0 && (
                      <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={() => setSelectedSessionForView(null)}>
+                        <Button variant="outline" size="sm" onClick={() => setComparisonSessions([])}>
                             <XIcon className="mr-2 h-4 w-4"/>
-                            Close View
+                            Clear Comparison
                         </Button>
-                        <Button size="sm" onClick={generateReport} disabled={isGeneratingReport}>
-                            <Download className="mr-2 h-4 w-4"/>
-                            {isGeneratingReport ? 'Generating...' : 'Generate PDF Report'}
-                        </Button>
+                        {comparisonSessions.length === 1 && (
+                            <Button size="sm" onClick={() => generateReport(comparisonSessions[0])} disabled={isGeneratingReport}>
+                                <Download className="mr-2 h-4 w-4"/>
+                                {isGeneratingReport ? 'Generating...' : 'Generate PDF Report'}
+                            </Button>
+                        )}
                      </div>
                    )}
                 </div>
                  <CardDescription>
-                  {selectedSessionForView ? `Session recorded on ${new Date(selectedSessionForView.startTime).toLocaleString()}` : 'Select a session from the history to view its data.'}
+                  {comparisonSessions.length === 0 ? 'Select a session from the history to view its data.' : `Displaying data for ${comparisonSessions.length} session(s).`}
                 </CardDescription>
             </CardHeader>
             <CardContent>
@@ -758,7 +772,7 @@ function TestingComponent() {
                   <ResponsiveContainer width="100%" height="100%">
                       <LineChart 
                         data={chartData} 
-                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                        margin={{ top: 5, right: 30, left: 20, bottom: 20 }}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                         <XAxis 
@@ -766,12 +780,12 @@ function TestingComponent() {
                             dataKey="name" 
                             stroke="hsl(var(--muted-foreground))"
                             domain={['dataMin', 'dataMax']}
-                            label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -5 }}
+                            label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -10 }}
                         />
                         <YAxis
                             stroke="hsl(var(--muted-foreground))"
                             domain={['dataMin - 10', 'dataMax + 10']}
-                            label={{ value: sensorConfigs?.find(c => c.id === selectedSessionForView?.sensorConfigurationId)?.unit || 'Value', angle: -90, position: 'insideLeft' }}
+                            label={{ value: activeSensorConfig?.unit || 'Value', angle: -90, position: 'insideLeft' }}
                         />
                         <Tooltip
                             contentStyle={{
@@ -780,14 +794,27 @@ function TestingComponent() {
                                 backdropFilter: 'blur(4px)',
                             }}
                             formatter={(value: number, name: string) => {
-                                const config = sensorConfigs?.find(c => c.id === selectedSessionForView?.sensorConfigurationId);
-                                const unit = name === 'value' ? config?.unit : '';
-                                return [`${value.toFixed(config?.decimalPlaces || 2)} ${unit}`, name.includes('Guideline') ? name.replace('Guideline', ' Guide') : 'Value'];
+                                const session = comparisonSessions.find(s => s.id === name);
+                                const config = sensorConfigs?.find(c => c.id === session?.sensorConfigurationId);
+                                const unit = config?.unit || '';
+                                return [`${value.toFixed(config?.decimalPlaces || 2)} ${unit}`, session ? `${session.vesselTypeName} - ${session.serialNumber}`: name];
                             }}
                             labelFormatter={(label) => `Time: ${label}s`}
                         />
                         <Legend verticalAlign="top" height={36} />
-                        <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" name="Sensor Value" dot={false} strokeWidth={2} isAnimationActive={!isLoadingSessionData && selectedSessionForView?.status !== 'RUNNING'} />
+                        
+                        {comparisonSessions.map((session, index) => (
+                           <Line 
+                            key={session.id}
+                            type="monotone" 
+                            dataKey={session.id} 
+                            stroke={CHART_COLORS[index % CHART_COLORS.length]} 
+                            name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`} 
+                            dot={false} 
+                            strokeWidth={2} 
+                            isAnimationActive={!isLoadingComparisonData && session.status !== 'RUNNING'} />
+                        ))}
+
                         <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
                       </LineChart>
