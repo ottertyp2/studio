@@ -182,7 +182,6 @@ function TestingComponent() {
 
   const [xAxisDomain, setXAxisDomain] = useState<[number | 'dataMin' | 'dataMax', number | 'dataMin' | 'dataMax']>(['dataMin', 'dataMax']);
   const [activeTimeframe, setActiveTimeframe] = useState('all');
-  const [samplingRate, setSamplingRate] = useState<number>(0);
 
 
   // Data fetching hooks
@@ -505,23 +504,6 @@ function TestingComponent() {
     return () => clearInterval(interval);
   }, [lastDataPointTimestamp]);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (isDeviceConnected && lastDataPointTimestamp) {
-        const timeDiff = (Date.now() - lastDataPointTimestamp) / 1000; // in seconds
-        if (timeDiff > 0) {
-          setSamplingRate(1 / timeDiff);
-        } else {
-          setSamplingRate(0);
-        }
-      } else {
-        setSamplingRate(0);
-      }
-    }, 1000); // Update every second
-
-    return () => clearInterval(interval);
-  }, [isDeviceConnected, lastDataPointTimestamp]);
-
   const convertedValue = useMemo(() => {
       if (currentValue === null) return null;
       const config = runningTestSession 
@@ -552,10 +534,10 @@ function TestingComponent() {
 
   const dataSourceStatus = useMemo(() => {
     if (isDeviceConnected) {
-      return `Sampling: ${samplingRate.toFixed(1)} Hz`;
+      return `Sampling: 1 Hz`;
     }
     return offlineMessage;
-  }, [isDeviceConnected, samplingRate, offlineMessage]);
+  }, [isDeviceConnected, offlineMessage]);
 
 
   const generateReport = async (session: WithId<TestSession>) => {
@@ -690,6 +672,7 @@ function TestingComponent() {
             };
             fetchAndSetSession();
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams, firestore, router, toast]);
 
   const handleToggleComparison = (session: WithId<TestSession>) => {
