@@ -1081,12 +1081,15 @@ export default function AdminPage() {
     });
 
     return filtered.sort((a, b) => {
-        const batchAName = batches?.find(bt => bt.id === a.batchId)?.name || '';
-        const batchBName = batches?.find(bt => bt.id === b.batchId)?.name || '';
+        const safeBatches = batches || [];
+        const safeTestBenches = testBenches || [];
 
+        const batchAName = safeBatches.find(bt => bt.id === a.batchId)?.name || '';
+        const batchBName = safeBatches.find(bt => bt.id === b.batchId)?.name || '';
+        
         switch (sessionSortOrder) {
             case 'startTime-desc':
-                return new Date(b.startTime).getTime() - new Date(b.startTime).getTime();
+                return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
             case 'startTime-asc':
                 return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
             case 'vesselTypeName-asc':
@@ -1096,8 +1099,8 @@ export default function AdminPage() {
              case 'username-asc':
                 return a.username.localeCompare(b.username);
             case 'testBenchName-asc': {
-              const benchAName = testBenches?.find(tb => tb.id === a.testBenchId)?.name || '';
-              const benchBName = testBenches?.find(tb => tb.id === b.testBenchId)?.name || '';
+              const benchAName = safeTestBenches.find(tb => tb.id === a.testBenchId)?.name || '';
+              const benchBName = safeTestBenches.find(tb => tb.id === b.testBenchId)?.name || '';
               return benchAName.localeCompare(benchBName);
             }
             default:
