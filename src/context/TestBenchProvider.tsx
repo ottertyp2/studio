@@ -23,7 +23,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [latency, setLatency] = useState<number | null>(null);
   
   const runningTestSessionRef = useRef<WithId<DocumentData> | null>(null);
-  const offlineTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
 
   // Monitor running sessions from Firestore
@@ -51,7 +50,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
     setCurrentValue(newDataPoint.value);
     
-    // The device sends a local timestamp, use it for the data log
     const newTimestamp = new Date(newDataPoint.timestamp).getTime();
     setLastDataPointTimestamp(newTimestamp);
     
@@ -109,56 +107,47 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     if (!database) return;
-
-    const liveRef = ref(database, 'live');
     
-    const unsubscribe = onValue(liveRef, (snap) => {
+    // Main data listener
+    const liveDataRef = ref(database, 'live');
+    const dataUnsubscribe = onValue(liveDataRef, (snap) => {
         const status = snap.val();
-
-        // If we get any data, the device is connected.
-        if (status && status.lastUpdate) {
-            setIsConnected(true);
-            
-            // Clear any previous offline timeout to prevent a false offline state
-            if (offlineTimeoutRef.current) {
-                clearTimeout(offlineTimeoutRef.current);
-            }
-
-            // Set a new timeout. If no new data arrives within 2.5 seconds,
-            // we'll consider the device offline.
-            offlineTimeoutRef.current = setTimeout(() => {
-                setIsConnected(false);
-                setCurrentValue(null);
-                setLatency(null);
-                toast({
-                    variant: 'destructive',
-                    title: 'Device Offline',
-                    description: 'No data received from the device for over 2.5 seconds.',
-                });
-            }, 2500);
-
-            // Process the live data payload
-            const localTimestamp = new Date(status.timestamp).toISOString();
-            handleNewDataPoint({ value: status.sensor, timestamp: localTimestamp });
-
+        if (status) {
+            handleNewDataPoint({ value: status.sensor, timestamp: new Date(status.lastUpdate).toISOString() });
             setValve1Status(status.valve1 ? 'ON' : 'OFF');
             setValve2Status(status.valve2 ? 'ON' : 'OFF');
             setIsRecording(status.recording === true);
             setDisconnectCount(status.disconnectCount || 0);
-            if (status.latency !== undefined) {
-              setLatency(status.latency);
-            }
-        } else {
-            // This case handles initial load or if the `/live` node is empty/invalid
-            setIsConnected(false);
+            setLatency(status.latency !== undefined ? status.latency : null);
         }
     });
-    
-    return () => {
-        unsubscribe();
-        if (offlineTimeoutRef.current) {
-            clearTimeout(offlineTimeoutRef.current);
+
+    // Heartbeat listener for connection status
+    const heartbeatRef = ref(database, 'live/lastUpdate');
+    const checkOnlineStatus = (serverTime: number | null) => {
+        if (serverTime) {
+            const timeDiff = Date.now() - serverTime;
+            setIsConnected(timeDiff < 2000);
+        } else {
+            setIsConnected(false);
         }
+    };
+    
+    const heartbeatUnsubscribe = onValue(heartbeatRef, (snapshot) => {
+        checkOnlineStatus(snapshot.val());
+    });
+
+    // Interval as a fallback to catch timeouts
+    const intervalId = setInterval(() => {
+        onValue(heartbeatRef, (snapshot) => {
+             checkOnlineStatus(snapshot.val());
+        }, { onlyOnce: true });
+    }, 1000);
+
+    return () => {
+        dataUnsubscribe();
+        heartbeatUnsubscribe();
+        clearInterval(intervalId);
     };
   }, [database, handleNewDataPoint, toast]);
 
