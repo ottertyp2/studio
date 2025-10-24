@@ -1,4 +1,3 @@
-
 'use client';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -221,9 +220,6 @@ export default function AdminPage() {
   const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
   const [bulkClassifyModelId, setBulkClassifyModelId] = useState<string | null>(null);
   const [trainingProgress, setTrainingProgress] = useState(0);
-
-  const [reportSearchTerm, setReportSearchTerm] = useState('');
-  const [reportSortOrder, setReportSortOrder] = useState('generatedAt-desc');
   
   // VesselType State
   const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '' });
@@ -294,13 +290,6 @@ export default function AdminPage() {
   }, [firestore, user]);
 
   const { data: trainDataSets, isLoading: isTrainDataSetsLoading } = useCollection<TrainDataSet>(trainDataSetsCollectionRef);
-
-  const reportsCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return collection(firestore, 'reports');
-  }, [firestore, user]);
-
-  const { data: reports, isLoading: isReportsLoading } = useCollection<Report>(reportsCollectionRef);
 
   const vesselTypesCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -1117,36 +1106,6 @@ export default function AdminPage() {
 
   }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, testBenches, batches]);
 
-    const filteredAndSortedReports = useMemo(() => {
-        if (!reports) return [];
-
-        let filtered = reports.filter(report => {
-            const searchTerm = reportSearchTerm.toLowerCase();
-            if (!searchTerm) return true;
-            return (
-                report.vesselTypeName.toLowerCase().includes(searchTerm) ||
-                report.serialNumber.toLowerCase().includes(searchTerm) ||
-                report.username.toLowerCase().includes(searchTerm)
-            );
-        });
-
-        return filtered.sort((a, b) => {
-            switch (reportSortOrder) {
-                case 'generatedAt-desc':
-                    return new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime();
-                case 'generatedAt-asc':
-                    return new Date(a.generatedAt).getTime() - new Date(b.generatedAt).getTime();
-                case 'vesselTypeName-asc':
-                    return a.vesselTypeName.localeCompare(b.vesselTypeName);
-                case 'username-asc':
-                    return a.username.localeCompare(b.username);
-                default:
-                    return 0;
-            }
-        });
-    }, [reports, reportSearchTerm, reportSortOrder]);
-
-
   const isFilterActive = useMemo(() => {
     return sessionUserFilter !== 'all' || 
            sessionVesselTypeFilter !== 'all' || 
@@ -1349,11 +1308,11 @@ export default function AdminPage() {
 
         setGeneratingVesselTypeReport(vesselType.id);
 
-        let relevantSessions, allSensorData: Record<string, SensorData[]>;
+        let relevantSessions: TestSession[], allSensorData: Record<string, SensorData[]>;
 
         try {
             // Step 1: Gather Data
-            relevantSessions = testSessions.filter(s => s.vesselTypeId === vesselType.id && s.status === 'COMPLETED');
+            relevantSessions = testSessions.filter(s => s.vesselTypeId === vesselType.id && s.status === 'COMPLETED') as TestSession[];
             if (relevantSessions.length === 0) {
                 toast({ title: 'No Data', description: 'No completed test sessions found for this vessel type.' });
                 setGeneratingVesselTypeReport(null);
@@ -1375,10 +1334,9 @@ export default function AdminPage() {
             return;
         }
 
-        let blob;
         try {
             // Step 2: Render PDF to blob
-            blob = await pdf(
+            const blob = await pdf(
                 <BatchReport 
                     vesselType={vesselType} 
                     sessions={relevantSessions}
@@ -1387,41 +1345,20 @@ export default function AdminPage() {
                     batches={batches}
                 />
             ).toBlob();
+            
+            // Step 3: Trigger local download
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `report-batch-${vesselType.name.replace(/\s+/g, '_')}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            toast({ title: 'Vessel Type Report Generated', description: 'The batch report PDF is downloading.' });
+
         } catch (e: any) {
             console.error("Report Generation Error (PDF Rendering):", e);
             toast({ variant: 'destructive', title: 'Report Failed: PDF Rendering', description: `Could not render the PDF document. ${e.message}` });
-            setGeneratingVesselTypeReport(null);
-            return;
-        }
-
-        try {
-            // Step 3: Upload and save metadata
-            const storage = getStorage(firebaseApp);
-            const reportId = doc(collection(firestore, '_')).id;
-            const filePath = `reports/vessel_type_reports/${vesselType.id}/${reportId}.pdf`;
-            const fileRef = storageRef(storage, filePath);
-
-            await uploadBytes(fileRef, blob);
-            const downloadUrl = await getDownloadURL(fileRef);
-
-            const reportData: Report = {
-                id: reportId,
-                testSessionId: `vesselType-${vesselType.id}`,
-                generatedAt: new Date().toISOString(),
-                downloadUrl: downloadUrl,
-                vesselTypeName: vesselType.name,
-                serialNumber: 'N/A', // This is a batch report, not for a single serial
-                username: user?.displayName || 'admin',
-            };
-            await setDoc(doc(firestore, 'reports', reportId), reportData);
-
-            toast({
-                title: 'Vessel Type Report Generated',
-                description: 'The unified vessel type report has been saved.',
-            });
-        } catch (e: any) {
-            console.error("Report Generation Error (Upload/Save):", e);
-            toast({ variant: 'destructive', title: 'Report Failed: Uploading', description: `Could not save the generated report. ${e.message}` });
         } finally {
             setGeneratingVesselTypeReport(null);
         }
@@ -2058,82 +1995,6 @@ export default function AdminPage() {
     </Card>
   );
 
-  const renderReportManagement = () => (
-    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
-      <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
-        <AccordionItem value="item-1">
-          <AccordionTrigger className="p-6">
-            <div className="text-left">
-              <CardTitle>Report Management</CardTitle>
-              <CardDescription>View, sort, and download generated PDF reports.</CardDescription>
-            </div>
-          </AccordionTrigger>
-          <AccordionContent className="p-6 pt-0">
-            <div className="flex flex-col sm:flex-row gap-4 mb-4">
-              <Input
-                placeholder="Search reports..."
-                value={reportSearchTerm}
-                onChange={(e) => setReportSearchTerm(e.target.value)}
-                className="flex-grow"
-              />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="w-full sm:w-auto">
-                    <ListTree className="mr-2 h-4 w-4" />
-                    Sort by
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => setReportSortOrder('generatedAt-desc')}>Newest</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setReportSortOrder('generatedAt-asc')}>Oldest</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setReportSortOrder('vesselTypeName-asc')}>Vessel Type</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setReportSortOrder('username-asc')}>Username</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-            <ScrollArea className="h-96">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Vessel Type</TableHead>
-                    <TableHead>Serial No.</TableHead>
-                    <TableHead>Generated By</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isReportsLoading ? (
-                    <TableRow><TableCell colSpan={5} className="text-center">Loading reports...</TableCell></TableRow>
-                  ) : filteredAndSortedReports.length > 0 ? (
-                    filteredAndSortedReports.map((report) => (
-                      <TableRow key={report.id}>
-                        <TableCell className="font-medium">{report.vesselTypeName}</TableCell>
-                        <TableCell>{report.serialNumber || 'N/A'}</TableCell>
-                        <TableCell>{report.username}</TableCell>
-                        <TableCell>{new Date(report.generatedAt).toLocaleString()}</TableCell>
-                        <TableCell className="text-right">
-                          <a href={report.downloadUrl} target="_blank" rel="noopener noreferrer">
-                            <Button variant="outline" size="sm">
-                              <Download className="mr-2 h-4 w-4" />
-                              Download
-                            </Button>
-                          </a>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">No reports found.</TableCell></TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </ScrollArea>
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
-    </Card>
-  );
-
   const renderVesselTypeManagement = () => (
     <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
         <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
@@ -2513,9 +2374,6 @@ const renderBatchManagement = () => (
           <div className="lg:col-span-2 space-y-6">
               {renderTestSessionManager()}
           </div>
-          <div className="lg:col-span-3">
-              {renderReportManagement()}
-          </div>
           {userRole === 'superadmin' && (
             <div className="lg:col-span-3">
                 {renderUserManagement()}
@@ -2531,4 +2389,3 @@ const renderBatchManagement = () => (
     </div>
   );
 }
-
