@@ -2,10 +2,16 @@
 'use client';
 import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { TestBenchContext, ValveStatus, RtdbSensorData } from './TestBenchContext';
+import { TestBenchContext, ValveStatus } from './TestBenchContext';
 import { useFirebase, useUser, addDocumentNonBlocking, WithId } from '@/firebase';
 import { ref, onValue, set, remove } from 'firebase/database';
 import { collection, query, where, onSnapshot, limit, doc, DocumentData } from 'firebase/firestore';
+
+export type RtdbSensorData = {
+  timestamp: string;
+  value: number;
+};
+
 
 export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
@@ -25,9 +31,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const runningTestSessionRef = useRef<WithId<DocumentData> | null>(null);
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // --- START: Valve Flicker Fix ---
   const [pendingValves, setPendingValves] = useState<('VALVE1' | 'VALVE2')[]>([]);
-  // --- END: Valve Flicker Fix ---
 
   // Monitor running sessions from Firestore
   useEffect(() => {
@@ -50,63 +54,58 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
 
   const handleNewDataPoint = useCallback((data: any) => {
-    if (data.sensor === null || data.sensor === undefined) return;
+    if (data === null || data === undefined) return;
 
-    setCurrentValue(data.sensor);
-    
-    const newTimestamp = data.lastUpdate ? new Date(data.lastUpdate).getTime() : new Date().getTime();
-    setLastDataPointTimestamp(newTimestamp);
-    
-    // --- START: Valve Flicker Fix ---
-    // Only update valve status if it's not in a pending state
+    // Only update if the valve is not in a pending state
     if (!pendingValves.includes('VALVE1')) {
       setValve1Status(data.valve1 ? 'ON' : 'OFF');
     }
     if (!pendingValves.includes('VALVE2')) {
       setValve2Status(data.valve2 ? 'ON' : 'OFF');
     }
-    // --- END: Valve Flicker Fix ---
 
+    setCurrentValue(data.sensor ?? null);
     setIsRecording(data.recording === true);
     setDisconnectCount(data.disconnectCount || 0);
     setLatency(data.latency !== undefined ? data.latency : null);
+    setLastDataPointTimestamp(data.lastUpdate || null);
 
     // Write to local log for display if needed
-    setLocalDataLog(prevLog => {
-        const newDataPoint = { value: data.sensor, timestamp: new Date(newTimestamp).toISOString() };
-        if(prevLog.length > 0 && prevLog[0].timestamp === newDataPoint.timestamp) {
-            return prevLog;
-        }
-        return [newDataPoint, ...prevLog].slice(0, 1000)
-    });
+    if (data.sensor !== null && data.lastUpdate) {
+        setLocalDataLog(prevLog => {
+            const newDataPoint = { value: data.sensor, timestamp: new Date(data.lastUpdate).toISOString() };
+            if(prevLog.length > 0 && prevLog[0].timestamp === newDataPoint.timestamp) {
+                return prevLog;
+            }
+            return [newDataPoint, ...prevLog].slice(0, 1000)
+        });
+    }
 
     // Write to Firestore if a session is running
-    if (runningTestSessionRef.current && firestore && data.recording === true) {
+    if (runningTestSessionRef.current && firestore && data.recording === true && data.sensor !== null && data.lastUpdate) {
       const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
       const dataToSave = {
         value: data.sensor,
-        timestamp: new Date(newTimestamp).toISOString(),
+        timestamp: new Date(data.lastUpdate).toISOString(),
       };
       
       addDocumentNonBlocking(sessionDataRef, dataToSave);
     }
-  }, [firestore, isRecording, pendingValves]); // Add pendingValves to dependency array
+  }, [firestore, pendingValves]);
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!database) {
         toast({ variant: 'destructive', title: 'Not Connected', description: 'Database service is not available.' });
         return;
     }
-    // --- START: Valve Flicker Fix ---
-    // Optimistically set UI state and enter pending state
+    
+    // Set pending state IMMEDIATELY on click
     setPendingValves(prev => [...prev, valve]);
-    if (valve === 'VALVE1') setValve1Status(state);
-    else setValve2Status(state);
 
+    // Set a timeout to clear the pending state, allowing the UI to update with confirmed data
     setTimeout(() => {
         setPendingValves(prev => prev.filter(v => v !== valve));
-    }, 1500); // Debounce for 1.5 seconds
-    // --- END: Valve Flicker Fix ---
+    }, 1500); // Debounce for 1.5 seconds, must be longer than device update interval.
     
     const commandPath = valve === 'VALVE1' ? 'commands/valve1' : 'commands/valve2';
     try {
@@ -114,10 +113,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     } catch (error: any) {
         console.error('Failed to send command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
-        // Revert UI on failure
-        if (valve === 'VALVE1') setValve1Status(state === 'ON' ? 'OFF' : 'ON');
-        else setValve2Status(state === 'ON' ? 'OFF' : 'ON');
-        setPendingValves(prev => prev.filter(v => v !== valve)); // Clear pending state on error
+        // Clear pending state on error
+        setPendingValves(prev => prev.filter(v => v !== valve)); 
     }
   }, [database, toast]);
 
@@ -138,29 +135,30 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!database) return;
     
-    // Main data listener
     const liveDataRef = ref(database, 'live');
-    const dataUnsubscribe = onValue(liveDataRef, (snap) => {
-        const status = snap.val();
+
+    const unsubscribe = onValue(liveDataRef, (snap) => {
+        const data = snap.val();
 
         if (connectionTimeoutRef.current) {
             clearTimeout(connectionTimeoutRef.current);
         }
 
-        if (status && status.lastUpdate) {
+        if (data && data.lastUpdate) {
             setIsConnected(true);
-            handleNewDataPoint(status);
+            handleNewDataPoint(data);
             
+            // Set a timer to declare offline if no new data arrives
             connectionTimeoutRef.current = setTimeout(() => {
                 setIsConnected(false);
-            }, 2000); // If no new data in 2 seconds, assume offline
+            }, 2000); // 2-second timeout
         } else {
             setIsConnected(false);
         }
     });
 
     return () => {
-        dataUnsubscribe();
+        unsubscribe();
         if (connectionTimeoutRef.current) {
             clearTimeout(connectionTimeoutRef.current);
         }
@@ -182,9 +180,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     sendValveCommand,
     sendRecordingCommand,
     deleteSession: async () => {},
-    // --- START: Valve Flicker Fix ---
     pendingValves,
-    // --- END: Valve Flicker Fix ---
   };
 
   return (
