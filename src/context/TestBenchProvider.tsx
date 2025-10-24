@@ -110,17 +110,17 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!database) return;
 
-    const unsubscribers: (() => void)[] = [];
-    
     const liveStatusRef = ref(database, 'live');
-    unsubscribers.push(onValue(liveStatusRef, (snap) => {
+    
+    const unsubscribe = onValue(liveStatusRef, (snap) => {
         const status = snap.val();
         if(status) {
+            // Update the last heartbeat timestamp. This is our primary connection signal.
             if (status.heartbeat) {
-                lastHeartbeatTimestamp.current = Date.now();
-                setIsConnected(true);
+                lastHeartbeatTimestamp.current = status.heartbeat;
             }
             
+            // Process the rest of the live data
             if (status.sensor !== undefined && status.timestamp !== undefined && status.timestamp > 0) {
                  const timestampISO = new Date(status.timestamp).toISOString();
                  handleNewDataPoint({ value: status.sensor, timestamp: timestampISO });
@@ -133,7 +133,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
               setLatency(status.latency);
             }
         }
-    }));
+    });
     
     // Dead man's switch timer for heartbeat
     const heartbeatCheckInterval = setInterval(() => {
@@ -142,13 +142,15 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             setIsConnected(false);
             setCurrentValue(null);
             setLatency(null);
+        } else if (lastHeartbeatTimestamp.current) {
+            // If we have a recent heartbeat, we are connected.
+            setIsConnected(true);
         }
     }, 1000);
 
-    unsubscribers.push(() => clearInterval(heartbeatCheckInterval));
-
     return () => {
-        unsubscribers.forEach(unsub => unsub());
+        unsubscribe();
+        clearInterval(heartbeatCheckInterval);
     };
   }, [database, handleNewDataPoint]);
 
