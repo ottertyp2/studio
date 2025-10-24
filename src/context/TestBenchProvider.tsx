@@ -4,8 +4,8 @@ import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { TestBenchContext, ValveStatus, SensorData } from './TestBenchContext';
 import { useFirebase, addDocumentNonBlocking } from '@/firebase';
-import { ref, onValue, set } from 'firebase/database';
-import { collection } from 'firebase/firestore';
+import { ref, onValue, set, remove } from 'firebase/database';
+import { collection, doc, query, where, getDocs, writeBatch, updateDoc } from 'firebase/firestore';
 
 export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
@@ -39,16 +39,13 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       if (session) {
           setLocalDataLog([]); // Clear log for new session
       }
-      if (database) {
-          // Tell the ESP32 to start/stop recording session data
-          set(ref(database, 'commands/recording'), !!session);
-      }
+      // The ESP32 now derives recording state from the presence of a RUNNING session, so direct command is not needed.
   };
 
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
-    if (!database) {
-        toast({ variant: 'destructive', title: 'Not Connected', description: 'Database service is not available.' });
+    if (!database || !isConnected) {
+        toast({ variant: 'destructive', title: 'Not Connected', description: 'Database service is not available or device is offline.' });
         return;
     }
     const commandPath = valve === 'VALVE1' ? 'commands/valve1' : 'commands/valve2';
@@ -66,7 +63,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         if (valve === 'VALVE1') setValve1Status(state === 'ON' ? 'OFF' : 'ON');
         else setValve2Status(state === 'ON' ? 'OFF' : 'ON');
     }
-  }, [database, toast]);
+  }, [database, isConnected, toast]);
 
   useEffect(() => {
     if (!database) return;
@@ -116,18 +113,22 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     let timeoutId: NodeJS.Timeout | null = null;
     if (lastDataPointTimestamp) {
+        // Set a dynamic timeout based on the recording state
+        const timeoutDuration = isRecording ? 5000 : 65000; // 5s if recording, 65s if not
+
         timeoutId = setTimeout(() => {
-            if (Date.now() - lastDataPointTimestamp >= 5000) {
+            // Check if the time since the last data point exceeds the dynamic timeout
+            if (Date.now() - lastDataPointTimestamp >= timeoutDuration) {
                 setCurrentValue(null);
             }
-        }, 5000);
+        }, timeoutDuration);
     }
     return () => {
         if (timeoutId) {
             clearTimeout(timeoutId);
         }
     };
-  }, [lastDataPointTimestamp]);
+  }, [lastDataPointTimestamp, isRecording]);
 
   const value = {
     isConnected,
