@@ -150,6 +150,7 @@ function TestingComponent() {
   const { firestore, auth, database, areServicesAvailable, firebaseApp } = useFirebase();
 
   const { 
+    isConnected: isDeviceConnected,
     isRecording,
     currentValue,
     lastDataPointTimestamp,
@@ -478,12 +479,6 @@ function TestingComponent() {
     router.push('/login');
   };
 
-  const isDeviceConnected = useMemo(() => {
-    if (!lastDataPointTimestamp) return false;
-    return (Date.now() - lastDataPointTimestamp) < 65000;
-  }, [lastDataPointTimestamp]);
-
-
   useEffect(() => {
     if (!lastDataPointTimestamp) {
       setTimeSinceLastUpdate('');
@@ -521,12 +516,26 @@ function TestingComponent() {
       };
   }, [currentValue, activeSensorConfig, runningTestSession, sensorConfigs]);
   
+  const isDuringDowntime = useMemo(() => {
+    const now = new Date();
+    const hour = now.getHours();
+    // Downtime is from 8 PM (20) to 8 AM (8)
+    return hour >= 20 || hour < 8;
+  }, []);
+
+  const offlineMessage = useMemo(() => {
+    if (isDuringDowntime) {
+      return "Arduino is not sending data during this time.";
+    }
+    return "Offline";
+  }, [isDuringDowntime]);
+
   const dataSourceStatus = useMemo(() => {
     if (isDeviceConnected) {
       return `Sampling: ${isRecording ? "1/s" : "1/min"}`;
     }
-    return 'Offline';
-  }, [isDeviceConnected, isRecording]);
+    return offlineMessage;
+  }, [isDeviceConnected, isRecording, offlineMessage]);
 
 
     const generateReport = async (session: WithId<TestSession>) => {
@@ -770,7 +779,7 @@ function TestingComponent() {
                 <CardContent className="flex flex-col items-center">
                 <div className="text-center">
                     <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                    {isDeviceConnected && currentValue !== null ? (convertedValue?.value ?? 'N/A') : 'Offline'}
+                      {isDeviceConnected && currentValue !== null ? (convertedValue?.value ?? 'N/A') : offlineMessage}
                     </p>
                     <p className="text-lg text-muted-foreground">{isDeviceConnected && currentValue !== null ? (convertedValue?.unit ?? '') : ''}</p>
                      <p className="text-xs text-muted-foreground h-4 mt-1">
