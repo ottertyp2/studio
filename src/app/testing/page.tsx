@@ -475,7 +475,10 @@ function TestingComponent() {
   }, [isConnected, isRecording]);
 
   const generateReport = async () => {
-      if (!chartRef.current || !selectedSessionForView || !firestore) return;
+      if (!chartRef.current || !selectedSessionForView || !firestore) {
+          toast({ variant: 'destructive', title: 'Report Generation Failed', description: 'Required report data is missing or not loaded.' });
+          return;
+      }
       setIsGeneratingReport(true);
       try {
           const dataUrl = await toPng(chartRef.current, { quality: 0.95 });
@@ -483,7 +486,12 @@ function TestingComponent() {
           const config = sensorConfigs?.find(c => c.id === selectedSessionForView.sensorConfigurationId);
           const vesselType = vesselTypes?.find(vt => vt.id === selectedSessionForView.vesselTypeId);
           const batch = batches?.find(b => b.id === selectedSessionForView.batchId);
-          if (!config) throw new Error('Sensor configuration for the session was not found.');
+          
+          if (!config || !vesselType || !batch || !chartData || chartData.length === 0) {
+              toast({ variant: 'destructive', title: 'Report Generation Failed', description: 'One or more required data items (config, vessel type, batch, or chart data) are missing.' });
+              setIsGeneratingReport(false);
+              return;
+          }
 
           const blob = await pdf(
               <TestReport 

@@ -175,7 +175,7 @@ const getStatus = (classification?: 'LEAK' | 'DIFFUSION') => {
 
 const BatchReport: React.FC<BatchReportProps> = ({ vesselType, sessions, allSensorData, sensorConfigs, batches }) => {
 
-  if (!sessions || !batches || !allSensorData || !sensorConfigs) {
+  if (!sessions || !batches || !allSensorData || !sensorConfigs || !vesselType) {
       return (
           <Document>
               <Page size="A4" style={styles.page}>
