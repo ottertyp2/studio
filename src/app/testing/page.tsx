@@ -228,8 +228,6 @@ function TestingComponent() {
         setComparisonSessions([session]);
       } else {
         setRunningTestSession(null);
-        // Optional: clear comparison sessions when no session is running.
-        // setComparisonSessions([]); 
       }
     });
     return () => unsubscribe();
