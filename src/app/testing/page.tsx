@@ -143,17 +143,8 @@ function TestingComponent() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   
-  const { user, userRole, isUserLoading } = useUser();
+  const { user, userRole } = useUser();
   const { firestore, auth, database } = useFirebase();
-
-  // This early return prevents the "change in order of hooks" error
-  if (isUserLoading || !user || !firestore || !database) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
-        <p className="text-lg">Loading Dashboard...</p>
-      </div>
-    );
-  }
 
   const { 
     isConnected, 
@@ -220,7 +211,7 @@ function TestingComponent() {
 
   // Find and subscribe to a running session on load
   useEffect(() => {
-    if (!firestore || !user) return;
+    if (!user) return;
     const q = query(
       collection(firestore, 'test_sessions'),
       where('status', '==', 'RUNNING'),
@@ -243,7 +234,7 @@ function TestingComponent() {
   }, [firestore, user]);
 
   const handleStartSession = async () => {
-    if (!user || !firestore || !database || !activeTestBench || !activeSensorConfig || !newSessionData.vesselTypeId || !newSessionData.batchId) {
+    if (!user || !activeTestBench || !activeSensorConfig || !newSessionData.vesselTypeId || !newSessionData.batchId) {
       toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select a test bench, sensor, vessel type, and batch.' });
       return;
     }
@@ -286,7 +277,7 @@ function TestingComponent() {
   };
   
   const handleStopSession = async () => {
-    if (!firestore || !database || !runningTestSession) return;
+    if (!runningTestSession) return;
     const sessionRef = doc(firestore, 'test_sessions', runningTestSession.id);
     await updateDocumentNonBlocking(sessionRef, {
       status: 'COMPLETED',
@@ -299,7 +290,7 @@ function TestingComponent() {
   
   // Real-time data listener for comparison sessions
   useEffect(() => {
-    if (!firestore || comparisonSessions.length === 0) {
+    if (comparisonSessions.length === 0) {
       setComparisonData({});
       return;
     }
@@ -325,11 +316,10 @@ function TestingComponent() {
             const data = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
             setComparisonData(prev => ({ ...prev, [session.id]: data }));
             
-            // This logic ensures loading state is false once initial data for all completed sessions is loaded
             if (session.status === 'COMPLETED' && !isLoadingComparisonData) {
                 checkAllLoaded();
             } else if(session.status === 'RUNNING') {
-                 setIsLoadingComparisonData(false); // For running sessions, data comes in a stream, so we are "loaded" immediately
+                 setIsLoadingComparisonData(false);
             }
         }, (error) => {
             console.error(`Error fetching data for ${session.id}:`, error);
@@ -486,7 +476,7 @@ function TestingComponent() {
       const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
       const batch = batches?.find(b => b.id === session.batchId);
 
-      if (!chartRef.current || !session || !dataForReport || dataForReport.length === 0 || !config || !vesselType || !batch) {
+      if (!chartRef.current || !session || !dataForReport || !config || !vesselType || !batch) {
           toast({ variant: 'destructive', title: 'Report Generation Failed', description: 'Required report data is missing. Ensure the session, its config, vessel type, and batch are all available.' });
           return;
       }
@@ -528,7 +518,7 @@ function TestingComponent() {
   };
 
   useEffect(() => {
-    if (!firestore || !user) return;
+    if (!user) return;
     setIsHistoryLoading(true);
     const q = query(collection(firestore, 'test_sessions'), orderBy('startTime', 'desc'));
     const unsubscribe = onSnapshot(q, 
@@ -888,6 +878,20 @@ function TestingComponent() {
 }
 
 export default function TestingPage() {
+    const { user, isUserLoading } = useUser();
+    const { areServicesAvailable } = useFirebase();
+
+    // This component now acts as a gatekeeper.
+    // It shows a loading screen until both user auth and firebase services are ready.
+    if (isUserLoading || !areServicesAvailable) {
+        return (
+            <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
+                <p className="text-lg">Loading Dashboard...</p>
+            </div>
+        );
+    }
+    
+    // Once everything is loaded, render the main component inside the Suspense boundary.
     return (
         <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
             <TestingComponent />

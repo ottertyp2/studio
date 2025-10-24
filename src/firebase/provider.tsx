@@ -36,6 +36,7 @@ export interface FirebaseServices {
   auth: Auth;
   storage: FirebaseStorage;
   database: Database;
+  areServicesAvailable: boolean;
 }
 
 // React Context
@@ -118,6 +119,7 @@ export const useFirebase = (): FirebaseServices => {
     auth: context.auth,
     storage: context.storage,
     database: context.database,
+    areServicesAvailable: context.areServicesAvailable,
   };
 };
 
