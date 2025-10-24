@@ -54,7 +54,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, setDocumentNonBlocking, deleteDocumentNonBlocking, WithId } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
 import { useTestBench } from '@/context/TestBenchContext';
-import { collection, query, where, getDocs, doc, onSnapshot, writeBatch, orderBy, limit, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, onSnapshot, writeBatch, orderBy, limit, serverTimestamp, getDoc } from 'firebase/firestore';
 import { ref, set, remove } from 'firebase/database';
 import { formatDistanceToNow } from 'date-fns';
 import { convertRawValue } from '@/lib/utils';
@@ -638,6 +638,33 @@ function TestingComponent() {
     );
     return () => unsubscribe();
   }, [firestore, user, toast]);
+
+    // Handle incoming sessionId from URL
+    useEffect(() => {
+        const sessionId = searchParams.get('sessionId');
+        if (sessionId && firestore && sessionHistory.length > 0) {
+            const sessionToSelect = sessionHistory.find(s => s.id === sessionId);
+            if (sessionToSelect) {
+                // Check if it's not already selected to avoid infinite loops
+                if (!comparisonSessions.some(cs => cs.id === sessionId)) {
+                    setComparisonSessions([sessionToSelect]);
+                }
+            } else {
+                 // It might not be in the history yet if the page is loading, try fetching it directly
+                const fetchSession = async () => {
+                    const sessionDocRef = doc(firestore, 'test_sessions', sessionId);
+                    const sessionDoc = await getDoc(sessionDocRef);
+                    if (sessionDoc.exists()) {
+                        const sessionData = {id: sessionDoc.id, ...sessionDoc.data()} as WithId<TestSession>;
+                        if (!comparisonSessions.some(cs => cs.id === sessionId)) {
+                            setComparisonSessions([sessionData]);
+                        }
+                    }
+                };
+                fetchSession();
+            }
+        }
+    }, [searchParams, firestore, sessionHistory, comparisonSessions]);
 
   const handleToggleComparison = (session: WithId<TestSession>) => {
     setComparisonSessions(prev => {

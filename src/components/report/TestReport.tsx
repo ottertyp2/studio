@@ -183,6 +183,16 @@ const styles = StyleSheet.create({
   },
   statusNotPassed: {
     color: '#DC2626', // red-600
+  },
+  finalStatusPassed: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#16A34A',
+  },
+  finalStatusNotPassed: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#DC2626',
   }
 });
 
@@ -201,9 +211,9 @@ const TestReport: React.FC<TestReportProps> = ({ session, data, config, chartIma
     const getStatus = () => {
         switch(session.classification) {
             case 'DIFFUSION':
-                return <Text style={{...styles.statusText, ...styles.statusPassed}}>Passed</Text>;
+                return <Text style={styles.finalStatusPassed}>Passed</Text>;
             case 'LEAK':
-                return <Text style={{...styles.statusText, ...styles.statusNotPassed}}>Not Passed</Text>;
+                return <Text style={styles.finalStatusNotPassed}>Not Passed</Text>;
             default:
                 return <Text style={styles.statusText}>Undetermined</Text>;
         }
