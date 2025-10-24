@@ -47,7 +47,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
 
   const handleNewDataPoint = useCallback((newDataPoint: RtdbSensorData) => {
+    if (newDataPoint.value === null || newDataPoint.value === undefined) return;
+
     setCurrentValue(newDataPoint.value);
+    
+    // The device sends a local timestamp, use it for the data log
     const newTimestamp = new Date(newDataPoint.timestamp).getTime();
     setLastDataPointTimestamp(newTimestamp);
     
@@ -62,7 +66,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
       const dataToSave = {
         value: newDataPoint.value,
-        timestamp: newDataPoint.timestamp,
+        timestamp: new Date(newTimestamp).toISOString(),
       };
       
       addDocumentNonBlocking(sessionDataRef, dataToSave);
@@ -111,29 +115,31 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const unsubscribe = onValue(liveRef, (snap) => {
         const status = snap.val();
 
-        if (status && status.timestamp) { // Use device timestamp for data, but server timestamp for heartbeat
+        // If we get any data, the device is connected.
+        if (status && status.lastUpdate) {
             setIsConnected(true);
             
-            // Clear any existing offline timeout
+            // Clear any previous offline timeout to prevent a false offline state
             if (offlineTimeoutRef.current) {
                 clearTimeout(offlineTimeoutRef.current);
             }
 
-            // Set a new timeout to declare the device offline if no new data comes in
+            // Set a new timeout. If no new data arrives within 2.5 seconds,
+            // we'll consider the device offline.
             offlineTimeoutRef.current = setTimeout(() => {
                 setIsConnected(false);
                 setCurrentValue(null);
                 setLatency(null);
-                 toast({
+                toast({
                     variant: 'destructive',
                     title: 'Device Offline',
                     description: 'No data received from the device for over 2.5 seconds.',
                 });
-            }, 2500); // 2.5 seconds threshold
+            }, 2500);
 
             // Process the live data payload
-            const timestampISO = new Date(status.timestamp).toISOString();
-            handleNewDataPoint({ value: status.sensor, timestamp: timestampISO });
+            const localTimestamp = new Date(status.timestamp).toISOString();
+            handleNewDataPoint({ value: status.sensor, timestamp: localTimestamp });
 
             setValve1Status(status.valve1 ? 'ON' : 'OFF');
             setValve2Status(status.valve2 ? 'ON' : 'OFF');
@@ -143,7 +149,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
               setLatency(status.latency);
             }
         } else {
-            // This case handles initial load or if the `/live` node is completely empty
+            // This case handles initial load or if the `/live` node is empty/invalid
             setIsConnected(false);
         }
     });
