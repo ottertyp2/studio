@@ -68,7 +68,9 @@ import { Badge } from '@/components/ui/badge';
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
 
-pdfMake.vfs = pdfFonts.pdfMake.vfs;
+if (pdfFonts.pdfMake) {
+    pdfMake.vfs = pdfFonts.pdfMake.vfs;
+}
 
 
 type SensorConfig = {
