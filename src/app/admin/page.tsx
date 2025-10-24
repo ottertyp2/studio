@@ -1084,10 +1084,10 @@ export default function AdminPage() {
         );
     });
 
-    return filtered.sort((a, b) => {
-        const safeBatches = batches || [];
-        const safeTestBenches = testBenches || [];
+    const safeBatches = batches || [];
+    const safeTestBenches = testBenches || [];
 
+    return filtered.sort((a, b) => {
         const batchAName = safeBatches.find(bt => bt.id === a.batchId)?.name || '';
         const batchBName = safeBatches.find(bt => bt.id === b.batchId)?.name || '';
         
@@ -1334,7 +1334,7 @@ export default function AdminPage() {
         allSensorData[session.id] = data;
       }
 
-      // Pre-generation validation and logging as requested
+      // Pre-generation validation and logging
       console.log('=== Batch Report Generation Debug ===');
       console.log('Vessel Type:', vesselType);
       console.log('Relevant Sessions:', relevantSessions);
@@ -1343,7 +1343,7 @@ export default function AdminPage() {
       console.log('All Sensor Data:', allSensorData);
 
       const missingConfigIds = relevantSessions.map(s => s.sensorConfigurationId).filter(id => !sensorConfigs.some(c => c.id === id));
-      const missingBatchIds = relevantSessions.map(s => s.batchId).filter(id => !batches.some(b => b.id === id));
+      const missingBatchIds = relevantSessions.map(s => s.batchId).filter(id => !batches?.some(b => b.id === id));
       const missingSensorData = relevantSessions.map(s => s.id).filter(id => !(id in allSensorData));
       
       console.log("Missing SensorConfig IDs from Sessions:", missingConfigIds);
@@ -1381,9 +1381,9 @@ export default function AdminPage() {
 
         const getStatusText = (classification?: 'LEAK' | 'DIFFUSION') => {
           switch(classification) {
-              case 'DIFFUSION': return 'Passed';
-              case 'LEAK': return 'Not Passed';
-              default: return 'Undetermined';
+              case 'DIFFUSION': return { text: 'Passed', color: 'green' };
+              case 'LEAK': return { text: 'Not Passed', color: 'red' };
+              default: return { text: 'Undetermined', color: 'gray' };
           }
         };
         
@@ -1402,23 +1402,27 @@ export default function AdminPage() {
         content: [
           { text: 'Vessel Type Report', style: 'header' },
           { text: `Vessel Type: ${vesselType.name}`, style: 'subheader' },
-          { text: `Total Sessions: ${relevantSessions.length}`, style: 'subheader' },
+          { text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' },
+          { text: `Total Sessions: ${relevantSessions.length}`, style: 'body', margin: [0, 0, 0, 15] },
           {
             style: 'tableExample',
             table: {
               headerRows: 1,
               widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'],
               body: [
-                ['Batch', 'Serial No.', 'Date', 'User', 'End Pressure', 'Duration (s)', 'Status'],
+                [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial No.', style: 'tableHeader'}, {text: 'Date', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'End Pressure', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
                 ...tableBody
               ]
-            }
+            },
+            layout: 'lightHorizontalLines'
           }
         ],
         styles: {
           header: { fontSize: 18, bold: true, margin: [0, 0, 0, 10] },
-          subheader: { fontSize: 14, bold: false, margin: [0, 10, 0, 5] },
-          tableExample: { margin: [0, 5, 0, 15] },
+          subheader: { fontSize: 14, bold: true, margin: [0, 10, 0, 5] },
+          body: { fontSize: 10 },
+          tableExample: { margin: [0, 5, 0, 15], fontSize: 9 },
+          tableHeader: { bold: true, fontSize: 10, color: 'black' }
         }
       };
 

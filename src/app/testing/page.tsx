@@ -49,7 +49,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, BarChartHorizontal, ZoomIn, ZoomOut, Redo, Timer } from 'lucide-react';
+import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, BarChartHorizontal, ZoomIn, ZoomOut, Redo, Timer, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, setDocumentNonBlocking, deleteDocumentNonBlocking, WithId } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
@@ -67,6 +67,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { Badge } from '@/components/ui/badge';
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
+import * as htmlToImage from 'html-to-image';
 
 if (pdfFonts.pdfMake) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
@@ -165,7 +166,7 @@ function TestingComponent() {
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
   const [activeSensorConfig, setActiveSensorConfig] = useState<WithId<SensorConfig> | null>(null);
 
-  const [timeSinceLastUpdate, setTimeSinceLastUpdate] = useState<string>('');
+  const [samplingRate, setSamplingRate] = useState(0);
   
   const [isNewSessionDialogOpen, setIsNewSessionDialogOpen] = useState(false);
   const [newSessionData, setNewSessionData] = useState({ vesselTypeId: '', batchId: '', serialNumber: '', description: '' });
@@ -484,26 +485,20 @@ function TestingComponent() {
   };
 
   useEffect(() => {
-    if (!lastDataPointTimestamp) {
-      setTimeSinceLastUpdate('');
-      return;
-    }
-
-    const update = () => {
-      const now = Date.now();
-      const elapsed = now - lastDataPointTimestamp;
-      
-      if (elapsed > 60000) { 
-         setTimeSinceLastUpdate(formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true }));
+    const timer = setInterval(() => {
+      if (lastDataPointTimestamp) {
+        const timeSince = Date.now() - lastDataPointTimestamp;
+        if (timeSince < 2000) { // Only calculate if recent
+          setSamplingRate(1000 / timeSince);
+        } else {
+          setSamplingRate(0);
+        }
       } else {
-         setTimeSinceLastUpdate(formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true, includeSeconds: true }));
+        setSamplingRate(0);
       }
-    };
-    
-    update();
-    const interval = setInterval(update, 5000);
+    }, 1000); // Update rate every second
 
-    return () => clearInterval(interval);
+    return () => clearInterval(timer);
   }, [lastDataPointTimestamp]);
 
   const convertedValue = useMemo(() => {
@@ -543,85 +538,113 @@ function TestingComponent() {
 
 
   const generateReport = async (session: WithId<TestSession>) => {
-    if (!firestore) {
-      toast({ variant: 'destructive', title: 'Report Failed', description: 'Firebase services not available.' });
+    if (!firestore || !chartRef.current) {
+      toast({ variant: 'destructive', title: 'Report Failed', description: 'A required component is not ready.' });
       return;
     }
   
     setIsGeneratingReport(true);
-    toast({ title: 'Generating Report...', description: 'Please wait...' });
+    toast({ title: 'Generating Report...', description: 'Please wait, this can take a moment.' });
   
     try {
-      const dataForReport = comparisonData[session.id];
-      const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-      const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-      const batch = batches?.find(b => b.id === session.batchId);
+        const dataForReport = comparisonData[session.id];
+        const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+        const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+        const batch = batches?.find(b => b.id === session.batchId);
   
-      if (!dataForReport || !config || !vesselType || !batch) {
-        throw new Error(`Could not find all required data. Missing: ${!dataForReport ? 'session data' : ''} ${!config ? 'sensor config' : ''} ${!vesselType ? 'vessel type' : ''} ${!batch ? 'batch info' : ''}`);
-      }
-  
-      const startTime = new Date(session.startTime).getTime();
-      const singleChartData = dataForReport.map(d => {
-        const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
-        const value = parseFloat(convertRawValue(d.value, config).toFixed(config.decimalPlaces));
-        return { name: time, value };
-      });
-  
-      const summaryStats = (singleChartData || []).reduce((acc, point) => {
-          acc.max = Math.max(acc.max, point.value);
-          acc.min = Math.min(acc.min, point.value);
-          acc.sum += point.value;
-          return acc;
-      }, { max: -Infinity, min: Infinity, sum: 0 });
-      const avg = singleChartData?.length > 0 ? summaryStats.sum / singleChartData.length : 0;
-  
-      const getStatusText = (classification?: 'LEAK' | 'DIFFUSION') => {
-          switch(classification) {
-              case 'DIFFUSION': return 'Passed';
-              case 'LEAK': return 'Not Passed';
-              default: return 'Undetermined';
-          }
-      };
-
-      const tableBody = [
-        ['Number of Data Points', singleChartData.length],
-        ['Maximum Value', `${summaryStats.max.toFixed(config.decimalPlaces)} ${config.unit}`],
-        ['Minimum Value', `${summaryStats.min.toFixed(config.decimalPlaces)} ${config.unit}`],
-        ['Average Value', `${avg.toFixed(config.decimalPlaces)} ${config.unit}`],
-      ];
-  
-      const docDefinition = {
-        content: [
-          { text: 'Test Session Report', style: 'header' },
-          { text: `Vessel: ${vesselType.name} (S/N: ${session.serialNumber || 'N/A'})`, style: 'subheader' },
-          { text: `Batch: ${batch.name}`, style: 'subheader' },
-          '\n',
-          { text: `Tested By: ${session.username}` },
-          { text: `Start Time: ${new Date(session.startTime).toLocaleString()}` },
-          { text: `End Time: ${session.endTime ? new Date(session.endTime).toLocaleString() : 'N/A'}` },
-          { text: `Final Status: ${getStatusText(session.classification)}`, bold: true, margin: [0, 5, 0, 15] },
-          
-          { text: 'Summary of Results', style: 'subheader' },
-          {
-            style: 'tableExample',
-            table: {
-              widths: ['*', 'auto'],
-              body: tableBody
-            }
-          },
-          { text: 'Notes', style: 'subheader' },
-          { text: session.description || 'No notes provided.', margin: [0, 0, 0, 15] },
-        ],
-        styles: {
-          header: { fontSize: 18, bold: true, margin: [0, 0, 0, 10] },
-          subheader: { fontSize: 14, bold: true, margin: [0, 10, 0, 5] },
-          tableExample: { margin: [0, 5, 0, 15] },
+        // 1. Validation
+        if (!dataForReport || !config || !vesselType || !batch) {
+            throw new Error(`Could not find all required data. Missing: ${!dataForReport ? 'session data' : ''} ${!config ? 'sensor config' : ''} ${!vesselType ? 'vessel type' : ''} ${!batch ? 'batch info' : ''}`);
         }
-      };
   
-      pdfMake.createPdf(docDefinition).download(`report-${session.vesselTypeName.replace(/\s+/g, '_')}-${session.serialNumber || session.id}.pdf`);
-      toast({ title: 'Report Generated', description: 'Your PDF report is downloading.' });
+        // 2. Generate Chart Image
+        const chartImage = await htmlToImage.toPng(chartRef.current, { 
+            quality: 0.95, 
+            backgroundColor: '#ffffff'
+        });
+
+        // 3. Prepare Data for PDF
+        const startTime = new Date(session.startTime);
+        const endTime = session.endTime ? new Date(session.endTime) : null;
+        const duration = endTime ? formatDistanceToNow(startTime, {
+             unit: 'minute',
+             addSuffix: false
+        }).replace('about ','') : 'In Progress';
+  
+        const summaryStats = dataForReport.reduce((acc, point) => {
+            const converted = convertRawValue(point.value, config);
+            acc.max = Math.max(acc.max, converted);
+            acc.min = Math.min(acc.min, converted);
+            acc.sum += converted;
+            return acc;
+        }, { max: -Infinity, min: Infinity, sum: 0 });
+        const avg = dataForReport.length > 0 ? summaryStats.sum / dataForReport.length : 0;
+  
+        const getStatusText = (classification?: 'LEAK' | 'DIFFUSION') => {
+            switch(classification) {
+                case 'DIFFUSION': return { text: 'Passed', color: 'green', bold: true };
+                case 'LEAK': return { text: 'Not Passed', color: 'red', bold: true };
+                default: return { text: 'Undetermined', color: 'gray', bold: false };
+            }
+        };
+
+        // 4. Define PDF Document
+        const docDefinition: any = {
+            content: [
+                { text: 'Test Session Report', style: 'header' },
+                { text: `Vessel: ${vesselType.name} (S/N: ${session.serialNumber || 'N/A'})`, style: 'subheader' },
+                { text: `Batch: ${batch.name}`, style: 'body' },
+                { text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body', margin: [0, 0, 0, 15] },
+                
+                {
+                    style: 'tableExample',
+                    table: {
+                        widths: ['*', '*'],
+                        body: [
+                            [{text: 'Test Details', style: 'tableHeader', colSpan: 2, alignment: 'center'}, {}],
+                            ['Tested By', session.username],
+                            ['Start Time', startTime.toLocaleString()],
+                            ['End Time', endTime ? endTime.toLocaleString() : 'N/A'],
+                            ['Duration', duration],
+                            ['Final Status', getStatusText(session.classification)],
+                        ]
+                    },
+                    layout: 'lightHorizontalLines'
+                },
+
+                {
+                    style: 'tableExample',
+                    table: {
+                        widths: ['*', '*'],
+                        body: [
+                            [{text: 'Summary of Results', style: 'tableHeader', colSpan: 2, alignment: 'center'}, {}],
+                            ['Number of Data Points', dataForReport.length],
+                            ['Maximum Value', `${summaryStats.max.toFixed(config.decimalPlaces)} ${config.unit}`],
+                            ['Minimum Value', `${summaryStats.min.toFixed(config.decimalPlaces)} ${config.unit}`],
+                            ['Average Value', `${avg.toFixed(config.decimalPlaces)} ${config.unit}`],
+                        ]
+                    },
+                    layout: 'lightHorizontalLines'
+                },
+                
+                { text: 'Session Notes', style: 'subheader', margin: [0, 15, 0, 5] },
+                { text: session.description || 'No notes provided.', style: 'body', margin: [0, 0, 0, 15] },
+
+                { text: 'Pressure Curve Visualization', style: 'subheader', pageBreak: 'before', margin: [0, 0, 0, 5] },
+                { image: chartImage, width: 500 }
+            ],
+            styles: {
+                header: { fontSize: 22, bold: true, alignment: 'center', margin: [0, 0, 0, 10], color: '#1E40AF' },
+                subheader: { fontSize: 14, bold: true, margin: [0, 10, 0, 5] },
+                body: { fontSize: 10 },
+                tableExample: { margin: [0, 5, 0, 15], fontSize: 10 },
+                tableHeader: { bold: true, fontSize: 11, color: 'black' }
+            }
+        };
+  
+        // 5. Create and Download PDF
+        pdfMake.createPdf(docDefinition).download(`report-${session.vesselTypeName.replace(/\s+/g, '_')}-${session.serialNumber || session.id}.pdf`);
+        toast({ title: 'Report Generated', description: 'Your PDF report is downloading.' });
   
     } catch (e: any) {
       console.error("PDF Generation Error:", e);
@@ -821,7 +844,7 @@ function TestingComponent() {
                     </p>
                     <p className="text-lg text-muted-foreground">{isDeviceConnected && currentValue !== null ? (convertedValue?.unit ?? '') : ''}</p>
                      <p className="text-xs text-muted-foreground h-4 mt-1">
-                        {isDeviceConnected && currentValue !== null && lastDataPointTimestamp ? `(Updated ${timeSinceLastUpdate})` : ''}
+                        {isDeviceConnected && lastDataPointTimestamp ? `(Updated ${formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true, includeSeconds: true })})` : ''}
                     </p>
                     
                     <div className={`text-sm mt-2 flex items-center justify-center gap-1 ${isDeviceConnected ? 'text-green-600' : 'text-destructive'}`}>
@@ -910,7 +933,7 @@ function TestingComponent() {
                                                 <div className="flex gap-2">
                                                     {comparisonSessions.length === 1 && comparisonSessions[0].id === session.id && session.status === 'COMPLETED' && (
                                                         <Button size="sm" onClick={() => generateReport(session)} disabled={isGeneratingReport}>
-                                                            {isGeneratingReport ? '...' : <Download className="h-4 w-4"/>}
+                                                            {isGeneratingReport ? <Loader2 className="animate-spin" /> : <Download className="h-4 w-4"/>}
                                                         </Button>
                                                     )}
                                                     <AlertDialog>
@@ -1009,6 +1032,7 @@ function TestingComponent() {
 export default function TestingPage() {
     const { user, isUserLoading } = useUser();
     const { areServicesAvailable } = useFirebase();
+    const searchParams = useSearchParams(); // Moved here
 
     if (isUserLoading || !areServicesAvailable) {
         return (
