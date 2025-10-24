@@ -110,9 +110,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!database) return;
 
-    const liveStatusRef = ref(database, 'live');
+    // Listen to the entire /live object to get all data at once
+    const liveRef = ref(database, 'live');
     
-    const unsubscribe = onValue(liveStatusRef, (snap) => {
+    const unsubscribe = onValue(liveRef, (snap) => {
         const status = snap.val();
         if(status) {
             // Update the last heartbeat timestamp. This is our primary connection signal.
