@@ -67,6 +67,8 @@ import TestReport from '@/components/report/TestReport';
 import { toPng } from 'html-to-image';
 import ValveControl from '@/components/dashboard/ValveControl';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Badge } from '@/components/ui/badge';
 
 
 type SensorConfig = {
@@ -273,7 +275,7 @@ function TestingComponent() {
   };
   
   const handleStopSession = async () => {
-    if (!runningTestSession || !database) return;
+    if (!runningTestSession || !database || !firestore) return;
     const sessionRef = doc(firestore, 'test_sessions', runningTestSession.id);
     await updateDocumentNonBlocking(sessionRef, {
       status: 'COMPLETED',
@@ -302,6 +304,12 @@ function TestingComponent() {
     };
 
     comparisonSessions.forEach(session => {
+        // If data for this session is already loaded and the session is complete, don't refetch
+        if (comparisonData[session.id] && session.status === 'COMPLETED') {
+            checkAllLoaded();
+            return;
+        }
+
         const dataQuery = query(
           collection(firestore, 'test_sessions', session.id, 'sensor_data'),
           orderBy('timestamp', 'asc')
@@ -473,28 +481,22 @@ function TestingComponent() {
         toast({ variant: 'destructive', title: 'Error', description: errorMsg });
         return;
       }
-      if (!session) {
-        const errorMsg = "PDF Generation Failed: Session data is missing.";
-        console.error(errorMsg);
-        toast({ variant: 'destructive', title: 'Error', description: errorMsg });
-        return;
-      }
-      
-      console.log("Session:", session);
+
+      console.log("Session:", JSON.stringify(session, null, 2));
 
       const dataForReport = comparisonData[session.id];
       const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
       const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
       const batch = batches?.find(b => b.id === session.batchId);
       
-      console.log("Data for report:", dataForReport);
-      console.log("Config:", config);
-      console.log("Vessel Type:", vesselType);
-      console.log("Batch:", batch);
+      console.log("Data for report:", dataForReport ? `${dataForReport.length} points` : "undefined");
+      console.log("Config:", config ? JSON.stringify(config, null, 2) : "undefined");
+      console.log("Vessel Type:", vesselType ? JSON.stringify(vesselType, null, 2) : "undefined");
+      console.log("Batch:", batch ? JSON.stringify(batch, null, 2) : "undefined");
       
-      if (!dataForReport || !config || !vesselType || !batch) {
-          const errorMsg = 'Required report data is missing. Please ensure all catalog items (config, vessel type, batch) are present.';
-          console.error(errorMsg, {dataForReport, config, vesselType, batch});
+      if (!dataForReport || !config || !vesselType || !batch || !session.batchId) {
+          const errorMsg = 'Required report data is missing. Ensure all catalog items (config, vessel type, batch) are present and the session has a batch ID.';
+          console.error(errorMsg, {dataForReport: !!dataForReport, config: !!config, vesselType: !!vesselType, batch: !!batch, batchId: session.batchId});
           toast({ variant: 'destructive', title: 'Report Generation Failed', description: errorMsg });
           return;
       }
@@ -573,12 +575,6 @@ function TestingComponent() {
     });
   };
 
-  const getChartTitle = () => {
-    if (comparisonSessions.length === 0) return 'Live Data Visualization';
-    if (comparisonSessions.length === 1) return `Viewing Session: ${comparisonSessions[0].vesselTypeName} - ${comparisonSessions[0].serialNumber || 'N/A'}`;
-    return `Comparing ${comparisonSessions.length} Sessions`;
-  }
-
   const handleBrushChange = (newDomain: any) => {
     if (newDomain && (newDomain.startIndex !== null && newDomain.endIndex !== null)) {
       setBrushDomain({ startIndex: newDomain.startIndex, endIndex: newDomain.endIndex });
@@ -637,10 +633,6 @@ function TestingComponent() {
               <CardHeader>
                 <div className="flex justify-between items-center">
                   <CardTitle>Session Control</CardTitle>
-                  <Button variant="outline" size="sm" onClick={() => setIsHistoryPanelOpen(!isHistoryPanelOpen)}>
-                      <Search className="mr-2 h-4 w-4" />
-                      View & Compare Sessions
-                  </Button>
                 </div>
               </CardHeader>
               <CardContent>
@@ -714,55 +706,6 @@ function TestingComponent() {
                 )}
               </CardContent>
             </Card>
-            
-            <Dialog open={isHistoryPanelOpen} onOpenChange={setIsHistoryPanelOpen}>
-                <DialogContent className="max-w-3xl h-[80vh]">
-                    <DialogHeader>
-                        <DialogTitle>Test Session History</DialogTitle>
-                        <DialogDescription>Select sessions to view and compare on the chart.</DialogDescription>
-                    </DialogHeader>
-                    <div className="h-full overflow-y-auto pt-4">
-                        {isHistoryLoading ? <p className="text-center text-muted-foreground">Loading history...</p> : sessionHistory.length > 0 ? (
-                          <div className="space-y-2">
-                            {sessionHistory.map(session => (
-                                <Card key={session.id} className={`p-3 transition-colors ${comparisonSessions.some(s => s.id === session.id) ? 'border-primary' : 'hover:bg-muted/50'}`}>
-                                    <div className="flex justify-between items-center gap-2">
-                                        <div className="flex items-center gap-4 flex-grow">
-                                            <Checkbox
-                                                checked={comparisonSessions.some(s => s.id === session.id)}
-                                                onCheckedChange={() => handleToggleComparison(session)}
-                                                aria-label={`Select session ${session.serialNumber}`}
-                                            />
-                                            <div className="flex-grow">
-                                                <p className="font-semibold">{session.vesselTypeName} - {session.serialNumber || 'N/A'}</p>
-                                                <p className="text-xs text-muted-foreground">{new Date(session.startTime).toLocaleString()} by {session.username}</p>
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <AlertDialog>
-                                                <AlertDialogTrigger asChild>
-                                                    <Button size="sm" variant="destructive"><Trash2 className="h-4 w-4"/></Button>
-                                                </AlertDialogTrigger>
-                                                <AlertDialogContent>
-                                                    <AlertDialogHeader>
-                                                        <AlertDialogTitle>Delete Session?</AlertDialogTitle>
-                                                        <AlertDialogDescription>This will permanently delete the session for "{session.vesselTypeName} - {session.serialNumber}" and all its data. This cannot be undone.</AlertDialogDescription>
-                                                    </AlertDialogHeader>
-                                                    <AlertDialogFooter>
-                                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                        <AlertDialogAction variant="destructive" onClick={() => handleDeleteSession(session.id)}>Confirm Delete</AlertDialogAction>
-                                                    </AlertDialogFooter>
-                                                </AlertDialogContent>
-                                            </AlertDialog>
-                                        </div>
-                                    </div>
-                                </Card>
-                            ))}
-                          </div>  
-                        ) : <p className="text-center text-muted-foreground">No sessions recorded yet.</p>}
-                    </div>
-                </DialogContent>
-            </Dialog>
 
         </div>
                 
@@ -796,12 +739,80 @@ function TestingComponent() {
             <CardHeader>
                 <div className="flex justify-between items-center flex-wrap gap-4">
                     <div>
-                        <CardTitle>{getChartTitle()}</CardTitle>
-                        <CardDescription>
-                            {comparisonSessions.length === 0 ? 'Select a session to view its data.' : `Displaying data for ${comparisonSessions.length} session(s).`}
-                        </CardDescription>
+                        <CardTitle>Live Data Visualization</CardTitle>
+                        {comparisonSessions.length > 0 ? (
+                             <div className="flex flex-wrap items-center gap-2 mt-2">
+                                {comparisonSessions.map((session, index) => (
+                                    <Badge key={session.id} variant="outline" className="flex items-center gap-2" style={{borderColor: CHART_COLORS[index % CHART_COLORS.length]}}>
+                                       <div className="h-2 w-2 rounded-full" style={{backgroundColor: CHART_COLORS[index % CHART_COLORS.length]}}></div>
+                                        <span>{session.vesselTypeName} - {session.serialNumber || 'N/A'}</span>
+                                        <button onClick={() => handleToggleComparison(session)} className="opacity-50 hover:opacity-100">
+                                            <XIcon className="h-3 w-3" />
+                                        </button>
+                                    </Badge>
+                                ))}
+                            </div>
+                        ) : (
+                            <CardDescription>
+                                Select a session to view its data.
+                            </CardDescription>
+                        )}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                        <Sheet open={isHistoryPanelOpen} onOpenChange={setIsHistoryPanelOpen}>
+                            <SheetTrigger asChild>
+                                <Button variant="outline" size="sm">
+                                  <Search className="mr-2 h-4 w-4" />
+                                  View & Compare Sessions
+                                </Button>
+                            </SheetTrigger>
+                            <SheetContent className="w-[400px] sm:w-[540px]">
+                                <SheetHeader>
+                                <SheetTitle>Test Session History</SheetTitle>
+                                <SheetDescription>Select sessions to view and compare on the chart.</SheetDescription>
+                                </SheetHeader>
+                                <div className="h-[calc(100%-4rem)] overflow-y-auto pt-4">
+                                {isHistoryLoading ? <p className="text-center text-muted-foreground">Loading history...</p> : sessionHistory.length > 0 ? (
+                                <div className="space-y-2">
+                                    {sessionHistory.map(session => (
+                                        <Card key={session.id} className={`p-3 transition-colors ${comparisonSessions.some(s => s.id === session.id) ? 'border-primary' : 'hover:bg-muted/50'}`}>
+                                            <div className="flex justify-between items-center gap-2">
+                                                <div className="flex items-center gap-4 flex-grow">
+                                                    <Checkbox
+                                                        checked={comparisonSessions.some(s => s.id === session.id)}
+                                                        onCheckedChange={() => handleToggleComparison(session)}
+                                                        aria-label={`Select session ${session.serialNumber}`}
+                                                    />
+                                                    <div className="flex-grow">
+                                                        <p className="font-semibold">{session.vesselTypeName} - {session.serialNumber || 'N/A'}</p>
+                                                        <p className="text-xs text-muted-foreground">{new Date(session.startTime).toLocaleString()} by {session.username}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <AlertDialog>
+                                                        <AlertDialogTrigger asChild>
+                                                            <Button size="sm" variant="destructive"><Trash2 className="h-4 w-4"/></Button>
+                                                        </AlertDialogTrigger>
+                                                        <AlertDialogContent>
+                                                            <AlertDialogHeader>
+                                                                <AlertDialogTitle>Delete Session?</AlertDialogTitle>
+                                                                <AlertDialogDescription>This will permanently delete the session for "{session.vesselTypeName} - {session.serialNumber}" and all its data. This cannot be undone.</AlertDialogDescription>
+                                                            </AlertDialogHeader>
+                                                            <AlertDialogFooter>
+                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                <AlertDialogAction variant="destructive" onClick={() => handleDeleteSession(session.id)}>Confirm Delete</AlertDialogAction>
+                                                            </AlertDialogFooter>
+                                                        </AlertDialogContent>
+                                                    </AlertDialog>
+                                                </div>
+                                            </div>
+                                        </Card>
+                                    ))}
+                                </div>  
+                                ) : <p className="text-center text-muted-foreground">No sessions recorded yet.</p>}
+                            </div>
+                            </SheetContent>
+                        </Sheet>
                         <Button variant={timeframe === '1' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('1')}>1m</Button>
                         <Button variant={timeframe === '5' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('5')}>5m</Button>
                         <Button variant={timeframe === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('all')}>All</Button>
@@ -812,12 +823,6 @@ function TestingComponent() {
                             <Button variant="outline" size="sm" onClick={resetZoom}>
                                 <Redo className="mr-2 h-4 w-4" />
                                 Reset Zoom
-                            </Button>
-                        )}
-                        {comparisonSessions.length > 0 && (
-                            <Button variant="outline" size="sm" onClick={() => setComparisonSessions([])}>
-                                <XIcon className="mr-2 h-4 w-4"/>
-                                Clear
                             </Button>
                         )}
                         {comparisonSessions.length === 1 && comparisonSessions[0].status === 'COMPLETED' && (
@@ -919,5 +924,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
