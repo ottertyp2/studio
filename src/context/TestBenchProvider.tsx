@@ -44,12 +44,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     if (!startTime) {
       setStartTime(Date.now());
     }
-  }, []);
+  }, [startTime]);
 
   useEffect(() => {
-    if (downtimeSinceRef.current === null && !isConnected) {
+    if (!isConnected && downtimeSinceRef.current === null) {
         downtimeSinceRef.current = Date.now();
-    } else if (downtimeSinceRef.current !== null && isConnected) {
+    } else if (isConnected && downtimeSinceRef.current !== null) {
         setTotalDowntime(prev => prev + (Date.now() - (downtimeSinceRef.current ?? Date.now())));
         downtimeSinceRef.current = null;
     }
@@ -171,7 +171,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     
     const liveDataRef = ref(database, 'live');
 
-    const unsubscribe = onValue(liveDataRef, (snap) => {
+    const listener = onValue(liveDataRef, (snap) => {
         const data = snap.val();
 
         if (connectionTimeoutRef.current) {
@@ -184,14 +184,14 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             
             connectionTimeoutRef.current = setTimeout(() => {
                 setIsConnected(false);
-            }, 5000);
+            }, 5000); // 5-second timeout
         } else {
             setIsConnected(false);
         }
     });
 
     return () => {
-        unsubscribe();
+        listener(); // Detach the listener
         if (connectionTimeoutRef.current) {
             clearTimeout(connectionTimeoutRef.current);
         }

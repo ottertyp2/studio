@@ -70,7 +70,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Edit, Upload, FileSignature, Layers, Calendar as CalendarIcon } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Edit, Upload, FileSignature, Layers, Calendar as CalendarIcon, RotateCcw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
@@ -1074,6 +1074,10 @@ export default function AdminPage() {
                 filtered = filtered.filter(session => !!session.classification);
             } else if (sessionClassificationFilter === 'unclassified') {
                 filtered = filtered.filter(session => !session.classification);
+            } else if (sessionClassificationFilter === 'passed') {
+                filtered = filtered.filter(session => session.classification === 'DIFFUSION');
+            } else if (sessionClassificationFilter === 'not-passed') {
+                filtered = filtered.filter(session => session.classification === 'LEAK');
             }
         }
 
@@ -1137,8 +1141,19 @@ export default function AdminPage() {
            sessionBatchFilter !== 'all' ||
            sessionTestBenchFilter !== 'all' || 
            sessionClassificationFilter !== 'all' ||
-           !!sessionDateFilter;
-  }, [sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, sessionDateFilter]);
+           !!sessionDateFilter ||
+           sessionSearchTerm !== '';
+  }, [sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, sessionDateFilter, sessionSearchTerm]);
+
+  const handleResetFilters = () => {
+    setSessionSearchTerm('');
+    setSessionUserFilter('all');
+    setSessionVesselTypeFilter('all');
+    setSessionBatchFilter('all');
+    setSessionTestBenchFilter('all');
+    setSessionClassificationFilter('all');
+    setSessionDateFilter(undefined);
+  };
 
   const handleAddVesselType = () => {
     if (!firestore || !newVesselType.name?.trim() || !vesselTypesCollectionRef) {
@@ -1343,8 +1358,7 @@ export default function AdminPage() {
         return;
       }
       
-      const logoUrl = '/images/logo.png';
-      const logoBase64 = await toBase64(logoUrl);
+      const logoBase64 = await toBase64('/images/logo.png');
 
       const allSensorData: Record<string, SensorData[]> = {};
       for (const session of relevantSessions) {
@@ -1833,6 +1847,9 @@ export default function AdminPage() {
                                         onSelect={setSessionDateFilter}
                                         numberOfMonths={2}
                                     />
+                                    <div className="p-2 border-t border-border">
+                                        <Button onClick={() => setSessionDateFilter(undefined)} variant="ghost" size="sm" className="w-full justify-center">Reset</Button>
+                                    </div>
                                     </PopoverContent>
                                 </Popover>
                             </div>
@@ -1884,12 +1901,21 @@ export default function AdminPage() {
                                         <SelectItem value="all">All Statuses</SelectItem>
                                         <SelectItem value="classified">Classified</SelectItem>
                                         <SelectItem value="unclassified">Unclassified</SelectItem>
+                                        <SelectItem value="passed">Passed</SelectItem>
+                                        <SelectItem value="not-passed">Not Passed</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
                         </div>
                     </DropdownMenuContent>
                 </DropdownMenu>
+
+                {isFilterActive && (
+                  <Button onClick={handleResetFilters} variant="ghost" size="sm" className="w-full sm:w-auto">
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                    Reset
+                  </Button>
+                )}
 
                 <Dialog>
                   <DialogTrigger asChild>
