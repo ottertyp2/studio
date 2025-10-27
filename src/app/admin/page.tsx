@@ -75,7 +75,7 @@ import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
-import { getStorage, ref as storageRef, getDownloadURL } from 'firebase/storage';
+import { getStorage, ref as storageRef, getDownloadURL, uploadBytes } from 'firebase/storage';
 import { signOut, adminCreateUser } from '@/firebase/non-blocking-login';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
@@ -622,9 +622,9 @@ export default function AdminPage() {
 
     try {
         const storage = getStorage(firebaseApp);
-        const modelRef = storageRef(storage, modelToUse.storagePath);
-        const model = await tf.loadLayersModel(tf.io.browserHTTPRequest(await getDownloadURL(modelRef)));
-
+        const modelUrl = await getDownloadURL(storageRef(storage, modelToUse.storagePath));
+        const model = await tf.loadLayersModel(modelUrl);
+        
         const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
         const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
         const snapshot = await getDocs(q);
@@ -902,18 +902,27 @@ export default function AdminPage() {
         toast({ title: 'Training Complete!', description: 'Now saving model to cloud...' });
 
         const storage = getStorage(firebaseApp);
-        const modelPath = `models/${selectedModel.name}`;
-        const saveResult = await model.save(tf.io.browserHTTPRequest(
-          `https://firebasestorage.googleapis.com/v0/b/${storage.app.options.storageBucket}/o?name=${encodeURIComponent(modelPath)}`,
-          { method: 'POST', headers: { 'Content-Type': 'application/json' } }
-        ));
+        const modelPath = `models/${selectedModel.name}/model.json`;
+        const modelSaveRef = storageRef(storage, modelPath);
         
+        await model.save(tf.io.withSaveHandler(async (modelArtifacts) => {
+            if (modelArtifacts.modelTopology) {
+                const topologyBlob = new Blob([JSON.stringify(modelArtifacts.modelTopology)], { type: 'application/json' });
+                await uploadBytes(modelSaveRef, topologyBlob);
+            }
+            if (modelArtifacts.weightData) {
+                const weightsRef = storageRef(storage, `models/${selectedModel.name}/weights.bin`);
+                await uploadBytes(weightsRef, modelArtifacts.weightData);
+            }
+            return { modelArtifactsInfo: { dateSaved: new Date(), modelTopologyType: 'JSON', weightDataBytes: modelArtifacts.weightData?.byteLength || 0 } };
+        }));
+
         const modelDocRef = doc(firestore, 'mlModels', selectedModelId);
         await updateDoc(modelDocRef, {
             description: `Manually trained on ${new Date().toLocaleDateString()}. Final Val Acc: ${finalValAcc.toFixed(2)}%`,
             version: `${selectedModel.version.split('-')[0]}-trained`,
-            storagePath: `${modelPath}/model.json`,
-            fileSize: saveResult.modelArtifactsInfo.weightData.byteLength,
+            storagePath: modelPath,
+            fileSize: 0,
         });
 
         toast({ title: 'Model Saved', description: `Model "${selectedModel.name}" updated in catalog and saved to Firebase Storage.` });
@@ -1036,11 +1045,20 @@ export default function AdminPage() {
 
       const modelName = `auto-model-${autoModelSize}-${new Date().toISOString().split('T')[0]}`;
       const storage = getStorage(firebaseApp);
-      const modelPath = `models/${modelName}`;
-      const saveResult = await model.save(tf.io.browserHTTPRequest(
-        `https://firebasestorage.googleapis.com/v0/b/${storage.app.options.storageBucket}/o?name=${encodeURIComponent(modelPath)}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' } }
-      ));
+      const modelPath = `models/${modelName}/model.json`;
+      const modelSaveRef = storageRef(storage, modelPath);
+
+      await model.save(tf.io.withSaveHandler(async (modelArtifacts) => {
+        if (modelArtifacts.modelTopology) {
+            const topologyBlob = new Blob([JSON.stringify(modelArtifacts.modelTopology)], { type: 'application/json' });
+            await uploadBytes(modelSaveRef, topologyBlob);
+        }
+        if (modelArtifacts.weightData) {
+            const weightsRef = storageRef(storage, `models/${modelName}/weights.bin`);
+            await uploadBytes(weightsRef, modelArtifacts.weightData);
+        }
+        return { modelArtifactsInfo: { dateSaved: new Date(), modelTopologyType: 'JSON', weightDataBytes: modelArtifacts.weightData?.byteLength || 0 } };
+      }));
       
       const newId = doc(collection(firestore, '_')).id;
       const modelMetaData: MLModel = {
@@ -1048,8 +1066,8 @@ export default function AdminPage() {
           name: modelName,
           version: '1.0-auto',
           description: `Automatically trained on ${new Date().toLocaleDateString()}. Accuracy: ${finalAccuracy.toFixed(2)}%`,
-          fileSize: saveResult.modelArtifactsInfo.weightData.byteLength,
-          storagePath: `${modelPath}/model.json`
+          fileSize: 0,
+          storagePath: modelPath
       };
 
       addDocumentNonBlocking(mlModelsCollectionRef, modelMetaData);
@@ -2829,4 +2847,3 @@ const renderBatchManagement = () => (
     </div>
   );
 }
-
