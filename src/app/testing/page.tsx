@@ -176,8 +176,6 @@ function TestingComponent() {
     disconnectCount,
     sendRecordingCommand,
     latency,
-    startTime,
-    totalDowntime,
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
@@ -416,7 +414,6 @@ function TestingComponent() {
             firstSessionWithGuidelines = session;
         }
         
-        // Use the timestamp of the very first data point as the true start time for this session.
         const startTime = new Date(sessionData[0].timestamp).getTime();
         const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
 
@@ -502,21 +499,19 @@ function TestingComponent() {
   }, [currentValue, activeSensorConfig, runningTestSession, sensorConfigs]);
   
   const downtimePercentage = useMemo(() => {
-    if (startTime === null) return 0;
-    const nowTime = now || Date.now();
-    let currentDowntime = 0;
+    if (!lastDataPointTimestamp) return 0;
+    const now = Date.now();
+    const timeSinceLastData = now - lastDataPointTimestamp;
+    
+    // Assuming if we haven't received data for more than 5 seconds, we're "down".
+    // A more sophisticated calculation would track total downtime over a period.
+    // For a simple UI indicator, this works.
     if (!isConnected) {
-      const lastSeen = lastDataPointTimestamp || startTime;
-      currentDowntime = nowTime - lastSeen;
+        return 100;
     }
     
-    const totalElapsed = nowTime - startTime;
-    if (totalElapsed <= 0) return 0;
-
-    const totalOfflineTime = totalDowntime + currentDowntime;
-    
-    return Math.min(100, (totalOfflineTime / totalElapsed) * 100);
-  }, [startTime, totalDowntime, isConnected, lastDataPointTimestamp, now]);
+    return Math.min(100, (timeSinceLastData / 5000) * 100);
+}, [isConnected, lastDataPointTimestamp, now]);
 
 
   const isDuringDowntime = useMemo(() => {
@@ -536,8 +531,8 @@ function TestingComponent() {
   }, [isDuringDowntime, lastDataPointTimestamp]);
 
     const generateReport = async () => {
-        if (!firestore || !chartRef.current || !reportType || !selectedReportSessionId) {
-            toast({ variant: 'destructive', title: 'Report Failed', description: 'Please select a report type and a session.' });
+        if (!firestore || !chartRef.current || !reportType) {
+            toast({ variant: 'destructive', title: 'Report Failed', description: 'Please select a report type and make a selection.' });
             return;
         }
 
@@ -546,13 +541,15 @@ function TestingComponent() {
 
         const originalComparisonSessions = [...comparisonSessions];
         let sessionToReport: WithId<TestSession> | undefined;
+        let batchToReport: WithId<Batch> | undefined;
+        let sessionsForBatchReport: WithId<TestSession>[] = [];
         let reportTitle = '';
         let reportFilename = 'report';
 
         let logoBase64: string | null = null;
         try {
             logoBase64 = await toBase64('/images/logo.png');
-            if (!logoBase64.startsWith('data:image')) {
+            if (!logoBase64 || !logoBase64.startsWith('data:image')) {
                 throw new Error("Conversion to base64 failed or returned invalid format.");
             }
         } catch (error: any) {
@@ -571,6 +568,14 @@ function TestingComponent() {
                 setComparisonSessions([sessionToReport]);
                 reportTitle = `Single Vessel Pressure Test Report`;
                 reportFilename = `report-session-${sessionToReport.serialNumber || sessionToReport.id}`;
+            } else if (reportType === 'batch' && selectedReportBatchId) {
+                 batchToReport = batches?.find(b => b.id === selectedReportBatchId);
+                 if (!batchToReport) throw new Error('Selected batch not found.');
+                 sessionsForBatchReport = sessionHistory.filter(s => s.batchId === selectedReportBatchId && s.status === 'COMPLETED');
+                 if(sessionsForBatchReport.length === 0) throw new Error('No completed sessions found for this batch.');
+                 setComparisonSessions(sessionsForBatchReport);
+                 reportTitle = `Batch Pressure Test Report`;
+                 reportFilename = `report-batch-${batchToReport.name.replace(/\s+/g, '_')}`;
             } else {
                 throw new Error('Invalid report selection.');
             }
@@ -582,70 +587,107 @@ function TestingComponent() {
                 backgroundColor: '#ffffff'
             });
 
-            const config = sensorConfigs?.find(c => c.id === sessionToReport!.sensorConfigurationId);
-            const batch = batches?.find(b => b.id === sessionToReport!.batchId);
-            
-            const data = comparisonData[sessionToReport!.id] || [];
-            const endValue = data.length > 0 ? data[data.length-1].value : undefined;
-            const endPressure = (endValue !== undefined && config) ? `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${config.unit}` : 'N/A';
-            const duration = sessionToReport!.endTime ? ((new Date(sessionToReport!.endTime).getTime() - new Date(sessionToReport!.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
-
-            const classificationText = getClassificationText(sessionToReport!.classification);
-            const statusStyle = {
-              text: classificationText,
-              color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
-            };
-
-            const tableBody = [[
-                batch?.name || 'N/A',
-                sessionToReport!.serialNumber || 'N/A',
-                new Date(sessionToReport!.startTime).toLocaleString(),
-                sessionToReport!.description || 'N/A',
-                endPressure,
-                duration,
-                statusStyle
-            ]];
-
             const docDefinition: any = {
                 pageSize: 'A4',
                 pageMargins: [40, 40, 40, 40],
-                content: [
-                    {
-                        columns: [
-                           logoBase64 ? { image: logoBase64, width: 70 } : { text: '' },
-                            {
-                                stack: [
-                                { text: reportTitle, style: 'header', alignment: 'right' },
-                                { text: sessionToReport!.vesselTypeName, style: 'subheader', alignment: 'right', margin: [0, 0, 0, 10] },
-                                ],
-                            },
-                        ],
-                        columnGap: 10,
-                    },
-                    { text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' },
-                    { image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] },
-                    { text: 'Session Summary', style: 'subheader', margin: [0, 10, 0, 5] },
-                    {
-                        style: 'tableExample',
-                        table: {
-                            headerRows: 1,
-                            widths: ['auto', 'auto', '*', '*', 'auto', 'auto', 'auto'],
-                            body: [
-                                ['Batch', 'Serial Number', 'Start Time', 'Description', 'End Value', 'Duration (s)', 'Status'],
-                                ...tableBody
-                            ]
-                        },
-                        layout: 'lightHorizontalLines'
-                    }
-                ],
+                content: [],
                 styles: {
                     header: { fontSize: 16, bold: true, color: '#1E40AF' },
                     subheader: { fontSize: 12, bold: true },
                     body: { fontSize: 9 },
                     tableExample: { fontSize: 8 },
+                    tableHeader: { bold: true, fontSize: 9, color: 'black' },
                 },
                 defaultStyle: { font: 'Roboto' }
             };
+
+            // Common Header
+            docDefinition.content.push({
+                columns: [
+                   logoBase64 ? { image: logoBase64, width: 70 } : { text: '' },
+                    {
+                        stack: [
+                        { text: reportTitle, style: 'header', alignment: 'right' },
+                        { text: (sessionToReport?.vesselTypeName || vesselTypes?.find(vt => vt.id === batchToReport?.vesselTypeId)?.name) || '', style: 'subheader', alignment: 'right', margin: [0, 0, 0, 10] },
+                        ],
+                    },
+                ],
+                columnGap: 10,
+            });
+            docDefinition.content.push({ text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' });
+             docDefinition.content.push({ image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] });
+
+            // Table Content
+            if (reportType === 'single' && sessionToReport) {
+                const config = sensorConfigs?.find(c => c.id === sessionToReport.sensorConfigurationId);
+                const batch = batches?.find(b => b.id === sessionToReport.batchId);
+                const data = comparisonData[sessionToReport.id] || [];
+                const startTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(sessionToReport.startTime).getTime();
+                const endTime = sessionToReport.endTime ? new Date(sessionToReport.endTime).getTime() : (data.length > 0 ? new Date(data[data.length-1].timestamp).getTime() : startTime);
+                const duration = ((endTime - startTime) / 1000).toFixed(1);
+                const endValue = data.length > 0 ? data[data.length-1].value : undefined;
+                const endPressure = (endValue !== undefined && config) ? `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${config.unit}` : 'N/A';
+                
+                const classificationText = getClassificationText(sessionToReport.classification);
+                const statusStyle = {
+                    text: classificationText,
+                    color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
+                };
+
+                docDefinition.content.push({ text: 'Session Summary', style: 'subheader', margin: [0, 10, 0, 5] });
+                docDefinition.content.push({
+                    style: 'tableExample',
+                    table: {
+                        headerRows: 1,
+                        widths: ['auto', 'auto', '*', '*', 'auto', 'auto', 'auto'],
+                        body: [
+                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                             [{ text: batch?.name || 'N/A'}, { text: sessionToReport.serialNumber || 'N/A' }, {text: new Date(sessionToReport.startTime).toLocaleString()}, {text: sessionToReport.description || 'N/A'}, {text: endPressure}, {text: duration}, statusStyle]
+                        ]
+                    },
+                    layout: 'lightHorizontalLines'
+                });
+
+            } else if (reportType === 'batch' && batchToReport) {
+                const tableBody = sessionsForBatchReport.map(session => {
+                    const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+                    const data = comparisonData[session.id] || [];
+                    const startTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(session.startTime).getTime();
+                    const endTime = session.endTime ? new Date(session.endTime).getTime() : (data.length > 0 ? new Date(data[data.length - 1].timestamp).getTime() : startTime);
+                    const duration = ((endTime - startTime) / 1000).toFixed(1);
+                    const endValue = data.length > 0 ? data[data.length-1].value : undefined;
+                    const endPressure = (endValue !== undefined && config) ? `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${config.unit}` : 'N/A';
+                    
+                    const classificationText = getClassificationText(session.classification);
+                    const statusStyle = {
+                        text: classificationText,
+                        color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
+                    };
+
+                    return [
+                        session.serialNumber || 'N/A',
+                        new Date(session.startTime).toLocaleString(),
+                        session.description || 'N/A',
+                        endPressure,
+                        duration,
+                        statusStyle
+                    ];
+                });
+
+                docDefinition.content.push({ text: `Batch: ${batchToReport.name} - Summary`, style: 'subheader', margin: [0, 10, 0, 5] });
+                docDefinition.content.push({
+                    style: 'tableExample',
+                    table: {
+                        headerRows: 1,
+                        widths: ['auto', '*', '*', 'auto', 'auto', 'auto'],
+                        body: [
+                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            ...tableBody
+                        ]
+                    },
+                    layout: 'lightHorizontalLines'
+                });
+            }
 
             pdfMake.createPdf(docDefinition).download(`${reportFilename}.pdf`);
             toast({ title: 'Report Generated', description: 'Your PDF report is downloading.' });
@@ -1024,9 +1066,25 @@ function TestingComponent() {
                                             </SelectContent>
                                         </Select>
                                     )}
+                                    <div className="flex items-center space-x-2">
+                                        <input type="radio" id="report-batch" name="report-type" value="batch" onChange={() => setReportType('batch')} />
+                                        <Label htmlFor="report-batch">Batch Report</Label>
+                                    </div>
+                                     {reportType === 'batch' && (
+                                        <Select onValueChange={setSelectedReportBatchId}>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select a batch..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {batches?.map(b => (
+                                                    <SelectItem key={b.id} value={b.id}>{b.name} ({vesselTypes?.find(vt => vt.id === b.vesselTypeId)?.name})</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    )}
                                 </div>
                                 <DialogFooter>
-                                    <Button onClick={generateReport} disabled={isGeneratingReport || !reportType || (reportType === 'single' && !selectedReportSessionId) }>
+                                    <Button onClick={generateReport} disabled={isGeneratingReport || !reportType || (reportType === 'single' && !selectedReportSessionId) || (reportType === 'batch' && !selectedReportBatchId) }>
                                         {isGeneratingReport ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating...</> : "Generate Report"}
                                     </Button>
                                 </DialogFooter>
