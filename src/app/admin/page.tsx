@@ -80,7 +80,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import GuidelineCurveEditor from '@/components/admin/GuidelineCurveEditor';
 import pdfMake from 'pdfmake/build/pdfmake';
-import * as pdfFonts from 'pdfmake/build/vfs_fonts';
+import pdfFonts from 'pdfmake/build/vfs_fonts';
 
 if (pdfFonts.pdfMake) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
@@ -344,7 +344,7 @@ export default function AdminPage() {
             }));
         });
 
-        unsubscribers.push(unsubscribe);
+        unscribers.push(unsubscribe);
     });
 
     return () => {
@@ -1440,7 +1440,7 @@ export default function AdminPage() {
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
     return (
-        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
+        <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
             <CardHeader>
                 <CardTitle>{tempSensorConfig.id ? 'Edit Configuration' : 'Create New Configuration'}</CardTitle>
             </CardHeader>
@@ -1531,7 +1531,7 @@ export default function AdminPage() {
     const uniqueBatchIds = [...new Set(testSessions?.map(s => s.batchId) || [])];
 
     return (
-      <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg lg:col-span-2">
+      <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg lg:col-span-2">
         <CardHeader>
           <CardTitle>Test Sessions</CardTitle>
           <CardDescription>
@@ -1801,7 +1801,7 @@ export default function AdminPage() {
 
   const renderUserManagement = () => {
     return (
-        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg mt-6 lg:col-span-3">
+        <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg mt-6 lg:col-span-3">
             <Accordion type="single" collapsible className="w-full" defaultValue='item-1'>
                 <AccordionItem value="item-1">
                     <AccordionTrigger className="p-6">
@@ -1901,7 +1901,7 @@ export default function AdminPage() {
   };
   
   const renderModelManagement = () => (
-    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
+    <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <BrainCircuit className="h-6 w-6" />
@@ -2030,7 +2030,7 @@ export default function AdminPage() {
   );
 
   const renderAutomatedTraining = () => (
-    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
+    <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
       <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BrainCircuit className="h-6 w-6 text-primary" />
@@ -2069,7 +2069,7 @@ export default function AdminPage() {
   );
 
   const renderVesselTypeManagement = () => (
-    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+    <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg">
         <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
             <AccordionItem value="item-1">
                 <AccordionTrigger className="p-6">
@@ -2201,7 +2201,7 @@ export default function AdminPage() {
 );
 
 const renderBatchManagement = () => (
-    <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+    <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg">
         <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
             <AccordionItem value="item-1">
                 <AccordionTrigger className="p-6">
@@ -2292,7 +2292,7 @@ const renderBatchManagement = () => (
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
       <header className="w-full max-w-7xl mx-auto mb-6">
-        <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+        <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg">
           <CardHeader>
             <div className="flex justify-between items-center">
                 <CardTitle className="text-3xl bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
@@ -2320,7 +2320,7 @@ const renderBatchManagement = () => (
 
       <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1 space-y-6">
-             <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+             <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg">
                   <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
                       <AccordionItem value="item-1">
                           <AccordionTrigger className="p-6">
@@ -2385,7 +2385,7 @@ const renderBatchManagement = () => (
               </Card>
               {renderBatchManagement()}
               {renderVesselTypeManagement()}
-              <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+              <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg">
                   <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
                       <AccordionItem value="item-1">
                           <AccordionTrigger className="p-6">

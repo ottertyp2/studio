@@ -45,7 +45,7 @@ export default function ValveControl() {
   };
 
   return (
-    <Card className="w-full bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+    <Card className="w-full backdrop-blur-sm border-slate-300/80 shadow-lg">
         <CardHeader className="p-4 text-center">
             <CardTitle className="text-xl">Valve Control</CardTitle>
             {!isConnected && <CardDescription className="text-xs">Connect a device to enable controls.</CardDescription>}
