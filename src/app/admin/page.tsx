@@ -903,19 +903,12 @@ export default function AdminPage() {
 
         const storage = getStorage(firebaseApp);
         const modelPath = `models/${selectedModel.name}/model.json`;
-        const modelSaveRef = storageRef(storage, modelPath);
-        
-        await model.save(tf.io.withSaveHandler(async (modelArtifacts) => {
-            if (modelArtifacts.modelTopology) {
-                const topologyBlob = new Blob([JSON.stringify(modelArtifacts.modelTopology)], { type: 'application/json' });
-                await uploadBytes(modelSaveRef, topologyBlob);
-            }
-            if (modelArtifacts.weightData) {
-                const weightsRef = storageRef(storage, `models/${selectedModel.name}/weights.bin`);
-                await uploadBytes(weightsRef, modelArtifacts.weightData);
-            }
-            return { modelArtifactsInfo: { dateSaved: new Date(), modelTopologyType: 'JSON', weightDataBytes: modelArtifacts.weightData?.byteLength || 0 } };
-        }));
+        const modelRef = storageRef(storage, modelPath);
+
+        await model.save(tf.io.browserHTTPRequest(
+            `https://firebasestorage.googleapis.com/v0/b/${modelRef.bucket}/o?name=${encodeURIComponent(modelRef.fullPath)}`, 
+            { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+        ));
 
         const modelDocRef = doc(firestore, 'mlModels', selectedModelId);
         await updateDoc(modelDocRef, {
@@ -1046,19 +1039,12 @@ export default function AdminPage() {
       const modelName = `auto-model-${autoModelSize}-${new Date().toISOString().split('T')[0]}`;
       const storage = getStorage(firebaseApp);
       const modelPath = `models/${modelName}/model.json`;
-      const modelSaveRef = storageRef(storage, modelPath);
+      const modelRef = storageRef(storage, modelPath);
 
-      await model.save(tf.io.withSaveHandler(async (modelArtifacts) => {
-        if (modelArtifacts.modelTopology) {
-            const topologyBlob = new Blob([JSON.stringify(modelArtifacts.modelTopology)], { type: 'application/json' });
-            await uploadBytes(modelSaveRef, topologyBlob);
-        }
-        if (modelArtifacts.weightData) {
-            const weightsRef = storageRef(storage, `models/${modelName}/weights.bin`);
-            await uploadBytes(weightsRef, modelArtifacts.weightData);
-        }
-        return { modelArtifactsInfo: { dateSaved: new Date(), modelTopologyType: 'JSON', weightDataBytes: modelArtifacts.weightData?.byteLength || 0 } };
-      }));
+      await model.save(tf.io.browserHTTPRequest(
+        `https://firebasestorage.googleapis.com/v0/b/${modelRef.bucket}/o?name=${encodeURIComponent(modelRef.fullPath)}`, 
+        { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+      ));
       
       const newId = doc(collection(firestore, '_')).id;
       const modelMetaData: MLModel = {
@@ -1395,15 +1381,12 @@ export default function AdminPage() {
     let logoBase64: string | null = null;
     try {
         logoBase64 = await toBase64('/images/logo.png');
-        if (!logoBase64.startsWith('data:image')) {
-            throw new Error('Conversion to base64 failed or returned invalid format.');
-        }
-    } catch (error: any) {
+    } catch (error) {
         console.error("PDF Logo Generation Error:", error);
         toast({
             variant: "destructive",
             title: "Could Not Load Logo",
-            description: `The report will be generated without a logo. ${error.message}`,
+            description: `The report will be generated without a logo. ${(error as Error).message}`,
         });
     }
 
@@ -1415,7 +1398,6 @@ export default function AdminPage() {
             return;
         }
 
-        // Fetch all data first
         const allSensorData: Record<string, SensorData[]> = {};
         for (const session of relevantSessions) {
             const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
@@ -1424,29 +1406,35 @@ export default function AdminPage() {
             allSensorData[session.id] = snapshot.docs.map(doc => doc.data() as SensorData);
         }
 
-        // Prepare chart data and render it
-        const chartDataForPdf = relevantSessions.map(session => {
+        const firstSessionForChart = relevantSessions[0];
+        const chartStartTime = allSensorData[firstSessionForChart.id]?.[0]?.timestamp 
+            ? new Date(allSensorData[firstSessionForChart.id][0].timestamp).getTime() 
+            : 0;
+
+        const chartDataForPdf = relevantSessions.flatMap(session => {
             const data = allSensorData[session.id];
-            if (!data || data.length === 0) return null;
-            const startTime = new Date(data[0].timestamp).getTime();
+            if (!data || data.length === 0) return [];
+            
+            const sessionStartTime = new Date(data[0].timestamp).getTime();
+
             return data.map(d => ({
-                name: (new Date(d.timestamp).getTime() - startTime) / 1000,
+                name: (new Date(d.timestamp).getTime() - sessionStartTime) / 1000,
                 [session.id]: d.value
             }));
-        }).flat().filter(Boolean);
+        }).filter(Boolean);
 
-        // Simple merge of data points for chart
         const mergedChartData: any[] = [];
         const temp: Record<number, any> = {};
         for (const dp of chartDataForPdf) {
             if (!dp) continue;
-            if (!temp[dp.name]) temp[dp.name] = { name: dp.name };
-            Object.assign(temp[dp.name], dp);
+            const roundedTime = Math.round(dp.name);
+            if (!temp[roundedTime]) temp[roundedTime] = { name: roundedTime };
+            Object.assign(temp[roundedTime], dp);
         }
         mergedChartData.push(...Object.values(temp).sort((a,b) => a.name - b.name));
 
         setPdfChartData(mergedChartData);
-        await new Promise(resolve => setTimeout(resolve, 500)); // wait for chart to render
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         const chartImage = await htmlToImage.toPng(pdfChartRef.current, { quality: 0.95, backgroundColor: '#ffffff' });
 
@@ -1475,6 +1463,7 @@ export default function AdminPage() {
                 batchName ?? 'N/A',
                 session.serialNumber || 'N/A',
                 new Date(session.startTime).toLocaleString(),
+                session.endTime ? new Date(session.endTime).toLocaleString() : 'N/A',
                 session.description || 'N/A',
                 endPressure,
                 duration,
@@ -1503,9 +1492,9 @@ export default function AdminPage() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', '*', '*', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto'],
                         body: [
-                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'End Pressure', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'End Time', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'End Pressure', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
                             ...tableBody
                         ]
                     },
