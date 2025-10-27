@@ -25,7 +25,7 @@ export default function HomePage() {
   // Render a full-page loading indicator while the auth state is being determined.
   // This prevents any content from flashing before the redirect happens.
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
+    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-blue-950/50 dark:to-blue-950">
       <p className="text-lg">Loading...</p>
     </div>
   );

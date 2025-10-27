@@ -67,8 +67,8 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background to-slate-200 p-4">
-      <Card className="w-full max-w-md backdrop-blur-sm shadow-lg">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background to-blue-950/50 dark:to-blue-950 p-4">
+      <Card className="w-full max-w-md shadow-lg">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">Create an Account</CardTitle>
           <CardDescription>Join to start analyzing your data</CardDescription>

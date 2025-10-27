@@ -714,9 +714,9 @@ function TestingComponent() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-950/50 dark:to-blue-950 text-foreground p-4">
       <header className="w-full max-w-7xl mx-auto mb-6">
-        <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg">
+        <Card className="shadow-lg">
           <CardHeader>
             <div className="flex justify-between items-center">
                 <CardTitle className="text-3xl bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
@@ -745,7 +745,7 @@ function TestingComponent() {
 
       <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 flex flex-col">
-            <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg flex-grow flex flex-col">
+            <Card className="shadow-lg flex-grow flex flex-col">
               <CardHeader>
                 <div className="flex justify-between items-center">
                   <CardTitle>Session Control</CardTitle>
@@ -826,7 +826,7 @@ function TestingComponent() {
         </div>
                 
         <div className="lg:col-span-1 space-y-6 flex flex-col">
-            <Card className="flex flex-col justify-center items-center backdrop-blur-sm border-slate-300/80 shadow-lg flex-grow">
+            <Card className="flex flex-col justify-center items-center shadow-lg flex-grow">
                 <CardHeader>
                 <CardTitle className="text-lg">Current Value</CardTitle>
                 </CardHeader>
@@ -862,7 +862,7 @@ function TestingComponent() {
         </div>
 
         <div className="lg:col-span-3">
-            <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg">
+            <Card className="shadow-lg">
             <CardHeader>
                 <div className="flex justify-between items-center flex-wrap gap-4">
                     <div>
@@ -1028,7 +1028,7 @@ export default function TestingPage() {
 
     if (isUserLoading || !areServicesAvailable) {
         return (
-            <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-slate-200">
+            <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-blue-950/50 dark:to-blue-950">
                 <p className="text-lg">Loading Dashboard...</p>
             </div>
         );
