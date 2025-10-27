@@ -80,7 +80,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import GuidelineCurveEditor from '@/components/admin/GuidelineCurveEditor';
 import pdfMake from 'pdfmake/build/pdfmake';
-import pdfFonts from 'pdfmake/build/vfs_fonts';
+import * as pdfFonts from 'pdfmake/build/vfs_fonts';
 
 if (pdfFonts.pdfMake) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
@@ -1043,74 +1043,74 @@ export default function AdminPage() {
   };
   
     const filteredAndSortedSessions = useMemo(() => {
-    if (!testSessions) return [];
+        if (!testSessions) return [];
     
-    let filtered = testSessions;
+        let filtered = testSessions;
 
-    if (sessionUserFilter !== 'all') {
-        filtered = filtered.filter(session => session.userId === sessionUserFilter);
-    }
-    
-    if (sessionVesselTypeFilter !== 'all') {
-        filtered = filtered.filter(session => session.vesselTypeId === sessionVesselTypeFilter);
-    }
-
-    if (sessionBatchFilter !== 'all') {
-        filtered = filtered.filter(session => session.batchId === sessionBatchFilter);
-    }
-    
-    if (sessionTestBenchFilter !== 'all') {
-        filtered = filtered.filter(session => session.testBenchId === sessionTestBenchFilter);
-    }
-
-    if (sessionClassificationFilter !== 'all') {
-        if (sessionClassificationFilter === 'classified') {
-            filtered = filtered.filter(session => !!session.classification);
-        } else if (sessionClassificationFilter === 'unclassified') {
-            filtered = filtered.filter(session => !session.classification);
+        if (sessionUserFilter !== 'all') {
+            filtered = filtered.filter(session => session.userId === sessionUserFilter);
         }
-    }
-
-    filtered = filtered.filter(session => {
-        const searchTerm = sessionSearchTerm.toLowerCase();
-        if (!searchTerm) return true;
-        const batchName = batches?.find(b => b.id === session.batchId)?.name.toLowerCase() || '';
-        return (
-            session.vesselTypeName.toLowerCase().includes(searchTerm) ||
-            batchName.includes(searchTerm) ||
-            session.serialNumber.toLowerCase().includes(searchTerm) ||
-            session.description.toLowerCase().includes(searchTerm) ||
-            session.username.toLowerCase().includes(searchTerm)
-        );
-    });
-
-    const safeBatches = batches || [];
-    const safeTestBenches = testBenches || [];
-
-    return filtered.sort((a, b) => {
-        const batchAName = safeBatches.find(bt => bt.id === a.batchId)?.name || '';
-        const batchBName = safeBatches.find(bt => bt.id === b.batchId)?.name || '';
         
-        switch (sessionSortOrder) {
-            case 'startTime-desc':
-                return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
-            case 'startTime-asc':
-                return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
-            case 'vesselTypeName-asc':
-                return a.vesselTypeName.localeCompare(b.vesselTypeName);
-            case 'batchName-asc':
-                return batchAName.localeCompare(batchBName);
-             case 'username-asc':
-                return a.username.localeCompare(b.username);
-            case 'testBenchName-asc': {
-              const benchAName = safeTestBenches.find(tb => tb.id === a.testBenchId)?.name || '';
-              const benchBName = safeTestBenches.find(tb => tb.id === b.testBenchId)?.name || '';
-              return benchAName.localeCompare(benchBName);
-            }
-            default:
-                return 0;
+        if (sessionVesselTypeFilter !== 'all') {
+            filtered = filtered.filter(session => session.vesselTypeId === sessionVesselTypeFilter);
         }
-    });
+
+        if (sessionBatchFilter !== 'all') {
+            filtered = filtered.filter(session => session.batchId === sessionBatchFilter);
+        }
+        
+        if (sessionTestBenchFilter !== 'all') {
+            filtered = filtered.filter(session => session.testBenchId === sessionTestBenchFilter);
+        }
+
+        if (sessionClassificationFilter !== 'all') {
+            if (sessionClassificationFilter === 'classified') {
+                filtered = filtered.filter(session => !!session.classification);
+            } else if (sessionClassificationFilter === 'unclassified') {
+                filtered = filtered.filter(session => !session.classification);
+            }
+        }
+
+        filtered = filtered.filter(session => {
+            const searchTerm = sessionSearchTerm.toLowerCase();
+            if (!searchTerm) return true;
+            const batchName = batches?.find(b => b.id === session.batchId)?.name.toLowerCase() || '';
+            return (
+                session.vesselTypeName.toLowerCase().includes(searchTerm) ||
+                batchName.includes(searchTerm) ||
+                session.serialNumber.toLowerCase().includes(searchTerm) ||
+                session.description.toLowerCase().includes(searchTerm) ||
+                session.username.toLowerCase().includes(searchTerm)
+            );
+        });
+
+        const safeBatches = batches || [];
+        const safeTestBenches = testBenches || [];
+
+        return filtered.sort((a, b) => {
+            const batchAName = safeBatches.find(bt => bt.id === a.batchId)?.name || '';
+            const batchBName = safeBatches.find(bt => bt.id === b.batchId)?.name || '';
+            
+            switch (sessionSortOrder) {
+                case 'startTime-desc':
+                    return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
+                case 'startTime-asc':
+                    return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+                case 'vesselTypeName-asc':
+                    return a.vesselTypeName.localeCompare(b.vesselTypeName);
+                case 'batchName-asc':
+                    return batchAName.localeCompare(batchBName);
+                 case 'username-asc':
+                    return a.username.localeCompare(b.username);
+                case 'testBenchName-asc': {
+                  const benchAName = safeTestBenches.find(tb => tb.id === a.testBenchId)?.name || '';
+                  const benchBName = safeTestBenches.find(tb => tb.id === b.testBenchId)?.name || '';
+                  return benchAName.localeCompare(benchBName);
+                }
+                default:
+                    return 0;
+            }
+        });
 
   }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, testBenches, batches]);
 

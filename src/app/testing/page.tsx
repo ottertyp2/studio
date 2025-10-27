@@ -744,14 +744,14 @@ function TestingComponent() {
       </header>
 
       <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
+        <div className="lg:col-span-2 flex flex-col">
+            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg flex-grow flex flex-col">
               <CardHeader>
                 <div className="flex justify-between items-center">
                   <CardTitle>Session Control</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="flex items-center justify-center h-full">
+              <CardContent className="flex-grow flex items-center justify-center">
                 {runningTestSession ? (
                     <div className="flex flex-col items-center gap-4">
                         <p className="text-lg font-semibold text-primary animate-pulse">🔴 Recording Session in Progress...</p>
