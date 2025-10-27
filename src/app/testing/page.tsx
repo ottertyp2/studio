@@ -56,13 +56,13 @@ import { useTestBench } from '@/context/TestBenchContext';
 import { collection, query, where, getDocs, doc, onSnapshot, writeBatch, orderBy, limit, getDoc } from 'firebase/firestore';
 import { ref, get } from 'firebase/database';
 import { formatDistanceToNow } from 'date-fns';
-import { convertRawValue } from '@/lib/utils';
+import { convertRawValue, toBase64 } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import ValveControl from '@/components/dashboard/ValveControl';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetOverlay, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
@@ -578,27 +578,34 @@ function TestingComponent() {
         let sessionsToReport: WithId<TestSession>[] = [];
         let reportTitle = '';
         let reportFilename = 'report';
+        let mainVesselTypeName = '';
 
         try {
+            const logoUrl = '/images/logo.png';
+            const logoBase64 = await toBase64(logoUrl);
+
             if (reportType === 'single' && selectedReportSessionId) {
                 const session = sessionHistory.find(s => s.id === selectedReportSessionId);
                 if (!session) throw new Error('Selected session not found.');
                 sessionsToReport = [session];
+                mainVesselTypeName = session.vesselTypeName;
                 reportTitle = `Single Vessel Pressure Test Report`;
                 reportFilename = `report-session-${session.serialNumber || session.id}`;
             } else if (reportType === 'batch' && selectedReportBatchId) {
                 const batch = batches?.find(b => b.id === selectedReportBatchId);
                 if (!batch) throw new Error('Selected batch not found.');
+                const vesselType = vesselTypes?.find(vt => vt.id === batch.vesselTypeId);
                 sessionsToReport = sessionHistory.filter(s => s.batchId === selectedReportBatchId && s.status === 'COMPLETED');
                 if (sessionsToReport.length === 0) throw new Error(`No completed sessions found for batch "${batch.name}".`);
+                mainVesselTypeName = vesselType?.name || batch.name;
                 reportTitle = `Batch Vessel Pressure Test Report`;
                 reportFilename = `report-batch-${batch.name.replace(/\s+/g, '_')}`;
             } else {
                 throw new Error('Invalid report selection.');
             }
 
-            setComparisonSessions(sessionsToReport); // Temporarily set chart to show only report sessions
-            await new Promise(resolve => setTimeout(resolve, 1500)); // Allow chart to re-render
+            setComparisonSessions(sessionsToReport);
+            await new Promise(resolve => setTimeout(resolve, 1500)); 
 
             const chartImage = await htmlToImage.toPng(chartRef.current, {
                 quality: 0.95,
@@ -609,7 +616,7 @@ function TestingComponent() {
                 switch (classification) {
                     case 'DIFFUSION': return { text: 'Passed', color: 'green', bold: true };
                     case 'LEAK': return { text: 'Not Passed', color: 'red', bold: true };
-                    default: return { text: 'Undetermined', color: 'gray', bold: false };
+                    default: return { text: 'Unclassified', color: 'gray', bold: false };
                 }
             };
 
@@ -626,11 +633,13 @@ function TestingComponent() {
                 const data = comparisonData[session.id] || [];
                 const endValue = data.length > 0 ? data[data.length-1].value : undefined;
                 const endPressure = (endValue !== undefined && config) ? `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${config.unit}` : 'N/A';
-                const duration = session.endTime ? formatDistanceToNow(new Date(session.startTime), { unit: 'minute', addSuffix: false }).replace('about ', '') : 'N/A';
+                const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
+                
                 return [
                     batch?.name || 'N/A',
                     session.serialNumber || 'N/A',
                     new Date(session.startTime).toLocaleString(),
+                    session.endTime ? new Date(session.endTime).toLocaleString() : 'N/A',
                     session.username,
                     endPressure,
                     duration,
@@ -640,35 +649,41 @@ function TestingComponent() {
 
             const docDefinition: any = {
                 pageSize: 'A4',
-                pageMargins: [40, 60, 40, 60],
+                pageMargins: [40, 40, 40, 40],
                 content: [
-                    { text: reportTitle, style: 'header' },
+                    {
+                        columns: [
+                            { image: logoBase64, width: 70 },
+                            {
+                                stack: [
+                                { text: reportTitle, style: 'header', alignment: 'right' },
+                                { text: mainVesselTypeName, style: 'subheader', alignment: 'right', margin: [0, 0, 0, 10] },
+                                ],
+                            },
+                        ],
+                        columnGap: 10,
+                    },
                     { text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' },
-                    { text: sessionsToReport[0].vesselTypeName, style: 'subheader', margin: [0, 0, 0, 20] },
-                    { image: chartImage, width: 500, alignment: 'center', margin: [0, 0, 0, 5] },
-                    { text: 'Session Summary', style: 'subheader' },
+                    { image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] },
+                    { text: 'Session Summary', style: 'subheader', margin: [0, 10, 0, 5] },
                     {
                         style: 'tableExample',
                         table: {
                             headerRows: 1,
-                            widths: ['auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                            widths: ['auto', 'auto', '*', '*', 'auto', 'auto', 'auto', 'auto'],
                             body: [
-                                ['Batch', 'Serial No.', 'Start Time', 'User', 'End Value', 'Duration', 'Status'],
+                                ['Batch', 'Serial No.', 'Start Time', 'End Time', 'User', 'End Value', 'Duration (s)', 'Status'],
                                 ...tableBody
                             ]
                         },
-                        layout: {
-                            hLineWidth: (i: number, node: any) => (i === 0 || i === 1 || i === node.table.body.length) ? 1 : 0.5,
-                            vLineWidth: () => 0,
-                            hLineColor: (i: number) => (i === 0 || i === 1) ? 'black' : 'gray',
-                        }
+                        layout: 'lightHorizontalLines'
                     }
                 ],
                 styles: {
-                    header: { fontSize: 18, bold: true, alignment: 'center', margin: [0, 0, 0, 10], color: '#1E40AF' },
-                    subheader: { fontSize: 14, bold: true, margin: [0, 10, 0, 5] },
-                    body: { fontSize: 10 },
-                    tableExample: { fontSize: 9, margin: [0, 5, 0, 15] },
+                    header: { fontSize: 16, bold: true, color: '#1E40AF' },
+                    subheader: { fontSize: 12, bold: true },
+                    body: { fontSize: 9 },
+                    tableExample: { fontSize: 8 },
                 },
                 defaultStyle: { font: 'Roboto' }
             };
@@ -947,9 +962,9 @@ function TestingComponent() {
                         </DialogTrigger>
                         <DialogContent className="max-w-lg">
                             <DialogHeader>
-                                <DialogTitle>Arduino Crash & Reconnect Analysis</DialogTitle>
+                                <DialogTitle>Device Reconnect Analysis</DialogTitle>
                                 <DialogDescription>
-                                    AI-powered analysis of the last device-initiated reconnect event.
+                                    Analysis of the last device-initiated reconnect event.
                                 </DialogDescription>
                             </DialogHeader>
                             <div className="py-4 space-y-4">
@@ -1111,7 +1126,7 @@ function TestingComponent() {
                                                                 setSelectedReportSessionId(session.id);
                                                             }}
                                                         >
-                                                            <Download className="h-4 w-4"/>
+                                                            <FileText className="h-4 w-4"/>
                                                         </Button>
                                                     )}
                                                     <AlertDialog>
@@ -1227,4 +1242,3 @@ export default function TestingPage() {
     )
 }
 
-    
