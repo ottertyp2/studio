@@ -344,7 +344,7 @@ export default function AdminPage() {
             }));
         });
 
-        unscribers.push(unsubscribe);
+        unsubscribers.push(unsubscribe);
     });
 
     return () => {
