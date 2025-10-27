@@ -44,7 +44,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const downtimeIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    // Load persisted start time and downtime from localStorage
     const persistedStartTime = localStorage.getItem('startTime');
     if (persistedStartTime) {
       setStartTime(JSON.parse(persistedStartTime));
@@ -59,7 +58,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       setTotalDowntime(JSON.parse(persistedDowntime));
     }
 
-    // Start a single, reliable interval for downtime calculation
     if (downtimeIntervalRef.current) clearInterval(downtimeIntervalRef.current);
     downtimeIntervalRef.current = setInterval(() => {
         if (!isConnected) {
@@ -70,11 +68,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     return () => {
         if (downtimeIntervalRef.current) clearInterval(downtimeIntervalRef.current);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected]); // Rerunning only on isConnected change is key
+  }, [isConnected]);
 
   useEffect(() => {
-    // Persist total downtime to localStorage whenever it changes
     if (startTime) {
       localStorage.setItem('totalDowntime', JSON.stringify(totalDowntime + currentDowntime));
     }
@@ -110,11 +106,14 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       setValve2Status(data.valve2 ? 'ON' : 'OFF');
     }
     
-    if (!lockedSequences.includes('sequence1')) {
-        setSequence1Running(data.sequence1_running === true);
+    setSequence1Running(data.sequence1_running === true);
+    setSequence2Running(data.sequence2_running === true);
+
+    if (data.sequence1_running === false) {
+      setLockedSequences(prev => prev.filter(s => s !== 'sequence1'));
     }
-     if (!lockedSequences.includes('sequence2')) {
-        setSequence2Running(data.sequence2_running === true);
+    if (data.sequence2_running === false) {
+        setLockedSequences(prev => prev.filter(s => s !== 'sequence2'));
     }
 
     setCurrentValue(data.sensor ?? null);
@@ -150,7 +149,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       };
       addDocumentNonBlocking(sessionDataRef, dataToSave);
     }
-  }, [firestore, lockedValves, lockedSequences]);
+  }, [firestore, lockedValves]);
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!database) {
@@ -204,22 +203,17 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       }
       
       setLockedSequences(prev => [...prev, sequence]);
-      if (sequence === 'sequence1') setSequence1Running(true);
-      if (sequence === 'sequence2') setSequence2Running(true);
 
       const commandPath = `commands/${sequence}`;
       try {
           await set(ref(database, commandPath), state);
-          // The 'running' state will be cleared by the onValue listener when the device reports back.
-          // Add a timeout to unlock the button in case the device doesn't respond.
+          // Add a timeout to unlock the button in case the device doesn't respond to clear the state.
           setTimeout(() => {
               setLockedSequences(prev => prev.filter(s => s !== sequence));
-          }, 5000); // 5-second timeout
+          }, 5000);
       } catch (error: any) {
           console.error('Failed to send sequence command:', error);
           toast({ variant: 'destructive', title: 'Sequence Command Failed', description: error.message });
-          if (sequence === 'sequence1') setSequence1Running(false);
-          if (sequence === 'sequence2') setSequence2Running(false);
           setLockedSequences(prev => prev.filter(s => s !== sequence));
       }
   }, [database, toast]);
@@ -239,7 +233,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       if (data && data.lastUpdate) {
         if (!isConnected) {
             setIsConnected(true);
-            // On reconnect, commit the current downtime session to total downtime
             setTotalDowntime(prev => prev + currentDowntime);
             setCurrentDowntime(0);
         }
@@ -250,7 +243,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
           if (connectionTimeoutRef.current) {
             clearTimeout(connectionTimeoutRef.current);
           }
-        }, 5000); // Set to 5 seconds
+        }, 5000);
       } else {
         setIsConnected(false);
       }
@@ -268,7 +261,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         clearTimeout(connectionTimeoutRef.current);
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [database, handleNewDataPoint, isConnected, currentDowntime]);
 
 

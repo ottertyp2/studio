@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Zap, Square } from 'lucide-react';
 
 const ValveRow = ({ valveName, valveId, status, onToggle, isLocked, isDisabled }: { valveName: string, valveId: 'VALVE1' | 'VALVE2', status: ValveStatus, onToggle: (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => void, isLocked: boolean, isDisabled: boolean}) => {
     const isChecked = status === 'ON';
@@ -47,12 +47,12 @@ export default function ValveControl() {
   
   const handleSequence = (sequence: 'sequence1' | 'sequence2') => {
       if (!isConnected) return;
-      sendSequenceCommand(sequence, true);
+      const isRunning = sequence === 'sequence1' ? sequence1Running : sequence2Running;
+      // Send false to stop, true to start
+      sendSequenceCommand(sequence, !isRunning);
   };
 
   const isAnySequenceRunning = sequence1Running || sequence2Running;
-  const isSeq1Locked = lockedSequences.includes('sequence1') || isAnySequenceRunning;
-  const isSeq2Locked = lockedSequences.includes('sequence2') || isAnySequenceRunning;
 
   return (
     <Card className="w-full backdrop-blur-sm border-slate-300/80 shadow-lg">
@@ -79,14 +79,24 @@ export default function ValveControl() {
                 isDisabled={!isConnected}
             />
             <Separator />
-            <div className="grid grid-cols-2 gap-2 pt-2">
-                <Button onClick={() => handleSequence('sequence1')} disabled={!isConnected || isSeq1Locked}>
-                    {(sequence1Running || lockedSequences.includes('sequence1')) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    {sequence1Running ? 'Running...' : 'Sequence 1'}
+            <div className="flex flex-col gap-2 pt-2">
+                 <Button 
+                    onClick={() => handleSequence('sequence1')} 
+                    disabled={!isConnected || lockedSequences.includes('sequence1') || (isAnySequenceRunning && !sequence1Running)}
+                    variant={sequence1Running ? "destructive" : "outline"}
+                    className="transition-all"
+                >
+                    {lockedSequences.includes('sequence1') ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (sequence1Running ? <Square className="mr-2 h-4 w-4" /> : <Zap className="mr-2 h-4 w-4" />)}
+                    {sequence1Running ? 'Stop Sequence 1' : 'Run Sequence 1'}
                 </Button>
-                <Button onClick={() => handleSequence('sequence2')} disabled={!isConnected || isSeq2Locked}>
-                    {(sequence2Running || lockedSequences.includes('sequence2')) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    {sequence2Running ? 'Running...' : 'Sequence 2'}
+                 <Button 
+                    onClick={() => handleSequence('sequence2')} 
+                    disabled={!isConnected || lockedSequences.includes('sequence2') || (isAnySequenceRunning && !sequence2Running)}
+                    variant={sequence2Running ? "destructive" : "outline"}
+                    className="transition-all"
+                >
+                    {lockedSequences.includes('sequence2') ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (sequence2Running ? <Square className="mr-2 h-4 w-4" /> : <Zap className="mr-2 h-4 w-4" />)}
+                    {sequence2Running ? 'Stop Sequence 2' : 'Run Sequence 2'}
                 </Button>
             </div>
         </CardContent>
