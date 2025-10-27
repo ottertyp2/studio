@@ -759,9 +759,9 @@ function TestingComponent() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 text-foreground p-1">
-      <header className="w-full max-w-7xl mx-auto mb-3 animate-in">
-        <Card className="shadow-lg">
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-4">
+      <header className="w-full max-w-7xl mx-auto mb-6 animate-in">
+        <Card>
           <CardHeader className="p-6">
             <div className="flex justify-between items-center">
                 <CardTitle className="text-3xl bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
@@ -788,7 +788,7 @@ function TestingComponent() {
         </Card>
       </header>
 
-      <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 flex flex-col animate-in">
             <Card className="shadow-lg flex-grow flex flex-col">
               <CardHeader>
@@ -870,7 +870,7 @@ function TestingComponent() {
 
         </div>
                 
-        <div className="lg:col-span-1 space-y-3 flex flex-col animate-in">
+        <div className="lg:col-span-1 space-y-6 flex flex-col animate-in">
             <Card className="flex flex-col justify-center items-center shadow-lg flex-grow">
                 <CardHeader>
                 <CardTitle className="text-lg">Current Value</CardTitle>
@@ -1088,3 +1088,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
