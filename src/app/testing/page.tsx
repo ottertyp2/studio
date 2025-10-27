@@ -63,7 +63,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import ValveControl from '@/components/dashboard/ValveControl';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger, SheetOverlay } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
@@ -186,6 +186,9 @@ function TestingComponent() {
   const [xAxisDomain, setXAxisDomain] = useState<[number | 'dataMin' | 'dataMax', number | 'dataMin' | 'dataMax']>(['dataMin', 'dataMax']);
   const [activeTimeframe, setActiveTimeframe] = useState('all');
 
+  const [startTime] = useState(Date.now());
+  const [totalDowntime, setTotalDowntime] = useState(0);
+  const downtimeSinceRef = useRef<number | null>(null);
 
   // Data fetching hooks
   const testBenchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'testbenches') : null, [firestore]);
@@ -199,6 +202,33 @@ function TestingComponent() {
   
   const batchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'batches') : null, [firestore]);
   const { data: batches, isLoading: isBatchesLoading } = useCollection<Batch>(batchesCollectionRef);
+
+  useEffect(() => {
+    if (!isDeviceConnected) {
+      if (downtimeSinceRef.current === null) {
+        downtimeSinceRef.current = Date.now();
+      }
+    } else {
+      if (downtimeSinceRef.current !== null) {
+        setTotalDowntime(prev => prev + (Date.now() - (downtimeSinceRef.current ?? Date.now())));
+        downtimeSinceRef.current = null;
+      }
+    }
+  }, [isDeviceConnected]);
+
+  const downtimePercentage = useMemo(() => {
+    const totalTime = Date.now() - startTime;
+    if (totalTime === 0) return 0;
+
+    let currentDowntime = 0;
+    if (downtimeSinceRef.current !== null) {
+      currentDowntime = Date.now() - downtimeSinceRef.current;
+    }
+
+    const percentage = ((totalDowntime + currentDowntime) / totalTime) * 100;
+    return Math.min(100, percentage);
+  }, [startTime, totalDowntime, isDeviceConnected]); // Re-calculate when connection status changes
+
 
   // Set initial active bench and config
   useEffect(() => {
@@ -591,6 +621,8 @@ function TestingComponent() {
 
         // 4. Define PDF Document
         const docDefinition: any = {
+            pageSize: 'A4',
+            pageMargins: [ 40, 60, 40, 60 ],
             content: [
                 { text: 'Test Session Report', style: 'header' },
                 { text: `Vessel: ${vesselType.name} (S/N: ${session.serialNumber || 'N/A'})`, style: 'subheader' },
@@ -633,7 +665,7 @@ function TestingComponent() {
                 { text: session.description || 'No notes provided.', style: 'body', margin: [0, 0, 0, 10] },
 
                 { text: 'Pressure Curve Visualization', style: 'subheader', margin: [0, 5, 0, 5] },
-                { image: chartImage, width: 500, alignment: 'center' }
+                { image: chartImage, width: 515, alignment: 'center' }
             ],
             styles: {
                 header: { fontSize: 22, bold: true, alignment: 'center', margin: [0, 0, 0, 10], color: '#1E40AF' },
@@ -728,9 +760,9 @@ function TestingComponent() {
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 text-foreground p-1">
-      <header className="w-full max-w-7xl mx-auto mb-3">
+      <header className="w-full max-w-7xl mx-auto mb-3 animate-in">
         <Card className="shadow-lg">
-          <CardHeader>
+          <CardHeader className="p-6">
             <div className="flex justify-between items-center">
                 <CardTitle className="text-3xl bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
                 BioThrust Live Dashboard
@@ -757,7 +789,7 @@ function TestingComponent() {
       </header>
 
       <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <div className="lg:col-span-2 flex flex-col">
+        <div className="lg:col-span-2 flex flex-col animate-in">
             <Card className="shadow-lg flex-grow flex flex-col">
               <CardHeader>
                 <div className="flex justify-between items-center">
@@ -780,7 +812,7 @@ function TestingComponent() {
                   <div className="text-center">
                     <Dialog open={isNewSessionDialogOpen} onOpenChange={setIsNewSessionDialogOpen}>
                         <DialogTrigger asChild>
-                            <Button className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md">
+                            <Button className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
                               <PlusCircle className="mr-2 h-4 w-4" />
                               Start New Test Session
                             </Button>
@@ -838,7 +870,7 @@ function TestingComponent() {
 
         </div>
                 
-        <div className="lg:col-span-1 space-y-3 flex flex-col">
+        <div className="lg:col-span-1 space-y-3 flex flex-col animate-in">
             <Card className="flex flex-col justify-center items-center shadow-lg flex-grow">
                 <CardHeader>
                 <CardTitle className="text-lg">Current Value</CardTitle>
@@ -857,6 +889,9 @@ function TestingComponent() {
                         {isDeviceConnected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
                         <span>{isDeviceConnected ? `Sampling: ${samplingRate} Hz` : offlineMessage}</span>
                     </div>
+                     <p className="text-xs text-muted-foreground mt-1">
+                        Downtime: {downtimePercentage.toFixed(2)}%
+                    </p>
                     {isDeviceConnected && (
                       <>
                         <p className="text-xs text-muted-foreground mt-1">Disconnects: {disconnectCount}</p>
@@ -874,7 +909,7 @@ function TestingComponent() {
             {isDeviceConnected && <ValveControl />}
         </div>
 
-        <div className="lg:col-span-3">
+        <div className="lg:col-span-3 animate-in">
             <Card className="shadow-lg">
             <CardHeader>
                 <div className="flex justify-between items-center flex-wrap gap-2">
@@ -923,7 +958,7 @@ function TestingComponent() {
                                 {isHistoryLoading ? <p className="text-center text-muted-foreground">Loading history...</p> : sessionHistory.length > 0 ? (
                                 <div className="space-y-2">
                                     {sessionHistory.map(session => (
-                                        <Card key={session.id} className={`p-3 transition-colors ${comparisonSessions.some(s => s.id === session.id) ? 'border-primary' : 'hover:bg-muted/50'}`}>
+                                        <Card key={session.id} className={`p-3 transition-colors hover:bg-muted/50 hover:scale-[1.02] hover:shadow-lg ${comparisonSessions.some(s => s.id === session.id) ? 'border-primary' : ''}`}>
                                             <div className="flex justify-between items-center gap-2">
                                                 <div className="flex items-center gap-4 flex-grow">
                                                     <Checkbox
@@ -1041,7 +1076,7 @@ export default function TestingPage() {
 
     if (isUserLoading || !areServicesAvailable) {
         return (
-            <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-blue-200">
+            <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950">
                 <p className="text-lg">Loading Dashboard...</p>
             </div>
         );
