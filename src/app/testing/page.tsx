@@ -53,7 +53,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, WithId } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
 import { useTestBench } from '@/context/TestBenchContext';
-import { collection, query, where, onSnapshot, doc, getDocs, orderBy, limit, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDocs, orderBy, limit, getDoc, writeBatch } from 'firebase/firestore';
 import { ref, get } from 'firebase/database';
 import { formatDistanceToNow } from 'date-fns';
 import { convertRawValue, toBase64 } from '@/lib/utils';
@@ -175,7 +175,9 @@ function TestingComponent() {
     disconnectCount,
     sendRecordingCommand,
     latency,
-    downtimePercentage,
+    startTime,
+    totalDowntime,
+    downtimeSinceRef,
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
@@ -522,6 +524,22 @@ function TestingComponent() {
       };
   }, [currentValue, activeSensorConfig, runningTestSession, sensorConfigs]);
   
+    const downtimePercentage = useMemo(() => {
+        if (startTime === null) return 0;
+        
+        let currentDowntime = 0;
+        if (downtimeSinceRef.current !== null) {
+            currentDowntime = Date.now() - downtimeSinceRef.current;
+        }
+
+        const totalElapsed = Date.now() - startTime;
+        if (totalElapsed === 0) return 0;
+
+        const totalOfflineTime = totalDowntime + currentDowntime;
+        return (totalOfflineTime / totalElapsed) * 100;
+
+    }, [startTime, totalDowntime, downtimeSinceRef, now]);
+
   const isDuringDowntime = useMemo(() => {
     const now = new Date();
     const hour = now.getHours();
@@ -556,8 +574,8 @@ function TestingComponent() {
         let logoBase64: string | null = null;
         try {
             logoBase64 = await toBase64('/images/logo.png');
-        } catch (error: any) {
-            console.error("Logo conversion failed:", error.message);
+        } catch (error) {
+            console.error("PDF Logo Generation Error:", error);
             toast({
                 variant: "destructive",
                 title: "Could Not Load Logo",
@@ -915,7 +933,7 @@ function TestingComponent() {
                     </p>
                     <p className="text-lg text-muted-foreground">{isConnected && currentValue !== null ? (convertedValue?.unit ?? '') : ''}</p>
                      <p className="text-xs text-muted-foreground h-4 mt-1">
-                        {isConnected && lastDataPointTimestamp ? `(Updated ${formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true, includeSeconds: true })})` : ''}
+                        {isConnected && lastDataPointTimestamp ? `(Updated ${formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true, includeSeconds: true })}` : ''}
                     </p>
                     
                     <div className={`text-sm mt-2 flex items-center justify-center gap-1 ${isConnected ? 'text-green-600' : 'text-destructive'}`}>
@@ -923,7 +941,7 @@ function TestingComponent() {
                         <span>{isConnected ? `Online` : offlineMessage}</span>
                     </div>
                      <p className="text-xs text-muted-foreground mt-1">
-                        Downtime: {downtimePercentage.toFixed(2)}%
+                        Downtime: {(downtimePercentage || 0).toFixed(2)}%
                     </p>
                     {isConnected && (
                       <>
@@ -1212,3 +1230,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
