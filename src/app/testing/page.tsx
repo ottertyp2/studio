@@ -717,8 +717,8 @@ function TestingComponent() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-950/50 dark:to-blue-950 text-foreground p-4">
-      <header className="w-full max-w-7xl mx-auto mb-6">
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-950/50 dark:to-blue-950 text-foreground p-1">
+      <header className="w-full max-w-7xl mx-auto mb-3">
         <Card className="shadow-lg">
           <CardHeader>
             <div className="flex justify-between items-center">
@@ -746,7 +746,7 @@ function TestingComponent() {
         </Card>
       </header>
 
-      <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-3">
         <div className="lg:col-span-2 flex flex-col">
             <Card className="shadow-lg flex-grow flex flex-col">
               <CardHeader>
@@ -828,7 +828,7 @@ function TestingComponent() {
 
         </div>
                 
-        <div className="lg:col-span-1 space-y-6 flex flex-col">
+        <div className="lg:col-span-1 space-y-3 flex flex-col">
             <Card className="flex flex-col justify-center items-center shadow-lg flex-grow">
                 <CardHeader>
                 <CardTitle className="text-lg">Current Value</CardTitle>
@@ -867,7 +867,7 @@ function TestingComponent() {
         <div className="lg:col-span-3">
             <Card className="shadow-lg">
             <CardHeader>
-                <div className="flex justify-between items-center flex-wrap gap-4">
+                <div className="flex justify-between items-center flex-wrap gap-2">
                     <div>
                         <CardTitle>Live Data Visualization</CardTitle>
                         {comparisonSessions.length > 0 ? (

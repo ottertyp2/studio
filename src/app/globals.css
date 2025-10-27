@@ -8,37 +8,37 @@ body {
 
 @layer base {
   :root {
-    --background: 210 100% 97%; /* Light Blue */
+    --background: 210 40% 98%;
     --foreground: 224 71% 4%;
     --card: 0 0% 100%;
     --card-foreground: 224 71% 4%;
     --popover: 0 0% 100%;
     --popover-foreground: 224 71% 4%;
-    --primary: 210 100% 56%; /* Brighter Blue */
+    --primary: 210 100% 56%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222 47% 11.2%;
     --muted: 210 40% 96.1%;
     --muted-foreground: 215 20% 65.1%;
-    --accent: 170 80% 50%; /* Teal Accent */
+    --accent: 170 80% 50%;
     --accent-foreground: 210 40% 98%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 210 100% 56%;
-    --chart-1: 220 80% 55%; /* Blue */
-    --chart-2: 160 70% 45%; /* Green */
-    --chart-3: 340 90% 60%; /* Pink */
-    --chart-4: 40 90% 60%;  /* Orange */
-    --chart-5: 280 80% 65%; /* Purple */
+    --chart-1: 220 80% 55%;
+    --chart-2: 160 70% 45%;
+    --chart-3: 340 90% 60%;
+    --chart-4: 40 90% 60%;
+    --chart-5: 280 80% 65%;
     --radius: 0.5rem;
   }
 
   .dark {
-    --background: 220 30% 12%; /* Dark Blue */
+    --background: 220 30% 12%;
     --foreground: 210 40% 98%;
-    --card: 220 25% 15%; /* Darker, near-black blue for cards */
+    --card: 220 25% 15%;
     --card-foreground: 210 40% 98%;
     --popover: 220 15% 5%;
     --popover-foreground: 210 40% 98%;
@@ -48,18 +48,18 @@ body {
     --secondary-foreground: 210 40% 98%;
     --muted: 217 33% 17%;
     --muted-foreground: 215 20% 65%;
-    --accent: 170 80% 60%; /* Teal Accent */
+    --accent: 170 80% 60%;
     --accent-foreground: 210 40% 98%;
     --destructive: 0 63% 31%;
     --destructive-foreground: 210 40% 98%;
     --border: 217 33% 25%;
     --input: 217 33% 17%;
     --ring: 210 100% 56%;
-    --chart-1: 220 80% 65%; /* Blue */
-    --chart-2: 160 70% 55%; /* Green */
-    --chart-3: 340 90% 70%; /* Pink */
-    --chart-4: 40 90% 70%;  /* Orange */
-    --chart-5: 280 80% 75%; /* Purple */
+    --chart-1: 220 80% 65%;
+    --chart-2: 160 70% 55%;
+    --chart-3: 340 90% 70%;
+    --chart-4: 40 90% 70%;
+    --chart-5: 280 80% 75%;
   }
 }
 

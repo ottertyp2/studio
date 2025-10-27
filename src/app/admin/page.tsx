@@ -2592,11 +2592,29 @@ const renderBatchManagement = () => (
             </div>
           )}
           <div className="lg:col-span-3">
-            {renderModelManagement()}
+            <Accordion type="single" collapsible className="w-full">
+              <AccordionItem value="item-1">
+                <AccordionTrigger>
+                  <CardTitle>AI Model Management</CardTitle>
+                </AccordionTrigger>
+                <AccordionContent>
+                  {renderModelManagement()}
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </div>
            <div className="lg:col-span-3">
-            {renderAutomatedTraining()}
-          </div>
+            <Accordion type="single" collapsible className="w-full">
+                <AccordionItem value="item-1">
+                  <AccordionTrigger>
+                    <CardTitle>Automated Training Pipeline</CardTitle>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    {renderAutomatedTraining()}
+                  </AccordionContent>
+                </AccordionItem>
+            </Accordion>
+           </div>
       </main>
     </div>
   );
