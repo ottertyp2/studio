@@ -113,7 +113,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setLockedValves(prev => [...prev, valve]);
     setTimeout(() => {
         setLockedValves(prev => prev.filter(v => v !== valve));
-    }, 1200);
+    }, 2000);
 
     const commandPath = valve === 'VALVE1' ? 'commands/valve1' : 'commands/valve2';
     try {

@@ -1558,16 +1558,16 @@ export default function AdminPage() {
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
     return (
-        <Card className="shadow-lg mt-1.5">
+        <Card className="shadow-lg mt-6">
             <CardHeader>
                 <CardTitle>{tempSensorConfig.id ? 'Edit Configuration' : 'Create New Configuration'}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-1 pt-1.5">
-                 <div className="space-y-0.5">
+            <CardContent className="space-y-4 pt-4">
+                 <div className="space-y-2">
                     <Label htmlFor="configName">Name</Label>
                     <Input id="configName" value={tempSensorConfig.name || ''} onChange={(e) => handleConfigChange('name', e.target.value)} placeholder="e.g. Primary Pressure Sensor" />
                 </div>
-                <div className="space-y-0.5">
+                <div className="space-y-2">
                   <Label htmlFor="testBenchSelect">Test Bench</Label>
                   <Select value={tempSensorConfig.testBenchId} onValueChange={(value) => handleConfigChange('testBenchId', value)}>
                     <SelectTrigger id="testBenchSelect">
@@ -1579,7 +1579,7 @@ export default function AdminPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-0.5">
+                <div className="space-y-2">
                   <Label htmlFor="conversionMode">Display Mode</Label>
                   <Select value={tempSensorConfig.mode} onValueChange={(value) => handleConfigChange('mode', value)}>
                     <SelectTrigger id="conversionMode">
@@ -1593,24 +1593,24 @@ export default function AdminPage() {
                   </Select>
                 </div>
                  {tempSensorConfig.mode === 'CUSTOM' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-1">
-                        <div className="space-y-0.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="space-y-2">
                             <Label htmlFor="sensorUnitInput">Unit</Label>
                             <Input id="sensorUnitInput" value={tempSensorConfig.unit || ''} onChange={(e) => handleConfigChange('unit', e.target.value)} placeholder="e.g. 'bar' or 'psi'"/>
                         </div>
-                        <div className="space-y-0.5">
+                        <div className="space-y-2">
                             <Label htmlFor="minValueInput">Minimum Value</Label>
                             <Input id="minValueInput" type="number" value={tempSensorConfig.min ?? ''} onChange={(e) => handleConfigChange('min', e.target.value)} placeholder="e.g. 0"/>
                         </div>
-                        <div className="space-y-0.5">
+                        <div className="space-y-2">
                             <Label htmlFor="maxValueInput">Maximum Value</Label>
                             <Input id="maxValueInput" type="number" value={tempSensorConfig.max ?? ''} onChange={(e) => handleConfigChange('max', e.target.value)} placeholder="e.g. 10"/>
                         </div>
                     </div>
                  )}
                  {tempSensorConfig.mode !== 'RAW' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-                        <div className="space-y-0.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
                             <Label htmlFor="adcBitResolution">ADC Bit Resolution</Label>
                             <Select value={String(tempSensorConfig.adcBitResolution || 10)} onValueChange={(value) => handleConfigChange('adcBitResolution', value)}>
                                 <SelectTrigger id="adcBitResolution">
@@ -1625,19 +1625,19 @@ export default function AdminPage() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <div className="space-y-0.5">
+                        <div className="space-y-2">
                             <Label htmlFor="arduinoVoltageInput">Reference Voltage (V)</Label>
                             <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage ?? ''} onChange={(e) => handleConfigChange('arduinoVoltage', e.target.value)} placeholder="e.g. 5 or 3.3"/>
                         </div>
-                        <div className="space-y-0.5">
+                        <div className="space-y-2">
                             <Label htmlFor="decimalPlacesInput">Decimal Places</Label>
                             <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces || 0} onChange={(e) => handleConfigChange('decimalPlaces', parseInt(e.target.value))} />
                         </div>
                     </div>
                  )}
-                 <div className="flex justify-center gap-1 pt-1">
-                    <Button onClick={handleSaveSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Save</Button>
+                 <div className="flex justify-end gap-4 pt-4">
                     <Button onClick={() => setTempSensorConfig(null)} variant="ghost">Cancel</Button>
+                    <Button onClick={handleSaveSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Save</Button>
                  </div>
               </CardContent>
         </Card>
@@ -1650,7 +1650,7 @@ export default function AdminPage() {
 
     return (
       <Card className="shadow-lg lg:col-span-2">
-        <CardHeader className="p-3">
+        <CardHeader className="p-6">
           <div className="flex justify-between items-center">
             <div>
               <CardTitle>Test Sessions</CardTitle>
@@ -1667,16 +1667,16 @@ export default function AdminPage() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="p-3">
-          <div className="space-y-1">
-            <div className="flex flex-col sm:flex-row gap-1">
+        <CardContent className="p-6">
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row gap-2">
               <Input
                 placeholder="Search sessions..."
                 value={sessionSearchTerm}
                 onChange={(e) => setSessionSearchTerm(e.target.value)}
                 className="flex-grow"
               />
-              <div className="flex gap-0.5">
+              <div className="flex gap-2">
                  <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" className="w-full sm:w-auto">
@@ -1702,8 +1702,8 @@ export default function AdminPage() {
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-[250px]">
-                        <div className="p-1 space-y-1">
-                            <div className="space-y-0.5">
+                        <div className="p-2 space-y-2">
+                            <div className="space-y-1">
                                 <Label>User</Label>
                                 <Select value={sessionUserFilter} onValueChange={setSessionUserFilter}>
                                     <SelectTrigger><SelectValue/></SelectTrigger>
@@ -1713,7 +1713,7 @@ export default function AdminPage() {
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <div className="space-y-0.5">
+                            <div className="space-y-1">
                                 <Label>Vessel Type</Label>
                                 <Select value={sessionVesselTypeFilter} onValueChange={setSessionVesselTypeFilter}>
                                     <SelectTrigger><SelectValue/></SelectTrigger>
@@ -1723,7 +1723,7 @@ export default function AdminPage() {
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <div className="space-y-0.5">
+                            <div className="space-y-1">
                                 <Label>Batch</Label>
                                 <Select value={sessionBatchFilter} onValueChange={setSessionBatchFilter}>
                                     <SelectTrigger><SelectValue/></SelectTrigger>
@@ -1733,7 +1733,7 @@ export default function AdminPage() {
                                     </SelectContent>
                                 </Select>
                             </div>
-                             <div className="space-y-0.5">
+                             <div className="space-y-1">
                                 <Label>Test Bench</Label>
                                 <Select value={sessionTestBenchFilter} onValueChange={setSessionTestBenchFilter}>
                                     <SelectTrigger><SelectValue/></SelectTrigger>
@@ -1743,7 +1743,7 @@ export default function AdminPage() {
                                     </SelectContent>
                                 </Select>
                             </div>
-                             <div className="space-y-0.5">
+                             <div className="space-y-1">
                                 <Label>Classification</Label>
                                 <Select value={sessionClassificationFilter} onValueChange={setSessionClassificationFilter}>
                                     <SelectTrigger><SelectValue/></SelectTrigger>
@@ -1772,7 +1772,7 @@ export default function AdminPage() {
                         Select a model to classify all completed sessions that do not yet have a classification. This action cannot be undone.
                       </DialogDescription>
                     </DialogHeader>
-                    <div className="space-y-1 py-2">
+                    <div className="space-y-2 py-4">
                       <Label htmlFor="bulk-model-select">Model for Classification</Label>
                       <Select onValueChange={setBulkClassifyModelId}>
                         <SelectTrigger id="bulk-model-select">
@@ -1811,30 +1811,30 @@ export default function AdminPage() {
               </div>
             </div>
 
-             <ScrollArea className="h-[40rem] mt-1">
-              {isTestSessionsLoading ? <p className="text-center text-muted-foreground pt-2.5">Loading sessions...</p> : filteredAndSortedSessions.length > 0 ? (
-                <div className="space-y-0.5">
+             <ScrollArea className="h-[40rem] mt-4">
+              {isTestSessionsLoading ? <p className="text-center text-muted-foreground pt-10">Loading sessions...</p> : filteredAndSortedSessions.length > 0 ? (
+                <div className="space-y-3">
                 {filteredAndSortedSessions.map(session => {
                   const bench = testBenches?.find(b => b.id === session.testBenchId);
                   const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
                   const batchName = batches?.find(b => b.id === session.batchId)?.name;
                   return (
-                    <Card key={session.id} className={`p-1 ${session.status === 'RUNNING' ? 'border-primary' : ''} hover:bg-muted/50`}>
-                        <div className="flex justify-between items-start gap-1">
-                            <div className='flex-grow space-y-0'>
+                    <Card key={session.id} className={`p-4 ${session.status === 'RUNNING' ? 'border-primary' : ''} hover:bg-muted/50`}>
+                        <div className="flex justify-between items-start gap-4">
+                            <div className='flex-grow space-y-1'>
                                 <p className="font-semibold">{session.vesselTypeName} <span className="text-sm text-muted-foreground">(Batch: {batchName || 'N/A'}, S/N: {session.serialNumber || 'N/A'})</span></p>
                                 <p className="text-sm text-muted-foreground">
                                     {new Date(session.startTime).toLocaleString()} - {session.status}
                                 </p>
-                                <div className="flex items-center gap-1 text-xs text-muted-foreground pt-0">
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
                                   <User className="h-3 w-3" />
                                   <span>{session.username}</span>
                                 </div>
-                                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                   <Server className="h-3 w-3" />
                                   <span>{bench?.name || 'N/A'} / {config?.name || 'N/A'}</span>
                                 </div>
-                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                   <Tag className="h-3 w-3" />
                                   <span>{session.classification || 'Unclassified'}</span>
                                 </div>
@@ -1842,11 +1842,11 @@ export default function AdminPage() {
                                     Data Points: {sessionDataCounts[session.id] ?? '...'}
                                 </p>
                             </div>
-                            <div className="flex flex-col gap-0.5 items-end shrink-0">
+                            <div className="flex flex-col gap-2 items-end shrink-0">
                                 {session.status === 'RUNNING' && (
                                     <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session.id)}>Stop</Button>
                                 )}
-                                <div className="flex gap-0.5">
+                                <div className="flex gap-2">
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
                                     <Button size="sm" variant="outline" disabled={session.status === 'RUNNING'}>Actions</Button>
@@ -1922,7 +1922,7 @@ export default function AdminPage() {
                 )})}
                 </div>
               ) : (
-                 <p className="text-sm text-muted-foreground text-center pt-2.5">No test sessions found.</p>
+                 <p className="text-sm text-muted-foreground text-center pt-10">No test sessions found.</p>
               )}
             </ScrollArea>
           </div>
@@ -1934,28 +1934,28 @@ export default function AdminPage() {
 
   const renderUserManagement = () => {
     return (
-        <Card className="shadow-lg mt-1.5 lg:col-span-3">
+        <Card className="shadow-lg mt-6 lg:col-span-3">
             <Accordion type="single" collapsible className="w-full">
                 <AccordionItem value="item-1">
-                    <AccordionTrigger className="p-1.5">
+                    <AccordionTrigger className="p-4">
                         <div className="text-left">
                             <CardTitle>User Management</CardTitle>
                             <CardDescription>Create users, manage roles, and access.</CardDescription>
                         </div>
                     </AccordionTrigger>
-                    <AccordionContent className="p-1.5 pt-0">
-                        <div className="mb-1.5 p-1 border rounded-lg bg-background/50">
-                            <h3 className="text-lg font-semibold mb-1">Create New User</h3>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-1">
-                                <div className="space-y-0.5">
+                    <AccordionContent className="p-6 pt-0">
+                        <div className="mb-6 p-4 border rounded-lg bg-background/50">
+                            <h3 className="text-lg font-semibold mb-2">Create New User</h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div className="space-y-2">
                                     <Label htmlFor="new-username">Username</Label>
                                     <Input id="new-username" placeholder="e.g. test_operator" value={newUser.username} onChange={(e) => setNewUser(p => ({ ...p, username: e.target.value }))} />
                                 </div>
-                                <div className="space-y-0.5">
+                                <div className="space-y-2">
                                     <Label htmlFor="new-password">Password</Label>
                                     <Input id="new-password" type="password" placeholder="••••••••" value={newUser.password} onChange={(e) => setNewUser(p => ({ ...p, password: e.target.value }))} />
                                 </div>
-                                <div className="space-y-0.5">
+                                <div className="space-y-2">
                                     <Label htmlFor="new-role">Role</Label>
                                     <Select value={newUser.role} onValueChange={(value) => setNewUser(p => ({ ...p, role: value }))}>
                                         <SelectTrigger id="new-role"><SelectValue /></SelectTrigger>
@@ -1966,7 +1966,7 @@ export default function AdminPage() {
                                     </Select>
                                 </div>
                             </div>
-                            <Button onClick={handleCreateUser} className="mt-1">Create User Account</Button>
+                            <Button onClick={handleCreateUser} className="mt-4">Create User Account</Button>
                         </div>
                         <ScrollArea className="h-64">
                             <Table>
@@ -2034,11 +2034,11 @@ export default function AdminPage() {
   };
   
   const renderModelManagement = () => (
-    <Card className="shadow-lg mt-1.5">
+    <Card className="shadow-lg mt-6">
         <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="item-1">
-                <AccordionTrigger className="p-1.5">
-                    <div className="flex items-center gap-1 text-left">
+                <AccordionTrigger className="p-4">
+                    <div className="flex items-center gap-4 text-left">
                         <BrainCircuit className="h-6 w-6" />
                         <div>
                             <CardTitle>AI Model Management</CardTitle>
@@ -2046,20 +2046,20 @@ export default function AdminPage() {
                         </div>
                     </div>
                 </AccordionTrigger>
-                <AccordionContent className="p-1.5 pt-0 space-y-1.5">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
-                        <div className="space-y-1">
+                <AccordionContent className="p-6 pt-0 space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-4">
                             <h3 className="font-semibold text-lg">Model Catalog</h3>
-                            <div className="flex gap-0.5">
+                            <div className="flex gap-2">
                                 <Input placeholder="New model name..." value={newMlModel.name || ''} onChange={(e) => setNewMlModel(p => ({...p, name: e.target.value}))} />
                                 <Input placeholder="Version (e.g., 1.0)" value={newMlModel.version || ''} onChange={(e) => setNewMlModel(p => ({...p, version: e.target.value}))} />
                                 <Button onClick={handleAddMlModel}><PackagePlus className="h-4 w-4" /></Button>
                             </div>
-                            <ScrollArea className="h-40 border rounded-md p-0.5 bg-background/50">
-                                {isMlModelsLoading ? <p className="text-center p-1">Loading...</p> : mlModels && mlModels.length > 0 ? (
-                                    <div className="space-y-0.5">
+                            <ScrollArea className="h-40 border rounded-md p-2 bg-background/50">
+                                {isMlModelsLoading ? <p className="text-center p-4">Loading...</p> : mlModels && mlModels.length > 0 ? (
+                                    <div className="space-y-2">
                                     {mlModels.map(m => (
-                                      <div key={m.id} className="flex justify-between items-center p-0.5 rounded-md hover:bg-muted">
+                                      <div key={m.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted">
                                           <div>
                                               <p className="font-medium">{m.name} <span className="text-xs text-muted-foreground">v{m.version}</span></p>
                                               {m.description && <p className="text-xs text-muted-foreground">{m.description}</p>}
@@ -2070,21 +2070,21 @@ export default function AdminPage() {
                                       </div>
                                     ))}
                                     </div>
-                                ) : <p className="text-center p-1 text-muted-foreground">No models in catalog.</p>}
+                                ) : <p className="text-center p-4 text-muted-foreground">No models in catalog.</p>}
                             </ScrollArea>
                         </div>
 
-                        <div className="space-y-1">
+                        <div className="space-y-4">
                             <h3 className="font-semibold text-lg">Training Datasets</h3>
-                            <div className="flex gap-0.5">
+                            <div className="flex gap-2">
                                 <Input placeholder="New dataset name..." value={newTrainDataSet.name || ''} onChange={(e) => setNewTrainDataSet(p => ({...p, name: e.target.value}))} />
                                 <Button onClick={handleAddTrainDataSet}><PackagePlus className="h-4 w-4" /></Button>
                             </div>
-                             <ScrollArea className="h-40 border rounded-md p-0.5 bg-background/50">
-                                {isTrainDataSetsLoading ? <p className="text-center p-1">Loading...</p> : trainDataSets && trainDataSets.length > 0 ? (
-                                  <div className="space-y-0.5">
+                             <ScrollArea className="h-40 border rounded-md p-2 bg-background/50">
+                                {isTrainDataSetsLoading ? <p className="text-center p-4">Loading...</p> : trainDataSets && trainDataSets.length > 0 ? (
+                                  <div className="space-y-2">
                                   {trainDataSets.map(d => (
-                                    <div key={d.id} className="flex justify-between items-center p-0.5 rounded-md hover:bg-muted">
+                                    <div key={d.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted">
                                         <p className="font-medium">{d.name}</p>
                                         <Button variant="ghost" size="icon" onClick={() => handleDeleteTrainDataSet(d.id)}>
                                             <Trash2 className="h-4 w-4 text-destructive" />
@@ -2092,15 +2092,15 @@ export default function AdminPage() {
                                     </div>
                                   ))}
                                   </div>
-                                ): <p className="text-center p-1 text-muted-foreground">No datasets in catalog.</p>}
+                                ): <p className="text-center p-4 text-muted-foreground">No datasets in catalog.</p>}
                             </ScrollArea>
                         </div>
                     </div>
 
-                    <div className="border-t pt-1.5 space-y-1">
+                    <div className="border-t pt-6 space-y-4">
                         <h3 className="font-semibold text-lg">Manual Model Training</h3>
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
-                          <div className='space-y-0.5'>
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className='space-y-2'>
                             <Label htmlFor="model-select">Select Model to Update</Label>
                             <Select onValueChange={setSelectedModelId} value={selectedModelId || ''}>
                               <SelectTrigger id="model-select">
@@ -2112,13 +2112,13 @@ export default function AdminPage() {
                               </SelectContent>
                             </Select>
                           </div>
-                          <div className='space-y-0.5'>
+                          <div className='space-y-2'>
                             <Label>Select Training Datasets (Classified Test Sessions)</Label>
-                            <ScrollArea className="h-32 border rounded-md p-0.5 bg-background/50">
-                                <div className="space-y-0.5">
-                                {isTestSessionsLoading ? <p className="p-1 text-center">Loading...</p> :
+                            <ScrollArea className="h-32 border rounded-md p-2 bg-background/50">
+                                <div className="space-y-2">
+                                {isTestSessionsLoading ? <p className="p-4 text-center">Loading...</p> :
                                  testSessions?.filter(s => s.classification && s.status === 'COMPLETED').map(d => (
-                                     <div key={d.id} className="flex items-center space-x-2 p-0.5">
+                                     <div key={d.id} className="flex items-center space-x-2 p-2">
                                          <Checkbox
                                             id={d.id}
                                             checked={selectedDataSetIds.includes(d.id)}
@@ -2135,7 +2135,7 @@ export default function AdminPage() {
                                  ))}
                                 </div>
                             </ScrollArea>
-                             <p className="text-xs text-muted-foreground mt-0">
+                             <p className="text-xs text-muted-foreground mt-1">
                               Generate demo sessions or classify real sessions to create training data.
                             </p>
                           </div>
@@ -2147,7 +2147,7 @@ export default function AdminPage() {
                           </Button>
                         </div>
                         {isTraining && (
-                            <div className="space-y-0.5">
+                            <div className="space-y-2">
                             <Label>Training Progress</Label>
                             <Progress value={trainingProgress} />
                             <div className="flex justify-between text-xs text-muted-foreground">
@@ -2165,11 +2165,11 @@ export default function AdminPage() {
   );
 
   const renderAutomatedTraining = () => (
-    <Card className="shadow-lg mt-1.5">
+    <Card className="shadow-lg mt-6">
         <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="item-1">
-                <AccordionTrigger className="p-1.5">
-                    <div className="flex items-center gap-1 text-left">
+                <AccordionTrigger className="p-4">
+                    <div className="flex items-center gap-4 text-left">
                         <BrainCircuit className="h-6 w-6 text-primary" />
                         <div>
                             <CardTitle>Automated Training Pipeline</CardTitle>
@@ -2177,8 +2177,8 @@ export default function AdminPage() {
                         </div>
                     </div>
                 </AccordionTrigger>
-                <AccordionContent className="p-1.5 pt-0 space-y-1">
-                   <div className="space-y-0.5">
+                <AccordionContent className="p-6 pt-0 space-y-4">
+                   <div className="space-y-2">
                       <Label htmlFor="auto-model-size">Model Size</Label>
                       <Select onValueChange={(value) => setAutoModelSize(value as 'small' | 'medium' | 'large')} defaultValue="medium" disabled={isAutoTraining}>
                         <SelectTrigger id="auto-model-size">
@@ -2195,7 +2195,7 @@ export default function AdminPage() {
                     {isAutoTraining ? 'Pipeline Running...' : 'Start Automated Training'}
                   </Button>
                   {isAutoTraining && autoTrainingStatus && (
-                    <div className="space-y-0.5 pt-1">
+                    <div className="space-y-2 pt-4">
                         <Label>Pipeline Progress ({autoTrainingStatus.step})</Label>
                         <Progress value={autoTrainingStatus.progress} />
                         <p className="text-xs text-muted-foreground text-center">{autoTrainingStatus.details}</p>
@@ -2211,22 +2211,22 @@ export default function AdminPage() {
     <Card className="shadow-lg">
         <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="item-1">
-                <AccordionTrigger className="p-1.5">
+                <AccordionTrigger className="p-4">
                     <div className="text-left">
                         <CardTitle>Vessel Type Management</CardTitle>
                         <CardDescription>Create and manage vessel types and their test guidelines.</CardDescription>
                     </div>
                 </AccordionTrigger>
-                <AccordionContent className="p-1.5 pt-0">
-                    <div className="space-y-1 mb-1 p-1 border rounded-lg bg-background/50">
+                <AccordionContent className="p-6 pt-0">
+                    <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
                         <h3 className="font-semibold text-center">New Vessel Type</h3>
-                        <div className="space-y-0.5">
+                        <div className="space-y-2">
                             <Label htmlFor="new-vessel-type-name">Name</Label>
                             <Input id="new-vessel-type-name" placeholder="e.g., A-Series V1" value={newVesselType.name || ''} onChange={(e) => setNewVesselType({ name: e.target.value })} />
                         </div>
-                        <Button onClick={handleAddVesselType} size="sm" className="w-full mt-0.5">Add Vessel Type</Button>
+                        <Button onClick={handleAddVesselType} size="sm" className="w-full mt-2">Add Vessel Type</Button>
                     </div>
-                    <div className="flex justify-center gap-0.5 mb-1">
+                    <div className="flex justify-center gap-2 mb-4">
                         <Button onClick={() => handleExportGuidelines()} variant="outline" size="sm">
                             <Download className="mr-2 h-4 w-4" />
                             Export All Guidelines
@@ -2237,14 +2237,14 @@ export default function AdminPage() {
                         </Button>
                         <input type="file" ref={guidelineImportRef} onChange={handleImportGuidelines} accept=".csv" className="hidden" />
                     </div>
-                    {isVesselTypesLoading ? <p className="text-center pt-2.5">Loading vessel types...</p> : (
+                    {isVesselTypesLoading ? <p className="text-center pt-10">Loading vessel types...</p> : (
                         <ScrollArea className="h-56">
-                            <div className="space-y-0.5">
+                            <div className="space-y-2">
                                 {vesselTypes?.map(p => (
-                                    <Card key={p.id} className='p-1 hover:bg-muted/50'>
+                                    <Card key={p.id} className='p-3 hover:bg-muted/50'>
                                         <div className='flex justify-between items-center'>
                                             <p className='font-semibold'>{p.name}</p>
-                                            <div className="flex flex-wrap gap-0.5">
+                                            <div className="flex flex-wrap gap-2">
                                                 <Button size="sm" variant="outline" onClick={() => handleExportGuidelines(p)}>CSV</Button>
                                                 <Button 
                                                     size="sm" 
@@ -2265,19 +2265,19 @@ export default function AdminPage() {
                                                                 Click twice to set start/end points. Drag points to adjust the curve. Double-click a point to delete it.
                                                             </DialogDescription>
                                                         </DialogHeader>
-                                                        <div className="grid grid-cols-2 gap-1">
-                                                            <div className="space-y-0.5">
+                                                        <div className="grid grid-cols-2 gap-4">
+                                                            <div className="space-y-2">
                                                                 <Label>Maximum Time (s)</Label>
                                                                 <Input type="number" value={guidelineEditorMaxX} onChange={e => setGuidelineEditorMaxX(Number(e.target.value))} />
                                                             </div>
-                                                             <div className="space-y-0.5">
+                                                             <div className="space-y-2">
                                                                 <Label>Maximum Pressure</Label>
                                                                 <Input type="number" value={guidelineEditorMaxY} onChange={e => setGuidelineEditorMaxY(Number(e.target.value))} />
                                                             </div>
                                                         </div>
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 pt-1">
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
                                                             <div>
-                                                                <h3 className="font-semibold text-center mb-0.5">Minimum Curve (Green)</h3>
+                                                                <h3 className="font-semibold text-center mb-2">Minimum Curve (Green)</h3>
                                                                 <GuidelineCurveEditor
                                                                     points={minCurvePoints}
                                                                     setPoints={setMinCurvePoints}
@@ -2288,7 +2288,7 @@ export default function AdminPage() {
                                                                 />
                                                             </div>
                                                             <div>
-                                                                <h3 className="font-semibold text-center mb-0.5">Maximum Curve (Red)</h3>
+                                                                <h3 className="font-semibold text-center mb-2">Maximum Curve (Red)</h3>
                                                                 <GuidelineCurveEditor
                                                                     points={maxCurvePoints}
                                                                     setPoints={setMaxCurvePoints}
@@ -2343,20 +2343,20 @@ const renderBatchManagement = () => (
     <Card className="shadow-lg">
         <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="item-1">
-                <AccordionTrigger className="p-1.5">
+                <AccordionTrigger className="p-4">
                     <div className="text-left">
                         <CardTitle>Batch Management</CardTitle>
                         <CardDescription>Create and manage production batches and assign them to vessel types.</CardDescription>
                     </div>
                 </AccordionTrigger>
-                <AccordionContent className="p-1.5 pt-0">
-                    <div className="space-y-1 mb-1 p-1 border rounded-lg bg-background/50">
+                <AccordionContent className="p-6 pt-0">
+                    <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
                         <h3 className="font-semibold text-center">New Batch</h3>
-                        <div className="space-y-0.5">
+                        <div className="space-y-2">
                             <Label htmlFor="new-batch-name">Batch Name/ID</Label>
                             <Input id="new-batch-name" placeholder="e.g., 2024-Q3-PROD" value={newBatch.name || ''} onChange={(e) => setNewBatch(p => ({ ...p, name: e.target.value }))} />
                         </div>
-                        <div className="space-y-0.5">
+                        <div className="space-y-2">
                             <Label htmlFor="new-batch-vessel-type">Vessel Type</Label>
                             <Select onValueChange={(value) => setNewBatch(p => ({ ...p, vesselTypeId: value }))}>
                                 <SelectTrigger id="new-batch-vessel-type">
@@ -2368,16 +2368,16 @@ const renderBatchManagement = () => (
                                 </SelectContent>
                             </Select>
                         </div>
-                        <Button onClick={handleAddBatch} size="sm" className="w-full mt-0.5" disabled={!newBatch.name || !newBatch.vesselTypeId}>Add Batch</Button>
+                        <Button onClick={handleAddBatch} size="sm" className="w-full mt-2" disabled={!newBatch.name || !newBatch.vesselTypeId}>Add Batch</Button>
                     </div>
-                    {isBatchesLoading ? <p className="text-center pt-2.5">Loading batches...</p> : (
+                    {isBatchesLoading ? <p className="text-center pt-10">Loading batches...</p> : (
                         <ScrollArea className="h-56">
-                            <div className="space-y-0.5">
+                            <div className="space-y-2">
                                 {batches?.map(b => (
-                                    <Card key={b.id} className='p-1 hover:bg-muted/50'>
-                                        <div className='flex justify-between items-center gap-0.5'>
+                                    <Card key={b.id} className='p-3 hover:bg-muted/50'>
+                                        <div className='flex justify-between items-center gap-2'>
                                             <p className='font-semibold'>{b.name}</p>
-                                            <div className="flex items-center gap-0.5">
+                                            <div className="flex items-center gap-2">
                                                 <Select value={b.vesselTypeId} onValueChange={(newVesselTypeId) => handleUpdateBatchVesselType(b.id, newVesselTypeId)}>
                                                     <SelectTrigger className="w-[150px] bg-background">
                                                         <SelectValue placeholder="Assign Vessel Type" />
@@ -2429,15 +2429,15 @@ const renderBatchManagement = () => (
 
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-950/50 dark:to-blue-950 text-foreground p-1">
-      <header className="w-full max-w-7xl mx-auto mb-1.5">
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-950/50 dark:to-blue-950 text-foreground p-4">
+      <header className="w-full max-w-7xl mx-auto mb-6">
         <Card className="shadow-lg">
-          <CardHeader className="p-1.5">
+          <CardHeader className="p-4">
             <div className="flex justify-between items-center">
                 <CardTitle className="text-2xl bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
                 Management Panel
                 </CardTitle>
-                <div className="flex items-center gap-0.5">
+                <div className="flex items-center gap-2">
                     {user && (
                       <Button onClick={() => router.push('/testing')} variant="outline">
                           <FlaskConical className="h-4 w-4 mr-2" />
@@ -2457,39 +2457,39 @@ const renderBatchManagement = () => (
         </Card>
       </header>
 
-      <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-1.5">
-          <div className="lg:col-span-1 space-y-1.5">
+      <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-1 space-y-6">
              <Card className="shadow-lg">
                   <Accordion type="single" collapsible className="w-full">
                       <AccordionItem value="item-1">
-                          <AccordionTrigger className="p-1.5">
+                          <AccordionTrigger className="p-4">
                             <div className="text-left">
                                 <CardTitle>Test Bench Management</CardTitle>
                                 <CardDescription>Manage physical test benches.</CardDescription>
                             </div>
                           </AccordionTrigger>
-                          <AccordionContent className="p-1.5 pt-0">
-                              <div className="space-y-1 mb-1 p-1 border rounded-lg bg-background/50">
+                          <AccordionContent className="p-6 pt-0">
+                              <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
                                   <h3 className="font-semibold text-center">New Test Bench</h3>
-                                  <div className="space-y-0.5">
+                                  <div className="space-y-2">
                                     <Label htmlFor="new-bench-name">Name</Label>
                                     <Input id="new-bench-name" placeholder="e.g. Bench 01" value={newTestBench.name || ''} onChange={(e) => setNewTestBench(p => ({...p, name: e.target.value}))} />
                                   </div>
-                                  <div className="space-y-0.5">
+                                  <div className="space-y-2">
                                     <Label htmlFor="new-bench-location">Location</Label>
                                     <Input id="new-bench-location" placeholder="e.g. Lab A" value={newTestBench.location || ''} onChange={(e) => setNewTestBench(p => ({...p, location: e.target.value}))} />
                                   </div>
-                                  <div className="space-y-0.5">
+                                  <div className="space-y-2">
                                     <Label htmlFor="new-bench-desc">Description</Label>
                                     <Input id="new-bench-desc" placeholder="e.g. High-pressure testing" value={newTestBench.description || ''} onChange={(e) => setNewTestBench(p => ({...p, description: e.target.value}))} />
                                   </div>
-                                  <Button onClick={handleAddTestBench} size="sm" className="w-full mt-0.5">Add Bench</Button>
+                                  <Button onClick={handleAddTestBench} size="sm" className="w-full mt-2">Add Bench</Button>
                               </div>
-                              {isTestBenchesLoading ? <p className="text-center pt-2.5">Loading test benches...</p> :
+                              {isTestBenchesLoading ? <p className="text-center pt-10">Loading test benches...</p> :
                               <ScrollArea className="h-56">
-                                  <div className="space-y-0.5">
+                                  <div className="space-y-2">
                                       {testBenches?.map(b => (
-                                          <Card key={b.id} className='p-1 hover:bg-muted/50'>
+                                          <Card key={b.id} className='p-3 hover:bg-muted/50'>
                                               <div className='flex justify-between items-center'>
                                                   <div>
                                                       <p className='font-semibold'>{b.name}</p>
@@ -2527,7 +2527,7 @@ const renderBatchManagement = () => (
               <Card className="shadow-lg">
                   <Accordion type="single" collapsible className="w-full">
                       <AccordionItem value="item-1">
-                          <AccordionTrigger className="p-1.5">
+                          <AccordionTrigger className="p-4">
                             <div className="text-left">
                                 <CardTitle>Sensor Management</CardTitle>
                                 <CardDescription>
@@ -2535,22 +2535,22 @@ const renderBatchManagement = () => (
                                 </CardDescription>
                             </div>
                           </AccordionTrigger>
-                          <AccordionContent className="p-1.5 pt-0">
-                              <div className="flex justify-center mb-1">
+                          <AccordionContent className="p-6 pt-0">
+                              <div className="flex justify-center mb-4">
                                   <Button onClick={handleNewSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">New Configuration</Button>
                               </div>
-                              {isSensorConfigsLoading ? <p className="text-center pt-2.5">Loading sensors...</p> :
+                              {isSensorConfigsLoading ? <p className="text-center pt-10">Loading sensors...</p> :
                               <ScrollArea className="h-72">
-                                  <div className="space-y-0.5">
+                                  <div className="space-y-2">
                                       {sensorConfigs?.map(c => (
-                                          <Card key={c.id} className='p-1 hover:bg-muted/50'>
+                                          <Card key={c.id} className='p-3 hover:bg-muted/50'>
                                               <div className='flex justify-between items-center'>
                                                   <div>
                                                       <p className='font-semibold'>{c.name}</p>
                                                       <p className="text-sm text-muted-foreground">{c.mode} ({c.unit})</p>
                                                       <p className="text-xs text-muted-foreground">Bench: {testBenches?.find(b => b.id === c.testBenchId)?.name || 'N/A'}</p>
                                                   </div>
-                                                  <div className='flex gap-0.5'>
+                                                  <div className='flex gap-2'>
                                                       <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
                                                       <AlertDialog>
                                                           <AlertDialogTrigger asChild>
@@ -2583,7 +2583,7 @@ const renderBatchManagement = () => (
                   </Accordion>
               </Card>
           </div>
-          <div className="lg:col-span-2 space-y-1.5">
+          <div className="lg:col-span-2 space-y-6">
               {renderTestSessionManager()}
           </div>
           {userRole === 'superadmin' && (
@@ -2592,9 +2592,9 @@ const renderBatchManagement = () => (
             </div>
           )}
           <div className="lg:col-span-3">
-            <Accordion type="single" collapsible className="w-full">
+            <Accordion type="single" collapsible>
               <AccordionItem value="item-1">
-                <AccordionTrigger>
+                <AccordionTrigger className="p-4 text-left">
                   <CardTitle>AI Model Management</CardTitle>
                 </AccordionTrigger>
                 <AccordionContent>
@@ -2604,9 +2604,9 @@ const renderBatchManagement = () => (
             </Accordion>
           </div>
            <div className="lg:col-span-3">
-            <Accordion type="single" collapsible className="w-full">
+            <Accordion type="single" collapsible>
                 <AccordionItem value="item-1">
-                  <AccordionTrigger>
+                  <AccordionTrigger className="p-4 text-left">
                     <CardTitle>Automated Training Pipeline</CardTitle>
                   </AccordionTrigger>
                   <AccordionContent>
