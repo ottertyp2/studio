@@ -45,11 +45,9 @@ export default function ValveControl() {
     sendValveCommand(valve, state);
   };
   
-  const handleSequence = (sequence: 'sequence1' | 'sequence2') => {
+  const handleSequence = (sequence: 'sequence1' | 'sequence2', state: boolean) => {
       if (!isConnected) return;
-      const isRunning = sequence === 'sequence1' ? sequence1Running : sequence2Running;
-      // Send false to stop, true to start
-      sendSequenceCommand(sequence, !isRunning);
+      sendSequenceCommand(sequence, state);
   };
 
   return (
@@ -78,10 +76,10 @@ export default function ValveControl() {
             />
             <Separator />
             <div className="flex flex-col gap-2 pt-2">
-                 {sequence1Running ? (
+                {sequence1Running ? (
                     <Button 
-                        onClick={() => handleSequence('sequence1')} 
-                        disabled={!isConnected}
+                        onClick={() => handleSequence('sequence1', false)} 
+                        disabled={!isConnected || lockedSequences.includes('sequence1')}
                         variant="destructive"
                         className="transition-all btn-shine"
                     >
@@ -90,7 +88,7 @@ export default function ValveControl() {
                     </Button>
                  ) : (
                     <Button 
-                        onClick={() => handleSequence('sequence1')} 
+                        onClick={() => handleSequence('sequence1', true)} 
                         disabled={!isConnected || lockedSequences.includes('sequence1') || sequence2Running}
                         className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
                     >
@@ -101,8 +99,8 @@ export default function ValveControl() {
 
                  {sequence2Running ? (
                     <Button 
-                        onClick={() => handleSequence('sequence2')} 
-                        disabled={!isConnected}
+                        onClick={() => handleSequence('sequence2', false)} 
+                        disabled={!isConnected || lockedSequences.includes('sequence2')}
                         variant="destructive"
                         className="transition-all btn-shine"
                     >
@@ -111,7 +109,7 @@ export default function ValveControl() {
                     </Button>
                  ) : (
                     <Button 
-                        onClick={() => handleSequence('sequence2')} 
+                        onClick={() => handleSequence('sequence2', true)} 
                         disabled={!isConnected || lockedSequences.includes('sequence2') || sequence1Running}
                         className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
                     >
