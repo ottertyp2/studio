@@ -29,7 +29,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [latency, setLatency] = useState<number | null>(null);
   
   const runningTestSessionRef = useRef<WithId<DocumentData> | null>(null);
-  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [pendingValves, setPendingValves] = useState<('VALVE1' | 'VALVE2')[]>([]);
   const [lockedValves, setLockedValves] = useState<('VALVE1' | 'VALVE2')[]>([]);
@@ -44,7 +43,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     if (!startTime) {
       setStartTime(Date.now());
     }
-  }, [startTime]);
+  }, []); // Empty dependency array ensures this runs only once.
 
   useEffect(() => {
     if (!isConnected && downtimeSinceRef.current === null) {
@@ -92,7 +91,13 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setIsRecording(data.recording === true);
     setDisconnectCount(data.disconnectCount || 0);
     setLatency(data.latency !== undefined ? data.latency : null);
-    setLastDataPointTimestamp(data.lastUpdate || null);
+    
+    // Always update the last seen timestamp
+    const lastUpdateTimestamp = data.lastUpdate ? new Date(data.lastUpdate).getTime() : null;
+    if (lastUpdateTimestamp) {
+        setLastDataPointTimestamp(lastUpdateTimestamp);
+    }
+
 
     // Write to local log for display if needed
     if (data.sensor !== null && data.lastUpdate) {
@@ -174,29 +179,29 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const listener = onValue(liveDataRef, (snap) => {
         const data = snap.val();
 
-        if (connectionTimeoutRef.current) {
-            clearTimeout(connectionTimeoutRef.current);
-        }
-
         if (data && data.lastUpdate) {
-            setIsConnected(true);
             handleNewDataPoint(data);
-            
-            connectionTimeoutRef.current = setTimeout(() => {
-                setIsConnected(false);
-            }, 5000); // 5-second timeout
-        } else {
-            setIsConnected(false);
         }
     });
 
-    return () => {
-        listener(); // Detach the listener
-        if (connectionTimeoutRef.current) {
-            clearTimeout(connectionTimeoutRef.current);
+    // Interval to check connection status based on last received timestamp
+    const connectionCheckInterval = setInterval(() => {
+        if (lastDataPointTimestamp) {
+            const now = Date.now();
+            const timeSinceLastData = now - lastDataPointTimestamp;
+            // If it's been more than 5 seconds, consider it disconnected
+            setIsConnected(timeSinceLastData < 5000);
+        } else {
+            // If we've never received data, we're disconnected
+            setIsConnected(false);
         }
+    }, 2000); // Check every 2 seconds
+
+    return () => {
+        listener(); // Detach the onValue listener
+        clearInterval(connectionCheckInterval); // Clear the interval
     };
-  }, [database, handleNewDataPoint]);
+  }, [database, handleNewDataPoint, lastDataPointTimestamp]);
 
 
   const value = {
