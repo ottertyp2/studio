@@ -62,7 +62,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import ValveControl from '@/components/dashboard/ValveControl';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger, SheetOverlay } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
@@ -1116,19 +1116,7 @@ function TestingComponent() {
                                                     </div>
                                                 </div>
                                                  <div className="flex items-center gap-2">
-                                                    {session.status === 'COMPLETED' && (
-                                                        <Button 
-                                                            size="sm" 
-                                                            variant="outline"
-                                                            onClick={() => {
-                                                                setIsReportDialogOpen(true);
-                                                                setReportType('single');
-                                                                setSelectedReportSessionId(session.id);
-                                                            }}
-                                                        >
-                                                            <FileText className="h-4 w-4"/>
-                                                        </Button>
-                                                    )}
+                                                    
                                                     <AlertDialog>
                                                         <AlertDialogTrigger asChild>
                                                             <Button size="sm" variant="destructive"><Trash2 className="h-4 w-4"/></Button>
@@ -1241,4 +1229,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
 
