@@ -403,18 +403,6 @@ function TestingComponent() {
         return [];
     }
 
-    // 1. Find the earliest timestamp across all selected sessions to use as a global starting point.
-    const validStartTimes = comparisonSessions
-        .map(session => {
-            const sessionData = comparisonData[session.id];
-            return sessionData?.[0]?.timestamp ? new Date(sessionData[0].timestamp).getTime() : Infinity;
-        })
-        .filter(time => time !== Infinity);
-
-    if (validStartTimes.length === 0) return [];
-    
-    const globalStart = Math.min(...validStartTimes);
-
     const allDataPoints: Record<number, ChartDataPoint> = {};
     let firstSessionWithGuidelines: WithId<TestSession> | undefined = undefined;
 
@@ -427,10 +415,10 @@ function TestingComponent() {
         }
 
         const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+        const sessionStartTime = new Date(sessionData[0].timestamp).getTime();
 
         sessionData.forEach(d => {
-            // 2. Calculate time relative to the global start.
-            const time = parseFloat(((new Date(d.timestamp).getTime() - globalStart) / 1000).toFixed(2));
+            const time = parseFloat(((new Date(d.timestamp).getTime() - sessionStartTime) / 1000).toFixed(2));
             const value = parseFloat(convertRawValue(d.value, config || null).toFixed(config?.decimalPlaces || 2));
             
             if (!allDataPoints[time]) {
@@ -461,15 +449,8 @@ function TestingComponent() {
   
     Object.values(allDataPoints).forEach(point => {
       if (vesselTypeForGuidelines) {
-        // Since the chart now uses an absolute timeline from globalStart, we need to adjust the guideline lookup.
-        // We find the first session's relative start time and use that to offset the guideline time `x`.
-        const firstSessionData = comparisonData[firstSessionWithGuidelines!.id];
-        if (firstSessionData && firstSessionData.length > 0) {
-          const firstSessionStartTime = new Date(firstSessionData[0].timestamp).getTime();
-          const relativeTimeForGuideline = point.name - ((firstSessionStartTime - globalStart) / 1000);
-          point.minGuideline = interpolateCurve(vesselTypeForGuidelines.minCurve, relativeTimeForGuideline);
-          point.maxGuideline = interpolateCurve(vesselTypeForGuidelines.maxCurve, relativeTimeForGuideline);
-        }
+        point.minGuideline = interpolateCurve(vesselTypeForGuidelines.minCurve, point.name);
+        point.maxGuideline = interpolateCurve(vesselTypeForGuidelines.maxCurve, point.name);
       }
     });
   
@@ -563,18 +544,16 @@ function TestingComponent() {
         let logoBase64: string | null = null;
         try {
             logoBase64 = await toBase64('/images/logo.png');
-            console.log("Logo base64 fetched successfully.");
-            if (!logoBase64 || !logoBase64.startsWith('data:image')) {
-                throw new Error("Conversion to base64 failed or returned invalid format.");
+            if (!logoBase64.startsWith('data:image')) {
+                throw new Error('Conversion to base64 failed or returned invalid format.');
             }
         } catch (error: any) {
-            console.error("PDF Logo Generation Error:", error.message);
+            console.error("PDF Logo Generation Error:", error);
             toast({
                 variant: "destructive",
                 title: "Could Not Load Logo",
-                description: `The report will be generated without a logo. Check console for details.`,
+                description: `The report will be generated without a logo. ${error.message}`,
             });
-            logoBase64 = null;
         }
         
         try {
@@ -631,7 +610,29 @@ function TestingComponent() {
                 columnGap: 10,
             });
             docDefinition.content.push({ text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' });
-             docDefinition.content.push({ image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] });
+            
+            const firstData = comparisonData[comparisonSessions[0]?.id] || [];
+            const startTime = firstData.length > 0 ? new Date(firstData[0].timestamp).getTime() : 0;
+            const pdfChartData = Object.entries(comparisonData).flatMap(([sessionId, data]) => {
+                const session = comparisonSessions.find(s => s.id === sessionId);
+                if (!session) return [];
+                const sessionStart = data.length > 0 ? new Date(data[0].timestamp).getTime() : 0;
+                return data.map(d => ({
+                    [session.id]: d.value,
+                    name: (new Date(d.timestamp).getTime() - sessionStart) / 1000
+                }));
+            });
+
+            const mergedChartData: any[] = [];
+            const tempMap: Record<string, any> = {};
+            pdfChartData.forEach(dp => {
+                const key = dp.name.toFixed(2);
+                if (!tempMap[key]) tempMap[key] = { name: dp.name };
+                Object.assign(tempMap[key], dp);
+            });
+            mergedChartData.push(...Object.values(tempMap).sort((a,b) => a.name - b.name));
+            
+            docDefinition.content.push({ image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] });
 
             // Table Content
             if (reportType === 'single' && sessionToReport) {
