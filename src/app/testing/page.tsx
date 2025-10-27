@@ -533,27 +533,34 @@ function TestingComponent() {
 
   const generateReport = async (session: WithId<TestSession>) => {
     if (!firestore || !chartRef.current) {
-      toast({ variant: 'destructive', title: 'Report Failed', description: 'A required component is not ready.' });
-      return;
+        toast({ variant: 'destructive', title: 'Report Failed', description: 'A required component is not ready.' });
+        return;
     }
-  
+
     setIsGeneratingReport(true);
     toast({ title: 'Generating Report...', description: 'Please wait, this can take a moment.' });
-  
+
+    // Temporarily select only this session to render the chart for it
+    const originalComparisonSessions = [...comparisonSessions];
+    setComparisonSessions([session]);
+
+    // Give React a moment to re-render the chart with just the single session
+    await new Promise(resolve => setTimeout(resolve, 500));
+
     try {
         const dataForReport = comparisonData[session.id];
         const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
         const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
         const batch = batches?.find(b => b.id === session.batchId);
-  
+
         // 1. Validation
         if (!dataForReport || !config || !vesselType || !batch) {
             throw new Error(`Could not find all required data. Missing: ${!dataForReport ? 'session data' : ''} ${!config ? 'sensor config' : ''} ${!vesselType ? 'vessel type' : ''} ${!batch ? 'batch info' : ''}`);
         }
-  
+
         // 2. Generate Chart Image
-        const chartImage = await htmlToImage.toPng(chartRef.current, { 
-            quality: 0.95, 
+        const chartImage = await htmlToImage.toPng(chartRef.current, {
+            quality: 0.95,
             backgroundColor: '#ffffff'
         });
 
@@ -561,10 +568,10 @@ function TestingComponent() {
         const startTime = new Date(session.startTime);
         const endTime = session.endTime ? new Date(session.endTime) : null;
         const duration = endTime ? formatDistanceToNow(startTime, {
-             unit: 'minute',
-             addSuffix: false
-        }).replace('about ','') : 'In Progress';
-  
+            unit: 'minute',
+            addSuffix: false
+        }).replace('about ', '') : 'In Progress';
+
         const summaryStats = dataForReport.reduce((acc, point) => {
             const converted = convertRawValue(point.value, config);
             acc.max = Math.max(acc.max, converted);
@@ -573,9 +580,9 @@ function TestingComponent() {
             return acc;
         }, { max: -Infinity, min: Infinity, sum: 0 });
         const avg = dataForReport.length > 0 ? summaryStats.sum / dataForReport.length : 0;
-  
+
         const getStatusText = (classification?: 'LEAK' | 'DIFFUSION') => {
-            switch(classification) {
+            switch (classification) {
                 case 'DIFFUSION': return { text: 'Passed', color: 'green', bold: true };
                 case 'LEAK': return { text: 'Not Passed', color: 'red', bold: true };
                 default: return { text: 'Undetermined', color: 'gray', bold: false };
@@ -588,14 +595,14 @@ function TestingComponent() {
                 { text: 'Test Session Report', style: 'header' },
                 { text: `Vessel: ${vesselType.name} (S/N: ${session.serialNumber || 'N/A'})`, style: 'subheader' },
                 { text: `Batch: ${batch.name}`, style: 'body' },
-                { text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body', margin: [0, 0, 0, 15] },
-                
+                { text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body', margin: [0, 0, 0, 10] },
+
                 {
                     style: 'tableExample',
                     table: {
                         widths: ['*', '*'],
                         body: [
-                            [{text: 'Test Details', style: 'tableHeader', colSpan: 2, alignment: 'center'}, {}],
+                            [{ text: 'Test Details', style: 'tableHeader', colSpan: 2, alignment: 'center' }, {}],
                             ['Tested By', session.username],
                             ['Start Time', startTime.toLocaleString()],
                             ['End Time', endTime ? endTime.toLocaleString() : 'N/A'],
@@ -608,10 +615,11 @@ function TestingComponent() {
 
                 {
                     style: 'tableExample',
+                    margin: [0, 5, 0, 10],
                     table: {
                         widths: ['*', '*'],
                         body: [
-                            [{text: 'Summary of Results', style: 'tableHeader', colSpan: 2, alignment: 'center'}, {}],
+                            [{ text: 'Summary of Results', style: 'tableHeader', colSpan: 2, alignment: 'center' }, {}],
                             ['Number of Data Points', dataForReport.length],
                             ['Maximum Value', `${summaryStats.max.toFixed(config.decimalPlaces)} ${config.unit}`],
                             ['Minimum Value', `${summaryStats.min.toFixed(config.decimalPlaces)} ${config.unit}`],
@@ -620,31 +628,33 @@ function TestingComponent() {
                     },
                     layout: 'lightHorizontalLines'
                 },
-                
-                { text: 'Session Notes', style: 'subheader', margin: [0, 15, 0, 5] },
-                { text: session.description || 'No notes provided.', style: 'body', margin: [0, 0, 0, 15] },
 
-                { text: 'Pressure Curve Visualization', style: 'subheader', pageBreak: 'before', margin: [0, 0, 0, 5] },
-                { image: chartImage, width: 500 }
+                { text: 'Session Notes', style: 'subheader', margin: [0, 5, 0, 5] },
+                { text: session.description || 'No notes provided.', style: 'body', margin: [0, 0, 0, 10] },
+
+                { text: 'Pressure Curve Visualization', style: 'subheader', margin: [0, 5, 0, 5] },
+                { image: chartImage, width: 500, alignment: 'center' }
             ],
             styles: {
                 header: { fontSize: 22, bold: true, alignment: 'center', margin: [0, 0, 0, 10], color: '#1E40AF' },
                 subheader: { fontSize: 14, bold: true, margin: [0, 10, 0, 5] },
                 body: { fontSize: 10 },
-                tableExample: { margin: [0, 5, 0, 15], fontSize: 10 },
+                tableExample: { fontSize: 10 },
                 tableHeader: { bold: true, fontSize: 11, color: 'black' }
             }
         };
-  
+
         // 5. Create and Download PDF
         pdfMake.createPdf(docDefinition).download(`report-${session.vesselTypeName.replace(/\s+/g, '_')}-${session.serialNumber || session.id}.pdf`);
         toast({ title: 'Report Generated', description: 'Your PDF report is downloading.' });
-  
+
     } catch (e: any) {
-      console.error("PDF Generation Error:", e);
-      toast({ variant: 'destructive', title: 'Report Failed', description: `Could not generate the PDF. ${e.message}` });
+        console.error("PDF Generation Error:", e);
+        toast({ variant: 'destructive', title: 'Report Failed', description: `Could not generate the PDF. ${e.message}` });
     } finally {
-      setIsGeneratingReport(false);
+        setIsGeneratingReport(false);
+        // Restore original selections after generation
+        setComparisonSessions(originalComparisonSessions);
     }
   };
 
@@ -717,7 +727,7 @@ function TestingComponent() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-1">
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 text-foreground p-1">
       <header className="w-full max-w-7xl mx-auto mb-3">
         <Card className="shadow-lg">
           <CardHeader>
@@ -927,7 +937,7 @@ function TestingComponent() {
                                                     </div>
                                                 </div>
                                                 <div className="flex gap-2">
-                                                    {comparisonSessions.length === 1 && comparisonSessions[0].id === session.id && session.status === 'COMPLETED' && (
+                                                    {session.status === 'COMPLETED' && (
                                                         <Button size="sm" onClick={() => generateReport(session)} disabled={isGeneratingReport}>
                                                             {isGeneratingReport ? <Loader2 className="animate-spin" /> : <Download className="h-4 w-4"/>}
                                                         </Button>
@@ -1009,11 +1019,11 @@ function TestingComponent() {
                             name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`} 
                             dot={false} 
                             strokeWidth={2} 
-                            isAnimationActive={!isLoadingComparisonData && session.status !== 'RUNNING'} />
+                            isAnimationActive={!isGeneratingReport && !isLoadingComparisonData && session.status !== 'RUNNING'} />
                         ))}
 
-                        <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
-                        <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
+                        <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" isAnimationActive={!isGeneratingReport} />
+                        <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" isAnimationActive={!isGeneratingReport} />
                       </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -1031,7 +1041,7 @@ export default function TestingPage() {
 
     if (isUserLoading || !areServicesAvailable) {
         return (
-            <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950">
+            <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-blue-200">
                 <p className="text-lg">Loading Dashboard...</p>
             </div>
         );
