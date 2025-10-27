@@ -70,7 +70,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Edit, Upload, FileSignature, Layers } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Edit, Upload, FileSignature, Layers, Calendar as CalendarIcon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
@@ -81,6 +81,11 @@ import { Textarea } from '@/components/ui/textarea';
 import GuidelineCurveEditor from '@/components/admin/GuidelineCurveEditor';
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
+import { convertRawValue } from '@/lib/utils';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { addDays, format } from 'date-fns';
+import type { DateRange } from 'react-day-picker';
 
 if (pdfFonts.pdfMake) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
@@ -221,6 +226,7 @@ export default function AdminPage() {
   const [sessionBatchFilter, setSessionBatchFilter] = useState('all');
   const [sessionTestBenchFilter, setSessionTestBenchFilter] = useState('all');
   const [sessionClassificationFilter, setSessionClassificationFilter] = useState('all');
+  const [sessionDateFilter, setSessionDateFilter] = useState<DateRange | undefined>(undefined);
 
   const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
   const [bulkClassifyModelId, setBulkClassifyModelId] = useState<string | null>(null);
@@ -1071,6 +1077,17 @@ export default function AdminPage() {
             }
         }
 
+        if (sessionDateFilter?.from) {
+          const fromDate = sessionDateFilter.from;
+          fromDate.setHours(0, 0, 0, 0);
+          filtered = filtered.filter(session => new Date(session.startTime) >= fromDate);
+        }
+        if (sessionDateFilter?.to) {
+            const toDate = sessionDateFilter.to;
+            toDate.setHours(23, 59, 59, 999);
+            filtered = filtered.filter(session => new Date(session.startTime) <= toDate);
+        }
+
         filtered = filtered.filter(session => {
             const searchTerm = sessionSearchTerm.toLowerCase();
             if (!searchTerm) return true;
@@ -1112,15 +1129,16 @@ export default function AdminPage() {
             }
         });
 
-  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, testBenches, batches]);
+  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, sessionDateFilter, testBenches, batches]);
 
   const isFilterActive = useMemo(() => {
     return sessionUserFilter !== 'all' || 
            sessionVesselTypeFilter !== 'all' || 
            sessionBatchFilter !== 'all' ||
            sessionTestBenchFilter !== 'all' || 
-           sessionClassificationFilter !== 'all';
-  }, [sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter]);
+           sessionClassificationFilter !== 'all' ||
+           !!sessionDateFilter;
+  }, [sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, sessionDateFilter]);
 
   const handleAddVesselType = () => {
     if (!firestore || !newVesselType.name?.trim() || !vesselTypesCollectionRef) {
@@ -1365,14 +1383,6 @@ export default function AdminPage() {
 
         const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
 
-        const getStatusText = (classification?: 'LEAK' | 'DIFFUSION') => {
-          switch(classification) {
-              case 'DIFFUSION': return { text: 'Passed', color: 'green' };
-              case 'LEAK': return { text: 'Not Passed', color: 'red' };
-              default: return { text: 'Undetermined', color: 'gray' };
-          }
-        };
-        
         return [
           batchName ?? 'N/A',
           session.serialNumber || 'N/A',
@@ -1380,7 +1390,7 @@ export default function AdminPage() {
           session.username ?? 'N/A',
           endPressure,
           duration,
-          getStatusText(session.classification)
+          getClassificationText(session.classification)
         ];
       });
 
@@ -1424,13 +1434,14 @@ export default function AdminPage() {
   };
 
   const handleExportSessionCSV = async (session: TestSession) => {
-    if (!firestore) {
-      toast({ variant: "destructive", title: "Error", description: "Firestore not available." });
+    if (!firestore || !sensorConfigs) {
+      toast({ variant: "destructive", title: "Error", description: "Firestore or sensor configurations not available." });
       return;
     }
   
     const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
     const q = query(sensorDataRef, orderBy("timestamp", "asc"));
+    const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
     
     try {
       const snapshot = await getDocs(q);
@@ -1441,11 +1452,16 @@ export default function AdminPage() {
       
       const sensorData = snapshot.docs.map(doc => doc.data());
   
-      const csvData = sensorData.map(d => ({
-        ...session,
-        sensor_timestamp: d.timestamp,
-        sensor_value: d.value,
-      }));
+      const csvData = sensorData.map(d => {
+        const converted = config ? convertRawValue(d.value, config) : d.value;
+        return {
+            ...session,
+            sensor_timestamp: d.timestamp,
+            sensor_value_raw: d.value,
+            sensor_value_converted: config ? converted.toFixed(config.decimalPlaces) : converted,
+            sensor_unit: config?.unit || 'RAW',
+        }
+      });
   
       const csv = Papa.unparse(csvData);
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -1461,6 +1477,63 @@ export default function AdminPage() {
   
     } catch (error: any) {
       toast({ variant: "destructive", title: "Export Failed", description: error.message });
+    }
+  };
+
+  const handleExportFilteredSessions = async () => {
+    if (!firestore || !sensorConfigs) {
+      toast({ variant: "destructive", title: "Error", description: "Firestore or sensor configurations not available." });
+      return;
+    }
+    if (filteredAndSortedSessions.length === 0) {
+      toast({ title: "No Data", description: "No sessions match the current filters." });
+      return;
+    }
+    
+    toast({ title: "Exporting CSV...", description: `Preparing data for ${filteredAndSortedSessions.length} sessions. This may take a moment.`});
+
+    try {
+      let allCsvData: any[] = [];
+      for (const session of filteredAndSortedSessions) {
+        const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+        const q = query(sensorDataRef, orderBy("timestamp", "asc"));
+        const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
+        
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+          const sensorData = snapshot.docs.map(doc => doc.data());
+          sensorData.forEach(d => {
+            const converted = config ? convertRawValue(d.value, config) : d.value;
+            allCsvData.push({
+              session_name: `${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`,
+              session_date: session.startTime,
+              sensor_timestamp: d.timestamp,
+              sensor_value_converted: config ? converted.toFixed(config.decimalPlaces) : converted,
+              sensor_unit: config?.unit || 'RAW'
+            });
+          });
+        }
+      }
+
+      if (allCsvData.length === 0) {
+        toast({ title: "No Sensor Data", description: "The filtered sessions have no sensor data to export." });
+        return;
+      }
+
+      const csv = Papa.unparse(allCsvData);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", `filtered_sessions_report.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast({ title: "Filtered Sessions Exported", description: "The CSV file is downloading." });
+
+    } catch (error: any) {
+        toast({ variant: "destructive", title: "Export Failed", description: error.message });
     }
   };
   
@@ -1531,7 +1604,7 @@ export default function AdminPage() {
                         const sensorDataRef = doc(collection(sessionRef, 'sensor_data'));
                         batch.set(sensorDataRef, {
                             timestamp: row.sensor_timestamp,
-                            value: parseFloat(row.sensor_value),
+                            value: parseFloat(row.sensor_value_raw), // Always import the raw value
                         });
                     });
 
@@ -1664,7 +1737,11 @@ export default function AdminPage() {
                 Manage and review all test sessions.
               </CardDescription>
             </div>
-            <div>
+            <div className="flex gap-2">
+                <Button onClick={handleExportFilteredSessions} variant="outline">
+                    <Download className="mr-2 h-4 w-4" />
+                    Export Filtered to CSV
+                </Button>
                 <Button onClick={() => sessionImportRef.current?.click()} variant="outline">
                     <Upload className="mr-2 h-4 w-4" />
                     Import Sessions
@@ -1709,6 +1786,42 @@ export default function AdminPage() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-[250px]">
                         <div className="p-2 space-y-2">
+                             <div className="space-y-1">
+                                <Label>Date Range</Label>
+                                 <Popover>
+                                    <PopoverTrigger asChild>
+                                    <Button
+                                        id="date"
+                                        variant={"outline"}
+                                        className="w-full justify-start text-left font-normal"
+                                    >
+                                        <CalendarIcon className="mr-2 h-4 w-4" />
+                                        {sessionDateFilter?.from ? (
+                                        sessionDateFilter.to ? (
+                                            <>
+                                            {format(sessionDateFilter.from, "LLL dd, y")} -{" "}
+                                            {format(sessionDateFilter.to, "LLL dd, y")}
+                                            </>
+                                        ) : (
+                                            format(sessionDateFilter.from, "LLL dd, y")
+                                        )
+                                        ) : (
+                                        <span>Pick a date</span>
+                                        )}
+                                    </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0" align="start">
+                                    <Calendar
+                                        initialFocus
+                                        mode="range"
+                                        defaultMonth={sessionDateFilter?.from}
+                                        selected={sessionDateFilter}
+                                        onSelect={setSessionDateFilter}
+                                        numberOfMonths={2}
+                                    />
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
                             <div className="space-y-1">
                                 <Label>User</Label>
                                 <Select value={sessionUserFilter} onValueChange={setSessionUserFilter}>
