@@ -82,7 +82,7 @@ export default function ValveControl() {
                     onClick={() => handleSequence('sequence1')} 
                     disabled={!isConnected || lockedSequences.includes('sequence1') || sequence2Running}
                     variant={sequence1Running ? "destructive" : "default"}
-                    className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
+                    className="transition-all btn-shine"
                 >
                     {lockedSequences.includes('sequence1') ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (sequence1Running ? <Square className="mr-2 h-4 w-4" /> : <Zap className="mr-2 h-4 w-4" />)}
                     {sequence1Running ? 'Stop Sequence 1' : 'Run Sequence 1'}
@@ -91,7 +91,7 @@ export default function ValveControl() {
                     onClick={() => handleSequence('sequence2')} 
                     disabled={!isConnected || lockedSequences.includes('sequence2') || sequence1Running}
                     variant={sequence2Running ? "destructive" : "default"}
-                    className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
+                    className="transition-all btn-shine"
                 >
                     {lockedSequences.includes('sequence2') ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (sequence2Running ? <Square className="mr-2 h-4 w-4" /> : <Zap className="mr-2 h-4 w-4" />)}
                     {sequence2Running ? 'Stop Sequence 2' : 'Run Sequence 2'}
