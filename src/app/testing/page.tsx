@@ -400,12 +400,24 @@ function TestingComponent() {
 
   const chartData = useMemo(() => {
     if (comparisonSessions.length === 0 || Object.keys(comparisonData).length === 0) {
-      return [];
+        return [];
     }
-  
+
+    // 1. Find the earliest timestamp across all selected sessions to use as a global starting point.
+    const validStartTimes = comparisonSessions
+        .map(session => {
+            const sessionData = comparisonData[session.id];
+            return sessionData?.[0]?.timestamp ? new Date(sessionData[0].timestamp).getTime() : Infinity;
+        })
+        .filter(time => time !== Infinity);
+
+    if (validStartTimes.length === 0) return [];
+    
+    const globalStart = Math.min(...validStartTimes);
+
     const allDataPoints: Record<number, ChartDataPoint> = {};
     let firstSessionWithGuidelines: WithId<TestSession> | undefined = undefined;
-  
+
     comparisonSessions.forEach(session => {
         const sessionData = comparisonData[session.id] || [];
         if (sessionData.length === 0) return;
@@ -413,25 +425,21 @@ function TestingComponent() {
         if (!firstSessionWithGuidelines) {
             firstSessionWithGuidelines = session;
         }
-        
-        const startTime = new Date(sessionData[0].timestamp).getTime();
+
         const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
 
-        let processedData: { time: number, value: number }[] = sessionData.map(d => {
-            const time = parseFloat(((new Date(d.timestamp).getTime() - startTime) / 1000).toFixed(2));
+        sessionData.forEach(d => {
+            // 2. Calculate time relative to the global start.
+            const time = parseFloat(((new Date(d.timestamp).getTime() - globalStart) / 1000).toFixed(2));
             const value = parseFloat(convertRawValue(d.value, config || null).toFixed(config?.decimalPlaces || 2));
-            return { time, value };
-        });
-
-        processedData.forEach(p => {
-            const time = p.time;
+            
             if (!allDataPoints[time]) {
                 allDataPoints[time] = { name: time };
             }
-            allDataPoints[time][session.id] = p.value;
+            allDataPoints[time][session.id] = value;
         });
     });
-  
+
     const vesselTypeForGuidelines = vesselTypes?.find(vt => vt.id === firstSessionWithGuidelines?.vesselTypeId);
     
     const interpolateCurve = (curve: {x: number, y: number}[], x: number) => {
@@ -453,13 +461,21 @@ function TestingComponent() {
   
     Object.values(allDataPoints).forEach(point => {
       if (vesselTypeForGuidelines) {
-        point.minGuideline = interpolateCurve(vesselTypeForGuidelines.minCurve, point.name);
-        point.maxGuideline = interpolateCurve(vesselTypeForGuidelines.maxCurve, point.name);
+        // Since the chart now uses an absolute timeline from globalStart, we need to adjust the guideline lookup.
+        // We find the first session's relative start time and use that to offset the guideline time `x`.
+        const firstSessionData = comparisonData[firstSessionWithGuidelines!.id];
+        if (firstSessionData && firstSessionData.length > 0) {
+          const firstSessionStartTime = new Date(firstSessionData[0].timestamp).getTime();
+          const relativeTimeForGuideline = point.name - ((firstSessionStartTime - globalStart) / 1000);
+          point.minGuideline = interpolateCurve(vesselTypeForGuidelines.minCurve, relativeTimeForGuideline);
+          point.maxGuideline = interpolateCurve(vesselTypeForGuidelines.maxCurve, relativeTimeForGuideline);
+        }
       }
     });
   
     return Object.values(allDataPoints).sort((a, b) => a.name - b.name);
-  }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
+}, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
+
 
   const setTimeframe = (frame: '1m' | '5m' | 'all') => {
       setActiveTimeframe(frame);
@@ -499,19 +515,17 @@ function TestingComponent() {
   }, [currentValue, activeSensorConfig, runningTestSession, sensorConfigs]);
   
   const downtimePercentage = useMemo(() => {
-    if (!lastDataPointTimestamp) return 0;
+    if (!lastDataPointTimestamp) return 100;
     const now = Date.now();
     const timeSinceLastData = now - lastDataPointTimestamp;
     
-    // Assuming if we haven't received data for more than 5 seconds, we're "down".
-    // A more sophisticated calculation would track total downtime over a period.
-    // For a simple UI indicator, this works.
     if (!isConnected) {
         return 100;
     }
     
+    // Treat anything over 5s as downtime for the UI indicator
     return Math.min(100, (timeSinceLastData / 5000) * 100);
-}, [isConnected, lastDataPointTimestamp, now]);
+  }, [isConnected, lastDataPointTimestamp, now]);
 
 
   const isDuringDowntime = useMemo(() => {
@@ -549,16 +563,18 @@ function TestingComponent() {
         let logoBase64: string | null = null;
         try {
             logoBase64 = await toBase64('/images/logo.png');
+            console.log("Logo base64 fetched successfully.");
             if (!logoBase64 || !logoBase64.startsWith('data:image')) {
                 throw new Error("Conversion to base64 failed or returned invalid format.");
             }
         } catch (error: any) {
-            console.error("PDF Logo Generation Error:", error);
+            console.error("PDF Logo Generation Error:", error.message);
             toast({
                 variant: "destructive",
                 title: "Could Not Load Logo",
-                description: `The report will be generated without a logo. ${error.message}`,
+                description: `The report will be generated without a logo. Check console for details.`,
             });
+            logoBase64 = null;
         }
         
         try {
@@ -622,9 +638,11 @@ function TestingComponent() {
                 const config = sensorConfigs?.find(c => c.id === sessionToReport.sensorConfigurationId);
                 const batch = batches?.find(b => b.id === sessionToReport.batchId);
                 const data = comparisonData[sessionToReport.id] || [];
-                const startTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(sessionToReport.startTime).getTime();
-                const endTime = sessionToReport.endTime ? new Date(sessionToReport.endTime).getTime() : (data.length > 0 ? new Date(data[data.length-1].timestamp).getTime() : startTime);
-                const duration = ((endTime - startTime) / 1000).toFixed(1);
+                
+                const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(sessionToReport.startTime).getTime();
+                const sessionEndTime = sessionToReport.endTime ? new Date(sessionToReport.endTime).getTime() : (data.length > 0 ? new Date(data[data.length-1].timestamp).getTime() : sessionStartTime);
+                const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
+
                 const endValue = data.length > 0 ? data[data.length-1].value : undefined;
                 const endPressure = (endValue !== undefined && config) ? `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${config.unit}` : 'N/A';
                 
@@ -652,9 +670,11 @@ function TestingComponent() {
                 const tableBody = sessionsForBatchReport.map(session => {
                     const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
                     const data = comparisonData[session.id] || [];
-                    const startTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(session.startTime).getTime();
-                    const endTime = session.endTime ? new Date(session.endTime).getTime() : (data.length > 0 ? new Date(data[data.length - 1].timestamp).getTime() : startTime);
-                    const duration = ((endTime - startTime) / 1000).toFixed(1);
+
+                    const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(session.startTime).getTime();
+                    const sessionEndTime = session.endTime ? new Date(session.endTime).getTime() : (data.length > 0 ? new Date(data[data.length - 1].timestamp).getTime() : sessionStartTime);
+                    
+                    const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
                     const endValue = data.length > 0 ? data[data.length-1].value : undefined;
                     const endPressure = (endValue !== undefined && config) ? `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${config.unit}` : 'N/A';
                     
