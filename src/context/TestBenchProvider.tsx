@@ -34,6 +34,24 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [pendingValves, setPendingValves] = useState<('VALVE1' | 'VALVE2')[]>([]);
   const [lockedValves, setLockedValves] = useState<('VALVE1' | 'VALVE2')[]>([]);
 
+  // State for downtime calculation
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [totalDowntime, setTotalDowntime] = useState(0);
+  const downtimeSinceRef = useRef<number | null>(null);
+  
+  useEffect(() => {
+    setStartTime(Date.now());
+  }, []);
+
+  useEffect(() => {
+    if (downtimeSinceRef.current === null && !isConnected) {
+        downtimeSinceRef.current = Date.now();
+    } else if (downtimeSinceRef.current !== null && isConnected) {
+        setTotalDowntime(prev => prev + (Date.now() - (downtimeSinceRef.current ?? Date.now())));
+        downtimeSinceRef.current = null;
+    }
+  }, [isConnected]);
+
   // Monitor running sessions from Firestore
   useEffect(() => {
     if (!firestore || !user) return;
@@ -195,6 +213,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     deleteSession: async () => {},
     pendingValves,
     lockedValves,
+    startTime,
+    totalDowntime,
+    downtimeSinceRef,
   };
 
   return (

@@ -48,12 +48,13 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer } from 'lucide-react';
+import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, WithId } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
 import { useTestBench } from '@/context/TestBenchContext';
 import { collection, query, where, getDocs, doc, onSnapshot, writeBatch, orderBy, limit, getDoc } from 'firebase/firestore';
+import { ref, get } from 'firebase/database';
 import { formatDistanceToNow } from 'date-fns';
 import { convertRawValue } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
@@ -66,6 +67,7 @@ import { Badge } from '@/components/ui/badge';
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
 import * as htmlToImage from 'html-to-image';
+import { analyzeArduinoCrashes, AnalyzeArduinoCrashesOutput } from '@/ai/flows/analyze-arduino-crashes';
 
 if (pdfFonts.pdfMake) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
@@ -135,6 +137,21 @@ type TestBench = {
     name: string;
 }
 
+type CrashReport = {
+    reason: string;
+    timestamp: number;
+    errors: {
+      latency: number;
+      update: number;
+      stream: number;
+    };
+    totals: {
+      latency: number;
+      update: number;
+      stream: number;
+    };
+};
+
 const CHART_COLORS = [
   'hsl(var(--chart-1))',
   'hsl(var(--chart-2))',
@@ -158,6 +175,9 @@ function TestingComponent() {
     disconnectCount,
     sendRecordingCommand,
     latency,
+    startTime,
+    totalDowntime,
+    downtimeSinceRef,
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
@@ -183,15 +203,16 @@ function TestingComponent() {
   const [xAxisDomain, setXAxisDomain] = useState<[number | 'dataMin' | 'dataMax', number | 'dataMin' | 'dataMax']>(['dataMin', 'dataMax']);
   const [activeTimeframe, setActiveTimeframe] = useState('all');
 
-  const [startTime] = useState(Date.now());
-  const [totalDowntime, setTotalDowntime] = useState(0);
-  const downtimeSinceRef = useRef<number | null>(null);
   const [now, setNow] = useState(Date.now());
   
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportType, setReportType] = useState<'single' | 'batch' | null>(null);
   const [selectedReportSessionId, setSelectedReportSessionId] = useState<string | null>(null);
   const [selectedReportBatchId, setSelectedReportBatchId] = useState<string | null>(null);
+  const [isCrashPanelOpen, setIsCrashPanelOpen] = useState(false);
+  const [crashReport, setCrashReport] = useState<CrashReport | null>(null);
+  const [crashAnalysis, setCrashAnalysis] = useState<AnalyzeArduinoCrashesOutput | null>(null);
+  const [isAnalyzingCrash, setIsAnalyzingCrash] = useState(false);
 
 
   // Data fetching hooks
@@ -213,20 +234,8 @@ function TestingComponent() {
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    if (!isDeviceConnected) {
-      if (downtimeSinceRef.current === null) {
-        downtimeSinceRef.current = Date.now();
-      }
-    } else {
-      if (downtimeSinceRef.current !== null) {
-        setTotalDowntime(prev => prev + (Date.now() - (downtimeSinceRef.current ?? Date.now())));
-        downtimeSinceRef.current = null;
-      }
-    }
-  }, [isDeviceConnected]);
-
   const downtimePercentage = useMemo(() => {
+    if (!startTime) return 0;
     const totalTime = now - startTime;
     if (totalTime === 0) return 0;
 
@@ -237,7 +246,7 @@ function TestingComponent() {
 
     const percentage = ((totalDowntime + currentDowntime) / totalTime) * 100;
     return Math.min(100, percentage);
-  }, [startTime, totalDowntime, now]);
+  }, [startTime, totalDowntime, now, downtimeSinceRef]);
 
 
   // Set initial active bench and config
@@ -567,7 +576,6 @@ function TestingComponent() {
 
         const originalComparisonSessions = [...comparisonSessions];
         let sessionsToReport: WithId<TestSession>[] = [];
-        let chartTitle = 'Vessel Pressure Test Report';
         let reportTitle = '';
         let reportFilename = 'report';
 
@@ -607,10 +615,11 @@ function TestingComponent() {
 
             const mainConfig = sensorConfigs?.find(c => c.id === sessionsToReport[0]?.sensorConfigurationId);
             const yAxisLabel = mainConfig?.mode === 'VOLTAGE' 
-                ? `Voltage (${mainConfig.unit || 'V'})`
-                : `Pressure (${mainConfig?.unit || 'Value'})`;
+                ? `Voltage (${mainConfig.unit || 'V'})` 
+                : mainConfig?.mode === 'CUSTOM'
+                ? `Pressure (${mainConfig.unit || 'bar'})`
+                : `Raw Value`;
 
-            
             const tableBody = sessionsToReport.map(session => {
                 const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
                 const batch = batches?.find(b => b.id === session.batchId);
@@ -634,9 +643,9 @@ function TestingComponent() {
                 pageMargins: [40, 60, 40, 60],
                 content: [
                     { text: reportTitle, style: 'header' },
-                    { text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body', margin: [0, 0, 0, 20] },
-                    { text: chartTitle, style: 'subheader' },
-                    { image: chartImage, width: 500, alignment: 'center', margin: [0, 0, 0, 15] },
+                    { text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' },
+                    { text: sessionsToReport[0].vesselTypeName, style: 'subheader', margin: [0, 0, 0, 20] },
+                    { image: chartImage, width: 500, alignment: 'center', margin: [0, 0, 0, 5] },
                     { text: 'Session Summary', style: 'subheader' },
                     {
                         style: 'tableExample',
@@ -648,7 +657,11 @@ function TestingComponent() {
                                 ...tableBody
                             ]
                         },
-                        layout: 'lightHorizontalLines'
+                        layout: {
+                            hLineWidth: (i: number, node: any) => (i === 0 || i === 1 || i === node.table.body.length) ? 1 : 0.5,
+                            vLineWidth: () => 0,
+                            hLineColor: (i: number) => (i === 0 || i === 1) ? 'black' : 'gray',
+                        }
                     }
                 ],
                 styles: {
@@ -731,6 +744,33 @@ function TestingComponent() {
     });
   };
 
+  const handleOpenCrashPanel = async () => {
+    if (!database) return;
+    setIsCrashPanelOpen(true);
+    setCrashAnalysis(null);
+    setCrashReport(null);
+    setIsAnalyzingCrash(true);
+
+    try {
+        const crashReportRef = ref(database, '/system/lastCrashReport');
+        const snapshot = await get(crashReportRef);
+
+        if (snapshot.exists()) {
+            const report = snapshot.val() as CrashReport;
+            setCrashReport(report);
+            const analysis = await analyzeArduinoCrashes({ crashReport: report });
+            setCrashAnalysis(analysis);
+        } else {
+            setCrashReport(null);
+            toast({ title: "No Crash Reports Found", description: "The device has not reported any reconnect events yet." });
+        }
+    } catch (error: any) {
+        toast({ variant: 'destructive', title: "Failed to Fetch Crash Data", description: error.message });
+    } finally {
+        setIsAnalyzingCrash(false);
+    }
+  };
+
   const getLatencyColor = (ping: number | null) => {
     if (ping === null) return 'text-muted-foreground';
     if (ping <= 500) return 'text-green-600';
@@ -749,7 +789,7 @@ function TestingComponent() {
       if (!config) return "Value";
 
       if(config.mode === 'VOLTAGE') return `Voltage (${config.unit || 'V'})`;
-      if(config.mode === 'CUSTOM') return `Pressure (${config.unit || 'Value'})`;
+      if(config.mode === 'CUSTOM') return `Pressure (${config.unit || 'bar'})`;
       return `Raw Value (${config.unit || 'RAW'})`;
 
   }, [comparisonSessions, sensorConfigs]);
@@ -898,6 +938,50 @@ function TestingComponent() {
                         </div>
                       </>
                     )}
+                    <Dialog open={isCrashPanelOpen} onOpenChange={setIsCrashPanelOpen}>
+                        <DialogTrigger asChild>
+                            <Button variant="link" size="sm" className="mt-2 text-xs" onClick={handleOpenCrashPanel}>
+                                <AlertCircle className="mr-2 h-4 w-4" />
+                                Crash Analytics
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-lg">
+                            <DialogHeader>
+                                <DialogTitle>Arduino Crash & Reconnect Analysis</DialogTitle>
+                                <DialogDescription>
+                                    AI-powered analysis of the last device-initiated reconnect event.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="py-4 space-y-4">
+                                {isAnalyzingCrash ? (
+                                    <div className="flex items-center justify-center h-40">
+                                        <Loader2 className="h-8 w-8 animate-spin text-primary"/>
+                                        <p className="ml-4">Analyzing crash data...</p>
+                                    </div>
+                                ) : crashAnalysis ? (
+                                    <div className="space-y-4">
+                                        <h3 className="font-semibold text-lg text-primary">{crashAnalysis.title}</h3>
+                                        <p className="text-sm italic">"{crashAnalysis.summary}"</p>
+                                        <div className="text-sm space-y-2">
+                                            <p>{crashAnalysis.explanation}</p>
+                                            <p className="font-semibold">Recommendation: <span className="font-normal">{crashAnalysis.recommendation}</span></p>
+                                        </div>
+                                        <div className="text-xs text-muted-foreground pt-4 space-y-2 border-t">
+                                            <h4 className="font-semibold text-sm text-foreground pt-2">Raw Report Data</h4>
+                                            <p><strong>Last Event:</strong> {crashReport?.reason} on {new Date(crashReport?.timestamp || 0).toLocaleString()}</p>
+                                            <p><strong>Errors This Event:</strong> Latency ({crashReport?.errors.latency}), Update ({crashReport?.errors.update}), Stream ({crashReport?.errors.stream})</p>
+                                            <p><strong>Historical Totals:</strong> Latency Reconnects ({crashReport?.totals.latency}), Update Reconnects ({crashReport?.totals.update}), Stream Reconnects ({crashReport?.totals.stream})</p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="text-center h-40 flex flex-col justify-center items-center">
+                                        <p className="font-semibold">No Crash Reports Found</p>
+                                        <p className="text-sm text-muted-foreground">The device has not reported any reconnect events yet.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </DialogContent>
+                    </Dialog>
                 </div>
                 </CardContent>
             </Card>
@@ -1017,25 +1101,19 @@ function TestingComponent() {
                                                     </div>
                                                 </div>
                                                  <div className="flex items-center gap-2">
-                                                    <AlertDialog>
-                                                        <AlertDialogTrigger asChild>
-                                                            <Button size="sm" variant="outline"><Download className="h-4 w-4"/></Button>
-                                                        </AlertDialogTrigger>
-                                                        <AlertDialogContent>
-                                                            <AlertDialogHeader>
-                                                                <AlertDialogTitle>Download Report?</AlertDialogTitle>
-                                                                <AlertDialogDescription>This will generate a PDF report for the session "{session.vesselTypeName} - {session.serialNumber}".</AlertDialogDescription>
-                                                            </AlertDialogHeader>
-                                                            <AlertDialogFooter>
-                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                <AlertDialogAction onClick={() => {
-                                                                    setReportType('single');
-                                                                    setSelectedReportSessionId(session.id);
-                                                                    generateReport();
-                                                                }}>Download</AlertDialogAction>
-                                                            </AlertDialogFooter>
-                                                        </AlertDialogContent>
-                                                    </AlertDialog>
+                                                    {session.status === 'COMPLETED' && (
+                                                        <Button 
+                                                            size="sm" 
+                                                            variant="outline"
+                                                            onClick={() => {
+                                                                setIsReportDialogOpen(true);
+                                                                setReportType('single');
+                                                                setSelectedReportSessionId(session.id);
+                                                            }}
+                                                        >
+                                                            <Download className="h-4 w-4"/>
+                                                        </Button>
+                                                    )}
                                                     <AlertDialog>
                                                         <AlertDialogTrigger asChild>
                                                             <Button size="sm" variant="destructive"><Trash2 className="h-4 w-4"/></Button>
@@ -1072,6 +1150,7 @@ function TestingComponent() {
                       <LineChart 
                         data={chartData} 
                         margin={{ top: 5, right: 30, left: 20, bottom: 20 }}
+                        isAnimationActive={false}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                         <XAxis 
@@ -1113,11 +1192,11 @@ function TestingComponent() {
                             name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`} 
                             dot={false} 
                             strokeWidth={2} 
-                            isAnimationActive={!isGeneratingReport && !isLoadingComparisonData && session.status !== 'RUNNING'} />
+                           />
                         ))}
 
-                        <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" isAnimationActive={!isGeneratingReport} />
-                        <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" isAnimationActive={!isGeneratingReport} />
+                        <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
+                        <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
                       </LineChart>
                   </ResponsiveContainer>
                 </div>

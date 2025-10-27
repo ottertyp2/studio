@@ -1,6 +1,6 @@
 
 'use client';
-import { createContext, useContext } from 'react';
+import { createContext, useContext, RefObject } from 'react';
 
 export type SensorData = {
   timestamp: string;
@@ -39,6 +39,9 @@ export interface TestBenchContextType {
   deleteSession: (sessionId: string) => Promise<void>;
   pendingValves: ('VALVE1' | 'VALVE2')[];
   lockedValves: ('VALVE1' | 'VALVE2')[];
+  startTime: number | null;
+  totalDowntime: number;
+  downtimeSinceRef: RefObject<number | null>;
 }
 
 export const TestBenchContext = createContext<TestBenchContextType | undefined>(undefined);

@@ -312,6 +312,33 @@
             "username": { "type": "string", "description": "The username of the user who performed the test." }
         },
         "required": ["id", "testSessionId", "generatedAt", "downloadUrl", "vesselTypeName", "username"]
+    },
+    "CrashReport": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "CrashReport",
+        "type": "object",
+        "description": "Represents a crash/reconnect report from the Arduino device.",
+        "properties": {
+            "reason": { "type": "string", "description": "The primary reason for the reconnect event." },
+            "timestamp": { "type": "number", "description": "Timestamp of the event." },
+            "errors": {
+                "type": "object",
+                "properties": {
+                    "latency": { "type": "number", "description": "Consecutive latency errors." },
+                    "update": { "type": "number", "description": "Consecutive update errors." },
+                    "stream": { "type": "number", "description": "Consecutive stream errors." }
+                }
+            },
+            "totals": {
+                "type": "object",
+                "properties": {
+                    "latency": { "type": "number", "description": "Total latency-triggered reconnects." },
+                    "update": { "type": "number", "description": "Total update-triggered reconnects." },
+                    "stream": { "type": "number", "description": "Total stream-triggered reconnects." }
+                }
+            }
+        },
+        "required": ["reason", "timestamp", "errors", "totals"]
     }
   },
   "auth": {
@@ -417,7 +444,26 @@
             "description": "Stores metadata for generated PDF reports."
         }
       }
-    ],
-    "reasoning": "This Firestore data structure is designed for a single-user or public-access model. All data is stored in global collections, removing any user-specific paths or ownership. This simplifies data access as there is no user authentication or authorization layer to manage. It's suitable for local testing or a fully public dashboard."
+    ]
+  },
+  "rtdb": {
+    "structure": [
+        {
+            "path": "/live",
+            "description": "Live data from the ESP32 device."
+        },
+        {
+            "path": "/commands",
+            "description": "Commands sent to the ESP32 device."
+        },
+        {
+            "path": "/system/lastCrashReport",
+            "definition": {
+                "entityName": "CrashReport",
+                "schema": { "$ref": "#/entities/CrashReport" },
+                "description": "The last crash/reconnect report from the ESP32."
+            }
+        }
+    ]
   }
 }

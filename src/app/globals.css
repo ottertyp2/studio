@@ -8,7 +8,7 @@ body {
 
 @layer base {
   :root {
-    --background: 210 100% 98%;
+    --background: 210 40% 98%;
     --foreground: 224 71% 4%;
     --card: 0 0% 100%;
     --card-foreground: 224 71% 4%;
@@ -92,11 +92,9 @@ body {
     @keyframes keyframes-enter {
         from {
             opacity: 0;
-            transform: translateY(10px);
         }
         to {
             opacity: 1;
-            transform: translateY(0);
         }
     }
      .animate-in {
