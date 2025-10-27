@@ -940,7 +940,7 @@ function TestingComponent() {
                                                             </AlertDialogHeader>
                                                             <AlertDialogFooter>
                                                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                <AlertDialogAction variant="destructive" onClick={()={() => handleDeleteSession(session.id)}}>Confirm Delete</AlertDialogAction>
+                                                                <AlertDialogAction variant="destructive" onClick={() => handleDeleteSession(session.id)}>Confirm Delete</AlertDialogAction>
                                                             </AlertDialogFooter>
                                                         </AlertDialogContent>
                                                     </AlertDialog>
@@ -1040,3 +1040,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    

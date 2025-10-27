@@ -164,7 +164,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             // Set a timer to declare offline if no new data arrives
             connectionTimeoutRef.current = setTimeout(() => {
                 setIsConnected(false);
-            }, 2000); // 2-second timeout
+            }, 5000); // 5-second timeout
         } else {
             setIsConnected(false);
         }
