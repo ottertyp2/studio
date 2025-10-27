@@ -122,7 +122,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         });
     }
 
-    if (runningTestSessionRef.current && firestore && data.recording === true && data.sensor !== null && data.lastUpdate) {
+    if (runningTestSessionRef.current && firestore && data.sensor !== null && data.lastUpdate) {
       const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
       const dataToSave = {
         value: data.sensor,
@@ -180,36 +180,44 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     if (!database) return;
-
+  
     const liveDataRef = ref(database, 'live');
-
+  
     const unsubscribe = onValue(liveDataRef, (snap) => {
-        const data = snap.val();
-        if (connectionTimeoutRef.current) clearTimeout(connectionTimeoutRef.current);
-
-        if (data && data.lastUpdate) {
-            if (!isConnected) setIsConnected(true);
-            handleNewDataPoint(data);
-            
-            connectionTimeoutRef.current = setTimeout(() => {
-                setIsConnected(false);
-            }, 5000); // 5-second tolerance
-        } else {
-            setIsConnected(false);
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+      }
+  
+      const data = snap.val();
+  
+      if (data && data.lastUpdate) {
+        if (!isConnected) {
+          setIsConnected(true);
         }
-    }, (error) => {
-        console.error("Firebase onValue error:", error);
+        handleNewDataPoint(data);
+  
+        connectionTimeoutRef.current = setTimeout(() => {
+          setIsConnected(false);
+          if (connectionTimeoutRef.current) {
+            clearTimeout(connectionTimeoutRef.current);
+          }
+        }, 5000); // Set to 5 seconds
+      } else {
         setIsConnected(false);
-        if (connectionTimeoutRef.current) {
-            clearTimeout(connectionTimeoutRef.current);
-        }
+      }
+    }, (error) => {
+      console.error("Firebase onValue error:", error);
+      setIsConnected(false);
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+      }
     });
-
+  
     return () => {
-        unsubscribe();
-        if (connectionTimeoutRef.current) {
-            clearTimeout(connectionTimeoutRef.current);
-        }
+      unsubscribe();
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+      }
     };
   }, [database, handleNewDataPoint, isConnected]);
 
@@ -241,4 +249,3 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
-
