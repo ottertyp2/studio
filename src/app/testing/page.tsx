@@ -1,4 +1,5 @@
 
+
 'use client';
 import { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -177,7 +178,7 @@ function TestingComponent() {
     latency,
     startTime,
     totalDowntime,
-    downtimeSinceRef,
+    downtimeSince,
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
@@ -528,8 +529,8 @@ function TestingComponent() {
     if (startTime === null) return 0;
     const nowTime = now || Date.now();
     let currentDowntime = 0;
-    if (downtimeSinceRef.current !== null) {
-      currentDowntime = nowTime - downtimeSinceRef.current;
+    if (downtimeSince) {
+      currentDowntime = nowTime - downtimeSince;
     }
     
     const totalElapsed = nowTime - startTime;
@@ -538,7 +539,7 @@ function TestingComponent() {
     const totalOfflineTime = totalDowntime + currentDowntime;
     
     return Math.min(100, (totalOfflineTime / totalElapsed) * 100);
-  }, [startTime, totalDowntime, downtimeSinceRef, now]);
+  }, [startTime, totalDowntime, downtimeSince, now]);
 
   const isDuringDowntime = useMemo(() => {
     const now = new Date();
@@ -1236,3 +1237,4 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+

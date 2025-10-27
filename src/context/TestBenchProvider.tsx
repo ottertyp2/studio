@@ -1,4 +1,5 @@
 
+
 'use client';
 import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -34,8 +35,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   const [startTime, setStartTime] = useState<number | null>(null);
   const [totalDowntime, setTotalDowntime] = useState(0);
-  const downtimeSinceRef = useRef<number | null>(null);
-
+  const [downtimeSince, setDowntimeSince] = useState<number | null>(null);
+  
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -63,12 +64,13 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   }, [totalDowntime, startTime]);
 
   useEffect(() => {
-    if (!isConnected && downtimeSinceRef.current === null) {
-        downtimeSinceRef.current = Date.now();
-    } else if (isConnected && downtimeSinceRef.current !== null) {
-        setTotalDowntime(prev => prev + (Date.now() - (downtimeSinceRef.current ?? Date.now())));
-        downtimeSinceRef.current = null;
+    if (!isConnected && downtimeSince === null) {
+        setDowntimeSince(Date.now());
+    } else if (isConnected && downtimeSince !== null) {
+        setTotalDowntime(prev => prev + (Date.now() - (downtimeSince ?? Date.now())));
+        setDowntimeSince(null);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected]);
 
   useEffect(() => {
@@ -176,14 +178,15 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [database, toast]);
 
-
   useEffect(() => {
     if (!database) return;
+
     const liveDataRef = ref(database, 'live');
 
     const handleData = (snap: any) => {
       const data = snap.val();
-      
+
+      // Always clear the previous timeout when new data arrives
       if (connectionTimeoutRef.current) {
         clearTimeout(connectionTimeoutRef.current);
       }
@@ -193,7 +196,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
           setIsConnected(true);
         }
         handleNewDataPoint(data);
-
+        
+        // Set a new timeout. If no data arrives within 5s, we're disconnected.
         connectionTimeoutRef.current = setTimeout(() => {
           setIsConnected(false);
         }, 5000); // 5-second tolerance
@@ -203,8 +207,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const unsubscribe = onValue(liveDataRef, handleData, (error) => {
-        console.error("Firebase onValue error:", error);
-        setIsConnected(false);
+      console.error("Firebase onValue error:", error);
+      setIsConnected(false);
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+      }
     });
 
     return () => {
@@ -234,7 +241,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     lockedValves,
     startTime,
     totalDowntime,
-    downtimeSinceRef,
+    downtimeSince,
   };
 
   return (
@@ -243,3 +250,4 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
+
