@@ -329,7 +329,6 @@ export default function AdminPage() {
     const unsubscribers: (() => void)[] = [];
 
     testSessions.forEach(session => {
-        // Correctly query the subcollection for each session
         const sensorDataRef = collection(firestore, 'test_sessions', session.id, 'sensor_data');
         
         const unsubscribe = onSnapshot(sensorDataRef, (snapshot) => {
@@ -498,23 +497,19 @@ export default function AdminPage() {
 
     const batch = writeBatch(firestore);
 
-    // Find sessions that use this config
     const sessionsQuery = query(collection(firestore, 'test_sessions'), where('sensorConfigurationId', '==', configId));
     const sessionsSnapshot = await getDocs(sessionsQuery);
     const sessionsToDelete = sessionsSnapshot.docs;
 
-    // For each session, find and delete its sensor_data subcollection documents
     for (const sessionDoc of sessionsToDelete) {
         const sensorDataRef = collection(firestore, 'test_sessions', sessionDoc.id, 'sensor_data');
         const dataSnapshot = await getDocs(sensorDataRef);
         dataSnapshot.forEach(doc => {
             batch.delete(doc.ref);
         });
-        // Also delete the session document itself
         batch.delete(sessionDoc.ref);
     }
 
-    // Delete the sensor configuration itself
     const configRef = doc(firestore, `sensor_configurations`, configId);
     batch.delete(configRef);
 
@@ -582,7 +577,11 @@ export default function AdminPage() {
   const handleSetSessionClassification = (sessionId: string, classification: 'LEAK' | 'DIFFUSION' | null) => {
     if (!firestore) return;
     const sessionRef = doc(firestore, 'test_sessions', sessionId);
-    updateDoc(sessionRef, { classification: classification || null })
+    const updateData: { classification: 'LEAK' | 'DIFFUSION' | null } = { classification };
+    if (classification === null) {
+      (updateData as any).classification = null;
+    }
+    updateDoc(sessionRef, updateData)
       .then(() => toast({ title: 'Classification Updated' }))
       .catch(e => toast({ variant: 'destructive', title: 'Update Failed', description: e.message }));
   };
@@ -628,7 +627,7 @@ export default function AdminPage() {
 
         const classification = predictionValue > 0.5 ? 'LEAK' : 'DIFFUSION';
         handleSetSessionClassification(session.id, classification);
-        toast({ title: 'AI Classification Complete', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification}`});
+        toast({ title: 'AI Classification Complete', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'}`});
 
     } catch (e: any) {
         toast({ variant: 'destructive', title: `AI Classification Failed for "${session.vesselTypeName} - ${session.serialNumber}"`, description: e.message.includes('No model found in IndexedDB') ? `A trained model named "${modelToUse.name}" was not found in your browser.` : e.message});
@@ -938,7 +937,7 @@ export default function AdminPage() {
           return data.map(v => Math.min(1023, Math.max(0, v)));
       };
 
-      setAutoTrainingStatus({ step: 'Data Generation', progress: 10, details: 'Generating leak and diffusion datasets...' });
+      setAutoTrainingStatus({ step: 'Data Generation', progress: 10, details: 'Generating "Passed" and "Not Passed" datasets...' });
       
       const leakData = generateData('LEAK', 500);
       const diffusionData = generateData('DIFFUSION', 500);
@@ -1354,7 +1353,6 @@ export default function AdminPage() {
         return;
       }
 
-      // Build document definition for pdfmake
       const tableBody = relevantSessions.map(session => {
         const data = allSensorData[session.id] ?? [];
         const config = session.sensorConfigurationId ? sensorConfigs.find(c => c.id === session.sensorConfigurationId) : undefined;
@@ -1444,7 +1442,7 @@ export default function AdminPage() {
       const sensorData = snapshot.docs.map(doc => doc.data());
   
       const csvData = sensorData.map(d => ({
-        ...session, // Add all session metadata to each row
+        ...session,
         sensor_timestamp: d.timestamp,
         sensor_value: d.value,
       }));
@@ -1506,7 +1504,7 @@ export default function AdminPage() {
 
                     const sessionRef = doc(firestore, 'test_sessions', firstRow.id);
 
-                    const sessionDoc: Omit<TestSession, 'classification'> & { classification?: 'LEAK' | 'DIFFUSION' } = {
+                    const sessionDoc: Omit<TestSession, 'classification'> & { classification?: 'LEAK' | 'DIFFUSION' | undefined } = {
                         id: firstRow.id,
                         vesselTypeId: firstRow.vesselTypeId,
                         vesselTypeName: firstRow.vesselTypeName,
@@ -1522,12 +1520,12 @@ export default function AdminPage() {
                         username: firstRow.username,
                         batchId: firstRow.batchId,
                     };
-                    
+
                     if (firstRow.classification === 'LEAK' || firstRow.classification === 'DIFFUSION') {
                         sessionDoc.classification = firstRow.classification;
                     }
-
-                    batch.set(sessionRef, sessionDoc);
+                    
+                    batch.set(sessionRef, sessionDoc as TestSession);
 
                     (results.data as any[]).forEach(row => {
                         const sensorDataRef = doc(collection(sessionRef, 'sensor_data'));
@@ -1545,7 +1543,7 @@ export default function AdminPage() {
                 } finally {
                     filesProcessed++;
                     if (filesProcessed === files.length && sessionImportRef.current) {
-                        sessionImportRef.current.value = ''; // Reset file input
+                        sessionImportRef.current.value = '';
                     }
                 }
             }
@@ -1553,6 +1551,14 @@ export default function AdminPage() {
     };
 
     Array.from(files).forEach(processFile);
+  };
+
+  const getClassificationText = (classification?: 'LEAK' | 'DIFFUSION') => {
+      switch(classification) {
+          case 'LEAK': return 'Not Passed';
+          case 'DIFFUSION': return 'Passed';
+          default: return 'Unclassified';
+      }
   };
 
   const renderSensorConfigurator = () => {
@@ -1836,7 +1842,7 @@ export default function AdminPage() {
                                 </div>
                                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                   <Tag className="h-3 w-3" />
-                                  <span>{session.classification || 'Unclassified'}</span>
+                                  <span>{getClassificationText(session.classification)}</span>
                                 </div>
                                 <p className="text-xs text-muted-foreground">
                                     Data Points: {sessionDataCounts[session.id] ?? '...'}
@@ -1868,8 +1874,8 @@ export default function AdminPage() {
                                       </DropdownMenuSubTrigger>
                                       <DropdownMenuPortal>
                                           <DropdownMenuSubContent>
-                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'LEAK')}>Leak</DropdownMenuItem>
-                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'DIFFUSION')}>Diffusion</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'LEAK')}>Not Passed</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'DIFFUSION')}>Passed</DropdownMenuItem>
                                             <DropdownMenuSeparator />
                                             <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, null)}>Clear Classification</DropdownMenuItem>
                                           </DropdownMenuSubContent>
@@ -2421,7 +2427,7 @@ const renderBatchManagement = () => (
              <Card className="animate-in">
                 <Accordion type="single" collapsible>
                     <AccordionItem value="ai-models">
-                        <AccordionTrigger className="flex w-full p-6">
+                       <AccordionTrigger className="flex w-full p-6">
                            <div className="flex items-center gap-4 text-left">
                                 <BrainCircuit className="h-6 w-6 text-primary" />
                                 <div>
@@ -2596,6 +2602,3 @@ const renderBatchManagement = () => (
     </div>
   );
 }
-
-
-    
