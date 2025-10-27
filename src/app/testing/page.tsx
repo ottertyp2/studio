@@ -189,6 +189,7 @@ function TestingComponent() {
   const [startTime] = useState(Date.now());
   const [totalDowntime, setTotalDowntime] = useState(0);
   const downtimeSinceRef = useRef<number | null>(null);
+  const [now, setNow] = useState(Date.now());
 
   // Data fetching hooks
   const testBenchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'testbenches') : null, [firestore]);
@@ -202,6 +203,12 @@ function TestingComponent() {
   
   const batchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'batches') : null, [firestore]);
   const { data: batches, isLoading: isBatchesLoading } = useCollection<Batch>(batchesCollectionRef);
+
+  // Effect to update 'now' state every second for live counters
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (!isDeviceConnected) {
@@ -227,7 +234,7 @@ function TestingComponent() {
 
     const percentage = ((totalDowntime + currentDowntime) / totalTime) * 100;
     return Math.min(100, percentage);
-  }, [startTime, totalDowntime, isDeviceConnected]); // Re-calculate when connection status changes
+  }, [startTime, totalDowntime, now]);
 
 
   // Set initial active bench and config
@@ -622,7 +629,7 @@ function TestingComponent() {
         // 4. Define PDF Document
         const docDefinition: any = {
             pageSize: 'A4',
-            pageMargins: [ 40, 60, 40, 60 ],
+            pageMargins: [ 40, 60, 40, 40 ],
             content: [
                 { text: 'Test Session Report', style: 'header' },
                 { text: `Vessel: ${vesselType.name} (S/N: ${session.serialNumber || 'N/A'})`, style: 'subheader' },
@@ -1013,6 +1020,7 @@ function TestingComponent() {
                       <LineChart 
                         data={chartData} 
                         margin={{ top: 5, right: 30, left: 20, bottom: 20 }}
+                        isAnimationActive={!isGeneratingReport}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                         <XAxis 
@@ -1088,5 +1096,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
