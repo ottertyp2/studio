@@ -1354,7 +1354,7 @@ export default function AdminPage() {
     try {
         logoBase64 = await toBase64('/images/logo.png');
     } catch (error: any) {
-        console.error("Logo conversion failed:", error.message);
+        console.error("PDF Logo Generation Error:", error.message);
         toast({
             variant: "destructive",
             title: "Could Not Load Logo",
@@ -2761,3 +2761,5 @@ const renderBatchManagement = () => (
     </div>
   );
 }
+
+    

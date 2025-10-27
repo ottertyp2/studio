@@ -525,20 +525,19 @@ function TestingComponent() {
   }, [currentValue, activeSensorConfig, runningTestSession, sensorConfigs]);
   
     const downtimePercentage = useMemo(() => {
-        if (startTime === null) return 0;
-        
-        let currentDowntime = 0;
-        if (downtimeSinceRef.current !== null) {
-            currentDowntime = Date.now() - downtimeSinceRef.current;
-        }
+    if (startTime === null) return 0;
+    
+    let currentDowntime = 0;
+    if (downtimeSinceRef.current !== null) {
+      currentDowntime = Date.now() - downtimeSinceRef.current;
+    }
 
-        const totalElapsed = Date.now() - startTime;
-        if (totalElapsed === 0) return 0;
+    const totalElapsed = Date.now() - startTime;
+    if (totalElapsed === 0) return 0;
 
-        const totalOfflineTime = totalDowntime + currentDowntime;
-        return (totalOfflineTime / totalElapsed) * 100;
-
-    }, [startTime, totalDowntime, downtimeSinceRef, now]);
+    const totalOfflineTime = totalDowntime + currentDowntime;
+    return (totalOfflineTime / totalElapsed) * 100;
+  }, [startTime, totalDowntime, downtimeSinceRef, now]);
 
   const isDuringDowntime = useMemo(() => {
     const now = new Date();
@@ -574,8 +573,8 @@ function TestingComponent() {
         let logoBase64: string | null = null;
         try {
             logoBase64 = await toBase64('/images/logo.png');
-        } catch (error) {
-            console.error("PDF Logo Generation Error:", error);
+        } catch (error: any) {
+            console.error("PDF Logo Generation Error:", error.message);
             toast({
                 variant: "destructive",
                 title: "Could Not Load Logo",
@@ -941,7 +940,7 @@ function TestingComponent() {
                         <span>{isConnected ? `Online` : offlineMessage}</span>
                     </div>
                      <p className="text-xs text-muted-foreground mt-1">
-                        Downtime: {(downtimePercentage || 0).toFixed(2)}%
+                        Downtime: {downtimePercentage.toFixed(2)}%
                     </p>
                     {isConnected && (
                       <>
@@ -1230,5 +1229,7 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
 
     
