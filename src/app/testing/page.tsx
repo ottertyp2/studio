@@ -190,6 +190,12 @@ function TestingComponent() {
   const [totalDowntime, setTotalDowntime] = useState(0);
   const downtimeSinceRef = useRef<number | null>(null);
   const [now, setNow] = useState(Date.now());
+  
+  const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
+  const [reportType, setReportType] = useState<'single' | 'batch' | null>(null);
+  const [selectedReportSessionId, setSelectedReportSessionId] = useState<string | null>(null);
+  const [selectedReportVesselTypeId, setSelectedReportVesselTypeId] = useState<string | null>(null);
+
 
   // Data fetching hooks
   const testBenchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'testbenches') : null, [firestore]);
@@ -568,133 +574,122 @@ function TestingComponent() {
   }, [isDeviceConnected, offlineMessage]);
 
 
-  const generateReport = async (session: WithId<TestSession>) => {
-    if (!firestore || !chartRef.current) {
-        toast({ variant: 'destructive', title: 'Report Failed', description: 'A required component is not ready.' });
-        return;
-    }
-
-    setIsGeneratingReport(true);
-    toast({ title: 'Generating Report...', description: 'Please wait, this can take a moment.' });
-
-    // Temporarily select only this session to render the chart for it
-    const originalComparisonSessions = [...comparisonSessions];
-    setComparisonSessions([session]);
-
-    // Give React a moment to re-render the chart with just the single session
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    try {
-        const dataForReport = comparisonData[session.id];
-        const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-        const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-        const batch = batches?.find(b => b.id === session.batchId);
-
-        // 1. Validation
-        if (!dataForReport || !config || !vesselType || !batch) {
-            throw new Error(`Could not find all required data. Missing: ${!dataForReport ? 'session data' : ''} ${!config ? 'sensor config' : ''} ${!vesselType ? 'vessel type' : ''} ${!batch ? 'batch info' : ''}`);
+  const generateReport = async () => {
+        if (!firestore || !chartRef.current || !reportType || (!selectedReportSessionId && !selectedReportVesselTypeId)) {
+            toast({ variant: 'destructive', title: 'Report Failed', description: 'Please select a report type and a session/vessel type.' });
+            return;
         }
+    
+        setIsGeneratingReport(true);
+        toast({ title: 'Generating Report...', description: 'Please wait, this can take a moment.' });
 
-        // 2. Generate Chart Image
-        const chartImage = await htmlToImage.toPng(chartRef.current, {
-            quality: 0.95,
-            backgroundColor: '#ffffff'
-        });
+        const originalComparisonSessions = [...comparisonSessions];
+        let sessionsToReport: WithId<TestSession>[] = [];
+        let chartTitle = 'Session Report';
 
-        // 3. Prepare Data for PDF
-        const startTime = new Date(session.startTime);
-        const endTime = session.endTime ? new Date(session.endTime) : null;
-        const duration = endTime ? formatDistanceToNow(startTime, {
-            unit: 'minute',
-            addSuffix: false
-        }).replace('about ', '') : 'In Progress';
-
-        const summaryStats = dataForReport.reduce((acc, point) => {
-            const converted = convertRawValue(point.value, config);
-            acc.max = Math.max(acc.max, converted);
-            acc.min = Math.min(acc.min, converted);
-            acc.sum += converted;
-            return acc;
-        }, { max: -Infinity, min: Infinity, sum: 0 });
-        const avg = dataForReport.length > 0 ? summaryStats.sum / dataForReport.length : 0;
-
-        const getStatusText = (classification?: 'LEAK' | 'DIFFUSION') => {
-            switch (classification) {
-                case 'DIFFUSION': return { text: 'Passed', color: 'green', bold: true };
-                case 'LEAK': return { text: 'Not Passed', color: 'red', bold: true };
-                default: return { text: 'Undetermined', color: 'gray', bold: false };
+        try {
+            if (reportType === 'single' && selectedReportSessionId) {
+                const session = sessionHistory.find(s => s.id === selectedReportSessionId);
+                if (!session) throw new Error('Selected session not found.');
+                sessionsToReport = [session];
+                setComparisonSessions(sessionsToReport);
+                chartTitle = `Report for ${session.vesselTypeName} S/N: ${session.serialNumber}`;
+            } else if (reportType === 'batch' && selectedReportVesselTypeId) {
+                const vesselType = vesselTypes?.find(vt => vt.id === selectedReportVesselTypeId);
+                if (!vesselType) throw new Error('Selected vessel type not found.');
+                sessionsToReport = sessionHistory.filter(s => s.vesselTypeId === selectedReportVesselTypeId && s.status === 'COMPLETED');
+                if (sessionsToReport.length === 0) throw new Error(`No completed sessions found for vessel type "${vesselType.name}".`);
+                setComparisonSessions(sessionsToReport);
+                chartTitle = `Vessel Type Report for ${vesselType.name}`;
+            } else {
+                throw new Error('Invalid report selection.');
             }
-        };
 
-        // 4. Define PDF Document
-        const docDefinition: any = {
-            pageSize: 'A4',
-            pageMargins: [ 40, 60, 40, 40 ],
-            content: [
-                { text: 'Test Session Report', style: 'header' },
-                { text: `Vessel: ${vesselType.name} (S/N: ${session.serialNumber || 'N/A'})`, style: 'subheader' },
-                { text: `Batch: ${batch.name}`, style: 'body' },
-                { text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body', margin: [0, 0, 0, 10] },
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Allow chart to re-render
 
-                {
-                    style: 'tableExample',
-                    table: {
-                        widths: ['*', '*'],
-                        body: [
-                            [{ text: 'Test Details', style: 'tableHeader', colSpan: 2, alignment: 'center' }, {}],
-                            ['Tested By', session.username],
-                            ['Start Time', startTime.toLocaleString()],
-                            ['End Time', endTime ? endTime.toLocaleString() : 'N/A'],
-                            ['Duration', duration],
-                            ['Final Status', getStatusText(session.classification)],
-                        ]
-                    },
-                    layout: 'lightHorizontalLines'
+            const chartImage = await htmlToImage.toPng(chartRef.current, {
+                quality: 0.95,
+                backgroundColor: '#ffffff'
+            });
+
+            const getStatusText = (classification?: 'LEAK' | 'DIFFUSION') => {
+                switch (classification) {
+                    case 'DIFFUSION': return { text: 'Passed', color: 'green', bold: true };
+                    case 'LEAK': return { text: 'Not Passed', color: 'red', bold: true };
+                    default: return { text: 'Undetermined', color: 'gray', bold: false };
+                }
+            };
+            
+            const tableBody = sessionsToReport.map(session => {
+                const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+                const batch = batches?.find(b => b.id === session.batchId);
+                const data = comparisonData[session.id] || [];
+                const endValue = data.length > 0 ? data[data.length-1].value : undefined;
+                const endPressure = (endValue !== undefined && config) ? `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${config.unit}` : 'N/A';
+                const duration = session.endTime ? formatDistanceToNow(new Date(session.startTime), { unit: 'minute', addSuffix: false }).replace('about ', '') : 'N/A';
+                return [
+                    batch?.name || 'N/A',
+                    session.serialNumber || 'N/A',
+                    new Date(session.startTime).toLocaleString(),
+                    session.username,
+                    endPressure,
+                    duration,
+                    getStatusText(session.classification)
+                ];
+            });
+
+            const docDefinition: any = {
+                pageSize: 'A4',
+                pageMargins: [40, 60, 40, 60], // Adjusted margins
+                content: [
+                    { text: chartTitle, style: 'header' },
+                    { text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body', margin: [0, 0, 0, 20] },
+                    { text: 'Pressure Curve Visualization', style: 'subheader' },
+                    { image: chartImage, width: 500, alignment: 'center', margin: [0, 0, 0, 15] },
+                    { text: 'Session Summary', style: 'subheader' },
+                    {
+                        style: 'tableExample',
+                        table: {
+                            headerRows: 1,
+                            widths: ['auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                            body: [
+                                ['Batch', 'Serial No.', 'Start Time', 'User', 'End Value', 'Duration', 'Status'],
+                                ...tableBody
+                            ]
+                        },
+                        layout: 'lightHorizontalLines'
+                    }
+                ],
+                styles: {
+                    header: { fontSize: 18, bold: true, alignment: 'center', margin: [0, 0, 0, 10], color: '#1E40AF' },
+                    subheader: { fontSize: 14, bold: true, margin: [0, 10, 0, 5] },
+                    body: { fontSize: 10 },
+                    tableExample: { fontSize: 9, margin: [0, 5, 0, 15] },
+                    tableHeader: { bold: true, fontSize: 10, color: 'black' }
                 },
+                defaultStyle: {
+                    font: 'Roboto'
+                }
+            };
 
-                {
-                    style: 'tableExample',
-                    margin: [0, 5, 0, 10],
-                    table: {
-                        widths: ['*', '*'],
-                        body: [
-                            [{ text: 'Summary of Results', style: 'tableHeader', colSpan: 2, alignment: 'center' }, {}],
-                            ['Number of Data Points', dataForReport.length],
-                            ['Maximum Value', `${summaryStats.max.toFixed(config.decimalPlaces)} ${config.unit}`],
-                            ['Minimum Value', `${summaryStats.min.toFixed(config.decimalPlaces)} ${config.unit}`],
-                            ['Average Value', `${avg.toFixed(config.decimalPlaces)} ${config.unit}`],
-                        ]
-                    },
-                    layout: 'lightHorizontalLines'
-                },
+            const reportName = reportType === 'batch'
+                ? `report-vessel-${vesselTypes?.find(v => v.id === selectedReportVesselTypeId)?.name.replace(/\s+/g, '_')}`
+                : `report-session-${sessionsToReport[0].serialNumber || sessionsToReport[0].id}`;
 
-                { text: 'Session Notes', style: 'subheader', margin: [0, 5, 0, 5] },
-                { text: session.description || 'No notes provided.', style: 'body', margin: [0, 0, 0, 10] },
+            pdfMake.createPdf(docDefinition).download(`${reportName}.pdf`);
+            toast({ title: 'Report Generated', description: 'Your PDF report is downloading.' });
 
-                { text: 'Pressure Curve Visualization', style: 'subheader', margin: [0, 5, 0, 5] },
-                { image: chartImage, width: 515, alignment: 'center' }
-            ],
-            styles: {
-                header: { fontSize: 22, bold: true, alignment: 'center', margin: [0, 0, 0, 10], color: '#1E40AF' },
-                subheader: { fontSize: 14, bold: true, margin: [0, 10, 0, 5] },
-                body: { fontSize: 10 },
-                tableExample: { fontSize: 10 },
-                tableHeader: { bold: true, fontSize: 11, color: 'black' }
-            }
-        };
-
-        // 5. Create and Download PDF
-        pdfMake.createPdf(docDefinition).download(`report-${session.vesselTypeName.replace(/\s+/g, '_')}-${session.serialNumber || session.id}.pdf`);
-        toast({ title: 'Report Generated', description: 'Your PDF report is downloading.' });
-
-    } catch (e: any) {
-        console.error("PDF Generation Error:", e);
-        toast({ variant: 'destructive', title: 'Report Failed', description: `Could not generate the PDF. ${e.message}` });
-    } finally {
-        setIsGeneratingReport(false);
-        // Restore original selections after generation
-        setComparisonSessions(originalComparisonSessions);
-    }
+        } catch (e: any) {
+            console.error("PDF Generation Error:", e);
+            toast({ variant: 'destructive', title: 'Report Failed', description: `Could not generate the PDF. ${e.message}` });
+        } finally {
+            setIsGeneratingReport(false);
+            setComparisonSessions(originalComparisonSessions); // Restore original chart selection
+            setIsReportDialogOpen(false);
+            setReportType(null);
+            setSelectedReportSessionId(null);
+            setSelectedReportVesselTypeId(null);
+        }
   };
 
   useEffect(() => {
@@ -949,6 +944,56 @@ function TestingComponent() {
                         )}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                         <Dialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
+                            <DialogTrigger asChild>
+                                <Button variant="outline" size="sm"><FileText className="mr-2 h-4 w-4" />Create PDF Report</Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                                <DialogHeader>
+                                    <DialogTitle>Create PDF Report</DialogTitle>
+                                    <DialogDescription>Select the type of report you want to generate.</DialogDescription>
+                                </DialogHeader>
+                                <div className="py-4 space-y-4">
+                                    <div className="flex items-center space-x-2">
+                                        <input type="radio" id="report-single" name="report-type" value="single" onChange={() => setReportType('single')} />
+                                        <Label htmlFor="report-single">Single Session Report</Label>
+                                    </div>
+                                    {reportType === 'single' && (
+                                        <Select onValueChange={setSelectedReportSessionId}>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select a completed session..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {sessionHistory.filter(s => s.status === 'COMPLETED').map(s => (
+                                                    <SelectItem key={s.id} value={s.id}>{s.vesselTypeName} - S/N: {s.serialNumber || 'N/A'} ({new Date(s.startTime).toLocaleDateString()})</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    )}
+                                    <div className="flex items-center space-x-2">
+                                        <input type="radio" id="report-batch" name="report-type" value="batch" onChange={() => setReportType('batch')} />
+                                        <Label htmlFor="report-batch">Vessel Type Report</Label>
+                                    </div>
+                                    {reportType === 'batch' && (
+                                         <Select onValueChange={setSelectedReportVesselTypeId}>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select a vessel type..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {vesselTypes?.map(vt => (
+                                                    <SelectItem key={vt.id} value={vt.id}>{vt.name}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    )}
+                                </div>
+                                <DialogFooter>
+                                    <Button onClick={generateReport} disabled={isGeneratingReport || !reportType}>
+                                        {isGeneratingReport ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating...</> : "Generate Report"}
+                                    </Button>
+                                </DialogFooter>
+                            </DialogContent>
+                        </Dialog>
                         <Sheet open={isHistoryPanelOpen} onOpenChange={setIsHistoryPanelOpen}>
                             <SheetTrigger asChild>
                                 <Button variant="outline" size="sm">
@@ -978,28 +1023,21 @@ function TestingComponent() {
                                                         <p className="text-xs text-muted-foreground">{new Date(session.startTime).toLocaleString()} by {session.username}</p>
                                                     </div>
                                                 </div>
-                                                <div className="flex gap-2">
-                                                    {session.status === 'COMPLETED' && (
-                                                        <Button size="sm" onClick={() => generateReport(session)} disabled={isGeneratingReport}>
-                                                            {isGeneratingReport ? <Loader2 className="animate-spin" /> : <Download className="h-4 w-4"/>}
-                                                        </Button>
-                                                    )}
-                                                    <AlertDialog>
-                                                        <AlertDialogTrigger asChild>
-                                                            <Button size="sm" variant="destructive"><Trash2 className="h-4 w-4"/></Button>
-                                                        </AlertDialogTrigger>
-                                                        <AlertDialogContent>
-                                                            <AlertDialogHeader>
-                                                                <AlertDialogTitle>Delete Session?</AlertDialogTitle>
-                                                                <AlertDialogDescription>This will permanently delete the session for "{session.vesselTypeName} - {session.serialNumber}" and all its data. This cannot be undone.</AlertDialogDescription>
-                                                            </AlertDialogHeader>
-                                                            <AlertDialogFooter>
-                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                <AlertDialogAction variant="destructive" onClick={() => handleDeleteSession(session.id)}>Confirm Delete</AlertDialogAction>
-                                                            </AlertDialogFooter>
-                                                        </AlertDialogContent>
-                                                    </AlertDialog>
-                                                </div>
+                                                <AlertDialog>
+                                                    <AlertDialogTrigger asChild>
+                                                        <Button size="sm" variant="destructive"><Trash2 className="h-4 w-4"/></Button>
+                                                    </AlertDialogTrigger>
+                                                    <AlertDialogContent>
+                                                        <AlertDialogHeader>
+                                                            <AlertDialogTitle>Delete Session?</AlertDialogTitle>
+                                                            <AlertDialogDescription>This will permanently delete the session for "{session.vesselTypeName} - {session.serialNumber}" and all its data. This cannot be undone.</AlertDialogDescription>
+                                                        </AlertDialogHeader>
+                                                        <AlertDialogFooter>
+                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteSession(session.id)}>Confirm Delete</AlertDialogAction>
+                                                        </AlertDialogFooter>
+                                                    </AlertDialogContent>
+                                                </AlertDialog>
                                             </div>
                                         </Card>
                                     ))}
@@ -1096,3 +1134,4 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+

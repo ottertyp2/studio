@@ -1,3 +1,4 @@
+
 'use client';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -662,7 +663,7 @@ export default function AdminPage() {
     toast({ title: 'Bulk Classification Finished' });
   };
   
-  const handleCreateUser = async () => {
+  async function handleCreateUser() {
     if (!auth || !firestore) {
       toast({ variant: 'destructive', title: 'Initialization Error', description: 'Firebase services not available.' });
       return;
@@ -1853,7 +1854,7 @@ export default function AdminPage() {
                                   <DropdownMenuContent align="end">
                                      <DropdownMenuItem onClick={() => router.push(`/testing?sessionId=${session.id}`)}>
                                         <FileSignature className="mr-2 h-4 w-4" />
-                                        <span>View & Generate Report</span>
+                                        <span>View Session</span>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => handleExportSessionCSV(session)}>
                                         <Download className="mr-2 h-4 w-4" />
@@ -1933,10 +1934,10 @@ export default function AdminPage() {
 
   const renderUserManagement = () => {
     return (
-        <Card className="mt-6 lg:col-span-3 animate-in">
-            <Accordion type="single" collapsible className="w-full">
+        <Card className="animate-in">
+             <Accordion type="single" collapsible className="w-full">
                 <AccordionItem value="item-1">
-                    <AccordionTrigger className="p-4">
+                    <AccordionTrigger className="p-6">
                         <div className="text-left">
                             <CardTitle>User Management</CardTitle>
                             <CardDescription>Create users, manage roles, and access.</CardDescription>
@@ -2036,7 +2037,7 @@ export default function AdminPage() {
     <Card className="animate-in">
         <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="item-1">
-                <AccordionTrigger className="p-4">
+                <AccordionTrigger className="p-6">
                     <div className="text-left">
                         <CardTitle>Vessel Type Management</CardTitle>
                         <CardDescription>Create and manage vessel types and their test guidelines.</CardDescription>
@@ -2168,7 +2169,7 @@ const renderBatchManagement = () => (
     <Card className="animate-in">
         <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="item-1">
-                <AccordionTrigger className="p-4">
+                <AccordionTrigger className="p-6">
                     <div className="text-left">
                         <CardTitle>Batch Management</CardTitle>
                         <CardDescription>Create and manage production batches and assign them to vessel types.</CardDescription>
@@ -2287,7 +2288,7 @@ const renderBatchManagement = () => (
              <Card className="animate-in">
                   <Accordion type="single" collapsible className="w-full">
                       <AccordionItem value="item-1">
-                          <AccordionTrigger className="p-4">
+                          <AccordionTrigger className="p-6">
                             <div className="text-left">
                                 <CardTitle>Test Bench Management</CardTitle>
                                 <CardDescription>Manage physical test benches.</CardDescription>
@@ -2352,7 +2353,7 @@ const renderBatchManagement = () => (
               <Card className="animate-in">
                   <Accordion type="single" collapsible className="w-full">
                       <AccordionItem value="item-1">
-                          <AccordionTrigger className="p-4">
+                          <AccordionTrigger className="p-6">
                             <div className="text-left">
                                 <CardTitle>Sensor Management</CardTitle>
                                 <CardDescription>
@@ -2417,10 +2418,10 @@ const renderBatchManagement = () => (
             </div>
           )}
           <div className="lg:col-span-3">
-             <Accordion type="single" collapsible>
-                <AccordionItem value="ai-models">
-                    <Card className="animate-in">
-                        <AccordionTrigger className="p-4 flex w-full">
+             <Card className="animate-in">
+                <Accordion type="single" collapsible>
+                    <AccordionItem value="ai-models">
+                        <AccordionTrigger className="flex w-full p-6">
                            <div className="flex items-center gap-4 text-left">
                                 <BrainCircuit className="h-6 w-6 text-primary" />
                                 <div>
@@ -2543,55 +2544,58 @@ const renderBatchManagement = () => (
                             </div>
                            </CardContent>
                         </AccordionContent>
-                    </Card>
-                </AccordionItem>
-            </Accordion>
+                    </AccordionItem>
+                </Accordion>
+             </Card>
           </div>
            <div className="lg:col-span-3">
-            <Accordion type="single" collapsible>
-                <AccordionItem value="auto-train">
-                  <Card className="animate-in">
-                      <AccordionTrigger className="p-4 flex w-full">
-                          <div className="flex items-center gap-4 text-left">
-                            <BrainCircuit className="h-6 w-6 text-primary" />
-                            <div>
-                                <CardTitle>Automated Training Pipeline</CardTitle>
-                                <CardDescription>Generate data, train a model, and save it to the catalog.</CardDescription>
+             <Card className="animate-in">
+                <Accordion type="single" collapsible>
+                    <AccordionItem value="auto-train">
+                        <AccordionTrigger className="flex w-full p-6">
+                            <div className="flex items-center gap-4 text-left">
+                                <BrainCircuit className="h-6 w-6 text-primary" />
+                                <div>
+                                    <CardTitle>Automated Training Pipeline</CardTitle>
+                                    <CardDescription>Generate data, train a model, and save it to the catalog.</CardDescription>
+                                </div>
                             </div>
-                          </div>
-                      </AccordionTrigger>
-                      <AccordionContent>
-                          <CardContent className="p-6 pt-4 space-y-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="auto-model-size">Model Size</Label>
-                                <Select onValueChange={(value) => setAutoModelSize(value as 'small' | 'medium' | 'large')} defaultValue="medium" disabled={isAutoTraining}>
-                                  <SelectTrigger id="auto-model-size">
-                                    <SelectValue placeholder="Select model size" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="small">Small (1x25)</SelectItem>
-                                    <SelectItem value="medium">Medium (2x50)</SelectItem>
-                                    <SelectItem value="large">Large (2x100)</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            <Button onClick={handleAutomatedTraining} disabled={isAutoTraining} className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
-                              {isAutoTraining ? 'Pipeline Running...' : 'Start Automated Training'}
-                            </Button>
-                            {isAutoTraining && autoTrainingStatus && (
-                              <div className="space-y-2 pt-4">
-                                  <Label>Pipeline Progress ({autoTrainingStatus.step})</Label>
-                                  <Progress value={autoTrainingStatus.progress} />
-                                  <p className="text-xs text-muted-foreground text-center">{autoTrainingStatus.details}</p>
-                              </div>
-                            )}
-                          </CardContent>
-                      </AccordionContent>
-                  </Card>
-                </AccordionItem>
-            </Accordion>
+                        </AccordionTrigger>
+                        <AccordionContent>
+                            <CardContent className="p-6 pt-4 space-y-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="auto-model-size">Model Size</Label>
+                                    <Select onValueChange={(value) => setAutoModelSize(value as 'small' | 'medium' | 'large')} defaultValue="medium" disabled={isAutoTraining}>
+                                    <SelectTrigger id="auto-model-size">
+                                        <SelectValue placeholder="Select model size" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="small">Small (1x25)</SelectItem>
+                                        <SelectItem value="medium">Medium (2x50)</SelectItem>
+                                        <SelectItem value="large">Large (2x100)</SelectItem>
+                                    </SelectContent>
+                                    </Select>
+                                </div>
+                                <Button onClick={handleAutomatedTraining} disabled={isAutoTraining} className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
+                                {isAutoTraining ? 'Pipeline Running...' : 'Start Automated Training'}
+                                </Button>
+                                {isAutoTraining && autoTrainingStatus && (
+                                <div className="space-y-2 pt-4">
+                                    <Label>Pipeline Progress ({autoTrainingStatus.step})</Label>
+                                    <Progress value={autoTrainingStatus.progress} />
+                                    <p className="text-xs text-muted-foreground text-center">{autoTrainingStatus.details}</p>
+                                </div>
+                                )}
+                            </CardContent>
+                        </AccordionContent>
+                    </AccordionItem>
+                </Accordion>
+             </Card>
            </div>
       </main>
     </div>
   );
 }
+
+
+    
