@@ -4,8 +4,8 @@ import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { TestBenchContext, ValveStatus } from './TestBenchContext';
 import { useFirebase, useUser, addDocumentNonBlocking, WithId } from '@/firebase';
-import { ref, onValue, set, remove } from 'firebase/database';
-import { collection, query, where, onSnapshot, limit, doc, DocumentData } from 'firebase/firestore';
+import { ref, onValue, set } from 'firebase/database';
+import { collection, query, where, onSnapshot, limit, DocumentData } from 'firebase/firestore';
 
 export type RtdbSensorData = {
   timestamp: string;
@@ -30,22 +30,37 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   
   const runningTestSessionRef = useRef<WithId<DocumentData> | null>(null);
 
-  const [pendingValves, setPendingValves] = useState<('VALVE1' | 'VALVE2')[]>([]);
   const [lockedValves, setLockedValves] = useState<('VALVE1' | 'VALVE2')[]>([]);
 
-  // State for downtime calculation
   const [startTime, setStartTime] = useState<number | null>(null);
   const [totalDowntime, setTotalDowntime] = useState(0);
   const downtimeSinceRef = useRef<number | null>(null);
 
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
+
   useEffect(() => {
-    // Set start time only once when the provider mounts
-    if (!startTime) {
-      setStartTime(Date.now());
+    // Load persisted downtime and start time from localStorage
+    const persistedDowntime = localStorage.getItem('totalDowntime');
+    if (persistedDowntime) {
+      setTotalDowntime(JSON.parse(persistedDowntime));
     }
-  }, []); // Empty dependency array ensures this runs only once.
+    
+    const persistedStartTime = localStorage.getItem('startTime');
+    if (persistedStartTime) {
+      setStartTime(JSON.parse(persistedStartTime));
+    } else {
+      const now = Date.now();
+      setStartTime(now);
+      localStorage.setItem('startTime', JSON.stringify(now));
+    }
+  }, []);
+
+  useEffect(() => {
+    // Persist downtime to localStorage whenever it changes
+    if (startTime) { // Only save if startTime is initialized
+        localStorage.setItem('totalDowntime', JSON.stringify(totalDowntime));
+    }
+  }, [totalDowntime, startTime]);
 
   useEffect(() => {
     if (!isConnected && downtimeSinceRef.current === null) {
@@ -56,7 +71,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [isConnected]);
 
-  // Monitor running sessions from Firestore
   useEffect(() => {
     if (!firestore || !user) return;
     const q = query(
@@ -79,9 +93,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const handleNewDataPoint = useCallback((data: any) => {
     if (data === null || data === undefined) return;
 
-    // The data from the device is the source of truth.
-    // This will automatically correct our optimistic UI if the command failed,
-    // unless the valve is temporarily locked by user action.
     if (!lockedValves.includes('VALVE1')) {
       setValve1Status(data.valve1 ? 'ON' : 'OFF');
     }
@@ -94,14 +105,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setDisconnectCount(data.disconnectCount || 0);
     setLatency(data.latency !== undefined ? data.latency : null);
     
-    // Always update the last seen timestamp
     const lastUpdateTimestamp = data.lastUpdate ? new Date(data.lastUpdate).getTime() : null;
     if (lastUpdateTimestamp) {
         setLastDataPointTimestamp(lastUpdateTimestamp);
     }
 
-
-    // Write to local log for display if needed
     if (data.sensor !== null && data.lastUpdate) {
         setLocalDataLog(prevLog => {
             const newDataPoint = { value: data.sensor, timestamp: new Date(data.lastUpdate).toISOString() };
@@ -112,7 +120,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         });
     }
 
-    // Write to Firestore if a session is running
     if (runningTestSessionRef.current && firestore && data.recording === true && data.sensor !== null && data.lastUpdate) {
       const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
       const dataToSave = {
@@ -130,14 +137,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         return;
     }
     
-    // Optimistic UI update
     if (valve === 'VALVE1') {
       setValve1Status(state);
     } else {
       setValve2Status(state);
     }
     
-    // Lock the valve from external updates
     setLockedValves(prev => [...prev, valve]);
     setTimeout(() => {
         setLockedValves(prev => prev.filter(v => v !== valve));
@@ -149,7 +154,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     } catch (error: any) {
         console.error('Failed to send command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
-        // Revert UI on failure & unlock immediately
          if (valve === 'VALVE1') {
           setValve1Status(state === 'ON' ? 'OFF' : 'ON');
         } else {
@@ -175,35 +179,41 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     if (!database) return;
-    
     const liveDataRef = ref(database, 'live');
 
-    const listener = onValue(liveDataRef, (snap) => {
+    const handleData = (snap: any) => {
       const data = snap.val();
-
+      
       if (connectionTimeoutRef.current) {
         clearTimeout(connectionTimeoutRef.current);
       }
 
       if (data && data.lastUpdate) {
-        setIsConnected(true);
+        if (!isConnected) {
+          setIsConnected(true);
+        }
         handleNewDataPoint(data);
-  
+
         connectionTimeoutRef.current = setTimeout(() => {
           setIsConnected(false);
-        }, 5000);
+        }, 5000); // 5-second tolerance
       } else {
         setIsConnected(false);
       }
+    };
+
+    const unsubscribe = onValue(liveDataRef, handleData, (error) => {
+        console.error("Firebase onValue error:", error);
+        setIsConnected(false);
     });
 
     return () => {
-        listener(); // Detach the onValue listener
-        if (connectionTimeoutRef.current) {
-          clearTimeout(connectionTimeoutRef.current);
-        }
+      unsubscribe();
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+      }
     };
-  }, [database, handleNewDataPoint]);
+  }, [database, handleNewDataPoint, isConnected]);
 
 
   const value = {
@@ -220,7 +230,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     sendValveCommand,
     sendRecordingCommand,
     deleteSession: async () => {},
-    pendingValves,
+    pendingValves: [],
     lockedValves,
     startTime,
     totalDowntime,

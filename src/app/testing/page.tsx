@@ -12,7 +12,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import {
   Dialog,
@@ -524,19 +523,20 @@ function TestingComponent() {
       };
   }, [currentValue, activeSensorConfig, runningTestSession, sensorConfigs]);
   
-    const downtimePercentage = useMemo(() => {
+  const downtimePercentage = useMemo(() => {
     if (startTime === null) return 0;
-    
+
     let currentDowntime = 0;
     if (downtimeSinceRef.current !== null) {
-      currentDowntime = Date.now() - downtimeSinceRef.current;
+      currentDowntime = now - downtimeSinceRef.current;
     }
-
-    const totalElapsed = Date.now() - startTime;
-    if (totalElapsed === 0) return 0;
+    
+    const totalElapsed = now - startTime;
+    if (totalElapsed <= 0) return 0;
 
     const totalOfflineTime = totalDowntime + currentDowntime;
-    return (totalOfflineTime / totalElapsed) * 100;
+    
+    return Math.min(100, (totalOfflineTime / totalElapsed) * 100);
   }, [startTime, totalDowntime, downtimeSinceRef, now]);
 
   const isDuringDowntime = useMemo(() => {
@@ -574,11 +574,11 @@ function TestingComponent() {
         try {
             logoBase64 = await toBase64('/images/logo.png');
         } catch (error: any) {
-            console.error("PDF Logo Generation Error:", error.message);
+            console.error("PDF Logo Generation Error:", error);
             toast({
                 variant: "destructive",
                 title: "Could Not Load Logo",
-                description: "The report will be generated without a logo. Check console for details.",
+                description: `The report will be generated without a logo. ${error.message}`,
             });
         }
 
@@ -957,7 +957,7 @@ function TestingComponent() {
                         <DialogTrigger asChild>
                             <Button variant="link" size="sm" className="mt-2 text-xs" onClick={handleOpenCrashPanel}>
                                 <AlertCircle className="mr-2 h-4 w-4" />
-                                Crash Analytics
+                                Device Reconnect Analysis
                             </Button>
                         </DialogTrigger>
                         <DialogContent className="max-w-lg">
@@ -1229,7 +1229,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
-
-    

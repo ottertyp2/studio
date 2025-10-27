@@ -70,5 +70,3 @@ export const toBase64 = (url: string): Promise<string> => {
       });
   });
 };
-
-    

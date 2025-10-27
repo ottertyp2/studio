@@ -887,8 +887,6 @@ export default function AdminPage() {
 
         const storage = getStorage(firebaseApp);
         const modelPath = `models/${selectedModel.name}`;
-        const modelRef = storageRef(storage, modelPath);
-        
         const saveResult = await model.save(tf.io.browserHTTPRequest(
           `https://firebasestorage.googleapis.com/v0/b/${storage.app.options.storageBucket}/o?name=${encodeURIComponent(modelPath)}`,
           { method: 'POST', headers: { 'Content-Type': 'application/json' } }

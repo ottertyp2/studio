@@ -1,14 +1,12 @@
 #include <WiFi.h>
 #include <Firebase_ESP_Client.h>
+#include <time.h>
+#include <esp_task_wdt.h>
 
-// Firebase Addons
 #include "addons/TokenHelper.h"
 #include "addons/RTDBHelper.h"
 
 // WiFi-Zugangsdaten
-// HINWEIS: Es wird empfohlen, diese in einer separaten "config.h"-Datei zu speichern,
-// die von der Versionskontrolle (git) ignoriert wird, um zu vermeiden,
-// dass sensible Daten veröffentlicht werden.
 #define WIFI_SSID "BioThrust"
 #define WIFI_PASSWORD "WORKBOX-declare-mescal-lion"
 
@@ -19,368 +17,997 @@
 #define USER_PASSWORD "esp32esp32"
 
 // Pin-Definitionen
-const int analogPin = A0;   // A0 ist normal (oft GPIO 36)
-const int valve1Pin = 18; // GPIO 18
-const int valve2Pin = 19; // GPIO 19
+const int analogPin = A0;
+const int valve1Pin = 18;
+const int valve2Pin = 19;
+const int valve1LedPin = D2;
+const int valve2LedPin = D3;
 
-// *** KORREKTUR ***
-// D2 und D3 sind nicht standardmäßig. Bitte passe Sie an dein Board an.
-// Beispiel: D2 ist oft GPIO 2, D3 ist auf manchen Boards GPIO 0 (Boot-Pin, riskant!)
-// Ich verwende hier GPIO 2 und GPIO 4 als sichere Beispiele.
-const int valve1LedPin = 2; // War D2. Bitte an dein Board anpassen!
-const int valve2LedPin = 4; // War D3. Bitte an dein Board anpassen!
+// NTP-Zeitserver-Einstellungen
+const char* ntpServer = "pool.ntp.org";
+const char* tzInfo = "CET-1CEST,M3.5.0/2,M10.5.0/3"; // Korrekte TZ für Berlin
 
+// Hardware Watchdog Konfiguration
+#define WDT_TIMEOUT 120
 
 // Firebase-Objekte
 FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
+FirebaseData fbdo_latency;
+FirebaseData fbdo_session;
+FirebaseData stream_fbdo_valve1;
+FirebaseData stream_fbdo_valve2;
+
+// Globale JSON-Objekte
+FirebaseJson liveStatus;
+FirebaseJson json;
 
 // Timing-Variablen
 unsigned long lastSensorTime = 0;
 unsigned long lastStatusTime = 0;
-unsigned long lastCommandCheck = 0;
+// unsigned long lastReconnect = 0; // Nicht mehr für Refresh benötigt
+unsigned long sensorInterval = 1000;
+unsigned long lastLatencyCheck = 0;
+unsigned long currentLatency = 0;
+
+// Intelligente Fehlerbehandlung - SEHR TOLERANT EINGESTELLT
+#define LATENCY_RECONNECT_THRESHOLD 15000
+#define UPDATE_TIMEOUT_THRESHOLD 60000          // 60 Sekunden
+#define STREAM_TIMEOUT_THRESHOLD 180000         // 3 Minuten
+#define MIN_RECONNECT_INTERVAL 60000
+
+// Error Counter System - MIT FEHLER-ABBAU
+int consecutiveLatencyErrors = 0;
+int consecutiveUpdateErrors = 0;
+int consecutiveStreamErrors = 0;
+#define ERROR_THRESHOLD_BEFORE_RECONNECT 10     // 10 Fehler
+unsigned long lastErrorReset = 0;               // Behalten für manuelle/Reconnect-Resets
+// #define ERROR_RESET_INTERVAL 120000          // Entfernt, wird durch Abbau ersetzt
+
+// NEU: Zeitstempel für letzten Fehler jedes Typs
+unsigned long lastLatencyErrorTime = 0;
+unsigned long lastUpdateErrorTime = 0;
+unsigned long lastStreamErrorTime = 0;
+unsigned long lastErrorDecayCheck = 0; // Timer für den Abbau-Check
+
+// Watchdog-Variablen
+unsigned long lastSuccessfulUpdate = 0;
+unsigned long lastStreamActivity = 0;
+unsigned long watchdogCheckInterval = 10000; // Prüft jetzt alle 10s für den Abbau
+unsigned long lastWatchdogCheck = 0;
+bool forceFullReconnect = false;
+unsigned long reconnectAttempts = 0;
+unsigned long lastFullReconnect = 0;
+
+// Memory Monitoring
+unsigned long lastMemoryCheck = 0;
+unsigned long minFreeHeap = 999999;
+unsigned long initialFreeHeap = 0;
+#define CRITICAL_HEAP_THRESHOLD 15000
+#define MEMORY_CHECK_DELAY 300000
+
+// Uptime & Reboot Counter
+RTC_DATA_ATTR int bootCount = 0;
+// Globale Crash-Zähler (überleben Neustarts)
+RTC_DATA_ATTR int totalLatencyReconnects = 0;
+RTC_DATA_ATTR int totalUpdateReconnects = 0;
+RTC_DATA_ATTR int totalStreamReconnects = 0;
+unsigned long bootTime = 0;
+
+// Error Counter (Generell)
+unsigned long wifiErrors = 0;
+unsigned long firebaseErrors = 0;
+unsigned long streamErrors = 0; // Zählt jeden Stream-Timeout
 
 // System-Status
 bool valve1 = false;
 bool valve2 = false;
-bool recordingActive = false;
-String currentSessionId = "";
-unsigned long sessionStartTime = 0;
+unsigned long disconnectCount = 0;
+unsigned long lastDisconnectLoggedTime = 0;
+int lastSensorValue = 0;
+unsigned long lastSensorTimestamp = 0;
 
-// =================================================================
-// *** NEU: Funktions-Prototypen (Forward Declarations) ***
-// Dies hilft dem Compiler/Linker, Funktionen zu finden,
-// die weiter unten im Code definiert sind.
-// =================================================================
+// Zeit- und Schlaf-Status
+bool isTimeSynced = false;
+bool isSleeping = false;
+bool isSunday = false;
+struct tm timeinfo;
+
+// Funktions-Prototypen
 void printStatus();
 String getISOTimestamp();
-// Die 'tokenStatusCallback' Deklaration wird aus TokenHelper.h geladen
+void handleDisconnect();
+void checkTimeAndSleepState();
+void performFullReconnect();
+void restartStreams();
+void checkWatchdog();
+void markStreamActivity();
+void markSuccessfulUpdate();
+void checkMemoryHealth();
+void feedHardwareWatchdog();
+void checkIfSunday();
+void logSystemHealth();
+void resetErrorCounters();
+void checkLatency(bool force = false);
+void reportError(const char* errorType);
+void decayErrorCounters(); // NEU: Prototyp für Fehler-Abbau
 
 // =================================================================
-//                     SETUP
+//           HARDWARE WATCHDOG
 // =================================================================
+
+void feedHardwareWatchdog() {
+  esp_task_wdt_reset();
+}
+
+// =================================================================
+//           ERROR COUNTER MANAGEMENT (Mit Crash Report & Abbau)
+// =================================================================
+
+void resetErrorCounters() {
+  if (consecutiveLatencyErrors > 0 || consecutiveUpdateErrors > 0 || consecutiveStreamErrors > 0) {
+    Serial.println("[ErrorMgmt] ✓ Fehler-Counter zurückgesetzt");
+  }
+  consecutiveLatencyErrors = 0;
+  consecutiveUpdateErrors = 0;
+  consecutiveStreamErrors = 0;
+  lastLatencyErrorTime = 0; // Reset auch für Abbau-Logik
+  lastUpdateErrorTime = 0;
+  lastStreamErrorTime = 0;
+  lastErrorReset = millis();
+}
+
+// NEU: Funktion zum Abbauen der Fehlerzähler alle 10 Sekunden
+void decayErrorCounters() {
+   if (millis() - lastErrorDecayCheck < 10000) return; // Nur alle 10s ausführen
+
+   lastErrorDecayCheck = millis();
+   bool decayed = false;
+
+   // Latenz-Fehler abbauen
+   if (consecutiveLatencyErrors > 0 && (millis() - lastLatencyErrorTime > 10000)) {
+       consecutiveLatencyErrors--;
+       decayed = true;
+       // Serial.printf("[ErrorMgmt] Latenz-Fehler abgebaut (%d)\n", consecutiveLatencyErrors);
+   }
+   // Update-Fehler abbauen
+   if (consecutiveUpdateErrors > 0 && (millis() - lastUpdateErrorTime > 10000)) {
+       consecutiveUpdateErrors--;
+       decayed = true;
+       // Serial.printf("[ErrorMgmt] Update-Fehler abgebaut (%d)\n", consecutiveUpdateErrors);
+   }
+   // Stream-Fehler abbauen
+   if (consecutiveStreamErrors > 0 && (millis() - lastStreamErrorTime > 10000)) {
+       consecutiveStreamErrors--;
+       decayed = true;
+       // Serial.printf("[ErrorMgmt] Stream-Fehler abgebaut (%d)\n", consecutiveStreamErrors);
+   }
+
+   // Optional: Log nur ausgeben, wenn etwas abgebaut wurde, um Spam zu vermeiden
+   // if (decayed) {
+   //    Serial.printf("[ErrorMgmt] Fehler-Abbau | L:%d U:%d S:%d\n",
+   //                  consecutiveLatencyErrors, consecutiveUpdateErrors, consecutiveStreamErrors);
+   // }
+}
+
+
+void reportError(const char* errorType) {
+  // Zeitstempel für den letzten Fehler setzen (für Abbau-Logik)
+  if (strcmp(errorType, "High-Latency") == 0 || strcmp(errorType, "Ping-Failed") == 0) {
+    lastLatencyErrorTime = millis();
+  } else if (strcmp(errorType, "Update-Timeout") == 0 || strcmp(errorType, "Disconnect") == 0) {
+    lastUpdateErrorTime = millis();
+  } else if (strcmp(errorType, "Stream-Timeout") == 0) { // Stream-Timeout wird jetzt HIER gemeldet
+    lastStreamErrorTime = millis();
+  }
+
+  Serial.printf("[ErrorMgmt] Fehler: %s | Latency: %d | Update: %d | Stream: %d\n",
+                errorType, consecutiveLatencyErrors, consecutiveUpdateErrors, consecutiveStreamErrors);
+
+  int totalErrors = consecutiveLatencyErrors + consecutiveUpdateErrors + consecutiveStreamErrors;
+
+  if (totalErrors < ERROR_THRESHOLD_BEFORE_RECONNECT) {
+     Serial.printf("[ErrorMgmt] Fehler registriert (%d/%d) - Noch kein Reconnect nötig\n",
+                  totalErrors, ERROR_THRESHOLD_BEFORE_RECONNECT);
+     return; // Schwelle noch nicht erreicht
+  }
+
+  // SCHWELLE ERREICHT - RECONNECT WIRD AUSGELÖST
+  Serial.printf("[ErrorMgmt] ⚠ Fehler-Schwelle erreicht (%d/%d) - Reconnect wird eingeleitet\n",
+                totalErrors, ERROR_THRESHOLD_BEFORE_RECONNECT);
+
+  forceFullReconnect = true; // Reconnect auslösen
+
+  // --- Crash-Report-Analyse ---
+  String crashReason = "Unknown";
+  int maxErrorVal = 0; // Geändert, da maxError bereits verwendet wird
+
+  // Finde den Hauptgrund für den Fehler
+  if (consecutiveLatencyErrors > maxErrorVal) {
+      maxErrorVal = consecutiveLatencyErrors;
+      crashReason = "High Latency";
+      totalLatencyReconnects++;
+  }
+  if (consecutiveUpdateErrors > maxErrorVal) {
+      maxErrorVal = consecutiveUpdateErrors;
+      crashReason = "Update Timeout";
+      totalUpdateReconnects++;
+  }
+  if (consecutiveStreamErrors > maxErrorVal) {
+      maxErrorVal = consecutiveStreamErrors;
+      crashReason = "Stream Timeout";
+      totalStreamReconnects++;
+  }
+
+   // Falls Zähler gleich sind, nimm den letzten Fehler als Grund
+  if (crashReason == "Unknown") {
+      if (strcmp(errorType, "High-Latency") == 0 || strcmp(errorType, "Ping-Failed") == 0) {
+          crashReason = "Last Error: Latency";
+          if (totalErrors >= ERROR_THRESHOLD_BEFORE_RECONNECT) totalLatencyReconnects++; // Nur erhöhen, wenn Schwelle überschritten
+      } else if (strcmp(errorType, "Update-Timeout") == 0 || strcmp(errorType, "Disconnect") == 0) {
+          crashReason = "Last Error: Update";
+           if (totalErrors >= ERROR_THRESHOLD_BEFORE_RECONNECT) totalUpdateReconnects++;
+      } else if (strcmp(errorType, "Stream-Timeout") == 0) { // Stream-Timeout wird vom Watchdog gemeldet
+          crashReason = "Last Error: Stream";
+           if (totalErrors >= ERROR_THRESHOLD_BEFORE_RECONNECT) totalStreamReconnects++;
+      } else {
+          crashReason = errorType; // Fallback
+           if (totalErrors >= ERROR_THRESHOLD_BEFORE_RECONNECT) totalUpdateReconnects++; // Standard
+      }
+  }
+
+
+  // 1. Crash-Report im Serial Monitor ausgeben
+  Serial.println("╔════════════════════════════════════╗");
+  Serial.println("║         CRASH REPORT (RECONNECT)   ║");
+  Serial.println("╚════════════════════════════════════╝");
+  Serial.printf(" Grund:         %s\n", crashReason.c_str());
+  Serial.printf(" Fehler-Details (L|U|S): %d | %d | %d\n",
+                consecutiveLatencyErrors, consecutiveUpdateErrors, consecutiveStreamErrors);
+  Serial.printf(" Gesamt-Reconnects (L|U|S): %d | %d | %d\n",
+                totalLatencyReconnects, totalUpdateReconnects, totalStreamReconnects);
+  Serial.println("════════════════════════════════════\n");
+
+  // 2. Crash-Report in Firebase speichern
+  if (Firebase.ready()) {
+      FirebaseJson crashReport;
+      crashReport.set("reason", crashReason);
+      crashReport.set("timestamp/.sv", "timestamp");
+      crashReport.set("errors/latency", consecutiveLatencyErrors);
+      crashReport.set("errors/update", consecutiveUpdateErrors);
+      crashReport.set("errors/stream", consecutiveStreamErrors);
+      crashReport.set("totals/latency", totalLatencyReconnects);
+      crashReport.set("totals/update", totalUpdateReconnects);
+      crashReport.set("totals/stream", totalStreamReconnects);
+
+      // Verwende fbdo_latency, da es wahrscheinlich nicht blockiert ist
+      if (!Firebase.RTDB.setJSON(&fbdo_latency, "/system/lastCrashReport", &crashReport)) {
+          Serial.println("[ErrorMgmt] ✗ Crash-Report konnte nicht an DB gesendet werden.");
+      } else {
+          Serial.println("[ErrorMgmt] ✓ Crash-Report an /system/lastCrashReport gesendet.");
+      }
+  }
+}
+
+
+// =================================================================
+//           MEMORY HEALTH MONITORING
+// =================================================================
+
+void checkMemoryHealth() {
+  if (millis() - lastMemoryCheck < 60000) {  // Alle 60s
+    return;
+  }
+
+  lastMemoryCheck = millis();
+  unsigned long freeHeap = ESP.getFreeHeap();
+  unsigned long minHeap = ESP.getMinFreeHeap();
+
+  if (minHeap < minFreeHeap) {
+    minFreeHeap = minHeap;
+  }
+
+  // Nur alle 10 Minuten ausgeben
+  static unsigned long lastMemoryLog = 0;
+  if (millis() - lastMemoryLog > 600000) {
+    lastMemoryLog = millis();
+    Serial.printf("[Memory] Free: %lu | Min: %lu\n", freeHeap, minHeap);
+  }
+
+  if (freeHeap < CRITICAL_HEAP_THRESHOLD) {
+    Serial.printf("[Memory] ✗ KRITISCH: Nur %lu Bytes frei! Neustart...\n", freeHeap);
+    delay(1000);
+    ESP.restart();
+  }
+}
+
+// =================================================================
+//           SONNTAGS-CHECK
+// =================================================================
+
+void checkIfSunday() {
+  if (!isTimeSynced) return;
+
+  if (!getLocalTime(&timeinfo)) {
+    return;
+  }
+
+  bool wasSunday = isSunday;
+  isSunday = (timeinfo.tm_wday == 0);
+
+  if (isSunday && !wasSunday) {
+    Serial.println("╔════════════════════════════════════╗");
+    Serial.println("║   SONNTAG - DATENPAUSE AKTIV     ║");
+    Serial.println("╚════════════════════════════════════╝");
+  } else if (!isSunday && wasSunday) {
+    Serial.println("╔════════════════════════════════════╗");
+    Serial.println("║   WOCHENTAG - NORMALBETRIEB      ║");
+    Serial.println("╚════════════════════════════════════╝");
+  }
+}
+
+// =================================================================
+//           SYSTEM HEALTH LOGGING
+// =================================================================
+
+void logSystemHealth() {
+  static unsigned long lastHealthLog = 0;
+
+  if (millis() - lastHealthLog < 600000) {  // Alle 10 Minuten
+    return;
+  }
+
+  lastHealthLog = millis();
+
+  if (!Firebase.ready()) return;
+
+  FirebaseJson healthData;
+  healthData.set("uptime", (int)millis());
+  healthData.set("bootCount", bootCount);
+  healthData.set("freeHeap", (int)ESP.getFreeHeap());
+  healthData.set("wifiSignal", WiFi.RSSI());
+  healthData.set("reconnects", (int)reconnectAttempts);
+  healthData.set("latency", (int)currentLatency);
+  healthData.set("isSunday", isSunday);
+  healthData.set("timestamp/.sv", "timestamp");
+
+  if (Firebase.RTDB.setJSON(&fbdo, "/system/health", &healthData)) {
+    markSuccessfulUpdate();
+  }
+}
+
+// =================================================================
+//           LATENZ-CHECK
+// =================================================================
+
+void checkLatency(bool force) {
+  if (!Firebase.ready()) return;
+
+  // Erzwingen (für setup) oder 30s-Intervall prüfen
+  if (force || (millis() - lastLatencyCheck > 30000)) {
+    lastLatencyCheck = millis();
+
+    unsigned long pingStart = millis();
+
+    // Verwende fbdo_latency
+    if (Firebase.RTDB.setInt(&fbdo_latency, "/live/ping", pingStart)) {
+      currentLatency = millis() - pingStart;
+
+      // Nur loggen wenn > 2s oder erzwungen
+      if (currentLatency > 2000 || force) {
+        Serial.printf("[Latency] %lu ms\n", currentLatency);
+      }
+
+      markSuccessfulUpdate(); // Setzt Update- und Latenz-Fehler zurück
+
+      // Nur bei wirklich extremer Latenz zählen
+      if (currentLatency > LATENCY_RECONNECT_THRESHOLD) {
+        consecutiveLatencyErrors++;
+        reportError("High-Latency");
+      }
+    } else {
+      // Ping-Fehler zählt jetzt
+      consecutiveLatencyErrors++;
+      reportError("Ping-Failed");
+      firebaseErrors++;
+    }
+  }
+}
+
+
+// =================================================================
+//           WATCHDOG-FUNKTIONEN (Mit Fehler-Abbau)
+// =================================================================
+
+void markStreamActivity() {
+  lastStreamActivity = millis();
+  if (consecutiveStreamErrors > 0) {
+    consecutiveStreamErrors = 0; // Fehler wird sofort zurückgesetzt
+    Serial.println("[Watchdog] Stream wieder aktiv - Counter zurückgesetzt");
+  }
+}
+
+void markSuccessfulUpdate() {
+  lastSuccessfulUpdate = millis();
+  // Setzt BEIDE Zähler zurück, da ein erfolgreiches Update meist auch Latenz impliziert
+  if (consecutiveUpdateErrors > 0 || consecutiveLatencyErrors > 0) {
+    consecutiveUpdateErrors = 0;
+    consecutiveLatencyErrors = 0;
+    Serial.println("[Watchdog] Update erfolgreich - Counter zurückgesetzt");
+  }
+}
+
+void checkWatchdog() {
+  // Check alle 10 Sekunden ausführen (für Fehler-Abbau)
+  if (millis() - lastWatchdogCheck < watchdogCheckInterval) {
+    return;
+  }
+
+  lastWatchdogCheck = millis();
+  feedHardwareWatchdog();
+
+  // NEU: Fehler-Abbau-Logik hier aufrufen
+  decayErrorCounters();
+
+  unsigned long timeSinceUpdate = millis() - lastSuccessfulUpdate;
+  unsigned long timeSinceStream = millis() - lastStreamActivity;
+
+  // Reset aller Error Counters nach 2 Minuten komplett stabiler Verbindung nicht mehr nötig
+
+  // Nur bei wirklich langen Timeouts zählen (nutzt 60s Threshold)
+  if (!isSleeping && !isSunday && timeSinceUpdate > UPDATE_TIMEOUT_THRESHOLD) {
+    consecutiveUpdateErrors++;
+    reportError("Update-Timeout");
+    lastUpdateErrorTime = millis(); // Zeitstempel für Abbau setzen
+  }
+
+  // Nutzt 3-Minuten Threshold für Stream-Inaktivität
+  if (timeSinceStream > STREAM_TIMEOUT_THRESHOLD) {
+    // Nur erhöhen, wenn nicht schon kürzlich erhöht wurde (verhindert Mehrfachzählung)
+    if (millis() - lastStreamErrorTime > STREAM_TIMEOUT_THRESHOLD - 1000) {
+       consecutiveStreamErrors++;
+       reportError("Stream-Timeout"); // HIER wird jetzt der Fehler gemeldet
+       lastStreamErrorTime = millis(); // Zeitstempel für Abbau setzen
+       // streamErrors++; // Allgemeiner Zähler wird im Callback erhöht
+    }
+  }
+
+  // Nur reconnecten wenn forceFullReconnect gesetzt ist (von reportError)
+  if (forceFullReconnect) {
+    forceFullReconnect = false;
+    performFullReconnect(); // Starte den Reconnect
+  }
+}
+
+// =================================================================
+//           VOLLSTÄNDIGER RECONNECT
+// =================================================================
+
+void performFullReconnect() {
+  if (millis() - lastFullReconnect < MIN_RECONNECT_INTERVAL) {
+    Serial.printf("[Reconnect] ⏳ Zu früh. Warte noch %lu s...\n",
+                  (MIN_RECONNECT_INTERVAL - (millis() - lastFullReconnect)) / 1000);
+    return;
+  }
+
+  // Zähler SOFORT zurücksetzen, um Schleifen zu verhindern
+  resetErrorCounters();
+
+  lastFullReconnect = millis();
+  reconnectAttempts++;
+
+  Serial.println("\n╔════════════════════════════════════╗");
+  Serial.printf("║ VOLLSTÄNDIGER RECONNECT #%-9lu║\n", reconnectAttempts);
+  Serial.println("╚════════════════════════════════════╝");
+
+  Serial.println("[Reconnect] 1/4: Beende Firebase-Streams...");
+  Firebase.RTDB.endStream(&stream_fbdo_valve1);
+  Firebase.RTDB.endStream(&stream_fbdo_valve2);
+  delay(500); // Mehr Zeit geben
+  feedHardwareWatchdog();
+
+  Serial.printf("[Reconnect] 2/4: Verbinde WiFi neu (%s)...\n", WIFI_SSID);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  int wifiTimeout = 0;
+  while (WiFi.status() != WL_CONNECTED && wifiTimeout < 30) { // 15s Timeout
+    delay(500);
+    Serial.print(".");
+    wifiTimeout++;
+    if (wifiTimeout % 10 == 0) {
+      feedHardwareWatchdog();
+    }
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("\n[Reconnect] ✗ WiFi-Reconnect fehlgeschlagen!");
+    wifiErrors++;
+    delay(5000);
+    ESP.restart(); // Harter Neustart
+    return;
+  }
+
+  Serial.println("\n[Reconnect] ✓ WiFi verbunden!");
+  Serial.printf("[Reconnect] IP: %s | Signal: %d dBm\n",
+                WiFi.localIP().toString().c_str(), WiFi.RSSI());
+  feedHardwareWatchdog();
+
+  // Zeit-Check VOR Firebase-Reconnect
+  getLocalTime(&timeinfo);
+  if (timeinfo.tm_year < 100) {
+    Serial.println("[Reconnect] ⚠ Zeit verloren! Erneute NTP-Synchronisierung...");
+    configTime(0, 0, ntpServer);
+    unsigned long ntpStartTime = millis();
+    while (timeinfo.tm_year < 100) {
+      getLocalTime(&timeinfo);
+      delay(500);
+      feedHardwareWatchdog();
+      if (millis() - ntpStartTime > 10000) { // 10s Timeout
+         Serial.println("[Reconnect] ✗ NTP-Sync fehlgeschlagen.");
+         break;
+      }
+    }
+    if(timeinfo.tm_year > 100) Serial.println("[Reconnect] ✓ Zeit erneut synchronisiert.");
+  }
+
+  Serial.println("[Reconnect] 3/4: Reconnecte Firebase...");
+  Firebase.reconnectWiFi(true);
+  delay(1000); // Mehr Zeit geben
+  feedHardwareWatchdog();
+
+  Serial.println("[Reconnect] 4/4: Starte Streams neu...");
+  restartStreams();
+  feedHardwareWatchdog();
+
+  lastSuccessfulUpdate = millis();
+  lastStreamActivity = millis();
+
+  Serial.println("[Reconnect] ✓ RECONNECT ABGESCHLOSSEN");
+  Serial.println("════════════════════════════════════\n");
+}
+
+// =================================================================
+//           STREAMS NEU STARTEN
+// =================================================================
+
+void restartStreams() {
+  Serial.println("[Streams] Starte Befehls-Streams neu...");
+
+  if (Firebase.RTDB.beginStream(&stream_fbdo_valve1, "/commands/valve1")) {
+    Firebase.RTDB.setStreamCallback(&stream_fbdo_valve1, streamCallback_Valve1, streamTimeoutCallback);
+    Serial.println("[Streams] ✓ Valve1-Stream gestartet");
+  } else {
+    Serial.printf("[Streams] ✗ Valve1-Stream fehlgeschlagen: %s\n",
+                  stream_fbdo_valve1.errorReason().c_str());
+    streamErrors++;
+    // KEIN reportError hier, wird vom Watchdog behandelt
+  }
+
+  delay(500); // Mehr Zeit geben
+
+  if (Firebase.RTDB.beginStream(&stream_fbdo_valve2, "/commands/valve2")) {
+    Firebase.RTDB.setStreamCallback(&stream_fbdo_valve2, streamCallback_Valve2, streamTimeoutCallback);
+    Serial.println("[Streams] ✓ Valve2-Stream gestartet");
+  } else {
+    Serial.printf("[Streams] ✗ Valve2-Stream fehlgeschlagen: %s\n",
+                  stream_fbdo_valve2.errorReason().c_str());
+    streamErrors++;
+    // KEIN reportError hier
+  }
+
+  delay(500); // Mehr Zeit geben
+
+  markStreamActivity(); // Setzt Zeitstempel, auch wenn ein Stream fehlschlägt
+}
+
+// =================================================================
+//           STREAM-CALLBACK-FUNKTIONEN
+// =================================================================
+
+void streamTimeoutCallback(bool timeout) {
+  if (timeout) {
+    Serial.println("[Stream] ⚠ Timeout (wird überwacht)");
+    streamErrors++; // Nur allgemeinen Zähler erhöhen
+    lastStreamErrorTime = millis(); // Zeitstempel für Abbau setzen
+    // consecutiveStreamErrors++; // Wird jetzt vom Watchdog erhöht
+    // reportError("Stream-Timeout-Callback"); // NICHT MEHR HIER REPORTEN
+  }
+}
+
+void streamCallback_Valve1(FirebaseStream data) {
+  markStreamActivity(); // Setzt consecutiveStreamErrors zurück
+
+  // Debug-Ausgaben hinzugefügt
+  Serial.println(">>> streamCallback_Valve1 triggered! <<<");
+  Serial.printf(">>> Data Type: %s\n", data.dataType().c_str());
+
+  Serial.print("[Stream] Valve1-Update: ");
+  bool newState = false;
+
+  if (data.dataType() == "boolean") {
+    newState = data.to<bool>();
+    Serial.println(newState ? "ON" : "OFF");
+    Serial.printf(">>> newState set to: %s\n", newState ? "true" : "false");
+  } else if (data.dataType() == "null") {
+    Serial.println("NULL (OFF)");
+    newState = false;
+    Serial.println(">>> newState set to: false (due to null)");
+  } else {
+    Serial.printf("Unerwarteter Typ: %s\n", data.dataType().c_str());
+    Serial.println(">>> Callback returning due to unexpected type <<<");
+    return;
+  }
+
+  Serial.printf(">>> Current valve1 state: %s\n", valve1 ? "true" : "false");
+  if (newState != valve1) {
+    Serial.println(">>> State change detected! Updating valve1... <<<");
+    valve1 = newState;
+    digitalWrite(valve1Pin, valve1 ? HIGH : LOW);
+    digitalWrite(valve1LedPin, valve1 ? HIGH : LOW);
+    Serial.printf("[Command] ✓ Valve1 -> %s\n", valve1 ? "ON" : "OFF");
+  } else {
+     Serial.println(">>> No state change detected. Not updating valve1. <<<");
+  }
+}
+
+
+void streamCallback_Valve2(FirebaseStream data) {
+  markStreamActivity(); // Setzt consecutiveStreamErrors zurück
+
+  Serial.print("[Stream] Valve2-Update: ");
+  bool newState = false;
+
+  if (data.dataType() == "boolean") {
+    newState = data.to<bool>();
+    Serial.println(newState ? "ON" : "OFF");
+  } else if (data.dataType() == "null") {
+    Serial.println("NULL (OFF)");
+    newState = false;
+  } else {
+    Serial.printf("Unerwarteter Typ: %s\n", data.dataType().c_str());
+    return;
+  }
+
+  if (newState != valve2) {
+    valve2 = newState;
+    digitalWrite(valve2Pin, valve2 ? HIGH : LOW);
+    digitalWrite(valve2LedPin, valve2 ? HIGH : LOW);
+    Serial.printf("[Command] ✓ Valve2 -> %s\n", valve2 ? "ON" : "OFF");
+  }
+}
+
+void handleDisconnect() {
+  if (millis() - lastDisconnectLoggedTime > 60000) {
+    lastDisconnectLoggedTime = millis();
+    disconnectCount++;
+    Serial.printf("[System] Disconnect registriert (%lu)\n", disconnectCount);
+    consecutiveUpdateErrors++;
+    reportError("Disconnect"); // Zählt jetzt nur als Update-Fehler
+    lastUpdateErrorTime = millis(); // Zeitstempel für Abbau
+  }
+}
+
+void checkTimeAndSleepState() {
+  if (!isTimeSynced) return;
+
+  if (!getLocalTime(&timeinfo)) {
+    return;
+  }
+
+  int currentHour = timeinfo.tm_hour;
+  bool shouldBeSleeping = (currentHour >= 20 || currentHour < 7); // 20:00 bis 06:59
+
+  if (shouldBeSleeping && !isSleeping) {
+    isSleeping = true;
+    Serial.printf("[Time] Nachtruhe (20:00-07:00) | %02d:%02d Uhr\n",
+                  timeinfo.tm_hour, timeinfo.tm_min);
+  } else if (!shouldBeSleeping && isSleeping) {
+    isSleeping = false;
+    Serial.printf("[Time] Tag-Modus (07:00-20:00) | %02d:%02d Uhr\n",
+                  timeinfo.tm_hour, timeinfo.tm_min);
+  }
+}
+
 void setup() {
-  // Serial für Debugging (bleibt IMMER aktiv!)
   Serial.begin(115200);
   delay(500);
-  Serial.println("\n=== ESP32 Studio Sensor System ===");
-  Serial.println("Version: 1.3 (Status-Log)");
-  
-  // Pin-Konfiguration
+
+  bootCount++;
+
+  Serial.println("\n╔════════════════════════════════════╗");
+  Serial.println("║   ESP32 STUDIO SENSOR SYSTEM       ║");
+  Serial.println("║   Version 7.4 - Decaying Errors    ║"); // Version erhöht
+  Serial.println("╚════════════════════════════════════╝");
+  Serial.printf("Boot #%d\n", bootCount);
+
+  Serial.printf("[Watchdog] Hardware-Watchdog (%ds)\n", WDT_TIMEOUT);
+  esp_task_wdt_init(WDT_TIMEOUT, true);
+  esp_task_wdt_add(NULL);
+
   pinMode(analogPin, INPUT);
   pinMode(valve1Pin, OUTPUT);
   pinMode(valve2Pin, OUTPUT);
   pinMode(valve1LedPin, OUTPUT);
   pinMode(valve2LedPin, OUTPUT);
-  
+
   digitalWrite(valve1Pin, LOW);
   digitalWrite(valve2Pin, LOW);
   digitalWrite(valve1LedPin, LOW);
   digitalWrite(valve2LedPin, LOW);
-  
-  Serial.println("[GPIO] Pins initialisiert");
-  
-  // WiFi-Verbindung
+
+  Serial.println("[GPIO] ✓ Pins initialisiert");
+
+  initialFreeHeap = ESP.getFreeHeap();
+  minFreeHeap = initialFreeHeap;
+  Serial.printf("[Memory] Initial: %lu Bytes\n", initialFreeHeap);
+
   Serial.printf("[WiFi] Verbinde mit %s...\n", WIFI_SSID);
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true); // Wichtig für Stabilität
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  
+
   int wifiTimeout = 0;
   while (WiFi.status() != WL_CONNECTED && wifiTimeout < 30) {
     delay(500);
     Serial.print(".");
     wifiTimeout++;
+    if (wifiTimeout % 10 == 0) {
+      feedHardwareWatchdog();
+    }
   }
-  
+
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("\n[WiFi] ✓ Verbunden!");
-    Serial.printf("[WiFi] IP: %s\n", WiFi.localIP().toString().c_str());
-    Serial.printf("[WiFi] Signal: %d dBm\n", WiFi.RSSI());
+    Serial.printf("[WiFi] IP: %s | Signal: %d dBm\n",
+                  WiFi.localIP().toString().c_str(), WiFi.RSSI());
+
+    // ✅ KRITISCH: Deaktiviere WiFi Power Save Mode
+    WiFi.setSleep(false);
+    Serial.println("[WiFi] Power Save deaktiviert");
+
   } else {
-    Serial.println("\n[WiFi] ✗ FEHLER: Verbindung fehlgeschlagen!");
-    Serial.println("[System] Arbeite nur im Serial-Debug-Modus");
-    Serial.println("[System] READY (Serial-only mode)");
-    return; // Im Fehlerfall hier stoppen (kein Firebase)
+    Serial.println("\n[WiFi] ✗ FEHLER! Starte neu...");
+    delay(5000);
+    ESP.restart();
   }
-  
-  // Firebase initialisieren
+
+  feedHardwareWatchdog();
+
+  Serial.println("[Time] NTP-Synchronisierung...");
+  setenv("TZ", tzInfo, 1);
+  tzset();
+  configTime(0, 0, ntpServer);
+
+  unsigned long ntpStartTime = millis();
+  timeinfo.tm_year = 0;
+
+  while (timeinfo.tm_year < 100) {
+      getLocalTime(&timeinfo);
+      delay(1000);
+      feedHardwareWatchdog();
+
+      if (millis() - ntpStartTime > 30000) {
+         Serial.println("[Time] ✗ Timeout!");
+         break;
+      }
+  }
+
+  if (timeinfo.tm_year > 100) {
+    isTimeSynced = true;
+    Serial.println("[Time] ✓ Synchronisiert");
+    checkIfSunday();
+  }
+
+  // FEHLERBEHEBUNG: Stoppen, wenn Zeit-Sync fehlschlägt
+  if (!isTimeSynced) {
+    Serial.println("\n[Time] ✗ KRITISCHER FEHLER: Zeitsynchronisierung fehlgeschlagen.");
+    Serial.println("[System] SSL/Firebase kann nicht initialisiert werden.");
+    Serial.println("[System] Neustart in 5 Sekunden...");
+    delay(5000);
+    ESP.restart();
+  }
+
+  feedHardwareWatchdog();
+
   Serial.println("[Firebase] Initialisiere...");
   config.api_key = API_KEY;
   config.database_url = DATABASE_URL;
   auth.user.email = USER_EMAIL;
   auth.user.password = USER_PASSWORD;
-  
-  // Token-Status-Callback
-  // Diese Zuweisung ist KORREKT. Die Funktion selbst
-  // wird von "addons/TokenHelper.h" bereitgestellt.
-  config.token_status_callback = tokenStatusCallback;
-  
+
+  config.timeout.serverResponse = 20 * 1000;
+  config.timeout.socketConnection = 60 * 1000;
+  config.timeout.sslHandshake = 120 * 1000;
+  config.max_token_generation_retry = 5;
+
+  Serial.println("[Firebase] Timeouts: 20s/60s/120s");
+
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
-  
-  // Warten bis Firebase bereit ist (optional, aber gut für den Start)
-  // Serial.println("[Firebase] Warte auf Token...");
-  // while (!Firebase.ready()) {
-  //   delay(500);
-  //   Serial.print(".");
-  // }
-  // Serial.println("\n[Firebase] ✓ Token erhalten!");
-  
-  Serial.println("[Firebase] ✓ Initialisierung gestartet.");
-  Serial.printf("[Firebase] Database: %s\n", DATABASE_URL);
-  Serial.println("[System] ✓ READY");
-  Serial.println("=====================================");
-  Serial.println("Serial Commands:");
-  Serial.println("  VALVE1:ON / VALVE1:OFF");
-  Serial.println("  VALVE2:ON / VALVE2:OFF");
-  Serial.println("  START / STOP (Recording)");
-  Serial.println("  STATUS (System-Info)");
-  Serial.println("=====================================\n");
+
+  feedHardwareWatchdog();
+
+  restartStreams();
+
+  lastSuccessfulUpdate = millis();
+  lastStreamActivity = millis();
+  lastWatchdogCheck = millis();
+  lastErrorReset = millis();
+
+  checkTimeAndSleepState();
+
+  Serial.println("\n[System] ✓ BEREIT - SMART RECONNECT AKTIV (Decaying Errors)");
+  Serial.println("════════════════════════════════════════");
+  Serial.println("Schwellenwerte:");
+  Serial.printf("  Latenz-Limit:       %d ms\n", LATENCY_RECONNECT_THRESHOLD);
+  Serial.printf("  Update-Timeout:     %d ms\n", UPDATE_TIMEOUT_THRESHOLD);
+  Serial.printf("  Stream-Timeout:     %d ms\n", STREAM_TIMEOUT_THRESHOLD);
+  Serial.printf("  Fehler bis Reconnect: %d\n", ERROR_THRESHOLD_BEFORE_RECONNECT);
+  Serial.println("════════════════════════════════════════\n");
+
+  Serial.println("[System] Führe initialen Latenz-Check durch...");
+  unsigned long setupPingStart = millis();
+  while(!Firebase.ready() && millis() - setupPingStart < 5000) {
+      feedHardwareWatchdog();
+      delay(100);
+  }
+
+  if(Firebase.ready()) {
+      checkLatency(true); // Erzwinge Latenz-Check
+      Serial.printf("[System] Initiale Latenz: %lu ms\n", currentLatency);
+  } else {
+      Serial.println("[System] ✗ Firebase nicht bereit für initialen Ping.");
+  }
 }
 
-// =================================================================
-//                     LOOP
-// =================================================================
 void loop() {
 
-  // Sensor immer auslesen (für Serial Debug)
-  if (millis() - lastSensorTime > 500) {
-    lastSensorTime = millis();
-    int sensorValue = analogRead(analogPin);
-    unsigned long timestamp = millis();
-    
-    // Immer auf Serial ausgeben (Debug)
-    
-    // *** ÄNDERUNG (v1.3) ***
-    // Die Serial.printf-Zeile wurde angepasst, um den Status von
-    // valve1 und valve2 (als HIGH/LOW) direkt anzuzeigen,
-    // wie vom Benutzer gewünscht.
-    Serial.printf("[Sensor] %d | V1: %s | V2: %s | %lu ms", 
-                  sensorValue, 
-                  valve1 ? "HIGH" : "LOW", 
-                  valve2 ? "HIGH" : "LOW", 
-                  timestamp);
-    
-    if (recordingActive) {
-      Serial.print(" [REC]");
+  feedHardwareWatchdog();
+
+  checkWatchdog(); // Enthält jetzt den Fehler-Abbau
+  checkMemoryHealth();
+  checkIfSunday();
+  logSystemHealth();
+
+  if (Firebase.ready()) {
+    Firebase.RTDB.readStream(&stream_fbdo_valve1);
+    Firebase.RTDB.readStream(&stream_fbdo_valve2);
+  }
+
+  checkTimeAndSleepState();
+
+  // Kein periodischer Refresh mehr
+
+  if (!isSleeping && !isSunday) {
+
+    if (millis() - lastSensorTime > sensorInterval) {
+      lastSensorTime = millis();
+      lastSensorValue = analogRead(analogPin);
+      lastSensorTimestamp = millis();
+
+      Serial.printf("[Sensor] %d | V1:%s V2:%s\n",
+                    lastSensorValue,
+                    valve1 ? "ON " : "OFF",
+                    valve2 ? "ON " : "OFF");
     }
-    Serial.println(); // Zeilenumbruch
-    
-    // Firebase nur wenn verbunden
-    if (Firebase.ready()) {
-      // LIVE-Wert (wird überschrieben, keine Historie!)
-      if (Firebase.RTDB.setInt(&fbdo, "/live/sensor", sensorValue)) {
-        // Erfolg - optional debug message
-      } else {
-        Serial.printf("[Firebase] Fehler: %s\n", fbdo.errorReason().c_str());
-      }
-      
-      Firebase.RTDB.setInt(&fbdo, "/live/timestamp", timestamp);
-      
-      // Wenn Recording aktiv: In Session speichern
-      if (recordingActive && currentSessionId != "") {
-        // Pfad mit String-Objekt erstellen
-        String path = "/sessions/" + currentSessionId + "/data/" + String(timestamp);
-        
-        // JSON-Objekt für bessere Performance
-        FirebaseJson json;
-        json.set("value", sensorValue);
-        json.set("time", timestamp);
-        json.set("relativeTime", timestamp - sessionStartTime);
-        
-        // Senden
-        if (Firebase.RTDB.setJSON(&fbdo, path.c_str(), &json)) {
-          // Erfolg
+
+    if (millis() - lastStatusTime > 1000) {
+      lastStatusTime = millis();
+
+      if (Firebase.ready()) {
+
+        liveStatus.clear();
+        liveStatus.set("valve1", valve1);
+        liveStatus.set("valve2", valve2);
+        liveStatus.set("sensor", lastSensorValue);
+        liveStatus.set("uptime", (int)millis());
+        liveStatus.set("freeHeap", (int)ESP.getFreeHeap());
+        liveStatus.set("latency", (int)currentLatency);
+        liveStatus.set("isSunday", isSunday);
+        liveStatus.set("errorCount", consecutiveLatencyErrors + consecutiveUpdateErrors + consecutiveStreamErrors);
+        liveStatus.set("lastUpdate/.sv", "timestamp");
+
+        if (Firebase.RTDB.updateNode(&fbdo, "/live", &liveStatus)) {
+          markSuccessfulUpdate(); // Setzt Update/Latenz-Fehler zurück
         } else {
-          Serial.printf("[Recording] Fehler: %s\n", fbdo.errorReason().c_str());
+          firebaseErrors++;
+          consecutiveUpdateErrors++;
+          lastUpdateErrorTime = millis(); // Zeitstempel für Abbau
+          // Kein reportError() hier, um Spam zu vermeiden
         }
       }
     }
+
+    // Latenz-Check wird jetzt von hier aufgerufen
+    checkLatency(false);
+
   }
-  
-  // Ventilstatus alle 1000ms senden
-  if (millis() - lastStatusTime > 1000) {
-    lastStatusTime = millis();
-    
-    if (Firebase.ready()) {
-      Firebase.RTDB.setBool(&fbdo, "/live/valve1", valve1);
-      Firebase.RTDB.setBool(&fbdo, "/live/valve2", valve2);
-      Firebase.RTDB.setBool(&fbdo, "/live/recording", recordingActive);
-    }
-  }
-  
-  // Commands von Firebase lesen (alle 200ms)
-  if (Firebase.ready() && millis() - lastCommandCheck > 200) {
-    lastCommandCheck = millis();
-    
-    // Valve 1 Command
-    if (Firebase.RTDB.getBool(&fbdo, "/commands/valve1")) {
-      bool newState = fbdo.boolData();
-      if (newState != valve1) {
-        valve1 = newState;
-        digitalWrite(valve1Pin, valve1 ? HIGH : LOW);
-        digitalWrite(valve1LedPin, valve1 ? HIGH : LOW);
-        // DIESE ZEILE ist die Ausgabe "was das Portal sagt"
-        Serial.printf("[Command] Valve1 -> %s\n", valve1 ? "ON" : "OFF");
-      }
-    }
-    
-    // Valve 2 Command
-    if (Firebase.RTDB.getBool(&fbdo, "/commands/valve2")) {
-      bool newState = fbdo.boolData();
-      if (newState != valve2) {
-        valve2 = newState;
-        digitalWrite(valve2Pin, valve2 ? HIGH : LOW);
-        digitalWrite(valve2LedPin, valve2 ? HIGH : LOW);
-        // DIESE ZEILE ist die Ausgabe "was das Portal sagt"
-        Serial.printf("[Command] Valve2 -> %s\n", valve2 ? "ON" : "OFF");
-      }
-    }
-    
-    // Recording Command
-    if (Firebase.RTDB.getBool(&fbdo, "/commands/recording")) {
-      bool shouldRecord = fbdo.boolData();
-      
-      if (shouldRecord && !recordingActive) {
-        // START RECORDING
-        recordingActive = true;
-        currentSessionId = String(millis()); // Eindeutige ID
-        sessionStartTime = millis();
-        
-        // Session-Metadaten speichern
-        String metaPath = "/sessions/" + currentSessionId + "/meta";
-        FirebaseJson meta;
-        meta.set("id", currentSessionId);
-        meta.set("startTime", sessionStartTime);
-        meta.set("startTimeISO", getISOTimestamp()); // Verwendet deine Funktion
-        meta.set("status", "recording");
-        
-        Firebase.RTDB.setJSON(&fbdo, metaPath.c_str(), &meta);
-        
-        Serial.println("=====================================");
-        // DIESE ZEILE ist die Ausgabe "was das Portal sagt"
-        Serial.printf("[Recording] ▶ GESTARTET\n");
-        Serial.printf("[Recording] Session: %s\n", currentSessionId.c_str());
-        Serial.println("=====================================");
-        
-      } else if (!shouldRecord && recordingActive) {
-        // STOP RECORDING
-        String metaPath = "/sessions/" + currentSessionId + "/meta";
-        FirebaseJson meta;
-        meta.set("endTime", millis());
-        meta.set("endTimeISO", getISOTimestamp()); // Verwendet deine Funktion
-        meta.set("duration", millis() - sessionStartTime);
-        meta.set("status", "completed");
-        
-        // Verwende updateNode, um nur die End-Daten hinzuzufügen,
-        // ohne die Start-Daten zu überschreiben.
-        Firebase.RTDB.updateNode(&fbdo, metaPath.c_str(), &meta);
-        
-        Serial.println("=====================================");
-        // DIESE ZEILE ist die Ausgabe "was das Portal sagt"
-        Serial.printf("[Recording] ■ GESTOPPT\n");
-        Serial.printf("[Recording] Session: %s\n", currentSessionId.c_str());
-        Serial.printf("[Recording] Dauer: %lu ms\n", millis() - sessionStartTime);
-        Serial.println("=====================================");
-        
-        recordingActive = false;
-        currentSessionId = "";
-        sessionStartTime = 0;
-      }
-    }
-  }
-  
-  // Serial Commands (für Debug)
+
   if (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
-    cmd.trim(); // Entfernt unsichtbare Zeichen
-    
-    Serial.printf("[Serial] Command: %s\n", cmd.c_str());
-    
+    cmd.trim();
+
     if (cmd == "VALVE1:ON") {
-      valve1 = true;
-      digitalWrite(valve1Pin, HIGH);
-      digitalWrite(valve1LedPin, HIGH);
       if (Firebase.ready()) Firebase.RTDB.setBool(&fbdo, "/commands/valve1", true);
-      Serial.println("[Serial] ✓ Valve1 ON");
     }
     else if (cmd == "VALVE1:OFF") {
-      valve1 = false;
-      digitalWrite(valve1Pin, LOW);
-      digitalWrite(valve1LedPin, LOW);
       if (Firebase.ready()) Firebase.RTDB.setBool(&fbdo, "/commands/valve1", false);
-      Serial.println("[Serial] ✓ Valve1 OFF");
     }
     else if (cmd == "VALVE2:ON") {
-      valve2 = true;
-      digitalWrite(valve2Pin, HIGH);
-      digitalWrite(valve2LedPin, HIGH);
       if (Firebase.ready()) Firebase.RTDB.setBool(&fbdo, "/commands/valve2", true);
-      Serial.println("[Serial] ✓ Valve2 ON");
     }
     else if (cmd == "VALVE2:OFF") {
-      valve2 = false;
-      digitalWrite(valve2Pin, LOW);
-      digitalWrite(valve2LedPin, LOW);
       if (Firebase.ready()) Firebase.RTDB.setBool(&fbdo, "/commands/valve2", false);
-      Serial.println("[Serial] ✓ Valve2 OFF");
-    }
-    else if (cmd == "START") {
-      if (Firebase.ready()) {
-        Firebase.RTDB.setBool(&fbdo, "/commands/recording", true);
-        Serial.println("[Serial] ✓ Recording START command sent");
-      }
-    }
-    else if (cmd == "STOP") {
-      if (Firebase.ready()) {
-        Firebase.RTDB.setBool(&fbdo, "/commands/recording", false);
-        Serial.println("[Serial] ✓ Recording STOP command sent");
-      }
     }
     else if (cmd == "STATUS") {
       printStatus();
     }
-    else {
-      Serial.println("[Serial] ✗ Unbekannter Command");
+    else if (cmd == "RECONNECT") {
+      Serial.println("[Serial] Manueller Reconnect...");
+      performFullReconnect();
+    }
+    else if (cmd == "REBOOT") {
+      Serial.println("[Serial] Neustart in 3s...");
+      delay(3000);
+      ESP.restart();
+    }
+    else if (cmd == "RESET") {
+      Serial.println("[Serial] Error Counter zurückgesetzt");
+      resetErrorCounters();
     }
   }
-} // Ende von loop()
+}
 
-// =================================================================
-//                 HELPER-FUNKTIONEN
-// =================================================================
-
-// *** HINWEIS: Die Definition für 'tokenStatusCallback' wurde ENTFERNT, ***
-// da sie von addons/TokenHelper.h bereitgestellt wird.
-
-
-// Hilfsfunktion: Status ausgeben
 void printStatus() {
-  Serial.println("\n=====================================");
-  Serial.println("         SYSTEM STATUS");
-  Serial.println("=====================================");
-  Serial.printf("WiFi:      %s\n", WiFi.status() == WL_CONNECTED ? "✓ Verbunden" : "✗ Getrennt");
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("IP:        %s\n", WiFi.localIP().toString().c_str());
-    Serial.printf("Signal:    %d dBm\n", WiFi.RSSI());
+  Serial.println("\n╔════════════════════════════════════╗");
+  Serial.println("║         SYSTEM STATUS            ║");
+  Serial.println("╚════════════════════════════════════╝");
+  Serial.printf("WiFi:         %s (%d dBm)\n",
+                WiFi.status() == WL_CONNECTED ? "✓" : "✗", WiFi.RSSI());
+  Serial.printf("Firebase:     %s\n", Firebase.ready() ? "✓" : "✗");
+  Serial.printf("Valve1:       %s\n", valve1 ? "ON" : "OFF");
+  Serial.printf("Valve2:       %s\n", valve2 ? "ON" : "OFF");
+  Serial.printf("Sensor:       %d\n", lastSensorValue);
+  Serial.printf("Uptime:       %.1f Stunden\n", millis() / 3600000.0);
+  Serial.printf("Boot Count:   %d\n", bootCount);
+  Serial.printf("Reconnects:   %lu\n", reconnectAttempts);
+  Serial.printf("Latency:      %lu ms\n", currentLatency);
+  Serial.printf("Free Heap:    %lu Bytes\n", ESP.getFreeHeap());
+
+  Serial.println("─────────────────────────────────────");
+  Serial.printf("Aktive Fehler (Schwelle: %d):\n", ERROR_THRESHOLD_BEFORE_RECONNECT);
+  Serial.printf("  Latency:    %d\n", consecutiveLatencyErrors);
+  Serial.printf("  Update:     %d\n", consecutiveUpdateErrors);
+  Serial.printf("  Stream:     %d\n", consecutiveStreamErrors);
+  Serial.printf("  Total:      %d\n", consecutiveLatencyErrors + consecutiveUpdateErrors + consecutiveStreamErrors);
+
+  // Gesamt-Statistik
+  Serial.println("─────────────────────────────────────");
+  Serial.println("Reconnect-Statistik (Gesamt):");
+  Serial.printf("  Latenz:     %d\n", totalLatencyReconnects);
+  Serial.printf("  Updates:    %d\n", totalUpdateReconnects);
+  Serial.printf("  Streams:    %d\n", totalStreamReconnects);
+
+  if (isTimeSynced) {
+    getLocalTime(&timeinfo);
+    const char* weekdays[] = {"So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"};
+    Serial.printf("Zeit:         %s %02d:%02d:%02d%s\n",
+                  weekdays[timeinfo.tm_wday],
+                  timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec,
+                  isSunday ? " [SONNTAG]" : "");
   }
-  Serial.printf("Firebase:  %s\n", Firebase.ready() ? "✓ Bereit" : "✗ Nicht bereit");
-  Serial.printf("Recording: %s\n", recordingActive ? "▶ AKTIV" : "■ INAKTIV");
-  if (recordingActive) {
-    Serial.printf("Session:   %s\n", currentSessionId.c_str());
-    Serial.printf("Dauer:     %lu ms\n", millis() - sessionStartTime);
-  }
-  Serial.printf("Valve1:    %s\n", valve1 ? "ON (HIGH)" : "OFF (LOW)");
-  Serial.printf("Valve2:    %s\n", valve2 ? "ON (HIGH)" : "OFF (LOW)");
-  Serial.printf("Uptime:    %lu ms\n", millis());
-  Serial.println("=====================================\n");
+
+  Serial.println("════════════════════════════════════\n");
 }
 
-// Hilfsfunktion: ISO Timestamp
-// HINWEIS: Diese Funktion gibt aktuell nur millis() als String zurück,
-// keinen echten ISO-8601-Timestamp.
-// Die Logik wurde NICHT geändert.
 String getISOTimestamp() {
-  unsigned long ms = millis();
-  return String(ms);
+  if (isTimeSynced && getLocalTime(&timeinfo)) {
+    char buffer[30];
+    strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%S", &timeinfo);
+    return String(buffer);
+  }
+  return String(millis());
 }
+
