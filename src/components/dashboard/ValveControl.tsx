@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
+import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 
 const ValveRow = ({ valveName, valveId, status, onToggle, isLocked, isDisabled }: { valveName: string, valveId: 'VALVE1' | 'VALVE2', status: ValveStatus, onToggle: (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => void, isLocked: boolean, isDisabled: boolean}) => {
@@ -37,12 +38,20 @@ const ValveRow = ({ valveName, valveId, status, onToggle, isLocked, isDisabled }
 
 
 export default function ValveControl() {
-  const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves } = useTestBench();
+  const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves, sequence1Running, sequence2Running, sendSequenceCommand, lockedSequences } = useTestBench();
 
   const handleToggle = (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!isConnected) return;
     sendValveCommand(valve, state);
   };
+  
+  const handleSequence = (sequence: 'sequence1' | 'sequence2') => {
+      if (!isConnected) return;
+      sendSequenceCommand(sequence, true);
+  };
+
+  const isSeq1Locked = lockedSequences.includes('sequence1') || sequence1Running;
+  const isSeq2Locked = lockedSequences.includes('sequence2') || sequence2Running;
 
   return (
     <Card className="w-full backdrop-blur-sm border-slate-300/80 shadow-lg">
@@ -50,7 +59,7 @@ export default function ValveControl() {
             <CardTitle className="text-xl">Valve Control</CardTitle>
             {!isConnected && <CardDescription className="text-xs">Connect a device to enable controls.</CardDescription>}
         </CardHeader>
-        <CardContent className="p-4 pt-0 space-y-2">
+        <CardContent className="p-4 pt-0 space-y-3">
             <ValveRow 
                 valveName="Valve 1"
                 valveId="VALVE1"
@@ -68,6 +77,17 @@ export default function ValveControl() {
                 isLocked={lockedValves.includes('VALVE2')}
                 isDisabled={!isConnected}
             />
+            <Separator />
+            <div className="grid grid-cols-2 gap-2 pt-2">
+                <Button onClick={() => handleSequence('sequence1')} disabled={!isConnected || isSeq1Locked}>
+                    {isSeq1Locked && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {isSeq1Locked ? 'Running...' : 'Sequence 1'}
+                </Button>
+                <Button onClick={() => handleSequence('sequence2')} disabled={!isConnected || isSeq2Locked}>
+                    {isSeq2Locked && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {isSeq2Locked ? 'Running...' : 'Sequence 2'}
+                </Button>
+            </div>
         </CardContent>
     </Card>
   );

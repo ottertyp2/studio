@@ -1407,10 +1407,6 @@ export default function AdminPage() {
         }
 
         const firstSessionForChart = relevantSessions[0];
-        const chartStartTime = allSensorData[firstSessionForChart.id]?.[0]?.timestamp 
-            ? new Date(allSensorData[firstSessionForChart.id][0].timestamp).getTime() 
-            : 0;
-
         const chartDataForPdf = relevantSessions.flatMap(session => {
             const data = allSensorData[session.id];
             if (!data || data.length === 0) return [];
@@ -1443,12 +1439,20 @@ export default function AdminPage() {
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
             const batchName = batches?.find(b => b.id === session.batchId)?.name;
             
-            const endValue = data.length > 0 ? data[data.length-1].value : undefined;
+            const values = data.map(d => d.value);
+            const startValue = values.length > 0 ? values[0] : undefined;
+            const endValue = values.length > 0 ? values[values.length - 1] : undefined;
+            const avgValue = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : undefined;
+
+            let startPressure = 'N/A';
             let endPressure = 'N/A';
-            if (endValue !== undefined && config) {
-                const converted = convertRawValue(endValue, config);
-                let unitLabel = config.unit || '';
-                endPressure = `${converted.toFixed(config.decimalPlaces)} ${unitLabel}`;
+            let avgPressure = 'N/A';
+
+            if (config) {
+                const unitLabel = config.unit || '';
+                if (startValue !== undefined) startPressure = `${convertRawValue(startValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                if (endValue !== undefined) endPressure = `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                if (avgValue !== undefined) avgPressure = `${convertRawValue(avgValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
             }
 
             const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
@@ -1462,10 +1466,12 @@ export default function AdminPage() {
             return [
                 batchName ?? 'N/A',
                 session.serialNumber || 'N/A',
+                session.description || 'N/A',
                 new Date(session.startTime).toLocaleString(),
                 session.endTime ? new Date(session.endTime).toLocaleString() : 'N/A',
-                session.description || 'N/A',
+                startPressure,
                 endPressure,
+                avgPressure,
                 duration,
                 statusStyle
             ];
@@ -1492,9 +1498,9 @@ export default function AdminPage() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
-                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'End Time', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'End Pressure', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'End Time', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Avg Value', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
                             ...tableBody
                         ]
                     },
@@ -1505,8 +1511,8 @@ export default function AdminPage() {
                 header: { fontSize: 18, bold: true, margin: [0, 0, 0, 5] },
                 subheader: { fontSize: 14, bold: true, margin: [0, 5, 0, 2] },
                 body: { fontSize: 10 },
-                tableExample: { margin: [0, 2, 0, 8], fontSize: 9 },
-                tableHeader: { bold: true, fontSize: 10, color: 'black' }
+                tableExample: { margin: [0, 2, 0, 8], fontSize: 8 },
+                tableHeader: { bold: true, fontSize: 9, color: 'black' }
             }
         };
 

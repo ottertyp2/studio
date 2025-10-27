@@ -42,6 +42,10 @@ export interface TestBenchContextType {
   startTime: number | null;
   totalDowntime: number;
   downtimeSinceRef: RefObject<number | null>;
+  sequence1Running: boolean;
+  sequence2Running: boolean;
+  sendSequenceCommand: (sequence: 'sequence1' | 'sequence2', state: boolean) => Promise<void>;
+  lockedSequences: ('sequence1' | 'sequence2')[];
 }
 
 export const TestBenchContext = createContext<TestBenchContextType | undefined>(undefined);

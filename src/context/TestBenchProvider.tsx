@@ -28,10 +28,13 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [valve2Status, setValve2Status] = useState<ValveStatus>('OFF');
   const [disconnectCount, setDisconnectCount] = useState<number>(0);
   const [latency, setLatency] = useState<number | null>(null);
+  const [sequence1Running, setSequence1Running] = useState(false);
+  const [sequence2Running, setSequence2Running] = useState(false);
   
   const runningTestSessionRef = useRef<WithId<DocumentData> | null>(null);
 
   const [lockedValves, setLockedValves] = useState<('VALVE1' | 'VALVE2')[]>([]);
+  const [lockedSequences, setLockedSequences] = useState<('sequence1' | 'sequence2')[]>([]);
 
   const [startTime, setStartTime] = useState<number | null>(null);
   const [totalDowntime, setTotalDowntime] = useState(0); // in milliseconds
@@ -106,6 +109,13 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     if (!lockedValves.includes('VALVE2')) {
       setValve2Status(data.valve2 ? 'ON' : 'OFF');
     }
+    
+    if (!lockedSequences.includes('sequence1')) {
+        setSequence1Running(data.sequence1_running === true);
+    }
+     if (!lockedSequences.includes('sequence2')) {
+        setSequence2Running(data.sequence2_running === true);
+    }
 
     setCurrentValue(data.sensor ?? null);
     setIsRecording(data.recording === true);
@@ -127,16 +137,20 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         });
     }
 
-    if (runningTestSessionRef.current && firestore && data.sensor !== null && data.lastUpdate) {
+    if (
+      runningTestSessionRef.current &&
+      firestore &&
+      data.sensor != null &&
+      data.lastUpdate
+    ) {
       const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
       const dataToSave = {
         value: data.sensor,
         timestamp: new Date(data.lastUpdate).toISOString(),
       };
-      
       addDocumentNonBlocking(sessionDataRef, dataToSave);
     }
-  }, [firestore, lockedValves]);
+  }, [firestore, lockedValves, lockedSequences]);
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!database) {
@@ -181,6 +195,33 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         console.error('Failed to send recording command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
     }
+  }, [database, toast]);
+
+  const sendSequenceCommand = useCallback(async (sequence: 'sequence1' | 'sequence2', state: boolean) => {
+      if (!database) {
+          toast({ variant: 'destructive', title: 'Not Connected', description: 'Database service is not available.' });
+          return;
+      }
+      
+      setLockedSequences(prev => [...prev, sequence]);
+      if (sequence === 'sequence1') setSequence1Running(true);
+      if (sequence === 'sequence2') setSequence2Running(true);
+
+      const commandPath = `commands/${sequence}`;
+      try {
+          await set(ref(database, commandPath), state);
+          // The 'running' state will be cleared by the onValue listener when the device reports back.
+          // Add a timeout to unlock the button in case the device doesn't respond.
+          setTimeout(() => {
+              setLockedSequences(prev => prev.filter(s => s !== sequence));
+          }, 5000); // 5-second timeout
+      } catch (error: any) {
+          console.error('Failed to send sequence command:', error);
+          toast({ variant: 'destructive', title: 'Sequence Command Failed', description: error.message });
+          if (sequence === 'sequence1') setSequence1Running(false);
+          if (sequence === 'sequence2') setSequence2Running(false);
+          setLockedSequences(prev => prev.filter(s => s !== sequence));
+      }
   }, [database, toast]);
 
   useEffect(() => {
@@ -249,7 +290,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     lockedValves,
     startTime,
     totalDowntime: totalDowntime + currentDowntime,
-    downtimeSince: null, // This is no longer used but kept for type safety
+    downtimeSinceRef: null,
+    sequence1Running,
+    sequence2Running,
+    sendSequenceCommand,
+    lockedSequences,
   };
 
   return (

@@ -405,7 +405,7 @@ function TestingComponent() {
 
     let allTimestamps = new Set<number>();
     const processedSessionData: Record<string, { time: number; value: number }[]> = {};
-
+    
     // Step 1: Normalize each session's data to start at t=0 and collect all timestamps
     comparisonSessions.forEach(session => {
         const sessionData = comparisonData[session.id] || [];
@@ -685,9 +685,21 @@ function TestingComponent() {
                 const sessionEndTime = sessionToReport.endTime ? new Date(sessionToReport.endTime).getTime() : (data.length > 0 ? new Date(data[data.length-1].timestamp).getTime() : sessionStartTime);
                 const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
 
-                const endValue = data.length > 0 ? data[data.length-1].value : undefined;
-                const endPressure = (endValue !== undefined && config) ? `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${config.unit}` : 'N/A';
-                
+                const values = data.map(d => d.value);
+                const startValue = values.length > 0 ? values[0] : undefined;
+                const endValue = values.length > 0 ? values[values.length-1] : undefined;
+                const avgValue = values.length > 0 ? values.reduce((a,b) => a + b, 0) / values.length : undefined;
+
+                let startPressure = 'N/A';
+                let endPressure = 'N/A';
+                let avgPressure = 'N/A';
+                if (config) {
+                    const unitLabel = config.unit || '';
+                    if (startValue !== undefined) startPressure = `${convertRawValue(startValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                    if (endValue !== undefined) endPressure = `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                    if (avgValue !== undefined) avgPressure = `${convertRawValue(avgValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                }
+
                 const classificationText = getClassificationText(sessionToReport.classification);
                 const statusStyle = {
                     text: classificationText,
@@ -699,10 +711,10 @@ function TestingComponent() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', '*', '*', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
-                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
-                             [{ text: batch?.name || 'N/A'}, { text: sessionToReport.serialNumber || 'N/A' }, {text: new Date(sessionToReport.startTime).toLocaleString()}, {text: sessionToReport.description || 'N/A'}, {text: endPressure}, {text: duration}, statusStyle]
+                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Avg Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            [{ text: batch?.name || 'N/A'}, { text: sessionToReport.serialNumber || 'N/A' }, {text: sessionToReport.description || 'N/A'}, {text: new Date(sessionToReport.startTime).toLocaleString()}, {text: duration}, {text: startPressure}, {text: endPressure}, {text: avgPressure}, statusStyle]
                         ]
                     },
                     layout: 'lightHorizontalLines'
@@ -717,9 +729,22 @@ function TestingComponent() {
                     const sessionEndTime = session.endTime ? new Date(session.endTime).getTime() : (data.length > 0 ? new Date(data[data.length - 1].timestamp).getTime() : sessionStartTime);
                     
                     const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
-                    const endValue = data.length > 0 ? data[data.length-1].value : undefined;
-                    const endPressure = (endValue !== undefined && config) ? `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${config.unit}` : 'N/A';
                     
+                    const values = data.map(d => d.value);
+                    const startValue = values.length > 0 ? values[0] : undefined;
+                    const endValue = values.length > 0 ? values[values.length-1] : undefined;
+                    const avgValue = values.length > 0 ? values.reduce((a,b) => a + b, 0) / values.length : undefined;
+
+                    let startPressure = 'N/A';
+                    let endPressure = 'N/A';
+                    let avgPressure = 'N/A';
+                    if (config) {
+                        const unitLabel = config.unit || '';
+                        if (startValue !== undefined) startPressure = `${convertRawValue(startValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                        if (endValue !== undefined) endPressure = `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                        if (avgValue !== undefined) avgPressure = `${convertRawValue(avgValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                    }
+
                     const classificationText = getClassificationText(session.classification);
                     const statusStyle = {
                         text: classificationText,
@@ -728,10 +753,12 @@ function TestingComponent() {
 
                     return [
                         session.serialNumber || 'N/A',
-                        new Date(session.startTime).toLocaleString(),
                         session.description || 'N/A',
-                        endPressure,
+                        new Date(session.startTime).toLocaleString(),
                         duration,
+                        startPressure,
+                        endPressure,
+                        avgPressure,
                         statusStyle
                     ];
                 });
@@ -741,9 +768,9 @@ function TestingComponent() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', '*', '*', 'auto', 'auto', 'auto'],
+                        widths: ['auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
-                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Avg Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
                             ...tableBody
                         ]
                     },

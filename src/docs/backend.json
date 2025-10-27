@@ -450,11 +450,29 @@
     "structure": [
         {
             "path": "/live",
-            "description": "Live data from the ESP32 device."
+            "description": "Live data from the ESP32 device, including valve and sequence status.",
+            "properties": {
+              "sensor": { "type": "number" },
+              "valve1": { "type": "boolean" },
+              "valve2": { "type": "boolean" },
+              "recording": { "type": "boolean" },
+              "sequence1_running": { "type": "boolean" },
+              "sequence2_running": { "type": "boolean" },
+              "lastUpdate": { "type": "string", "format": "date-time" },
+              "disconnectCount": { "type": "number" },
+              "latency": { "type": "number" }
+            }
         },
         {
             "path": "/commands",
-            "description": "Commands sent to the ESP32 device."
+            "description": "Commands sent to the ESP32 device.",
+            "properties": {
+              "valve1": { "type": "boolean" },
+              "valve2": { "type": "boolean" },
+              "recording": { "type": "boolean" },
+              "sequence1": { "type": "boolean" },
+              "sequence2": { "type": "boolean" }
+            }
         },
         {
             "path": "/system/lastCrashReport",
