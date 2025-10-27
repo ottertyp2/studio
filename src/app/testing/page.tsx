@@ -176,6 +176,8 @@ function TestingComponent() {
     disconnectCount,
     sendRecordingCommand,
     latency,
+    startTime,
+    totalDowntime,
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
@@ -399,20 +401,15 @@ function TestingComponent() {
   };
 
   const chartData = useMemo(() => {
-    if (comparisonSessions.length === 0 || Object.keys(comparisonData).length === 0) {
+    if (comparisonSessions.length === 0) {
         return [];
     }
 
     const allDataPoints: Record<number, ChartDataPoint> = {};
-    let firstSessionWithGuidelines: WithId<TestSession> | undefined = undefined;
 
     comparisonSessions.forEach(session => {
         const sessionData = comparisonData[session.id] || [];
         if (sessionData.length === 0) return;
-
-        if (!firstSessionWithGuidelines) {
-            firstSessionWithGuidelines = session;
-        }
 
         const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
         const sessionStartTime = new Date(sessionData[0].timestamp).getTime();
@@ -428,7 +425,8 @@ function TestingComponent() {
         });
     });
 
-    const vesselTypeForGuidelines = vesselTypes?.find(vt => vt.id === firstSessionWithGuidelines?.vesselTypeId);
+    const firstSessionForGuidelines = comparisonSessions.length > 0 ? comparisonSessions[0] : null;
+    const vesselTypeForGuidelines = vesselTypes?.find(vt => vt.id === firstSessionForGuidelines?.vesselTypeId);
     
     const interpolateCurve = (curve: {x: number, y: number}[], x: number) => {
         if (!curve || curve.length === 0) return undefined;
@@ -496,17 +494,11 @@ function TestingComponent() {
   }, [currentValue, activeSensorConfig, runningTestSession, sensorConfigs]);
   
   const downtimePercentage = useMemo(() => {
-    if (!lastDataPointTimestamp) return 100;
-    const now = Date.now();
-    const timeSinceLastData = now - lastDataPointTimestamp;
-    
-    if (!isConnected) {
-        return 100;
-    }
-    
-    // Treat anything over 5s as downtime for the UI indicator
-    return Math.min(100, (timeSinceLastData / 5000) * 100);
-  }, [isConnected, lastDataPointTimestamp, now]);
+    if (!startTime) return 0;
+    const totalElapsed = Date.now() - startTime;
+    if (totalElapsed <= 0) return 0;
+    return Math.min(100, (totalDowntime / totalElapsed) * 100);
+  }, [startTime, totalDowntime, now]);
 
 
   const isDuringDowntime = useMemo(() => {
@@ -612,11 +604,11 @@ function TestingComponent() {
             docDefinition.content.push({ text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' });
             
             const firstData = comparisonData[comparisonSessions[0]?.id] || [];
-            const startTime = firstData.length > 0 ? new Date(firstData[0].timestamp).getTime() : 0;
+            
             const pdfChartData = Object.entries(comparisonData).flatMap(([sessionId, data]) => {
                 const session = comparisonSessions.find(s => s.id === sessionId);
-                if (!session) return [];
-                const sessionStart = data.length > 0 ? new Date(data[0].timestamp).getTime() : 0;
+                if (!session || data.length === 0) return [];
+                const sessionStart = new Date(data[0].timestamp).getTime();
                 return data.map(d => ({
                     [session.id]: d.value,
                     name: (new Date(d.timestamp).getTime() - sessionStart) / 1000

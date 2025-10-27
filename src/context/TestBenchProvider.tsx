@@ -34,18 +34,14 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [lockedValves, setLockedValves] = useState<('VALVE1' | 'VALVE2')[]>([]);
 
   const [startTime, setStartTime] = useState<number | null>(null);
-  const [totalDowntime, setTotalDowntime] = useState(0);
-  const [downtimeSince, setDowntimeSince] = useState<number | null>(null);
-  
+  const [totalDowntime, setTotalDowntime] = useState(0); // in milliseconds
+  const [currentDowntime, setCurrentDowntime] = useState(0); // in milliseconds
+
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const downtimeIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    // Load persisted downtime and start time from localStorage
-    const persistedDowntime = localStorage.getItem('totalDowntime');
-    if (persistedDowntime) {
-      setTotalDowntime(JSON.parse(persistedDowntime));
-    }
-    
+    // Load persisted start time and downtime from localStorage
     const persistedStartTime = localStorage.getItem('startTime');
     if (persistedStartTime) {
       setStartTime(JSON.parse(persistedStartTime));
@@ -54,24 +50,33 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       setStartTime(now);
       localStorage.setItem('startTime', JSON.stringify(now));
     }
-  }, []);
-
-  useEffect(() => {
-    // Persist downtime to localStorage whenever it changes
-    if (startTime) { // Only save if startTime is initialized
-        localStorage.setItem('totalDowntime', JSON.stringify(totalDowntime));
+    
+    const persistedDowntime = localStorage.getItem('totalDowntime');
+    if (persistedDowntime) {
+      setTotalDowntime(JSON.parse(persistedDowntime));
     }
-  }, [totalDowntime, startTime]);
 
-  useEffect(() => {
-    if (!isConnected && downtimeSince === null) {
-        setDowntimeSince(Date.now());
-    } else if (isConnected && downtimeSince !== null) {
-        setTotalDowntime(prev => prev + (Date.now() - (downtimeSince ?? Date.now())));
-        setDowntimeSince(null);
-    }
+    // Start a single, reliable interval for downtime calculation
+    if (downtimeIntervalRef.current) clearInterval(downtimeIntervalRef.current);
+    downtimeIntervalRef.current = setInterval(() => {
+        if (!isConnected) {
+            setCurrentDowntime(prev => prev + 1000);
+        }
+    }, 1000);
+
+    return () => {
+        if (downtimeIntervalRef.current) clearInterval(downtimeIntervalRef.current);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected]);
+  }, [isConnected]); // Rerunning only on isConnected change is key
+
+  useEffect(() => {
+    // Persist total downtime to localStorage whenever it changes
+    if (startTime) {
+      localStorage.setItem('totalDowntime', JSON.stringify(totalDowntime + currentDowntime));
+    }
+  }, [totalDowntime, currentDowntime, startTime]);
+  
 
   useEffect(() => {
     if (!firestore || !user) return;
@@ -192,7 +197,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   
       if (data && data.lastUpdate) {
         if (!isConnected) {
-          setIsConnected(true);
+            setIsConnected(true);
+            // On reconnect, commit the current downtime session to total downtime
+            setTotalDowntime(prev => prev + currentDowntime);
+            setCurrentDowntime(0);
         }
         handleNewDataPoint(data);
   
@@ -219,7 +227,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         clearTimeout(connectionTimeoutRef.current);
       }
     };
-  }, [database, handleNewDataPoint, isConnected]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [database, handleNewDataPoint, isConnected, currentDowntime]);
 
 
   const value = {
@@ -239,8 +248,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     pendingValves: [],
     lockedValves,
     startTime,
-    totalDowntime,
-    downtimeSince,
+    totalDowntime: totalDowntime + currentDowntime,
+    downtimeSince: null, // This is no longer used but kept for type safety
   };
 
   return (
