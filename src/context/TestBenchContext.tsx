@@ -38,6 +38,7 @@ export interface TestBenchContextType {
   sendRecordingCommand: (shouldRecord: boolean) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   pendingValves: ('VALVE1' | 'VALVE2')[];
+  lockedValves: ('VALVE1' | 'VALVE2')[];
 }
 
 export const TestBenchContext = createContext<TestBenchContextType | undefined>(undefined);

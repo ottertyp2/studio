@@ -32,6 +32,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [pendingValves, setPendingValves] = useState<('VALVE1' | 'VALVE2')[]>([]);
+  const [lockedValves, setLockedValves] = useState<('VALVE1' | 'VALVE2')[]>([]);
 
   // Monitor running sessions from Firestore
   useEffect(() => {
@@ -57,9 +58,14 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     if (data === null || data === undefined) return;
 
     // The data from the device is the source of truth.
-    // This will automatically correct our optimistic UI if the command failed.
-    setValve1Status(data.valve1 ? 'ON' : 'OFF');
-    setValve2Status(data.valve2 ? 'ON' : 'OFF');
+    // This will automatically correct our optimistic UI if the command failed,
+    // unless the valve is temporarily locked by user action.
+    if (!lockedValves.includes('VALVE1')) {
+      setValve1Status(data.valve1 ? 'ON' : 'OFF');
+    }
+    if (!lockedValves.includes('VALVE2')) {
+      setValve2Status(data.valve2 ? 'ON' : 'OFF');
+    }
 
     setCurrentValue(data.sensor ?? null);
     setIsRecording(data.recording === true);
@@ -88,7 +94,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       
       addDocumentNonBlocking(sessionDataRef, dataToSave);
     }
-  }, [firestore]);
+  }, [firestore, lockedValves]);
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!database) {
@@ -102,26 +108,26 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     } else {
       setValve2Status(state);
     }
-
-    // Set a short pending state to prevent spamming commands
-    setPendingValves(prev => [...prev, valve]);
-    setTimeout(() => {
-        setPendingValves(prev => prev.filter(v => v !== valve));
-    }, 500); // 500ms debounce
     
+    // Lock the valve from external updates for 1 second
+    setLockedValves(prev => [...prev, valve]);
+    setTimeout(() => {
+        setLockedValves(prev => prev.filter(v => v !== valve));
+    }, 1000);
+
     const commandPath = valve === 'VALVE1' ? 'commands/valve1' : 'commands/valve2';
     try {
         await set(ref(database, commandPath), state === 'ON');
     } catch (error: any) {
         console.error('Failed to send command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
-        // Revert UI on failure
+        // Revert UI on failure & unlock immediately
          if (valve === 'VALVE1') {
           setValve1Status(state === 'ON' ? 'OFF' : 'ON');
         } else {
           setValve2Status(state === 'ON' ? 'OFF' : 'ON');
         }
-        setPendingValves(prev => prev.filter(v => v !== valve)); 
+        setLockedValves(prev => prev.filter(v => v !== valve)); 
     }
   }, [database, toast]);
 
@@ -188,6 +194,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     sendRecordingCommand,
     deleteSession: async () => {},
     pendingValves,
+    lockedValves,
   };
 
   return (

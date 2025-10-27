@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Loader2 } from 'lucide-react';
 
-const ValveRow = ({ valveName, valveId, status, onToggle, isPending, isDisabled }: { valveName: string, valveId: 'VALVE1' | 'VALVE2', status: ValveStatus, onToggle: (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => void, isPending: boolean, isDisabled: boolean}) => {
+const ValveRow = ({ valveName, valveId, status, onToggle, isLocked, isDisabled }: { valveName: string, valveId: 'VALVE1' | 'VALVE2', status: ValveStatus, onToggle: (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => void, isLocked: boolean, isDisabled: boolean}) => {
     const isChecked = status === 'ON';
     
     return (
@@ -17,7 +17,7 @@ const ValveRow = ({ valveName, valveId, status, onToggle, isPending, isDisabled 
                 <Label htmlFor={`valve-${valveId.toLowerCase()}-switch`} className={`text-base font-medium ${isDisabled ? 'text-muted-foreground' : ''}`}>{valveName}</Label>
             </div>
             <div className="flex items-center gap-4">
-                {isPending ? (
+                {isLocked ? (
                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 ) : (
                     <span className={`text-sm font-semibold w-12 text-center ${isDisabled ? 'text-muted-foreground' : (isChecked ? 'text-green-600' : 'text-destructive')}`}>
@@ -28,7 +28,7 @@ const ValveRow = ({ valveName, valveId, status, onToggle, isPending, isDisabled 
                     id={`valve-${valveId.toLowerCase()}-switch`}
                     checked={isChecked}
                     onCheckedChange={(checked) => onToggle(valveId, checked ? 'ON' : 'OFF')}
-                    disabled={isDisabled || isPending}
+                    disabled={isDisabled || isLocked}
                 />
             </div>
         </div>
@@ -37,7 +37,7 @@ const ValveRow = ({ valveName, valveId, status, onToggle, isPending, isDisabled 
 
 
 export default function ValveControl() {
-  const { isConnected, valve1Status, valve2Status, sendValveCommand, pendingValves } = useTestBench();
+  const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves } = useTestBench();
 
   const handleToggle = (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!isConnected) return;
@@ -56,7 +56,7 @@ export default function ValveControl() {
                 valveId="VALVE1"
                 status={valve1Status}
                 onToggle={handleToggle}
-                isPending={pendingValves.includes('VALVE1')}
+                isLocked={lockedValves.includes('VALVE1')}
                 isDisabled={!isConnected}
             />
             <Separator />
@@ -65,7 +65,7 @@ export default function ValveControl() {
                 valveId="VALVE2"
                 status={valve2Status}
                 onToggle={handleToggle}
-                isPending={pendingValves.includes('VALVE2')}
+                isLocked={lockedValves.includes('VALVE2')}
                 isDisabled={!isConnected}
             />
         </CardContent>
