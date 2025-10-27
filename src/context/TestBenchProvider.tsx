@@ -157,12 +157,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         return;
     }
     
-    if (valve === 'VALVE1') {
-      setValve1Status(state);
-    } else {
-      setValve2Status(state);
-    }
-    
     setLockedValves(prev => [...prev, valve]);
     setTimeout(() => {
         setLockedValves(prev => prev.filter(v => v !== valve));
@@ -174,11 +168,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     } catch (error: any) {
         console.error('Failed to send command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
-         if (valve === 'VALVE1') {
-          setValve1Status(state === 'ON' ? 'OFF' : 'ON');
-        } else {
-          setValve2Status(state === 'ON' ? 'OFF' : 'ON');
-        }
         setLockedValves(prev => prev.filter(v => v !== valve)); 
     }
   }, [database, toast]);
@@ -207,10 +196,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       const commandPath = `commands/${sequence}`;
       try {
           await set(ref(database, commandPath), state);
-          // Add a timeout to unlock the button in case the device doesn't respond to clear the state.
-          setTimeout(() => {
-              setLockedSequences(prev => prev.filter(s => s !== sequence));
-          }, 5000);
       } catch (error: any) {
           console.error('Failed to send sequence command:', error);
           toast({ variant: 'destructive', title: 'Sequence Command Failed', description: error.message });
