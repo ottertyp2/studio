@@ -607,7 +607,9 @@ export default function AdminPage() {
     }
 
     try {
-        const model = await tf.loadLayersModel(modelToUse.storagePath);
+        const storage = getStorage(firebaseApp);
+        const modelUrl = await getDownloadURL(storageRef(storage, modelToUse.storagePath));
+        const model = await tf.loadLayersModel(modelUrl);
 
         const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
         const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
@@ -636,7 +638,7 @@ export default function AdminPage() {
         toast({ title: 'AI Classification Complete', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'}`});
 
     } catch (e: any) {
-        toast({ variant: 'destructive', title: `AI Classification Failed for "${session.vesselTypeName} - ${session.serialNumber}"`, description: e.message.includes('No model found in IndexedDB') ? `A trained model named "${modelToUse.name}" was not found in your browser.` : e.message});
+        toast({ variant: 'destructive', title: `AI Classification Failed for "${session.vesselTypeName} - ${session.serialNumber}"`, description: e.message});
         throw e;
     }
   };
@@ -1423,6 +1425,12 @@ export default function AdminPage() {
 
         const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
 
+        const classificationText = getClassificationText(session.classification);
+        const statusStyle = {
+          text: classificationText,
+          color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
+        };
+
         return [
           batchName ?? 'N/A',
           session.serialNumber || 'N/A',
@@ -1431,7 +1439,7 @@ export default function AdminPage() {
           session.username ?? 'N/A',
           endPressure,
           duration,
-          getClassificationText(session.classification)
+          statusStyle
         ];
       });
 
@@ -1457,7 +1465,7 @@ export default function AdminPage() {
               headerRows: 1,
               widths: ['auto', 'auto', '*', '*', 'auto', 'auto', 'auto', 'auto'],
               body: [
-                [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial No.', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'End Time', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'End Pressure', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'End Time', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'End Pressure', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
                 ...tableBody
               ]
             },

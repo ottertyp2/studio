@@ -526,13 +526,13 @@ function TestingComponent() {
   
   const downtimePercentage = useMemo(() => {
     if (startTime === null) return 0;
-
+    const nowTime = now || Date.now();
     let currentDowntime = 0;
     if (downtimeSinceRef.current !== null) {
-      currentDowntime = now - downtimeSinceRef.current;
+      currentDowntime = nowTime - downtimeSinceRef.current;
     }
     
-    const totalElapsed = now - startTime;
+    const totalElapsed = nowTime - startTime;
     if (totalElapsed <= 0) return 0;
 
     const totalOfflineTime = totalDowntime + currentDowntime;
@@ -628,6 +628,12 @@ function TestingComponent() {
                 const endPressure = (endValue !== undefined && config) ? `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${config.unit}` : 'N/A';
                 const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
 
+                const classificationText = getClassificationText(session.classification);
+                const statusStyle = {
+                  text: classificationText,
+                  color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
+                };
+
                 return [
                     batch?.name || 'N/A',
                     session.serialNumber || 'N/A',
@@ -636,7 +642,7 @@ function TestingComponent() {
                     session.username,
                     endPressure,
                     duration,
-                    getClassificationText(session.classification)
+                    statusStyle
                 ];
             });
 
@@ -665,7 +671,7 @@ function TestingComponent() {
                             headerRows: 1,
                             widths: ['auto', 'auto', '*', '*', 'auto', 'auto', 'auto', 'auto'],
                             body: [
-                                ['Batch', 'Serial No.', 'Start Time', 'End Time', 'User', 'End Value', 'Duration (s)', 'Status'],
+                                ['Batch', 'Serial Number', 'Start Time', 'End Time', 'User', 'End Value', 'Duration (s)', 'Status'],
                                 ...tableBody
                             ]
                         },
