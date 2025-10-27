@@ -183,42 +183,33 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
     const liveDataRef = ref(database, 'live');
 
-    const handleData = (snap: any) => {
-      const data = snap.val();
+    const unsubscribe = onValue(liveDataRef, (snap) => {
+        const data = snap.val();
+        if (connectionTimeoutRef.current) clearTimeout(connectionTimeoutRef.current);
 
-      // Always clear the previous timeout when new data arrives
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-      }
-
-      if (data && data.lastUpdate) {
-        if (!isConnected) {
-          setIsConnected(true);
+        if (data && data.lastUpdate) {
+            if (!isConnected) setIsConnected(true);
+            handleNewDataPoint(data);
+            
+            connectionTimeoutRef.current = setTimeout(() => {
+                setIsConnected(false);
+            }, 5000); // 5-second tolerance
+        } else {
+            setIsConnected(false);
         }
-        handleNewDataPoint(data);
-        
-        // Set a new timeout. If no data arrives within 5s, we're disconnected.
-        connectionTimeoutRef.current = setTimeout(() => {
-          setIsConnected(false);
-        }, 5000); // 5-second tolerance
-      } else {
+    }, (error) => {
+        console.error("Firebase onValue error:", error);
         setIsConnected(false);
-      }
-    };
-
-    const unsubscribe = onValue(liveDataRef, handleData, (error) => {
-      console.error("Firebase onValue error:", error);
-      setIsConnected(false);
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-      }
+        if (connectionTimeoutRef.current) {
+            clearTimeout(connectionTimeoutRef.current);
+        }
     });
 
     return () => {
-      unsubscribe();
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-      }
+        unsubscribe();
+        if (connectionTimeoutRef.current) {
+            clearTimeout(connectionTimeoutRef.current);
+        }
     };
   }, [database, handleNewDataPoint, isConnected]);
 

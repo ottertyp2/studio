@@ -639,8 +639,7 @@ function TestingComponent() {
                     batch?.name || 'N/A',
                     session.serialNumber || 'N/A',
                     new Date(session.startTime).toLocaleString(),
-                    session.endTime ? new Date(session.endTime).toLocaleString() : 'N/A',
-                    session.username,
+                    session.description || 'N/A',
                     endPressure,
                     duration,
                     statusStyle
@@ -670,9 +669,9 @@ function TestingComponent() {
                         style: 'tableExample',
                         table: {
                             headerRows: 1,
-                            widths: ['auto', 'auto', '*', '*', 'auto', 'auto', 'auto', 'auto'],
+                            widths: ['auto', 'auto', '*', '*', 'auto', 'auto', 'auto'],
                             body: [
-                                ['Batch', 'Serial Number', 'Start Time', 'End Time', 'User', 'End Value', 'Duration (s)', 'Status'],
+                                ['Batch', 'Serial Number', 'Start Time', 'Description', 'End Value', 'Duration (s)', 'Status'],
                                 ...tableBody
                             ]
                         },

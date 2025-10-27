@@ -75,7 +75,7 @@ import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getStorage, ref as storageRef, getDownloadURL } from 'firebase/storage';
 import { signOut, adminCreateUser } from '@/firebase/non-blocking-login';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
@@ -87,6 +87,17 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { addDays, format } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
+import * as htmlToImage from 'html-to-image';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 
 if (pdfFonts.pdfMake) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
@@ -243,6 +254,8 @@ export default function AdminPage() {
   const [guidelineEditorMaxY, setGuidelineEditorMaxY] = useState(1200);
 
   const [generatingVesselTypeReport, setGeneratingVesselTypeReport] = useState<string | null>(null);
+  const [pdfChartData, setPdfChartData] = useState<any[]>([]);
+  const pdfChartRef = useRef<HTMLDivElement>(null);
   const sessionImportRef = useRef<HTMLInputElement>(null);
 
   // Batch State
@@ -609,8 +622,8 @@ export default function AdminPage() {
 
     try {
         const storage = getStorage(firebaseApp);
-        const modelUrl = await getDownloadURL(storageRef(storage, modelToUse.storagePath));
-        const model = await tf.loadLayersModel(modelUrl);
+        const modelRef = storageRef(storage, modelToUse.storagePath);
+        const model = await tf.loadLayersModel(tf.io.browserHTTPRequest(await getDownloadURL(modelRef)));
 
         const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
         const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
@@ -899,7 +912,7 @@ export default function AdminPage() {
         await updateDoc(modelDocRef, {
             description: `Manually trained on ${new Date().toLocaleDateString()}. Final Val Acc: ${finalValAcc.toFixed(2)}%`,
             version: `${selectedModel.version.split('-')[0]}-trained`,
-            storagePath: `gs://${storage.app.options.storageBucket}/${modelPath}/model.json`,
+            storagePath: `${modelPath}/model.json`,
             fileSize: saveResult.modelArtifactsInfo.weightData.byteLength,
         });
 
@@ -1036,7 +1049,7 @@ export default function AdminPage() {
           version: '1.0-auto',
           description: `Automatically trained on ${new Date().toLocaleDateString()}. Accuracy: ${finalAccuracy.toFixed(2)}%`,
           fileSize: saveResult.modelArtifactsInfo.weightData.byteLength,
-          storagePath: `gs://${storage.app.options.storageBucket}/${modelPath}/model.json`
+          storagePath: `${modelPath}/model.json`
       };
 
       addDocumentNonBlocking(mlModelsCollectionRef, modelMetaData);
@@ -1125,7 +1138,7 @@ export default function AdminPage() {
             
             switch (sessionSortOrder) {
                 case 'startTime-desc':
-                    return new Date(b.startTime).getTime() - new Date(b.startTime).getTime();
+                    return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
                 case 'startTime-asc':
                     return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
                 case 'vesselTypeName-asc':
@@ -1353,9 +1366,9 @@ export default function AdminPage() {
   };
 
   const handleGenerateVesselTypeReport = async (vesselType: VesselType) => {
-    if (!firestore || !firebaseApp || !testSessions || !sensorConfigs || !batches) {
-      toast({ variant: 'destructive', title: 'Report Failed', description: 'Required data is not loaded. Please wait and try again.' });
-      return;
+    if (!firestore || !firebaseApp || !testSessions || !sensorConfigs || !batches || !pdfChartRef.current) {
+        toast({ variant: 'destructive', title: 'Report Failed', description: 'Required data is not loaded. Please wait and try again.' });
+        return;
     }
 
     setGeneratingVesselTypeReport(vesselType.id);
@@ -1364,6 +1377,9 @@ export default function AdminPage() {
     let logoBase64: string | null = null;
     try {
         logoBase64 = await toBase64('/images/logo.png');
+        if (!logoBase64.startsWith('data:image')) {
+            throw new Error('Conversion to base64 failed or returned invalid format.');
+        }
     } catch (error: any) {
         console.error("PDF Logo Generation Error:", error);
         toast({
@@ -1374,124 +1390,130 @@ export default function AdminPage() {
     }
 
     try {
-      const relevantSessions = testSessions.filter(s => s.vesselTypeId === vesselType.id && s.status === 'COMPLETED') as TestSession[];
-      if (relevantSessions.length === 0) {
-        toast({ title: 'No Data', description: 'No completed test sessions found for this vessel type.' });
-        setGeneratingVesselTypeReport(null);
-        return;
-      }
-
-      const allSensorData: Record<string, SensorData[]> = {};
-      for (const session of relevantSessions) {
-        const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
-        const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
-        const snapshot = await getDocs(q);
-        const data = snapshot.docs.map(doc => doc.data() as SensorData);
-        allSensorData[session.id] = data;
-      }
-
-      const missingConfigIds = relevantSessions.map(s => s.sensorConfigurationId).filter(id => !sensorConfigs.some(c => c.id === id));
-      const missingBatchIds = relevantSessions.map(s => s.batchId).filter(id => !batches?.some(b => b.id === id));
-      
-      const validationErrors: string[] = [];
-      if (!vesselType) validationErrors.push('VesselType is missing.');
-      if (!relevantSessions) validationErrors.push('Sessions data is missing.');
-      if (!allSensorData) validationErrors.push('Sensor data object is missing.');
-      if (!sensorConfigs) validationErrors.push('Sensor configs are missing.');
-      if (!batches) validationErrors.push('Batches data is missing.');
-      if (missingConfigIds.length > 0) validationErrors.push(`Found sessions with missing SensorConfig IDs: ${missingConfigIds.join(', ')}`);
-      if (missingBatchIds.length > 0) validationErrors.push(`Found sessions with missing Batch IDs: ${missingBatchIds.join(', ')}`);
-      
-      if (validationErrors.length > 0) {
-        console.error('Validation Errors:', validationErrors);
-        toast({ variant: 'destructive', title: 'Report Validation Failed', description: validationErrors.join(' ') });
-        setGeneratingVesselTypeReport(null);
-        return;
-      }
-
-      const tableBody = relevantSessions.map(session => {
-        const data = allSensorData[session.id] ?? [];
-        const config = session.sensorConfigurationId ? sensorConfigs.find(c => c.id === session.sensorConfigurationId) : undefined;
-        const batchName = session.batchId ? batches.find(b => b.id === session.batchId)?.name : 'N/A';
-        
-        const endValue = data.length > 0 ? data[data.length-1].value : undefined;
-        let endPressure = 'N/A';
-        if (endValue !== undefined && config) {
-            const converted = convertRawValue(endValue, config);
-            let unitLabel = config.unit || '';
-            if (unitLabel.toLowerCase() === 'bar') unitLabel = 'bar';
-            else if (unitLabel.toLowerCase() === 'v') unitLabel = 'V';
-            endPressure = `${converted.toFixed(config.decimalPlaces)} ${unitLabel}`;
+        const relevantSessions = testSessions.filter(s => s.vesselTypeId === vesselType.id && s.status === 'COMPLETED') as TestSession[];
+        if (relevantSessions.length === 0) {
+            toast({ title: 'No Data', description: 'No completed test sessions found for this vessel type.' });
+            setGeneratingVesselTypeReport(null);
+            return;
         }
 
-        const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
+        // Fetch all data first
+        const allSensorData: Record<string, SensorData[]> = {};
+        for (const session of relevantSessions) {
+            const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+            const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
+            const snapshot = await getDocs(q);
+            allSensorData[session.id] = snapshot.docs.map(doc => doc.data() as SensorData);
+        }
 
-        const classificationText = getClassificationText(session.classification);
-        const statusStyle = {
-          text: classificationText,
-          color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
+        // Prepare chart data and render it
+        const chartDataForPdf = relevantSessions.map(session => {
+            const data = allSensorData[session.id];
+            if (!data || data.length === 0) return null;
+            const startTime = new Date(data[0].timestamp).getTime();
+            return data.map(d => ({
+                name: (new Date(d.timestamp).getTime() - startTime) / 1000,
+                [session.id]: d.value
+            }));
+        }).flat().filter(Boolean);
+
+        // Simple merge of data points for chart
+        const mergedChartData: any[] = [];
+        const temp: Record<number, any> = {};
+        for (const dp of chartDataForPdf) {
+            if (!dp) continue;
+            if (!temp[dp.name]) temp[dp.name] = { name: dp.name };
+            Object.assign(temp[dp.name], dp);
+        }
+        mergedChartData.push(...Object.values(temp).sort((a,b) => a.name - b.name));
+
+        setPdfChartData(mergedChartData);
+        await new Promise(resolve => setTimeout(resolve, 500)); // wait for chart to render
+
+        const chartImage = await htmlToImage.toPng(pdfChartRef.current, { quality: 0.95, backgroundColor: '#ffffff' });
+
+        const tableBody = relevantSessions.map(session => {
+            const data = allSensorData[session.id] ?? [];
+            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+            const batchName = batches?.find(b => b.id === session.batchId)?.name;
+            
+            const endValue = data.length > 0 ? data[data.length-1].value : undefined;
+            let endPressure = 'N/A';
+            if (endValue !== undefined && config) {
+                const converted = convertRawValue(endValue, config);
+                let unitLabel = config.unit || '';
+                endPressure = `${converted.toFixed(config.decimalPlaces)} ${unitLabel}`;
+            }
+
+            const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
+
+            const classificationText = getClassificationText(session.classification);
+            const statusStyle = {
+                text: classificationText,
+                color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
+            };
+
+            return [
+                batchName ?? 'N/A',
+                session.serialNumber || 'N/A',
+                new Date(session.startTime).toLocaleString(),
+                session.description || 'N/A',
+                endPressure,
+                duration,
+                statusStyle
+            ];
+        });
+
+        const docDefinition: any = {
+            content: [
+                {
+                    columns: [
+                        logoBase64 ? { image: logoBase64, width: 70 } : { text: '' },
+                        {
+                            stack: [
+                                { text: 'Batch Vessel Pressure Test Report', style: 'header', alignment: 'right' },
+                                { text: `Vessel Type: ${vesselType.name}`, style: 'subheader', alignment: 'right' },
+                            ],
+                        },
+                    ],
+                    columnGap: 10,
+                },
+                { text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' },
+                { text: `Total Sessions: ${relevantSessions.length}`, style: 'body', margin: [0, 0, 0, 10] },
+                { image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] },
+                {
+                    style: 'tableExample',
+                    table: {
+                        headerRows: 1,
+                        widths: ['auto', 'auto', '*', '*', 'auto', 'auto', 'auto'],
+                        body: [
+                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'End Pressure', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            ...tableBody
+                        ]
+                    },
+                    layout: 'lightHorizontalLines'
+                }
+            ],
+            styles: {
+                header: { fontSize: 18, bold: true, margin: [0, 0, 0, 5] },
+                subheader: { fontSize: 14, bold: true, margin: [0, 5, 0, 2] },
+                body: { fontSize: 10 },
+                tableExample: { margin: [0, 2, 0, 8], fontSize: 9 },
+                tableHeader: { bold: true, fontSize: 10, color: 'black' }
+            }
         };
 
-        return [
-          batchName ?? 'N/A',
-          session.serialNumber || 'N/A',
-          new Date(session.startTime).toLocaleString(),
-          session.endTime ? new Date(session.endTime).toLocaleString() : 'N/A',
-          session.username ?? 'N/A',
-          endPressure,
-          duration,
-          statusStyle
-        ];
-      });
-
-      const docDefinition: any = {
-        content: [
-          {
-            columns: [
-              logoBase64 ? { image: logoBase64, width: 70 } : { text: '' },
-              {
-                stack: [
-                  { text: 'Batch Vessel Pressure Test Report', style: 'header', alignment: 'right' },
-                  { text: `Vessel Type: ${vesselType.name}`, style: 'subheader', alignment: 'right' },
-                ],
-              },
-            ],
-            columnGap: 10,
-          },
-          { text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' },
-          { text: `Total Sessions: ${relevantSessions.length}`, style: 'body', margin: [0, 0, 0, 10] },
-          {
-            style: 'tableExample',
-            table: {
-              headerRows: 1,
-              widths: ['auto', 'auto', '*', '*', 'auto', 'auto', 'auto', 'auto'],
-              body: [
-                [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'End Time', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'End Pressure', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
-                ...tableBody
-              ]
-            },
-            layout: 'lightHorizontalLines'
-          }
-        ],
-        styles: {
-          header: { fontSize: 18, bold: true, margin: [0, 0, 0, 5] },
-          subheader: { fontSize: 14, bold: true, margin: [0, 5, 0, 2] },
-          body: { fontSize: 10 },
-          tableExample: { margin: [0, 2, 0, 8], fontSize: 9 },
-          tableHeader: { bold: true, fontSize: 10, color: 'black' }
-        }
-      };
-
-      pdfMake.createPdf(docDefinition).download(`report-batch-${vesselType.name.replace(/\s+/g, '_')}.pdf`);
-      toast({ title: 'Vessel Type Report Generated', description: 'The batch report PDF is downloading.' });
+        pdfMake.createPdf(docDefinition).download(`report-batch-${vesselType.name.replace(/\s+/g, '_')}.pdf`);
+        toast({ title: 'Vessel Type Report Generated', description: 'The batch report PDF is downloading.' });
 
     } catch (e: any) {
-      console.error("Report Generation Error:", e);
-      toast({ variant: 'destructive', title: 'Report Failed', description: `An unexpected error occurred. ${e.message}` });
+        console.error("Report Generation Error:", e);
+        toast({ variant: 'destructive', title: 'Report Failed', description: `An unexpected error occurred. ${e.message}` });
     } finally {
-      setGeneratingVesselTypeReport(null);
+        setGeneratingVesselTypeReport(null);
+        setPdfChartData([]);
     }
-  };
+};
 
   const handleExportSessionCSV = async (session: TestSession) => {
     if (!firestore || !sensorConfigs) {
@@ -2447,6 +2469,30 @@ const renderBatchManagement = () => (
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-4">
+       <div ref={pdfChartRef} className="fixed -left-[9999px] top-0 w-[800px] h-[400px] bg-white">
+          {pdfChartData.length > 0 && (
+              <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={pdfChartData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis />
+                      <Tooltip />
+                      <Legend />
+                      {filteredAndSortedSessions.map((session, index) => (
+                           <Line 
+                            key={session.id}
+                            type="monotone" 
+                            dataKey={session.id} 
+                            stroke={'#000000'}
+                            name={`${session.serialNumber}`} 
+                            dot={false} 
+                            strokeWidth={2} 
+                           />
+                        ))}
+                  </LineChart>
+              </ResponsiveContainer>
+          )}
+      </div>
       <header className="w-full max-w-7xl mx-auto mb-6 animate-in">
         <Card>
           <CardHeader className="p-6">
