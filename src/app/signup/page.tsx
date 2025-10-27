@@ -35,7 +35,7 @@ export default function SignupPage() {
     },
   });
 
-  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+  const onSubmit = async (values: z.infer<typeof formSchema>>) => {
     setIsLoading(true);
     if (!auth || !firestore) {
       toast({
@@ -67,7 +67,7 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background to-blue-950/50 dark:to-blue-950 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 p-4">
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">Create an Account</CardTitle>

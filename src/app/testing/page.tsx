@@ -717,7 +717,7 @@ function TestingComponent() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-950/50 dark:to-blue-950 text-foreground p-1">
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-1">
       <header className="w-full max-w-7xl mx-auto mb-3">
         <Card className="shadow-lg">
           <CardHeader>
@@ -1031,7 +1031,7 @@ export default function TestingPage() {
 
     if (isUserLoading || !areServicesAvailable) {
         return (
-            <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-blue-950/50 dark:to-blue-950">
+            <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950">
                 <p className="text-lg">Loading Dashboard...</p>
             </div>
         );

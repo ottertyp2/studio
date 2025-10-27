@@ -116,7 +116,7 @@ export default function PromotePage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background to-blue-950/50 dark:to-blue-950 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 p-4">
       <Card className="w-full max-w-lg shadow-lg">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl">Admin Promotion</CardTitle>

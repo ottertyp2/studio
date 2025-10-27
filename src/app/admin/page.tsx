@@ -2418,7 +2418,7 @@ const renderBatchManagement = () => (
 
   if (isUserLoading || !user) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-blue-950/50 dark:to-blue-950">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950">
         <div className="text-center">
             <p className="text-lg font-semibold">Loading Management Panel...</p>
             <p className="text-sm text-muted-foreground">Please wait a moment.</p>
@@ -2429,10 +2429,10 @@ const renderBatchManagement = () => (
 
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-950/50 dark:to-blue-950 text-foreground p-4">
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-4">
       <header className="w-full max-w-7xl mx-auto mb-6">
         <Card className="shadow-lg">
-          <CardHeader className="p-4">
+          <CardHeader className="p-6">
             <div className="flex justify-between items-center">
                 <CardTitle className="text-2xl bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
                 Management Panel
