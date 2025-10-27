@@ -517,8 +517,11 @@ function TestingComponent() {
     if (isDuringDowntime) {
       return "Arduino is not sending data during this time.";
     }
+    if (lastDataPointTimestamp) {
+      return `Offline. Last seen ${formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true })}.`;
+    }
     return "Offline";
-  }, [isDuringDowntime]);
+  }, [isDuringDowntime, lastDataPointTimestamp]);
 
   const dataSourceStatus = useMemo(() => {
     if (isDeviceConnected) {
@@ -833,7 +836,7 @@ function TestingComponent() {
                 <CardContent className="flex flex-col items-center">
                 <div className="text-center">
                     <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                      {isDeviceConnected && currentValue !== null ? (convertedValue?.value ?? 'N/A') : offlineMessage}
+                      {isDeviceConnected && currentValue !== null ? (convertedValue?.value ?? 'N/A') : "Offline"}
                     </p>
                     <p className="text-lg text-muted-foreground">{isDeviceConnected && currentValue !== null ? (convertedValue?.unit ?? '') : ''}</p>
                      <p className="text-xs text-muted-foreground h-4 mt-1">
@@ -842,7 +845,7 @@ function TestingComponent() {
                     
                     <div className={`text-sm mt-2 flex items-center justify-center gap-1 ${isDeviceConnected ? 'text-green-600' : 'text-destructive'}`}>
                         {isDeviceConnected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
-                        <span>{dataSourceStatus}</span>
+                        <span>{isDeviceConnected ? `Sampling: ${samplingRate} Hz` : offlineMessage}</span>
                     </div>
                     {isDeviceConnected && (
                       <>
