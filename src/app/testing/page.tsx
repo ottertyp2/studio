@@ -62,7 +62,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import ValveControl from '@/components/dashboard/ValveControl';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger, SheetOverlay } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
@@ -565,12 +565,12 @@ function TestingComponent() {
     return "Offline";
   }, [isDuringDowntime, lastDataPointTimestamp]);
 
-  const generateReport = async () => {
+    const generateReport = async () => {
         if (!firestore || !chartRef.current || !reportType || (!selectedReportSessionId && !selectedReportBatchId)) {
             toast({ variant: 'destructive', title: 'Report Failed', description: 'Please select a report type and a session/batch.' });
             return;
         }
-    
+
         setIsGeneratingReport(true);
         toast({ title: 'Generating Report...', description: 'Please wait, this can take a moment.' });
 
@@ -581,8 +581,7 @@ function TestingComponent() {
         let mainVesselTypeName = '';
 
         try {
-            const logoUrl = '/images/logo.png';
-            const logoBase64 = await toBase64(logoUrl);
+            const logoBase64 = await toBase64('/images/logo.png');
 
             if (reportType === 'single' && selectedReportSessionId) {
                 const session = sessionHistory.find(s => s.id === selectedReportSessionId);
@@ -605,27 +604,28 @@ function TestingComponent() {
             }
 
             setComparisonSessions(sessionsToReport);
-            await new Promise(resolve => setTimeout(resolve, 1500)); 
+            await new Promise(resolve => setTimeout(resolve, 1500));
 
             const chartImage = await htmlToImage.toPng(chartRef.current, {
                 quality: 0.95,
                 backgroundColor: '#ffffff'
             });
 
-            const getStatusText = (classification?: 'LEAK' | 'DIFFUSION') => {
-                switch (classification) {
-                    case 'DIFFUSION': return { text: 'Passed', color: 'green', bold: true };
+            const getClassificationText = (classification?: 'LEAK' | 'DIFFUSION') => {
+                switch(classification) {
                     case 'LEAK': return { text: 'Not Passed', color: 'red', bold: true };
+                    case 'DIFFUSION': return { text: 'Passed', color: 'green', bold: true };
                     default: return { text: 'Unclassified', color: 'gray', bold: false };
                 }
             };
+            
 
             const mainConfig = sensorConfigs?.find(c => c.id === sessionsToReport[0]?.sensorConfigurationId);
-            const yAxisLabel = mainConfig?.mode === 'VOLTAGE' 
-                ? `Voltage in V` 
-                : mainConfig?.mode === 'CUSTOM'
-                ? `Pressure in ${mainConfig.unit || 'bar'}`
-                : `Raw Value`;
+            let yAxisLabel = 'Raw Value';
+            if (mainConfig) {
+                if (mainConfig.mode === 'VOLTAGE') yAxisLabel = `Voltage in V`;
+                else if (mainConfig.mode === 'CUSTOM') yAxisLabel = `Pressure in ${mainConfig.unit || 'bar'}`;
+            }
 
             const tableBody = sessionsToReport.map(session => {
                 const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
@@ -634,7 +634,7 @@ function TestingComponent() {
                 const endValue = data.length > 0 ? data[data.length-1].value : undefined;
                 const endPressure = (endValue !== undefined && config) ? `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${config.unit}` : 'N/A';
                 const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
-                
+
                 return [
                     batch?.name || 'N/A',
                     session.serialNumber || 'N/A',
@@ -643,7 +643,7 @@ function TestingComponent() {
                     session.username,
                     endPressure,
                     duration,
-                    getStatusText(session.classification)
+                    getClassificationText(session.classification)
                 ];
             });
 
@@ -797,7 +797,7 @@ function TestingComponent() {
     return null;
   };
   
-  const yAxisLabel = useMemo(() => {
+    const yAxisLabel = useMemo(() => {
       const firstSession = comparisonSessions[0];
       if (!firstSession) return "Value";
       const config = sensorConfigs?.find(c => c.id === firstSession.sensorConfigurationId);
@@ -808,6 +808,14 @@ function TestingComponent() {
       return `Raw Value`;
 
   }, [comparisonSessions, sensorConfigs]);
+
+    const getClassificationText = (classification?: 'LEAK' | 'DIFFUSION') => {
+      switch(classification) {
+          case 'LEAK': return 'Not Passed';
+          case 'DIFFUSION': return 'Passed';
+          default: return 'Unclassified';
+      }
+  };
 
 
   return (
@@ -1229,5 +1237,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-

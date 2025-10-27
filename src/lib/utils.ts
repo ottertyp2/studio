@@ -48,12 +48,10 @@ export const toBase64 = (url: string): Promise<string> => {
       .then(blob => {
         const reader = new FileReader();
         reader.onloadend = () => {
-          // The result is a data URL string.
-          const base64data = reader.result;
-          if (typeof base64data === 'string') {
-            resolve(base64data);
+          if (typeof reader.result === 'string') {
+            resolve(reader.result);
           } else {
-            reject(new Error('Failed to convert blob to base64 string.'));
+            reject(new Error('Failed to convert blob to a base64 string.'));
           }
         };
         reader.onerror = (error) => {
