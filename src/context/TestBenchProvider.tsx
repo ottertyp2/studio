@@ -37,6 +37,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [startTime, setStartTime] = useState<number | null>(null);
   const [totalDowntime, setTotalDowntime] = useState(0);
   const downtimeSinceRef = useRef<number | null>(null);
+
+  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   useEffect(() => {
     // Set start time only once when the provider mounts
@@ -177,31 +179,31 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const liveDataRef = ref(database, 'live');
 
     const listener = onValue(liveDataRef, (snap) => {
-        const data = snap.val();
+      const data = snap.val();
 
-        if (data && data.lastUpdate) {
-            handleNewDataPoint(data);
-        }
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+      }
+
+      if (data && data.lastUpdate) {
+        setIsConnected(true);
+        handleNewDataPoint(data);
+  
+        connectionTimeoutRef.current = setTimeout(() => {
+          setIsConnected(false);
+        }, 5000);
+      } else {
+        setIsConnected(false);
+      }
     });
-
-    // Interval to check connection status based on last received timestamp
-    const connectionCheckInterval = setInterval(() => {
-        if (lastDataPointTimestamp) {
-            const now = Date.now();
-            const timeSinceLastData = now - lastDataPointTimestamp;
-            // If it's been more than 5 seconds, consider it disconnected
-            setIsConnected(timeSinceLastData < 5000);
-        } else {
-            // If we've never received data, we're disconnected
-            setIsConnected(false);
-        }
-    }, 2000); // Check every 2 seconds
 
     return () => {
         listener(); // Detach the onValue listener
-        clearInterval(connectionCheckInterval); // Clear the interval
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+        }
     };
-  }, [database, handleNewDataPoint, lastDataPointTimestamp]);
+  }, [database, handleNewDataPoint]);
 
 
   const value = {
