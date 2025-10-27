@@ -1802,7 +1802,7 @@ export default function AdminPage() {
   const renderUserManagement = () => {
     return (
         <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg mt-6 lg:col-span-3">
-            <Accordion type="single" collapsible className="w-full" defaultValue='item-1'>
+            <Accordion type="single" collapsible className="w-full">
                 <AccordionItem value="item-1">
                     <AccordionTrigger className="p-6">
                         <div className="text-left">
@@ -1902,175 +1902,181 @@ export default function AdminPage() {
   
   const renderModelManagement = () => (
     <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <BrainCircuit className="h-6 w-6" />
-          AI Model Management
-        </CardTitle>
-        <CardDescription>
-          Select, train, and manage machine learning models locally in your browser.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
-                <h3 className="font-semibold text-lg">Model Catalog</h3>
-                <div className="flex gap-2">
-                    <Input placeholder="New model name..." value={newMlModel.name || ''} onChange={(e) => setNewMlModel(p => ({...p, name: e.target.value}))} />
-                    <Input placeholder="Version (e.g., 1.0)" value={newMlModel.version || ''} onChange={(e) => setNewMlModel(p => ({...p, version: e.target.value}))} />
-                    <Button onClick={handleAddMlModel}><PackagePlus className="h-4 w-4" /></Button>
-                </div>
-                <ScrollArea className="h-48 border rounded-md p-2 bg-background/50">
-                    {isMlModelsLoading ? <p className="text-center p-4">Loading...</p> : mlModels && mlModels.length > 0 ? (
-                        <div className="space-y-2">
-                        {mlModels.map(m => (
-                          <div key={m.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted">
-                              <div>
-                                  <p className="font-medium">{m.name} <span className="text-xs text-muted-foreground">v{m.version}</span></p>
-                                  {m.description && <p className="text-xs text-muted-foreground">{m.description}</p>}
-                              </div>
-                              <Button variant="ghost" size="icon" onClick={() => handleDeleteMlModel(m.id)}>
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                          </div>
-                        ))}
+        <Accordion type="single" collapsible className="w-full">
+            <AccordionItem value="item-1">
+                <AccordionTrigger className="p-6">
+                    <div className="flex items-center gap-2 text-left">
+                        <BrainCircuit className="h-6 w-6" />
+                        <div>
+                            <CardTitle>AI Model Management</CardTitle>
+                            <CardDescription>Select, train, and manage machine learning models.</CardDescription>
                         </div>
-                    ) : <p className="text-center p-4 text-muted-foreground">No models in catalog.</p>}
-                </ScrollArea>
-            </div>
-
-            <div className="space-y-4">
-                <h3 className="font-semibold text-lg">Training Datasets</h3>
-                <div className="flex gap-2">
-                    <Input placeholder="New dataset name..." value={newTrainDataSet.name || ''} onChange={(e) => setNewTrainDataSet(p => ({...p, name: e.target.value}))} />
-                    <Button onClick={handleAddTrainDataSet}><PackagePlus className="h-4 w-4" /></Button>
-                </div>
-                 <ScrollArea className="h-48 border rounded-md p-2 bg-background/50">
-                    {isTrainDataSetsLoading ? <p className="text-center p-4">Loading...</p> : trainDataSets && trainDataSets.length > 0 ? (
-                      <div className="space-y-2">
-                      {trainDataSets.map(d => (
-                        <div key={d.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted">
-                            <p className="font-medium">{d.name}</p>
-                            <Button variant="ghost" size="icon" onClick={() => handleDeleteTrainDataSet(d.id)}>
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                        </div>
-                      ))}
-                      </div>
-                    ): <p className="text-center p-4 text-muted-foreground">No datasets in catalog.</p>}
-                </ScrollArea>
-            </div>
-        </div>
-
-        <div className="border-t pt-6 space-y-4">
-            <h3 className="font-semibold text-lg">Manual Model Training</h3>
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className='space-y-2'>
-                <Label htmlFor="model-select">Select Model to Update</Label>
-                <Select onValueChange={setSelectedModelId} value={selectedModelId || ''}>
-                  <SelectTrigger id="model-select">
-                    <SelectValue placeholder="Select a model to train/update" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {isMlModelsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                     mlModels?.map(m => <SelectItem key={m.id} value={m.id}>{m.name} v{m.version}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className='space-y-2'>
-                <Label>Select Training Datasets (Classified Test Sessions)</Label>
-                <ScrollArea className="h-40 border rounded-md p-2 bg-background/50">
-                    <div className="space-y-2">
-                    {isTestSessionsLoading ? <p className="p-4 text-center">Loading...</p> :
-                     testSessions?.filter(s => s.classification && s.status === 'COMPLETED').map(d => (
-                         <div key={d.id} className="flex items-center space-x-2">
-                             <Checkbox
-                                id={d.id}
-                                checked={selectedDataSetIds.includes(d.id)}
-                                onCheckedChange={(checked) => {
-                                    return checked
-                                        ? setSelectedDataSetIds([...selectedDataSetIds, d.id])
-                                        : setSelectedDataSetIds(selectedDataSetIds.filter(id => id !== d.id))
-                                }}
-                             />
-                             <label htmlFor={d.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                 {d.vesselTypeName} (S/N: {d.serialNumber}) - <span className="text-xs text-muted-foreground">{new Date(d.startTime).toLocaleDateString()}</span>
-                             </label>
-                         </div>
-                     ))}
                     </div>
-                </ScrollArea>
-                 <p className="text-xs text-muted-foreground mt-1">
-                  Generate demo sessions or classify real sessions to create training data.
-                </p>
-              </div>
-            </div>
+                </AccordionTrigger>
+                <AccordionContent className="p-6 pt-0 space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                            <h3 className="font-semibold text-lg">Model Catalog</h3>
+                            <div className="flex gap-2">
+                                <Input placeholder="New model name..." value={newMlModel.name || ''} onChange={(e) => setNewMlModel(p => ({...p, name: e.target.value}))} />
+                                <Input placeholder="Version (e.g., 1.0)" value={newMlModel.version || ''} onChange={(e) => setNewMlModel(p => ({...p, version: e.target.value}))} />
+                                <Button onClick={handleAddMlModel}><PackagePlus className="h-4 w-4" /></Button>
+                            </div>
+                            <ScrollArea className="h-48 border rounded-md p-2 bg-background/50">
+                                {isMlModelsLoading ? <p className="text-center p-4">Loading...</p> : mlModels && mlModels.length > 0 ? (
+                                    <div className="space-y-2">
+                                    {mlModels.map(m => (
+                                      <div key={m.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted">
+                                          <div>
+                                              <p className="font-medium">{m.name} <span className="text-xs text-muted-foreground">v{m.version}</span></p>
+                                              {m.description && <p className="text-xs text-muted-foreground">{m.description}</p>}
+                                          </div>
+                                          <Button variant="ghost" size="icon" onClick={() => handleDeleteMlModel(m.id)}>
+                                              <Trash2 className="h-4 w-4 text-destructive" />
+                                          </Button>
+                                      </div>
+                                    ))}
+                                    </div>
+                                ) : <p className="text-center p-4 text-muted-foreground">No models in catalog.</p>}
+                            </ScrollArea>
+                        </div>
 
-            <div>
-              <Button onClick={handleTrainModel} className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md" disabled={isTraining || !selectedModelId || selectedDataSetIds.length === 0}>
-                {isTraining ? 'Training...' : 'Train & Update Selected Model'}
-              </Button>
-            </div>
-            {isTraining && (
-                <div className="space-y-2">
-                <Label>Training Progress</Label>
-                <Progress value={trainingProgress} />
-                <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>Epoch: {trainingStatus.epoch}</span>
-                    <span>Loss: {trainingStatus.loss.toFixed(4)} | Acc: {trainingStatus.accuracy.toFixed(2)}%</span>
-                    <span>Val_Loss: {trainingStatus.val_loss.toFixed(4)} | Val_Acc: {trainingStatus.val_acc.toFixed(2)}%</span>
-                </div>
-                </div>
-            )}
-        </div>
+                        <div className="space-y-4">
+                            <h3 className="font-semibold text-lg">Training Datasets</h3>
+                            <div className="flex gap-2">
+                                <Input placeholder="New dataset name..." value={newTrainDataSet.name || ''} onChange={(e) => setNewTrainDataSet(p => ({...p, name: e.target.value}))} />
+                                <Button onClick={handleAddTrainDataSet}><PackagePlus className="h-4 w-4" /></Button>
+                            </div>
+                             <ScrollArea className="h-48 border rounded-md p-2 bg-background/50">
+                                {isTrainDataSetsLoading ? <p className="text-center p-4">Loading...</p> : trainDataSets && trainDataSets.length > 0 ? (
+                                  <div className="space-y-2">
+                                  {trainDataSets.map(d => (
+                                    <div key={d.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted">
+                                        <p className="font-medium">{d.name}</p>
+                                        <Button variant="ghost" size="icon" onClick={() => handleDeleteTrainDataSet(d.id)}>
+                                            <Trash2 className="h-4 w-4 text-destructive" />
+                                        </Button>
+                                    </div>
+                                  ))}
+                                  </div>
+                                ): <p className="text-center p-4 text-muted-foreground">No datasets in catalog.</p>}
+                            </ScrollArea>
+                        </div>
+                    </div>
 
-      </CardContent>
+                    <div className="border-t pt-6 space-y-4">
+                        <h3 className="font-semibold text-lg">Manual Model Training</h3>
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className='space-y-2'>
+                            <Label htmlFor="model-select">Select Model to Update</Label>
+                            <Select onValueChange={setSelectedModelId} value={selectedModelId || ''}>
+                              <SelectTrigger id="model-select">
+                                <SelectValue placeholder="Select a model to train/update" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {isMlModelsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                                 mlModels?.map(m => <SelectItem key={m.id} value={m.id}>{m.name} v{m.version}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className='space-y-2'>
+                            <Label>Select Training Datasets (Classified Test Sessions)</Label>
+                            <ScrollArea className="h-40 border rounded-md p-2 bg-background/50">
+                                <div className="space-y-2">
+                                {isTestSessionsLoading ? <p className="p-4 text-center">Loading...</p> :
+                                 testSessions?.filter(s => s.classification && s.status === 'COMPLETED').map(d => (
+                                     <div key={d.id} className="flex items-center space-x-2">
+                                         <Checkbox
+                                            id={d.id}
+                                            checked={selectedDataSetIds.includes(d.id)}
+                                            onCheckedChange={(checked) => {
+                                                return checked
+                                                    ? setSelectedDataSetIds([...selectedDataSetIds, d.id])
+                                                    : setSelectedDataSetIds(selectedDataSetIds.filter(id => id !== d.id))
+                                            }}
+                                         />
+                                         <label htmlFor={d.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                             {d.vesselTypeName} (S/N: {d.serialNumber}) - <span className="text-xs text-muted-foreground">{new Date(d.startTime).toLocaleDateString()}</span>
+                                         </label>
+                                     </div>
+                                 ))}
+                                </div>
+                            </ScrollArea>
+                             <p className="text-xs text-muted-foreground mt-1">
+                              Generate demo sessions or classify real sessions to create training data.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div>
+                          <Button onClick={handleTrainModel} className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md" disabled={isTraining || !selectedModelId || selectedDataSetIds.length === 0}>
+                            {isTraining ? 'Training...' : 'Train & Update Selected Model'}
+                          </Button>
+                        </div>
+                        {isTraining && (
+                            <div className="space-y-2">
+                            <Label>Training Progress</Label>
+                            <Progress value={trainingProgress} />
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>Epoch: {trainingStatus.epoch}</span>
+                                <span>Loss: {trainingStatus.loss.toFixed(4)} | Acc: {trainingStatus.accuracy.toFixed(2)}%</span>
+                                <span>Val_Loss: {trainingStatus.val_loss.toFixed(4)} | Val_Acc: {trainingStatus.val_acc.toFixed(2)}%</span>
+                            </div>
+                            </div>
+                        )}
+                    </div>
+                </AccordionContent>
+            </AccordionItem>
+        </Accordion>
     </Card>
   );
 
   const renderAutomatedTraining = () => (
     <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg mt-6">
-      <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BrainCircuit className="h-6 w-6 text-primary" />
-            Automated Training Pipeline
-          </CardTitle>
-          <CardDescription>
-            Automatically generate new data, train a model from scratch, and save it to the catalog.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-           <div className="space-y-2">
-              <Label htmlFor="auto-model-size">Model Size</Label>
-              <Select onValueChange={(value) => setAutoModelSize(value as 'small' | 'medium' | 'large')} defaultValue="medium" disabled={isAutoTraining}>
-                <SelectTrigger id="auto-model-size">
-                  <SelectValue placeholder="Select model size" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="small">Small (1x25)</SelectItem>
-                  <SelectItem value="medium">Medium (2x50)</SelectItem>
-                  <SelectItem value="large">Large (2x100)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          <Button onClick={handleAutomatedTraining} disabled={isAutoTraining} className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
-            {isAutoTraining ? 'Pipeline Running...' : 'Start Automated Training'}
-          </Button>
-          {isAutoTraining && autoTrainingStatus && (
-            <div className="space-y-2 pt-4">
-                <Label>Pipeline Progress ({autoTrainingStatus.step})</Label>
-                <Progress value={autoTrainingStatus.progress} />
-                <p className="text-xs text-muted-foreground text-center">{autoTrainingStatus.details}</p>
-            </div>
-          )}
-        </CardContent>
+        <Accordion type="single" collapsible className="w-full">
+            <AccordionItem value="item-1">
+                <AccordionTrigger className="p-6">
+                    <div className="flex items-center gap-2 text-left">
+                        <BrainCircuit className="h-6 w-6 text-primary" />
+                        <div>
+                            <CardTitle>Automated Training Pipeline</CardTitle>
+                            <CardDescription>Generate data, train a model, and save it to the catalog.</CardDescription>
+                        </div>
+                    </div>
+                </AccordionTrigger>
+                <AccordionContent className="p-6 pt-0 space-y-4">
+                   <div className="space-y-2">
+                      <Label htmlFor="auto-model-size">Model Size</Label>
+                      <Select onValueChange={(value) => setAutoModelSize(value as 'small' | 'medium' | 'large')} defaultValue="medium" disabled={isAutoTraining}>
+                        <SelectTrigger id="auto-model-size">
+                          <SelectValue placeholder="Select model size" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="small">Small (1x25)</SelectItem>
+                          <SelectItem value="medium">Medium (2x50)</SelectItem>
+                          <SelectItem value="large">Large (2x100)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  <Button onClick={handleAutomatedTraining} disabled={isAutoTraining} className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
+                    {isAutoTraining ? 'Pipeline Running...' : 'Start Automated Training'}
+                  </Button>
+                  {isAutoTraining && autoTrainingStatus && (
+                    <div className="space-y-2 pt-4">
+                        <Label>Pipeline Progress ({autoTrainingStatus.step})</Label>
+                        <Progress value={autoTrainingStatus.progress} />
+                        <p className="text-xs text-muted-foreground text-center">{autoTrainingStatus.details}</p>
+                    </div>
+                  )}
+                </AccordionContent>
+            </AccordionItem>
+        </Accordion>
     </Card>
   );
 
   const renderVesselTypeManagement = () => (
     <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg">
-        <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
+        <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="item-1">
                 <AccordionTrigger className="p-6">
                     <div className="text-left">
@@ -2202,7 +2208,7 @@ export default function AdminPage() {
 
 const renderBatchManagement = () => (
     <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg">
-        <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
+        <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="item-1">
                 <AccordionTrigger className="p-6">
                     <div className="text-left">
@@ -2321,7 +2327,7 @@ const renderBatchManagement = () => (
       <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1 space-y-6">
              <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg">
-                  <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
+                  <Accordion type="single" collapsible className="w-full">
                       <AccordionItem value="item-1">
                           <AccordionTrigger className="p-6">
                             <div className="text-left">
@@ -2386,7 +2392,7 @@ const renderBatchManagement = () => (
               {renderBatchManagement()}
               {renderVesselTypeManagement()}
               <Card className="backdrop-blur-sm border-slate-300/80 shadow-lg">
-                  <Accordion type="single" collapsible className="w-full" defaultValue="item-1">
+                  <Accordion type="single" collapsible className="w-full">
                       <AccordionItem value="item-1">
                           <AccordionTrigger className="p-6">
                             <div className="text-left">
@@ -2462,3 +2468,5 @@ const renderBatchManagement = () => (
     </div>
   );
 }
+
+    
