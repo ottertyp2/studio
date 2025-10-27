@@ -485,21 +485,12 @@ function TestingComponent() {
   };
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (lastDataPointTimestamp) {
-        const timeSince = Date.now() - lastDataPointTimestamp;
-        if (timeSince < 2000) { // Only calculate if recent
-          setSamplingRate(1000 / timeSince);
-        } else {
-          setSamplingRate(0);
-        }
-      } else {
+    if (isDeviceConnected) {
+        setSamplingRate(1);
+    } else {
         setSamplingRate(0);
-      }
-    }, 1000); // Update rate every second
-
-    return () => clearInterval(timer);
-  }, [lastDataPointTimestamp]);
+    }
+  }, [isDeviceConnected]);
 
   const convertedValue = useMemo(() => {
       if (currentValue === null) return null;
@@ -531,7 +522,7 @@ function TestingComponent() {
 
   const dataSourceStatus = useMemo(() => {
     if (isDeviceConnected) {
-      return `Sampling: 1 Hz`;
+      return "Sampling: 1 Hz";
     }
     return offlineMessage;
   }, [isDeviceConnected, offlineMessage]);
@@ -718,7 +709,9 @@ function TestingComponent() {
     return 'text-red-600';
   };
 
-  const renderLegendContent = () => null;
+  const renderLegendContent = () => {
+    return null;
+  };
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-slate-200 text-foreground p-4">
@@ -751,14 +744,14 @@ function TestingComponent() {
       </header>
 
       <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+        <div className="lg:col-span-2">
+            <Card className="bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg h-full">
               <CardHeader>
                 <div className="flex justify-between items-center">
                   <CardTitle>Session Control</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex items-center justify-center h-full">
                 {runningTestSession ? (
                     <div className="flex flex-col items-center gap-4">
                         <p className="text-lg font-semibold text-primary animate-pulse">🔴 Recording Session in Progress...</p>
@@ -832,8 +825,8 @@ function TestingComponent() {
 
         </div>
                 
-        <div className="lg:col-span-1 space-y-6">
-            <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg">
+        <div className="lg:col-span-1 space-y-6 flex flex-col">
+            <Card className="flex flex-col justify-center items-center bg-white/70 backdrop-blur-sm border-slate-300/80 shadow-lg flex-grow">
                 <CardHeader>
                 <CardTitle className="text-lg">Current Value</CardTitle>
                 </CardHeader>
@@ -947,7 +940,7 @@ function TestingComponent() {
                                                             </AlertDialogHeader>
                                                             <AlertDialogFooter>
                                                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                <AlertDialogAction variant="destructive" onClick={() => handleDeleteSession(session.id)}>Confirm Delete</AlertDialogAction>
+                                                                <AlertDialogAction variant="destructive" onClick={()={() => handleDeleteSession(session.id)}}>Confirm Delete</AlertDialogAction>
                                                             </AlertDialogFooter>
                                                         </AlertDialogContent>
                                                     </AlertDialog>
