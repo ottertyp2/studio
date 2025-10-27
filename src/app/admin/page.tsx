@@ -1350,6 +1350,18 @@ export default function AdminPage() {
     setGeneratingVesselTypeReport(vesselType.id);
     toast({ title: 'Generating Report...', description: 'Please wait while we prepare the data.' });
 
+    let logoBase64: string | null = null;
+    try {
+        logoBase64 = await toBase64('/images/logo.png');
+    } catch (error: any) {
+        console.error("Logo conversion failed:", error.message);
+        toast({
+            variant: "destructive",
+            title: "Could Not Load Logo",
+            description: "The report will be generated without a logo. Check console for details.",
+        });
+    }
+
     try {
       const relevantSessions = testSessions.filter(s => s.vesselTypeId === vesselType.id && s.status === 'COMPLETED') as TestSession[];
       if (relevantSessions.length === 0) {
@@ -1357,8 +1369,6 @@ export default function AdminPage() {
         setGeneratingVesselTypeReport(null);
         return;
       }
-      
-      const logoBase64 = await toBase64('/images/logo.png');
 
       const allSensorData: Record<string, SensorData[]> = {};
       for (const session of relevantSessions) {
@@ -1395,7 +1405,7 @@ export default function AdminPage() {
         
         const endValue = data.length > 0 ? data[data.length-1].value : undefined;
         const endPressure = (endValue !== undefined && config && typeof config.decimalPlaces === 'number')
-            ? endValue.toFixed(config.decimalPlaces) + ' ' + (config.unit || '')
+            ? convertRawValue(endValue, config).toFixed(config.decimalPlaces) + ' ' + (config.unit || '')
             : 'N/A';
 
         const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
@@ -1416,7 +1426,7 @@ export default function AdminPage() {
         content: [
           {
             columns: [
-              { image: logoBase64, width: 70 },
+              logoBase64 ? { image: logoBase64, width: 70 } : { text: '' },
               {
                 stack: [
                   { text: 'Vessel Type Report', style: 'header', alignment: 'right' },
@@ -2506,7 +2516,7 @@ const renderBatchManagement = () => (
                           </AccordionContent>
                       </AccordionItem>
                   </Accordion>
-              </Card>>
+              </Card>
               {renderBatchManagement()}
               {renderVesselTypeManagement()}
               <Card className="animate-in">

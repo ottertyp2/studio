@@ -53,7 +53,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, WithId } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
 import { useTestBench } from '@/context/TestBenchContext';
-import { collection, query, where, getDocs, doc, onSnapshot, writeBatch, orderBy, limit, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDocs, orderBy, limit, getDoc } from 'firebase/firestore';
 import { ref, get } from 'firebase/database';
 import { formatDistanceToNow } from 'date-fns';
 import { convertRawValue, toBase64 } from '@/lib/utils';
@@ -169,21 +169,17 @@ function TestingComponent() {
   const { firestore, auth, database } = useFirebase();
 
   const { 
-    isDeviceConnected,
+    isConnected,
     currentValue,
     lastDataPointTimestamp,
     disconnectCount,
     sendRecordingCommand,
     latency,
-    startTime,
-    totalDowntime,
-    downtimeSinceRef,
+    downtimePercentage,
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
   const [activeSensorConfig, setActiveSensorConfig] = useState<WithId<SensorConfig> | null>(null);
-
-  const [samplingRate, setSamplingRate] = useState(0);
   
   const [isNewSessionDialogOpen, setIsNewSessionDialogOpen] = useState(false);
   const [newSessionData, setNewSessionData] = useState({ vesselTypeId: '', batchId: '', serialNumber: '', description: '' });
@@ -233,21 +229,6 @@ function TestingComponent() {
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
   }, []);
-
-  const downtimePercentage = useMemo(() => {
-    if (!startTime) return 0;
-    const totalTime = now - startTime;
-    if (totalTime === 0) return 0;
-
-    let currentDowntime = 0;
-    if (downtimeSinceRef.current !== null) {
-      currentDowntime = now - downtimeSinceRef.current;
-    }
-
-    const percentage = ((totalDowntime + currentDowntime) / totalTime) * 100;
-    return Math.min(100, percentage);
-  }, [startTime, totalDowntime, now, downtimeSinceRef]);
-
 
   // Set initial active bench and config
   useEffect(() => {
@@ -527,14 +508,6 @@ function TestingComponent() {
     router.push('/login');
   };
 
-  useEffect(() => {
-    if (isDeviceConnected) {
-        setSamplingRate(1);
-    } else {
-        setSamplingRate(0);
-    }
-  }, [isDeviceConnected]);
-
   const convertedValue = useMemo(() => {
       if (currentValue === null) return null;
       const config = runningTestSession 
@@ -579,10 +552,20 @@ function TestingComponent() {
         let reportTitle = '';
         let reportFilename = 'report';
         let mainVesselTypeName = '';
+        
+        let logoBase64: string | null = null;
+        try {
+            logoBase64 = await toBase64('/images/logo.png');
+        } catch (error: any) {
+            console.error("Logo conversion failed:", error.message);
+            toast({
+                variant: "destructive",
+                title: "Could Not Load Logo",
+                description: "The report will be generated without a logo. Check console for details.",
+            });
+        }
 
         try {
-            const logoBase64 = await toBase64('/images/logo.png');
-
             if (reportType === 'single' && selectedReportSessionId) {
                 const session = sessionHistory.find(s => s.id === selectedReportSessionId);
                 if (!session) throw new Error('Selected session not found.');
@@ -611,20 +594,12 @@ function TestingComponent() {
                 backgroundColor: '#ffffff'
             });
 
-            const getClassificationText = (classification?: 'LEAK' | 'DIFFUSION') => {
-                switch(classification) {
-                    case 'LEAK': return { text: 'Not Passed', color: 'red', bold: true };
-                    case 'DIFFUSION': return { text: 'Passed', color: 'green', bold: true };
-                    default: return { text: 'Unclassified', color: 'gray', bold: false };
-                }
-            };
-            
-
             const mainConfig = sensorConfigs?.find(c => c.id === sessionsToReport[0]?.sensorConfigurationId);
-            let yAxisLabel = 'Raw Value';
+            let yAxisLabel = 'Value';
             if (mainConfig) {
-                if (mainConfig.mode === 'VOLTAGE') yAxisLabel = `Voltage in V`;
-                else if (mainConfig.mode === 'CUSTOM') yAxisLabel = `Pressure in ${mainConfig.unit || 'bar'}`;
+                 if (mainConfig.mode === 'VOLTAGE') yAxisLabel = `Voltage in V`;
+                 else if (mainConfig.mode === 'CUSTOM') yAxisLabel = `Pressure in ${mainConfig.unit || 'bar'}`;
+                 else yAxisLabel = `Raw Value`;
             }
 
             const tableBody = sessionsToReport.map(session => {
@@ -653,7 +628,7 @@ function TestingComponent() {
                 content: [
                     {
                         columns: [
-                            { image: logoBase64, width: 70 },
+                           logoBase64 ? { image: logoBase64, width: 70 } : { text: '' },
                             {
                                 stack: [
                                 { text: reportTitle, style: 'header', alignment: 'right' },
@@ -936,21 +911,21 @@ function TestingComponent() {
                 <CardContent className="flex flex-col items-center">
                 <div className="text-center">
                     <p className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                      {isDeviceConnected && currentValue !== null ? (convertedValue?.value ?? 'N/A') : "Offline"}
+                      {isConnected && currentValue !== null ? (convertedValue?.value ?? 'N/A') : "Offline"}
                     </p>
-                    <p className="text-lg text-muted-foreground">{isDeviceConnected && currentValue !== null ? (convertedValue?.unit ?? '') : ''}</p>
+                    <p className="text-lg text-muted-foreground">{isConnected && currentValue !== null ? (convertedValue?.unit ?? '') : ''}</p>
                      <p className="text-xs text-muted-foreground h-4 mt-1">
-                        {isDeviceConnected && lastDataPointTimestamp ? `(Updated ${formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true, includeSeconds: true })})` : ''}
+                        {isConnected && lastDataPointTimestamp ? `(Updated ${formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true, includeSeconds: true })})` : ''}
                     </p>
                     
-                    <div className={`text-sm mt-2 flex items-center justify-center gap-1 ${isDeviceConnected ? 'text-green-600' : 'text-destructive'}`}>
-                        {isDeviceConnected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
-                        <span>{isDeviceConnected ? `Sampling: ${samplingRate} Hz` : offlineMessage}</span>
+                    <div className={`text-sm mt-2 flex items-center justify-center gap-1 ${isConnected ? 'text-green-600' : 'text-destructive'}`}>
+                        {isConnected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
+                        <span>{isConnected ? `Online` : offlineMessage}</span>
                     </div>
                      <p className="text-xs text-muted-foreground mt-1">
                         Downtime: {downtimePercentage.toFixed(2)}%
                     </p>
-                    {isDeviceConnected && (
+                    {isConnected && (
                       <>
                         <p className="text-xs text-muted-foreground mt-1">Disconnects: {disconnectCount}</p>
                         <div className="flex items-center justify-center gap-1 mt-1">
@@ -1008,7 +983,7 @@ function TestingComponent() {
                 </div>
                 </CardContent>
             </Card>
-            {isDeviceConnected && <ValveControl />}
+            {isConnected && <ValveControl />}
         </div>
 
         <div className="lg:col-span-3 animate-in">

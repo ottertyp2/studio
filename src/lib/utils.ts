@@ -41,7 +41,11 @@ export const toBase64 = (url: string): Promise<string> => {
     fetch(url)
       .then(response => {
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          throw new Error(`HTTP error! status: ${response.status} - Could not fetch image at ${url}. Make sure the file exists in the 'public' directory.`);
+        }
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.startsWith('image/')) {
+            throw new Error(`Invalid content type. Expected an image, but received ${contentType}.`);
         }
         return response.blob();
       })
@@ -51,17 +55,18 @@ export const toBase64 = (url: string): Promise<string> => {
           if (typeof reader.result === 'string') {
             resolve(reader.result);
           } else {
-            reject(new Error('Failed to convert blob to a base64 string.'));
+            reject(new Error('Failed to convert blob to a base64 string. Reader result was not a string.'));
           }
         };
         reader.onerror = (error) => {
-            reject(error);
+            console.error("FileReader error:", error);
+            reject(new Error('An error occurred while reading the image file.'));
         };
         reader.readAsDataURL(blob);
       })
       .catch(error => {
-        console.error("Error fetching or converting image to base64:", error);
-        reject(new Error(`Failed to load image from ${url}. ${error.message}`));
+        console.error(`Error in toBase64 utility for URL: ${url}`, error);
+        reject(error);
       });
   });
 };
