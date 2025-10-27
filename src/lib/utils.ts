@@ -38,14 +38,32 @@ export function convertRawValue(rawValue: number, sensorConfig: SensorConfig | n
  */
 export const toBase64 = (url: string): Promise<string> => {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
     fetch(url)
-      .then(response => response.blob())
-      .then(blob => {
-        reader.readAsDataURL(blob);
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = error => reject(error);
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.blob();
       })
-      .catch(error => reject(error));
+      .then(blob => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          // The result is a data URL string.
+          const base64data = reader.result;
+          if (typeof base64data === 'string') {
+            resolve(base64data);
+          } else {
+            reject(new Error('Failed to convert blob to base64 string.'));
+          }
+        };
+        reader.onerror = (error) => {
+            reject(error);
+        };
+        reader.readAsDataURL(blob);
+      })
+      .catch(error => {
+        console.error("Error fetching or converting image to base64:", error);
+        reject(new Error(`Failed to load image from ${url}. ${error.message}`));
+      });
   });
 };
