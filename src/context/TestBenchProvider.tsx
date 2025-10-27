@@ -40,8 +40,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const downtimeSinceRef = useRef<number | null>(null);
   
   useEffect(() => {
-    setStartTime(Date.now());
-  }, []);
+    // Set start time only once when the provider mounts
+    if (!startTime) {
+      setStartTime(Date.now());
+    }
+  }, [startTime]);
 
   useEffect(() => {
     if (downtimeSinceRef.current === null && !isConnected) {
@@ -176,7 +179,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         }
 
         if (data && data.lastUpdate) {
-            setIsConnected(true);
+            if (!isConnected) {
+              setIsConnected(true);
+            }
             handleNewDataPoint(data);
             
             // Set a timer to declare offline if no new data arrives
@@ -194,7 +199,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             clearTimeout(connectionTimeoutRef.current);
         }
     };
-  }, [database, handleNewDataPoint, toast]);
+  }, [database, handleNewDataPoint, isConnected]);
 
 
   const value = {
