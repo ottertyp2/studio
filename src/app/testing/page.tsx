@@ -62,7 +62,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import ValveControl from '@/components/dashboard/ValveControl';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetOverlay } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetOverlay, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
@@ -615,9 +615,9 @@ function TestingComponent() {
 
             const mainConfig = sensorConfigs?.find(c => c.id === sessionsToReport[0]?.sensorConfigurationId);
             const yAxisLabel = mainConfig?.mode === 'VOLTAGE' 
-                ? `Voltage (${mainConfig.unit || 'V'})` 
+                ? `Voltage in V` 
                 : mainConfig?.mode === 'CUSTOM'
-                ? `Pressure (${mainConfig.unit || 'bar'})`
+                ? `Pressure in ${mainConfig.unit || 'bar'}`
                 : `Raw Value`;
 
             const tableBody = sessionsToReport.map(session => {
@@ -788,9 +788,9 @@ function TestingComponent() {
       const config = sensorConfigs?.find(c => c.id === firstSession.sensorConfigurationId);
       if (!config) return "Value";
 
-      if(config.mode === 'VOLTAGE') return `Voltage (${config.unit || 'V'})`;
-      if(config.mode === 'CUSTOM') return `Pressure (${config.unit || 'bar'})`;
-      return `Raw Value (${config.unit || 'RAW'})`;
+      if(config.mode === 'VOLTAGE') return `Voltage in V`;
+      if(config.mode === 'CUSTOM') return `Pressure in ${config.unit || 'bar'}`;
+      return `Raw Value`;
 
   }, [comparisonSessions, sensorConfigs]);
 
@@ -1150,7 +1150,7 @@ function TestingComponent() {
                       <LineChart 
                         data={chartData} 
                         margin={{ top: 5, right: 30, left: 20, bottom: 20 }}
-                        isAnimationActive={false}
+                        isAnimationActive={!isGeneratingReport}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                         <XAxis 
@@ -1226,3 +1226,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
