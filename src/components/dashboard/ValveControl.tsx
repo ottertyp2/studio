@@ -52,8 +52,6 @@ export default function ValveControl() {
       sendSequenceCommand(sequence, !isRunning);
   };
 
-  const isAnySequenceRunning = sequence1Running || sequence2Running;
-
   return (
     <Card className="w-full backdrop-blur-sm border-slate-300/80 shadow-lg">
         <CardHeader className="p-4 text-center">
@@ -82,7 +80,7 @@ export default function ValveControl() {
             <div className="flex flex-col gap-2 pt-2">
                  <Button 
                     onClick={() => handleSequence('sequence1')} 
-                    disabled={!isConnected || lockedSequences.includes('sequence1') || (isAnySequenceRunning && !sequence1Running)}
+                    disabled={!isConnected || lockedSequences.includes('sequence1') || sequence2Running}
                     variant={sequence1Running ? "destructive" : "outline"}
                     className="transition-all"
                 >
@@ -91,7 +89,7 @@ export default function ValveControl() {
                 </Button>
                  <Button 
                     onClick={() => handleSequence('sequence2')} 
-                    disabled={!isConnected || lockedSequences.includes('sequence2') || (isAnySequenceRunning && !sequence2Running)}
+                    disabled={!isConnected || lockedSequences.includes('sequence2') || sequence1Running}
                     variant={sequence2Running ? "destructive" : "outline"}
                     className="transition-all"
                 >
