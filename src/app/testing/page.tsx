@@ -401,33 +401,76 @@ function TestingComponent() {
   };
 
   const chartData = useMemo(() => {
-    if (comparisonSessions.length === 0) {
-        return [];
-    }
+    if (comparisonSessions.length === 0) return [];
 
-    const allDataPoints: Record<number, ChartDataPoint> = {};
+    let allTimestamps = new Set<number>();
+    const processedSessionData: Record<string, { time: number; value: number }[]> = {};
 
+    // Step 1: Normalize each session's data to start at t=0 and collect all timestamps
     comparisonSessions.forEach(session => {
         const sessionData = comparisonData[session.id] || [];
         if (sessionData.length === 0) return;
 
         const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-        const sessionStartTime = new Date(sessionData[0].timestamp).getTime();
+        const startTime = new Date(sessionData[0].timestamp).getTime();
 
-        sessionData.forEach(d => {
-            const time = parseFloat(((new Date(d.timestamp).getTime() - sessionStartTime) / 1000).toFixed(2));
-            const value = parseFloat(convertRawValue(d.value, config || null).toFixed(config?.decimalPlaces || 2));
-            
-            if (!allDataPoints[time]) {
-                allDataPoints[time] = { name: time };
-            }
-            allDataPoints[time][session.id] = value;
+        const processedData = sessionData.map(d => {
+            const time = (new Date(d.timestamp).getTime() - startTime) / 1000;
+            allTimestamps.add(time);
+            return {
+                time: time,
+                value: convertRawValue(d.value, config || null)
+            };
         });
+        processedSessionData[session.id] = processedData;
     });
 
+    const unifiedTimeline = Array.from(allTimestamps).sort((a, b) => a - b);
+    if (unifiedTimeline.length === 0) return [];
+
+    // Step 2: Create the final chart data structure with interpolated values
+    const finalChartData = unifiedTimeline.map(time => {
+        const dataPoint: ChartDataPoint = { name: time };
+
+        comparisonSessions.forEach(session => {
+            const sessionData = processedSessionData[session.id];
+            if (!sessionData || sessionData.length === 0) return;
+
+            // Find surrounding data points for interpolation
+            let p1 = sessionData.findLast(p => p.time <= time);
+            let p2 = sessionData.find(p => p.time >= time);
+
+            let value: number | undefined;
+            if (p1 && p1.time === time) {
+                value = p1.value;
+            } else if (p1 && p2) {
+                // Linear interpolation
+                const timeDiff = p2.time - p1.time;
+                if (timeDiff > 0) {
+                    const weight = (time - p1.time) / timeDiff;
+                    value = p1.value + (p2.value - p1.value) * weight;
+                } else {
+                    value = p1.value;
+                }
+            } else if (p1) {
+                value = p1.value;
+            } else if (p2) {
+                value = p2.value;
+            }
+            
+            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+            if (value !== undefined) {
+                 dataPoint[session.id] = parseFloat(value.toFixed(config?.decimalPlaces || 2));
+            }
+        });
+        return dataPoint;
+    });
+
+
+    // Step 3. Add guideline curves (normalized to start at t=0)
     const firstSessionForGuidelines = comparisonSessions.length > 0 ? comparisonSessions[0] : null;
     const vesselTypeForGuidelines = vesselTypes?.find(vt => vt.id === firstSessionForGuidelines?.vesselTypeId);
-    
+
     const interpolateCurve = (curve: {x: number, y: number}[], x: number) => {
         if (!curve || curve.length === 0) return undefined;
         for(let i = 0; i < curve.length - 1; i++) {
@@ -445,14 +488,14 @@ function TestingComponent() {
         return undefined;
     };
   
-    Object.values(allDataPoints).forEach(point => {
+    finalChartData.forEach(point => {
       if (vesselTypeForGuidelines) {
         point.minGuideline = interpolateCurve(vesselTypeForGuidelines.minCurve, point.name);
         point.maxGuideline = interpolateCurve(vesselTypeForGuidelines.maxCurve, point.name);
       }
     });
-  
-    return Object.values(allDataPoints).sort((a, b) => a.name - b.name);
+
+    return finalChartData;
 }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
 
@@ -537,7 +580,7 @@ function TestingComponent() {
         try {
             logoBase64 = await toBase64('/images/logo.png');
             if (!logoBase64.startsWith('data:image')) {
-                throw new Error('Conversion to base64 failed or returned invalid format.');
+                 throw new Error("Conversion to base64 failed or returned invalid format.");
             }
         } catch (error: any) {
             console.error("PDF Logo Generation Error:", error);
@@ -552,9 +595,15 @@ function TestingComponent() {
             if (reportType === 'single' && selectedReportSessionId) {
                 sessionToReport = sessionHistory.find(s => s.id === selectedReportSessionId);
                 if (!sessionToReport) throw new Error('Selected session not found.');
+                
+                const sessionData = comparisonData[sessionToReport.id] || (await getDocs(query(collection(firestore, `test_sessions/${sessionToReport.id}/sensor_data`), orderBy('timestamp')))).docs.map(d => ({id: d.id, ...d.data()} as WithId<SensorData>));
+                if (sessionData.length === 0) throw new Error('No data found for the selected session.');
+
+                setComparisonData(prev => ({...prev, [sessionToReport!.id]: sessionData}));
                 setComparisonSessions([sessionToReport]);
                 reportTitle = `Single Vessel Pressure Test Report`;
                 reportFilename = `report-session-${sessionToReport.serialNumber || sessionToReport.id}`;
+
             } else if (reportType === 'batch' && selectedReportBatchId) {
                  batchToReport = batches?.find(b => b.id === selectedReportBatchId);
                  if (!batchToReport) throw new Error('Selected batch not found.');
@@ -1079,7 +1128,7 @@ function TestingComponent() {
                                             </SelectContent>
                                         </Select>
                                     )}
-                                    <div className="flex items-center space-x-2">
+                                     <div className="flex items-center space-x-2">
                                         <input type="radio" id="report-batch" name="report-type" value="batch" onChange={() => setReportType('batch')} />
                                         <Label htmlFor="report-batch">Batch Report</Label>
                                     </div>
@@ -1212,6 +1261,7 @@ function TestingComponent() {
                             name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`} 
                             dot={false} 
                             strokeWidth={2} 
+                            connectNulls={false}
                            />
                         ))}
 
@@ -1246,3 +1296,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
