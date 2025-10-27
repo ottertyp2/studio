@@ -56,13 +56,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const handleNewDataPoint = useCallback((data: any) => {
     if (data === null || data === undefined) return;
 
-    // Only update if the valve is not in a pending state
-    if (!pendingValves.includes('VALVE1')) {
-      setValve1Status(data.valve1 ? 'ON' : 'OFF');
-    }
-    if (!pendingValves.includes('VALVE2')) {
-      setValve2Status(data.valve2 ? 'ON' : 'OFF');
-    }
+    // The data from the device is the source of truth.
+    // This will automatically correct our optimistic UI if the command failed.
+    setValve1Status(data.valve1 ? 'ON' : 'OFF');
+    setValve2Status(data.valve2 ? 'ON' : 'OFF');
 
     setCurrentValue(data.sensor ?? null);
     setIsRecording(data.recording === true);
@@ -91,7 +88,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       
       addDocumentNonBlocking(sessionDataRef, dataToSave);
     }
-  }, [firestore, pendingValves]);
+  }, [firestore]);
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!database) {
@@ -99,13 +96,18 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         return;
     }
     
-    // Set pending state IMMEDIATELY on click
-    setPendingValves(prev => [...prev, valve]);
+    // Optimistic UI update
+    if (valve === 'VALVE1') {
+      setValve1Status(state);
+    } else {
+      setValve2Status(state);
+    }
 
-    // Set a timeout to clear the pending state, allowing the UI to update with confirmed data
+    // Set a short pending state to prevent spamming commands
+    setPendingValves(prev => [...prev, valve]);
     setTimeout(() => {
         setPendingValves(prev => prev.filter(v => v !== valve));
-    }, 1500); // Debounce for 1.5 seconds, must be longer than device update interval.
+    }, 500); // 500ms debounce
     
     const commandPath = valve === 'VALVE1' ? 'commands/valve1' : 'commands/valve2';
     try {
@@ -113,7 +115,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     } catch (error: any) {
         console.error('Failed to send command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
-        // Clear pending state on error
+        // Revert UI on failure
+         if (valve === 'VALVE1') {
+          setValve1Status(state === 'ON' ? 'OFF' : 'ON');
+        } else {
+          setValve2Status(state === 'ON' ? 'OFF' : 'ON');
+        }
         setPendingValves(prev => prev.filter(v => v !== valve)); 
     }
   }, [database, toast]);
