@@ -109,11 +109,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       setValve2Status(state);
     }
     
-    // Lock the valve from external updates for 1 second
+    // Lock the valve from external updates
     setLockedValves(prev => [...prev, valve]);
     setTimeout(() => {
         setLockedValves(prev => prev.filter(v => v !== valve));
-    }, 1000);
+    }, 1200);
 
     const commandPath = valve === 'VALVE1' ? 'commands/valve1' : 'commands/valve2';
     try {
