@@ -50,8 +50,9 @@ export default function ValveControl() {
       sendSequenceCommand(sequence, true);
   };
 
-  const isSeq1Locked = lockedSequences.includes('sequence1') || sequence1Running;
-  const isSeq2Locked = lockedSequences.includes('sequence2') || sequence2Running;
+  const isAnySequenceRunning = sequence1Running || sequence2Running;
+  const isSeq1Locked = lockedSequences.includes('sequence1') || isAnySequenceRunning;
+  const isSeq2Locked = lockedSequences.includes('sequence2') || isAnySequenceRunning;
 
   return (
     <Card className="w-full backdrop-blur-sm border-slate-300/80 shadow-lg">
@@ -80,12 +81,12 @@ export default function ValveControl() {
             <Separator />
             <div className="grid grid-cols-2 gap-2 pt-2">
                 <Button onClick={() => handleSequence('sequence1')} disabled={!isConnected || isSeq1Locked}>
-                    {isSeq1Locked && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    {isSeq1Locked ? 'Running...' : 'Sequence 1'}
+                    {(sequence1Running || lockedSequences.includes('sequence1')) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {sequence1Running ? 'Running...' : 'Sequence 1'}
                 </Button>
                 <Button onClick={() => handleSequence('sequence2')} disabled={!isConnected || isSeq2Locked}>
-                    {isSeq2Locked && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    {isSeq2Locked ? 'Running...' : 'Sequence 2'}
+                    {(sequence2Running || lockedSequences.includes('sequence2')) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {sequence2Running ? 'Running...' : 'Sequence 2'}
                 </Button>
             </div>
         </CardContent>
