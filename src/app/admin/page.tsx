@@ -2273,7 +2273,7 @@ export default function AdminPage() {
                                                     onClick={() => handleGenerateVesselTypeReport(p)}
                                                     disabled={generatingVesselTypeReport === p.id}
                                                 >
-                                                  {generatingVesselTypeReport === p.id ? '...' : 'Report'}
+                                                  {generatingVesselTypeReport === p.id ? <Loader2 className="h-4 w-4 animate-spin"/> : 'Report'}
                                                 </Button>
                                                 <Dialog>
                                                     <DialogTrigger asChild>
@@ -2521,53 +2521,55 @@ const renderAIModelManagement = () => (
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-4">
-      <div ref={pdfChartRef} className="fixed -left-[9999px] top-0 w-[800px] h-[400px] bg-white p-4">
+      <div ref={pdfChartRef} className="fixed -left-[9999px] top-0 w-[800px] h-[400px] bg-white p-4 flex flex-col">
           {pdfChartData.length > 0 && (
-              <div className='w-full h-full relative'>
-                <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={pdfChartData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} />
-                        <YAxis domain={['dataMin', 'dataMax + 10']} />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
-                        <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
+              <>
+                <div className='w-full h-[350px] relative'>
+                    <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={pdfChartData}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} />
+                            <YAxis domain={['dataMin', 'dataMax + 10']} />
+                            <Tooltip />
+                            <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
+                            <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
-                        {pdfChartSessions.map((session, index) => (
-                           <Line 
-                            key={session.id}
-                            type="monotone" 
-                            dataKey={session.id} 
-                            stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                            name={session.serialNumber || session.id}
-                            dot={false} 
-                            strokeWidth={2}
-                            connectNulls
-                           />
-                        ))}
-                         {pdfChartSessions.map((session, index) => (
-                           <Line 
-                            key={`${session.id}-failed`}
-                            type="monotone" 
-                            dataKey={`${session.id}-failed`}
-                            stroke="hsl(var(--destructive))" 
-                            name={`${session.serialNumber} (Failed)`}
-                            dot={false} 
-                            strokeWidth={2} 
-                            connectNulls={false}
-                           />
-                        ))}
-                    </LineChart>
-                </ResponsiveContainer>
-                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex flex-wrap justify-center items-center text-xs">
+                            {pdfChartSessions.map((session, index) => (
+                               <Line 
+                                key={session.id}
+                                type="monotone" 
+                                dataKey={session.id} 
+                                stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                name={session.serialNumber || session.id}
+                                dot={false} 
+                                strokeWidth={2}
+                                connectNulls
+                               />
+                            ))}
+                             {pdfChartSessions.map((session, index) => (
+                               <Line 
+                                key={`${session.id}-failed`}
+                                type="monotone" 
+                                dataKey={`${session.id}-failed`}
+                                stroke="hsl(var(--destructive))" 
+                                name={`${session.serialNumber} (Failed)`}
+                                dot={false} 
+                                strokeWidth={2} 
+                                connectNulls={false}
+                               />
+                            ))}
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
+                <div className="w-full h-[50px] flex flex-wrap justify-center items-center text-xs gap-x-4 gap-y-1 pt-2">
                     {pdfChartSessions.map((session, index) => (
-                        <div key={session.id} className="flex items-center mr-4">
+                        <div key={session.id} className="flex items-center">
                             <div className="w-3 h-3 mr-1" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}></div>
                             <span>{session.serialNumber || 'N/A'}</span>
                         </div>
                     ))}
                 </div>
-              </div>
+              </>
           )}
       </div>
       <header className="w-full max-w-7xl mx-auto mb-6 animate-in">
