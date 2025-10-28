@@ -220,6 +220,16 @@ const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
     return window.btoa(binary);
 }
 
+const base64ToArrayBuffer = (base64: string) => {
+    const binary_string = window.atob(base64);
+    const len = binary_string.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binary_string.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -642,7 +652,7 @@ export default function AdminPage() {
 
     try {
         const { modelTopology, weightData } = modelToUse.modelData;
-        const weights = Bytes.fromBase64String(weightData).toUint8Array().buffer;
+        const weights = base64ToArrayBuffer(weightData);
         
         const model = await tf.loadLayersModel(
             tf.io.fromMemory(JSON.parse(modelTopology), weights)
