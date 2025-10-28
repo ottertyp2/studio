@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import * as tf from '@tensorflow/tfjs';
+import { memory } from '@tensorflow/tfjs';
 import Papa from 'papaparse';
 import {
   AlertDialog,
@@ -934,7 +935,7 @@ export default function AdminPage() {
 
         toast({ title: 'Training Complete!', description: 'Now saving model to cloud...' });
 
-        const modelArtifacts = await model.save(tf.io.memory());
+        const modelArtifacts = await model.save(memory());
         if (!modelArtifacts.weightData) {
             throw new Error('Model training did not produce weight data.');
         }
@@ -1072,7 +1073,7 @@ export default function AdminPage() {
       
       setAutoTrainingStatus({ step: 'Saving Model', progress: 90, details: 'Saving model to Firestore...' });
 
-        const modelArtifacts = await model.save(tf.io.memory());
+        const modelArtifacts = await model.save(memory());
 
         if (!modelArtifacts.weightData) {
             throw new Error('Model training did not produce weight data.');
