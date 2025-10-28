@@ -98,6 +98,7 @@ import {
 } from 'recharts';
 import Papa from 'papaparse';
 import * as tf from '@tensorflow/tfjs';
+import { memory } from '@tensorflow/tfjs';
 
 if (pdfFonts.pdfMake) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
@@ -138,7 +139,6 @@ type MLModel = {
     version: string;
     description: string;
     fileSize: number;
-    storagePath?: string;
     modelData?: {
         modelTopology: any; 
         weightData: string; 
@@ -229,12 +229,11 @@ const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
     return bytes.buffer;
 }
 
-// New helper function to serialize weights
 async function serializeWeights(tensors: tf.Tensor[]): Promise<ArrayBuffer> {
     const buffers: ArrayBuffer[] = [];
     for (const tensor of tensors) {
         const data = await tensor.data();
-        buffers.push(data.buffer);
+        buffers.push(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
     }
     const totalLength = buffers.reduce((acc, val) => acc + val.byteLength, 0);
     const result = new Uint8Array(totalLength);
@@ -298,6 +297,7 @@ export default function AdminPage() {
   const [newModelName, setNewModelName] = useState(`Leak-Diffusion-Model-${new Date().toISOString().split('T')[0]}`);
   const [classificationSession, setClassificationSession] = useState<TestSession | null>(null);
   const [activeModel, setActiveModel] = useState<MLModel | null>(null);
+  const [isClassifying, setIsClassifying] = useState(false);
 
   const modelsCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'mlModels') : null, [firestore]);
   const { data: mlModels } = useCollection<MLModel>(modelsCollectionRef);
@@ -1203,7 +1203,17 @@ export default function AdminPage() {
                 toast({variant: 'destructive', title: 'Chart Image Failed', description: 'Could not generate chart image for PDF.'});
             }
         }
+        
+        const sessionsByReactor: Record<string, TestSession[]> = {};
+        relevantSessions.forEach(session => {
+            const key = session.serialNumber || session.id;
+            if (!sessionsByReactor[key]) {
+                sessionsByReactor[key] = [];
+            }
+            sessionsByReactor[key].push(session);
+        });
 
+        Object.values(sessionsByReactor).forEach(sessions => sessions.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
 
         const tableBody = relevantSessions.map(session => {
             const data = allSensorData[session.id] ?? [];
@@ -1234,15 +1244,22 @@ export default function AdminPage() {
                 color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
             };
 
+            const reactorSessions = sessionsByReactor[session.serialNumber || session.id] || [];
+            const attemptNumber = reactorSessions.findIndex(s => s.id === session.id) + 1;
+            const totalAttempts = reactorSessions.length;
+            const passAttemptIndex = reactorSessions.findIndex(s => s.classification === 'DIFFUSION');
+            let passResult = 'Not passed';
+            if (passAttemptIndex !== -1) {
+                passResult = `Passed on try #${passAttemptIndex + 1}`;
+            }
+
             return [
                 batchName ?? 'N/A',
                 session.serialNumber || 'N/A',
-                session.description || 'N/A',
+                `${attemptNumber} of ${totalAttempts}`,
+                passResult,
+                session.username || 'N/A',
                 new Date(session.startTime).toLocaleString(),
-                session.endTime ? new Date(session.endTime).toLocaleString() : 'N/A',
-                startPressure,
-                endPressure,
-                avgPressure,
                 duration,
                 statusStyle
             ];
@@ -1269,9 +1286,18 @@ export default function AdminPage() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', 'auto', 'auto', '*', 'auto', 'auto'],
                         body: [
-                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'End Time', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Avg Value', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            [
+                              {text: 'Batch', style: 'tableHeader'}, 
+                              {text: 'Serial Number', style: 'tableHeader'}, 
+                              {text: 'Attempt', style: 'tableHeader'},
+                              {text: 'Pass Result', style: 'tableHeader'},
+                              {text: 'User', style: 'tableHeader'}, 
+                              {text: 'Start Time', style: 'tableHeader'}, 
+                              {text: 'Duration (s)', style: 'tableHeader'}, 
+                              {text: 'Status', style: 'tableHeader'}
+                            ],
                             ...tableBody
                         ]
                     },

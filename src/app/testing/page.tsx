@@ -622,6 +622,8 @@ function TestingComponent() {
             docDefinition.content.push({ text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' });
             
             docDefinition.content.push({ image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] });
+            
+            const allSessionsForBatch = reportType === 'batch' && batchToReport ? sessionHistory.filter(s => s.batchId === batchToReport!.id) : [];
 
             // Table Content
             if (reportType === 'single' && sessionToReport) {
@@ -653,44 +655,54 @@ function TestingComponent() {
                     text: classificationText,
                     color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
                 };
+                
+                const reactorSessions = (batch ? sessionHistory.filter(s => s.batchId === batch.id && s.serialNumber === sessionToReport!.serialNumber) : [sessionToReport]).sort((a,b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+                const attemptNumber = reactorSessions.findIndex(s => s.id === sessionToReport!.id) + 1;
+                const totalAttempts = reactorSessions.length;
+                const passAttemptIndex = reactorSessions.findIndex(s => s.classification === 'DIFFUSION');
+                let passResult = 'Not passed';
+                if (passAttemptIndex !== -1) {
+                    passResult = `Passed on try #${passAttemptIndex + 1}`;
+                }
 
                 docDefinition.content.push({ text: 'Session Summary', style: 'subheader', margin: [0, 10, 0, 5] });
                 docDefinition.content.push({
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'],
                         body: [
-                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Avg Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
-                            [{ text: batch?.name || 'N/A'}, { text: sessionToReport.serialNumber || 'N/A' }, {text: sessionToReport.description || 'N/A'}, {text: new Date(sessionToReport.startTime).toLocaleString()}, {text: duration}, {text: startPressure}, {text: endPressure}, {text: avgPressure}, statusStyle]
+                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            [{ text: batch?.name || 'N/A'}, { text: sessionToReport.serialNumber || 'N/A' }, `${attemptNumber} of ${totalAttempts}`, passResult, {text: sessionToReport.username}, {text: new Date(sessionToReport.startTime).toLocaleString()}, {text: duration}, {text: startPressure}, {text: endPressure}, statusStyle]
                         ]
                     },
                     layout: 'lightHorizontalLines'
                 });
 
             } else if (reportType === 'batch' && batchToReport) {
+
+                const sessionsByReactor: Record<string, TestSession[]> = {};
+                allSessionsForBatch.forEach(session => {
+                    const key = session.serialNumber || session.id;
+                    if (!sessionsByReactor[key]) {
+                        sessionsByReactor[key] = [];
+                    }
+                    sessionsByReactor[key].push(session);
+                });
+
+                Object.values(sessionsByReactor).forEach(sessions => sessions.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
+
                 const tableBody = sessionsForBatchReport.map(session => {
                     const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
                     const data = allSensorDataForReport[session.id] || [];
 
-                    const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(session.startTime).getTime();
-                    const sessionEndTime = session.endTime ? new Date(session.endTime).getTime() : (data.length > 0 ? new Date(data[data.length - 1].timestamp).getTime() : sessionStartTime);
-                    
-                    const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
-                    
-                    const values = data.map(d => d.value);
-                    const startValue = values.length > 0 ? values[0] : undefined;
-                    const endValue = values.length > 0 ? values[values.length-1] : undefined;
-                    const avgValue = values.length > 0 ? values.reduce((a,b) => a + b, 0) / values.length : undefined;
-
-                    let startPressure = 'N/A';
-                    let endPressure = 'N/A';
-                    let avgPressure = 'N/A';
-                    if (config) {
-                        const unitLabel = config.unit || '';
-                        if (startValue !== undefined) startPressure = `${convertRawValue(startValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
-                        if (endValue !== undefined) endPressure = `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
-                        if (avgValue !== undefined) avgPressure = `${convertRawValue(avgValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                    const reactorSessions = sessionsByReactor[session.serialNumber || session.id] || [];
+                    const attemptNumber = reactorSessions.findIndex(s => s.id === session.id) + 1;
+                    const totalAttempts = reactorSessions.length;
+                    const passAttemptIndex = reactorSessions.findIndex(s => s.classification === 'DIFFUSION');
+                    let passResult = 'Not passed';
+                    if (passAttemptIndex !== -1) {
+                        passResult = `Passed on try #${passAttemptIndex + 1}`;
                     }
 
                     const classificationText = getClassificationText(session.classification);
@@ -701,12 +713,10 @@ function TestingComponent() {
 
                     return [
                         session.serialNumber || 'N/A',
-                        session.description || 'N/A',
+                        `${attemptNumber} of ${totalAttempts}`,
+                        passResult,
+                        session.username,
                         new Date(session.startTime).toLocaleString(),
-                        duration,
-                        startPressure,
-                        endPressure,
-                        avgPressure,
                         statusStyle
                     ];
                 });
@@ -716,9 +726,9 @@ function TestingComponent() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', '*', 'auto', 'auto'],
                         body: [
-                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Avg Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
                             ...tableBody
                         ]
                     },
