@@ -1430,9 +1430,14 @@ export default function AdminPage() {
         mergedChartData.push(...Object.values(temp).sort((a,b) => a.name - b.name));
 
         setPdfChartData(mergedChartData);
+        
         await new Promise(resolve => setTimeout(resolve, 500));
+        
+        let chartImage = '';
+        if (pdfChartRef.current) {
+            chartImage = await htmlToImage.toPng(pdfChartRef.current, { quality: 0.95, backgroundColor: '#ffffff' });
+        }
 
-        const chartImage = await htmlToImage.toPng(pdfChartRef.current, { quality: 0.95, backgroundColor: '#ffffff' });
 
         const tableBody = relevantSessions.map(session => {
             const data = allSensorData[session.id] ?? [];
