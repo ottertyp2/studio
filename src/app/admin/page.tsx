@@ -1163,7 +1163,7 @@ export default function AdminPage() {
             const sessionStartTime = new Date(data[0].timestamp).getTime();
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
 
-            return data.map(d => {
+            return data.map((d, index) => {
                 const time = (new Date(d.timestamp).getTime() - sessionStartTime) / 1000;
                 const value = convertRawValue(d.value, config || null);
 
@@ -1171,12 +1171,21 @@ export default function AdminPage() {
                 const maxGuideline = vt?.maxCurve ? interpolate(vt.maxCurve, time) : undefined;
                 
                 const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
+                
+                const prevPoint = index > 0 ? data[index-1] : null;
+                const prevTime = prevPoint ? (new Date(prevPoint.timestamp).getTime() - sessionStartTime) / 1000 : time;
+                const prevValue = prevPoint ? convertRawValue(prevPoint.value, config || null) : value;
+                const prevMinGuideline = vt?.minCurve ? interpolate(vt.minCurve, prevTime) : undefined;
+                const prevMaxGuideline = vt?.maxCurve ? interpolate(vt.maxCurve, prevTime) : undefined;
+                const prevIsFailed = (prevMinGuideline !== undefined && prevValue < prevMinGuideline) || (prevMaxGuideline !== undefined && prevValue > prevMaxGuideline);
 
                 return {
                     name: time,
                     [session.id]: value,
                     [`${session.id}-failed`]: isFailed ? value : null,
-                     minGuideline,
+                    [`${session.id}-passed`]: !isFailed ? value : null,
+                    isTransition: isFailed !== prevIsFailed,
+                    minGuideline,
                     maxGuideline,
                 };
             });
@@ -1189,6 +1198,15 @@ export default function AdminPage() {
             if (!dp) continue;
             const roundedTime = Math.round(dp.name);
             if (!temp[roundedTime]) temp[roundedTime] = { name: roundedTime };
+            
+            if (dp.isTransition) {
+                const existing = temp[roundedTime][Object.keys(dp).find(k => k.includes(dp.sessionId)) as string];
+                if (existing) {
+                    temp[roundedTime][`${dp.sessionId}-passed`] = existing;
+                    temp[roundedTime][`${dp.sessionId}-failed`] = existing;
+                }
+            }
+            
             Object.assign(temp[roundedTime], dp);
         }
         
@@ -1220,7 +1238,7 @@ export default function AdminPage() {
 
         Object.values(sessionsByReactor).forEach(sessions => sessions.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
 
-        const tableBody = await Promise.all(relevantSessions.map(async session => {
+        const tableBody = await Promise.all(relevantSessions.map(async (session, index) => {
             const batchName = batches?.find(b => b.id === session.batchId)?.name;
             const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
             const classificationText = getClassificationText(session.classification);
@@ -1248,10 +1266,12 @@ export default function AdminPage() {
                 const sum = data.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
                 avgValue = (sum / data.length).toFixed(decimalPlaces);
             }
+            
+            const color = CHART_COLORS[index % CHART_COLORS.length];
 
             return [
                 batchName ?? 'N/A',
-                session.serialNumber || 'N/A',
+                { text: session.serialNumber || 'N/A', color: color, bold: true },
                 `${attemptNumber} of ${totalAttempts}`,
                 passResult,
                 session.username || 'N/A',
@@ -2521,7 +2541,7 @@ const renderAIModelManagement = () => (
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-4">
-      <div ref={pdfChartRef} className="fixed -left-[9999px] top-0 w-[800px] h-[400px] bg-white p-4 flex flex-col">
+      <div ref={pdfChartRef} className="fixed -left-[9999px] top-0 w-[800px] h-auto bg-white p-4 flex flex-col">
           {pdfChartData.length > 0 && (
               <>
                 <div className='w-full h-[350px] relative'>
@@ -2535,39 +2555,31 @@ const renderAIModelManagement = () => (
                             <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
                             {pdfChartSessions.map((session, index) => (
-                               <Line 
-                                key={session.id}
-                                type="monotone" 
-                                dataKey={session.id} 
-                                stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                                name={session.serialNumber || session.id}
-                                dot={false} 
-                                strokeWidth={2}
-                                connectNulls
-                               />
+                                <Line 
+                                    key={`${session.id}-passed`}
+                                    type="monotone" 
+                                    dataKey={`${session.id}-passed`} 
+                                    stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                    name={session.serialNumber || session.id}
+                                    dot={false} 
+                                    strokeWidth={2}
+                                    connectNulls={false}
+                                />
                             ))}
                              {pdfChartSessions.map((session, index) => (
-                               <Line 
-                                key={`${session.id}-failed`}
-                                type="monotone" 
-                                dataKey={`${session.id}-failed`}
-                                stroke="hsl(var(--destructive))" 
-                                name={`${session.serialNumber} (Failed)`}
-                                dot={false} 
-                                strokeWidth={2} 
-                                connectNulls={false}
-                               />
+                                <Line 
+                                    key={`${session.id}-failed`}
+                                    type="monotone" 
+                                    dataKey={`${session.id}-failed`} 
+                                    stroke="hsl(var(--destructive))"
+                                    name={`${session.serialNumber || session.id} (Failed)`}
+                                    dot={false} 
+                                    strokeWidth={2}
+                                    connectNulls={false}
+                                />
                             ))}
                         </LineChart>
                     </ResponsiveContainer>
-                </div>
-                <div className="w-full h-[50px] flex flex-wrap justify-center items-center text-xs gap-x-4 gap-y-1 pt-2">
-                    {pdfChartSessions.map((session, index) => (
-                        <div key={session.id} className="flex items-center">
-                            <div className="w-3 h-3 mr-1" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}></div>
-                            <span>{session.serialNumber || 'N/A'}</span>
-                        </div>
-                    ))}
                 </div>
               </>
           )}
@@ -2738,3 +2750,5 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
+
+    
