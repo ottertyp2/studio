@@ -935,7 +935,7 @@ export default function AdminPage() {
 
         toast({ title: 'Training Complete!', description: 'Now saving model to cloud...' });
 
-        const modelArtifacts = await model.save(memory());
+        const modelArtifacts = await model.save(tf.io.memory());
         if (!modelArtifacts.weightData) {
             throw new Error('Model training did not produce weight data.');
         }
@@ -1073,7 +1073,7 @@ export default function AdminPage() {
       
       setAutoTrainingStatus({ step: 'Saving Model', progress: 90, details: 'Saving model to Firestore...' });
 
-        const modelArtifacts = await model.save(memory());
+        const modelArtifacts = await model.save(tf.io.memory());
 
         if (!modelArtifacts.weightData) {
             throw new Error('Model training did not produce weight data.');
