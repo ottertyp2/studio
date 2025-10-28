@@ -68,7 +68,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Edit, Upload, FileSignature, Layers, Calendar as CalendarIcon, RotateCcw } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Edit, Upload, FileSignature, Layers, Calendar as CalendarIcon, RotateCcw, ShieldCheck } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
@@ -258,20 +258,7 @@ export default function AdminPage() {
   const [tempSensorConfig, setTempSensorConfig] = useState<Partial<SensorConfig> | null>(null);
   const [sessionDataCounts, setSessionDataCounts] = useState<Record<string, number>>({});
   
-  // ML State
-  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
-  const [selectedDataSetIds, setSelectedDataSetIds] = useState<string[]>([]);
-  const [isTraining, setIsTraining] = useState(false);
-  const [trainingStatus, setTrainingStatus] = useState({ epoch: 0, loss: 0, accuracy: 0, val_loss: 0, val_acc: 0 });
-  
-  const [newMlModel, setNewMlModel] = useState<Partial<MLModel>>({name: '', version: '1.0', description: '', fileSize: 0});
-  const [newTrainDataSet, setNewTrainDataSet] = useState<Partial<TrainDataSet>>({name: '', description: '', storagePath: ''});
-  
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'user' });
-
-  const [isAutoTraining, setIsAutoTraining] = useState(false);
-  const [autoTrainingStatus, setAutoTrainingStatus] = useState<AutomatedTrainingStatus | null>(null);
-  const [autoModelSize, setAutoModelSize] = useState<'small' | 'medium' | 'large'>('medium');
 
   const [sessionSearchTerm, setSessionSearchTerm] = useState('');
   const [sessionSortOrder, setSessionSortOrder] = useState('startTime-desc');
@@ -283,8 +270,6 @@ export default function AdminPage() {
   const [sessionDateFilter, setSessionDateFilter] = useState<DateRange | undefined>(undefined);
 
   const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
-  const [bulkClassifyModelId, setBulkClassifyModelId] = useState<string | null>(null);
-  const [trainingProgress, setTrainingProgress] = useState(0);
   
   // VesselType State
   const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '' });
@@ -344,20 +329,6 @@ export default function AdminPage() {
   }, [firestore, user]);
 
   const { data: testBenches, isLoading: isTestBenchesLoading, error: testBenchesError } = useCollection<TestBench>(testBenchesCollectionRef);
-
-  const mlModelsCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return collection(firestore, 'mlModels');
-  }, [firestore, user]);
-
-  const { data: mlModels, isLoading: isMlModelsLoading } = useCollection<MLModel>(mlModelsCollectionRef);
-
-  const trainDataSetsCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return collection(firestore, 'trainDataSets');
-  }, [firestore, user]);
-
-  const { data: trainDataSets, isLoading: isTrainDataSetsLoading } = useCollection<TrainDataSet>(trainDataSetsCollectionRef);
 
   const vesselTypesCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -648,70 +619,74 @@ export default function AdminPage() {
       .catch(e => toast({ variant: 'destructive', title: 'Update Failed', description: e.message }));
   };
 
-  const handleClassifyWithAI = async (session: TestSession, modelId: string) => {
-    if (!firestore || !mlModels) return;
-
-    const modelToUse = mlModels.find(m => m.id === modelId);
-    if (!modelToUse) {
-      toast({ variant: 'destructive', title: 'AI Classification Failed', description: `Model with ID ${modelId} not found.` });
+  const handleClassifyByGuideline = async (session: TestSession) => {
+    if (!firestore || !vesselTypes || !sensorConfigs) {
+      toast({ variant: 'destructive', title: 'Prerequisites Missing', description: 'Vessel types or sensor configurations not loaded.' });
       return;
     }
-    
-    if (modelToUse.storagePath) {
-        toast({ variant: 'destructive', title: 'AI Classification Failed', description: `Model "${modelToUse.name}" is using an unsupported storage format (Firebase Storage). Please retrain the model to store it in Firestore.` });
-        return;
-    }
-    if (!modelToUse.modelData) {
-        toast({ variant: 'destructive', title: 'AI Classification Failed', description: `Model "${modelToUse.name}" is missing model data. Please retrain it.` });
-        return;
+
+    const vesselType = vesselTypes.find(vt => vt.id === session.vesselTypeId);
+    if (!vesselType || !vesselType.minCurve || !vesselType.maxCurve || vesselType.minCurve.length === 0 || vesselType.maxCurve.length === 0) {
+      toast({ variant: 'destructive', title: 'Guideline Missing', description: `No guidelines found for vessel type "${session.vesselTypeName}".` });
+      return;
     }
 
+    const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
+    if (!config) {
+      toast({ variant: 'destructive', title: 'Configuration Missing', description: 'Sensor configuration for this session not found.' });
+      return;
+    }
 
     try {
-        const tf = await import('@tensorflow/tfjs');
-        const { modelTopology, weightData } = modelToUse.modelData;
-        
-        const model = await tf.loadLayersModel(
-            tf.io.fromMemory(modelTopology, base64ToArrayBuffer(weightData))
-        );
-        
-        const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
-        const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
-        const snapshot = await getDocs(q);
-        const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
+      const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+      const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
+      const snapshot = await getDocs(q);
+      const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
 
-        if (sensorData.length < 20) {
-          toast({ variant: 'destructive', title: 'Not Enough Data', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" has less than 20 data points.` });
-          return;
+      if (sensorData.length === 0) {
+        toast({ variant: 'warning', title: 'No Data', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" has no data to classify.` });
+        return;
+      }
+      
+      const sessionStartTime = new Date(sensorData[0].timestamp).getTime();
+
+      let hasFailed = false;
+      for (const dataPoint of sensorData) {
+        const timeElapsed = (new Date(dataPoint.timestamp).getTime() - sessionStartTime) / 1000;
+        const convertedValue = convertRawValue(dataPoint.value, config);
+
+        const interpolate = (curve: { x: number, y: number }[], x: number) => {
+          if (x < curve[0].x) return curve[0].y;
+          if (x > curve[curve.length - 1].x) return curve[curve.length - 1].y;
+
+          for (let i = 0; i < curve.length - 1; i++) {
+            if (x >= curve[i].x && x <= curve[i + 1].x) {
+              const t = (x - curve[i].x) / (curve[i + 1].x - curve[i].x);
+              return curve[i].y + t * (curve[i + 1].y - curve[i].y);
+            }
+          }
+          return curve[curve.length - 1].y;
+        };
+
+        const minGuideline = interpolate(vesselType.minCurve, timeElapsed);
+        const maxGuideline = interpolate(vesselType.maxCurve, timeElapsed);
+
+        if (convertedValue < minGuideline || convertedValue > maxGuideline) {
+          hasFailed = true;
+          break;
         }
+      }
 
-        const values = sensorData.map(d => d.value);
-
-        const lastValue = values[values.length -1];
-        const inputTensor = tf.tensor2d([[lastValue]], [1,1]);
-        const { mean, variance } = tf.moments(inputTensor);
-        const normalizedInput = inputTensor.sub(mean).div(tf.sqrt(variance));
-
-        const prediction = model.predict(normalizedInput) as tf.Tensor;
-        const predictionValue = (await prediction.data())[0];
-        
-        tf.dispose([inputTensor, normalizedInput, prediction]);
-
-        const classification = predictionValue > 0.5 ? 'LEAK' : 'DIFFUSION';
-        handleSetSessionClassification(session.id, classification);
-        toast({ title: 'AI Classification Complete', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'}`});
+      const classification = hasFailed ? 'LEAK' : 'DIFFUSION';
+      handleSetSessionClassification(session.id, classification);
+      toast({ title: 'Classification Complete', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'}` });
 
     } catch (e: any) {
-        toast({ variant: 'destructive', title: `AI Classification Failed for "${session.vesselTypeName} - ${session.serialNumber}"`, description: e.message});
-        throw e;
+      toast({ variant: 'destructive', title: `Guideline Classification Failed`, description: e.message });
     }
   };
 
-  const handleBulkClassify = async () => {
-    if (!bulkClassifyModelId) {
-      toast({ variant: 'destructive', title: 'No Model Selected', description: 'Please choose a model to use for bulk classification.' });
-      return;
-    }
+  const handleBulkClassifyByGuideline = async () => {
     if (!testSessions) return;
 
     const unclassifiedSessions = testSessions.filter(s => !s.classification && s.status === 'COMPLETED');
@@ -720,18 +695,23 @@ export default function AdminPage() {
         return;
     }
 
-    toast({ title: `Starting Bulk Classification`, description: `Attempting to classify ${unclassifiedSessions.length} sessions...` });
+    toast({ title: `Starting Bulk Classification`, description: `Attempting to classify ${unclassifiedSessions.length} sessions by guideline...` });
+
+    let successCount = 0;
+    let failCount = 0;
 
     for (const session of unclassifiedSessions) {
       try {
-        await handleClassifyWithAI(session, bulkClassifyModelId);
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await handleClassifyByGuideline(session);
+        await new Promise(resolve => setTimeout(resolve, 200)); // Avoid overwhelming the UI
+        successCount++;
       } catch (error) {
-        console.error(`Failed to classify session ${session.id} ("${session.vesselTypeName} - ${session.serialNumber}"):`, error);
+        console.error(`Failed to classify session ${session.id}:`, error);
+        failCount++;
       }
     }
     
-    toast({ title: 'Bulk Classification Finished' });
+    toast({ title: 'Bulk Classification Finished', description: `${successCount} sessions classified. ${failCount} failed.` });
   };
   
   async function handleCreateUser() {
@@ -801,324 +781,6 @@ export default function AdminPage() {
         title: 'Error Deleting User Profile',
         description: error.message,
       });
-    }
-  };
-
-  const handleAddMlModel = () => {
-    if (!firestore || !newMlModel.name?.trim() || !newMlModel.version?.trim() || !mlModelsCollectionRef) {
-        toast({variant: 'destructive', title: 'Error', description: 'Model name and version are required.'});
-        return;
-    }
-    const newId = doc(collection(firestore, '_')).id;
-    const docToSave: MLModel = {
-        id: newId,
-        name: newMlModel.name,
-        version: newMlModel.version,
-        description: newMlModel.description || '',
-        fileSize: 0,
-        storagePath: ''
-    };
-    addDocumentNonBlocking(mlModelsCollectionRef, docToSave);
-    toast({title: 'Model Added', description: `Added "${docToSave.name} v${docToSave.version}" to the catalog.`});
-    setNewMlModel({name: '', version: '1.0', description: '', fileSize: 0});
-  };
-
-  const handleDeleteMlModel = (modelId: string) => {
-    if (!firestore) return;
-    deleteDocumentNonBlocking(doc(firestore, 'mlModels', modelId));
-    toast({ title: 'Model Deleted'});
-  };
-
-  const handleAddTrainDataSet = () => {
-    if (!firestore || !newTrainDataSet.name?.trim() || !trainDataSetsCollectionRef) {
-      toast({variant: 'destructive', title: 'Error', description: 'Dataset name is required.'});
-      return;
-    }
-    const newId = doc(collection(firestore, '_')).id;
-    const docToSave: TrainDataSet = {
-      id: newId,
-      name: newTrainDataSet.name,
-      description: newTrainDataSet.description || '',
-      storagePath: newTrainDataSet.storagePath || ''
-    };
-    addDocumentNonBlocking(trainDataSetsCollectionRef, docToSave);
-    toast({title: 'Training Set Added', description: `Added "${docToSave.name}" to the catalog.`});
-    setNewTrainDataSet({name: '', description: '', storagePath: ''});
-  };
-
-  const handleDeleteTrainDataSet = (dataSetId: string) => {
-    if (!firestore) return;
-    deleteDocumentNonBlocking(doc(firestore, 'trainDataSets', dataSetId));
-    toast({ title: 'Training Set Deleted'});
-  };
-
-  const handleTrainModel = async () => {
-    if (selectedDataSetIds.length === 0 || !firestore || !selectedModelId || !firebaseApp) {
-        toast({variant: 'destructive', title: 'Training Error', description: 'Please select a model and at least one training dataset.'});
-        return;
-    }
-
-    const selectedModel = mlModels?.find(m => m.id === selectedModelId);
-    if (!selectedModel) {
-        toast({variant: 'destructive', title: 'Training Error', description: 'Selected model not found in catalog.'});
-        return;
-    }
-
-    setIsTraining(true);
-    setTrainingStatus({ epoch: 0, loss: 0, accuracy: 0, val_loss: 0, val_acc: 0 });
-
-    try {
-        const tf = await import('@tensorflow/tfjs');
-        let allWindows: number[][] = [];
-        let allLabels: number[] = [];
-        const windowSize = 20;
-
-        for (const sessionId of selectedDataSetIds) {
-            const trainingSession = testSessions?.find(s => s.id === sessionId);
-            if (!trainingSession || !trainingSession.sensorConfigurationId || !trainingSession.classification) {
-                toast({variant: 'warning', title: 'Skipping Session', description: `Session ${sessionId} is invalid or has no classification.`});
-                continue;
-            }
-
-            const sensorDataRef = collection(firestore, `test_sessions/${trainingSession.id}/sensor_data`);
-            const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
-            const snapshot = await getDocs(q);
-            const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
-
-            if (sensorData.length < windowSize) continue;
-
-            const isLeak = trainingSession.classification === 'LEAK';
-            const label = isLeak ? 1 : 0;
-            const values = sensorData.map(d => d.value);
-
-            const windows = [];
-            for (let i = windowSize; i < values.length; i++) {
-                windows.push(values.slice(i - windowSize, i));
-            }
-
-            allWindows.push(...windows);
-            allLabels.push(...Array(windows.length).fill(label));
-        }
-
-        if (allWindows.length === 0) {
-            toast({variant: 'destructive', title: 'Not enough data', description: `Need at least ${windowSize} data points in a session to create training windows.`});
-            setIsTraining(false);
-            return;
-        }
-
-        const indices = tf.util.createShuffledIndices(allWindows.length);
-        const shuffledWindows = Array.from(indices).map(i => allWindows[i]);
-        const shuffledLabels = Array.from(indices).map(i => allLabels[i]);
-
-        const inputTensor = tf.tensor2d(shuffledWindows, [shuffledWindows.length, windowSize]);
-        const labelTensor = tf.tensor1d(shuffledLabels);
-        
-        const {mean, variance} = tf.moments(inputTensor);
-        const normalizedInput = inputTensor.sub(mean).div(variance.sqrt());
-
-        const model = tf.sequential();
-        model.add(tf.layers.dense({inputShape: [windowSize], units: 50, activation: 'relu'}));
-        model.add(tf.layers.dense({units: 50, activation: 'relu'}));
-        model.add(tf.layers.dense({units: 1, activation: 'sigmoid'}));
-
-        model.compile({
-          optimizer: tf.train.adam(),
-          loss: 'binaryCrossentropy',
-          metrics: ['accuracy'],
-        });
-
-        let finalValAcc = 0;
-        await model.fit(normalizedInput, labelTensor, {
-          epochs: 100,
-          batchSize: 32,
-          validationSplit: 0.2,
-          callbacks: [{
-            onEpochEnd: (epoch, logs) => {
-              if (logs) {
-                setTrainingProgress(((epoch + 1) / 100) * 100);
-                const currentValAcc = (logs.val_acc || 0) * 100;
-                finalValAcc = currentValAcc;
-                setTrainingStatus({ 
-                    epoch: epoch + 1, 
-                    loss: logs.loss || 0, 
-                    accuracy: (logs.acc || 0) * 100,
-                    val_loss: logs.val_loss || 0,
-                    val_acc: currentValAcc,
-                });
-              }
-            }
-          }]
-        });
-
-        toast({ title: 'Training Complete!', description: 'Now saving model to cloud...' });
-
-        const modelTopology = model.toJSON(null, false);
-        const weightData = await serializeWeights(model.getWeights());
-        const weightDataAsBase64 = arrayBufferToBase64(weightData);
-
-        const modelData = {
-            modelTopology: modelTopology,
-            weightData: weightDataAsBase64,
-        };
-
-        const modelDocRef = doc(firestore, 'mlModels', selectedModelId);
-        await updateDoc(modelDocRef, {
-            description: `Manually trained on ${new Date().toLocaleDateString()}. Final Val Acc: ${finalValAcc.toFixed(2)}%`,
-            version: `${selectedModel.version.split('-')[0]}-trained`,
-            storagePath: '',
-            modelData: modelData,
-        });
-
-        toast({ title: 'Model Saved', description: `Model "${selectedModel.name}" updated in catalog and saved to Firestore.` });
-
-    } catch (e: any) {
-        toast({variant: 'destructive', title: 'Training Failed', description: e.message});
-    } finally {
-        setIsTraining(false);
-    }
-  };
-
-
-  const gaussianNoise = (mean = 0, std = 1) => {
-    let u = 0, v = 0;
-    while(u === 0) u = Math.random();
-    while(v === 0) v = Math.random();
-    let num = Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
-    return num * std + mean;
-  }
-
-  const handleAutomatedTraining = async () => {
-    if (!mlModelsCollectionRef || !firestore || !firebaseApp) return;
-
-    setIsAutoTraining(true);
-    setAutoTrainingStatus({ step: 'Initializing', progress: 0, details: 'Starting pipeline...' });
-
-    try {
-        const tf = await import('@tensorflow/tfjs');
-        const generateData = (type: 'LEAK' | 'DIFFUSION', numPoints = 200) => {
-            let data = [];
-            if (type === 'LEAK') {
-                const startValue = 900;
-                const endValue = 200;
-                const baseValueDrop = (startValue - endValue) / numPoints;
-                for (let i = 0; i < numPoints; i++) {
-                    const baseValue = startValue - (i * baseValueDrop);
-                    data.push(baseValue + gaussianNoise(0, 2));
-                }
-            } else {
-                const startValue = 950;
-                const endValue = 800;
-                const tau = numPoints / 4;
-                for (let i = 0; i < numPoints; i++) {
-                    const rawValue = endValue + (startValue - endValue) * Math.exp(-i / tau);
-                    data.push(rawValue + gaussianNoise(0, 1.5));
-                }
-            }
-            return data.map(v => Math.min(1023, Math.max(0, v)));
-        };
-
-        setAutoTrainingStatus({ step: 'Data Generation', progress: 10, details: 'Generating "Passed" and "Not Passed" datasets...' });
-        
-        const leakData = generateData('LEAK', 500);
-        const diffusionData = generateData('DIFFUSION', 500);
-        
-        await new Promise(res => setTimeout(res, 500));
-
-        setAutoTrainingStatus({ step: 'Data Preparation', progress: 30, details: 'Preparing data for training...' });
-
-        const features = [...leakData, ...diffusionData];
-        const labels = [...Array(leakData.length).fill(1), ...Array(diffusionData.length).fill(0)];
-        
-        const indices = tf.util.createShuffledIndices(features.length);
-        const shuffledFeatures = Array.from(indices).map(i => features[i]);
-        const shuffledLabels = Array.from(indices).map(i => labels[i]);
-
-        const featureMatrix = shuffledFeatures.map(v => [v]);
-        const labelMatrix = shuffledLabels.map(v => [v]);
-
-        const inputTensor = tf.tensor2d(featureMatrix, [featureMatrix.length, 1]);
-        const labelTensor = tf.tensor2d(labelMatrix, [labelMatrix.length, 1]);
-        
-        const { mean, variance } = tf.moments(inputTensor);
-        const normalizedInput = inputTensor.sub(mean).div(variance.sqrt());
-
-        setAutoTrainingStatus({ step: 'Model Training', progress: 50, details: 'Compiling model...' });
-        
-        const model = tf.sequential();
-        switch (autoModelSize) {
-            case 'small':
-            model.add(tf.layers.dense({ inputShape: [1], units: 25, activation: 'relu' }));
-            break;
-            case 'large':
-            model.add(tf.layers.dense({ inputShape: [1], units: 100, activation: 'relu' }));
-            model.add(tf.layers.dense({ units: 100, activation: 'relu' }));
-            break;
-            case 'medium':
-            default:
-            model.add(tf.layers.dense({ inputShape: [1], units: 50, activation: 'relu' }));
-            model.add(tf.layers.dense({ units: 50, activation: 'relu' }));
-            break;
-        }
-        model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }));
-
-        model.compile({
-            optimizer: tf.train.adam(),
-            loss: 'binaryCrossentropy',
-            metrics: ['accuracy'],
-        });
-        
-        let finalAccuracy = 0;
-        await model.fit(normalizedInput, labelTensor, {
-            epochs: 25,
-            batchSize: 64,
-            callbacks: {
-                onEpochEnd: (epoch, logs) => {
-                    if (logs) {
-                        const progress = 50 + ((epoch + 1) / 25) * 40;
-                        finalAccuracy = (logs.acc || 0) * 100;
-                        setAutoTrainingStatus({
-                            step: 'Model Training',
-                            progress,
-                            details: `Epoch ${epoch + 1}/25 - Loss: ${logs.loss?.toFixed(4)}, Acc: ${finalAccuracy.toFixed(2)}%`
-                        });
-                    }
-                }
-            }
-        });
-        
-        setAutoTrainingStatus({ step: 'Saving Model', progress: 90, details: 'Saving model to Firestore...' });
-
-        const modelTopology = model.toJSON(null, false);
-        const weightData = await serializeWeights(model.getWeights());
-        const weightDataAsBase64 = arrayBufferToBase64(weightData);
-        
-        const modelData = {
-            modelTopology: modelTopology,
-            weightData: weightDataAsBase64,
-        };
-
-        const newId = doc(collection(firestore, '_')).id;
-        const modelName = `auto-model-${autoModelSize}-${new Date().toISOString().split('T')[0]}`;
-        const modelMetaData: MLModel = {
-            id: newId,
-            name: modelName,
-            version: '1.0-auto',
-            description: `Automatically trained on ${new Date().toLocaleDateString()}. Accuracy: ${finalAccuracy.toFixed(2)}%`,
-            fileSize: JSON.stringify(modelData).length,
-            modelData: modelData
-        };
-
-        addDocumentNonBlocking(mlModelsCollectionRef, modelMetaData);
-      
-        toast({ title: 'Automated Training Complete!', description: `New model "${modelName}" is now available.` });
-
-        setAutoTrainingStatus({ step: 'Complete', progress: 100, details: `Finished with ${finalAccuracy.toFixed(2)}% accuracy.` });
-
-    } catch (e: any) {
-        toast({variant: 'destructive', title: 'Automated Training Failed', description: e.message});
-        setAutoTrainingStatus({ step: 'Failed', progress: 100, details: e.message });
-    } finally {
-        setTimeout(() => setIsAutoTraining(false), 5000);
     }
   };
 
@@ -2045,56 +1707,26 @@ export default function AdminPage() {
                   </Button>
                 )}
 
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" disabled={mlModels?.length === 0 || testSessions?.every(s => s.classification)} className="w-full sm:w-auto">
-                      <Sparkles className="mr-2 h-4 w-4" />
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="outline" disabled={testSessions?.every(s => s.classification)} className="w-full sm:w-auto">
+                      <ShieldCheck className="mr-2 h-4 w-4" />
                       Bulk Classify
                     </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Bulk Classify Unclassified Sessions</DialogTitle>
-                      <DialogDescription>
-                        Select a model to classify all completed sessions that do not yet have a classification. This action cannot be undone.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-2 py-4">
-                      <Label htmlFor="bulk-model-select">Model for Classification</Label>
-                      <Select onValueChange={setBulkClassifyModelId}>
-                        <SelectTrigger id="bulk-model-select">
-                          <SelectValue placeholder="Select a model" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {mlModels?.map(m => (
-                            <SelectItem key={m.id} value={m.id}>{m.name} v{m.version}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <DialogFooter>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="default" disabled={!bulkClassifyModelId}>
-                            Run Bulk Classification
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Confirm Bulk Classification</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This will attempt to classify all unclassified, completed sessions. This may take some time. Are you sure you want to continue?
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={handleBulkClassify}>Confirm</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Bulk Classify by Guideline</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will attempt to classify all unclassified, completed sessions by checking their data against the defined guidelines for their vessel type. This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleBulkClassifyByGuideline}>Confirm & Run</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             </div>
 
@@ -2148,10 +1780,14 @@ export default function AdminPage() {
                                         <span>Export as CSV</span>
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
+                                    <DropdownMenuItem onClick={() => handleClassifyByGuideline(session)}>
+                                        <ShieldCheck className="mr-2 h-4 w-4" />
+                                        <span>Classify by Guideline</span>
+                                    </DropdownMenuItem>
                                     <DropdownMenuSub>
                                       <DropdownMenuSubTrigger>
                                         <Tag className="mr-2 h-4 w-4" />
-                                        <span>Classify As</span>
+                                        <span>Manual Override</span>
                                       </DropdownMenuSubTrigger>
                                       <DropdownMenuPortal>
                                           <DropdownMenuSubContent>
@@ -2159,23 +1795,6 @@ export default function AdminPage() {
                                             <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'DIFFUSION')}>Passed</DropdownMenuItem>
                                             <DropdownMenuSeparator />
                                             <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, null)}>Clear Classification</DropdownMenuItem>
-                                          </DropdownMenuSubContent>
-                                      </DropdownMenuPortal>
-                                    </DropdownMenuSub>
-                                    <DropdownMenuSub>
-                                      <DropdownMenuSubTrigger>
-                                        <Sparkles className="mr-2 h-4 w-4" />
-                                        <span>Classify with AI</span>
-                                      </DropdownMenuSubTrigger>
-                                      <DropdownMenuPortal>
-                                          <DropdownMenuSubContent>
-                                            {isMlModelsLoading ? <DropdownMenuItem disabled>Loading models...</DropdownMenuItem> : 
-                                            mlModels && mlModels.length > 0 ?
-                                            mlModels.map(model => (
-                                                <DropdownMenuItem key={model.id} onClick={() => handleClassifyWithAI(session, model.id)}>
-                                                    {model.name}
-                                                </DropdownMenuItem>
-                                            )) : <DropdownMenuItem disabled>No models available</DropdownMenuItem>}
                                           </DropdownMenuSubContent>
                                       </DropdownMenuPortal>
                                     </DropdownMenuSub>
@@ -2728,179 +2347,7 @@ const renderBatchManagement = () => (
                 {renderUserManagement()}
             </div>
           )}
-          <Card className="lg:col-span-3 animate-in">
-            <Accordion type="single" collapsible>
-                <AccordionItem value="ai-models">
-                    <AccordionTrigger className="flex w-full p-6">
-                        <div className="flex items-center gap-4 text-left">
-                            <BrainCircuit className="h-6 w-6 text-primary" />
-                            <div>
-                                <CardTitle>AI Model Management</CardTitle>
-                                <CardDescription>Select, train, and manage machine learning models.</CardDescription>
-                            </div>
-                        </div>
-                    </AccordionTrigger>
-                    <AccordionContent>
-                        <CardContent className="p-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                            <div className="space-y-4">
-                                <h3 className="font-semibold text-lg">Model Catalog</h3>
-                                <div className="flex gap-2">
-                                    <Input placeholder="New model name..." value={newMlModel.name || ''} onChange={(e) => setNewMlModel(p => ({...p, name: e.target.value}))} />
-                                    <Input placeholder="Version (e.g., 1.0)" value={newMlModel.version || ''} onChange={(e) => setNewMlModel(p => ({...p, version: e.target.value}))} />
-                                    <Button onClick={handleAddMlModel}><PackagePlus className="h-4 w-4" /></Button>
-                                </div>
-                                <ScrollArea className="h-40 border rounded-md p-2 bg-background/50">
-                                    {isMlModelsLoading ? <p className="text-center p-4">Loading...</p> : mlModels && mlModels.length > 0 ? (
-                                        <div className="space-y-2">
-                                        {mlModels.map(m => (
-                                        <div key={m.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted">
-                                            <div>
-                                                <p className="font-medium">{m.name} <span className="text-xs text-muted-foreground">v{m.version}</span></p>
-                                                {m.description && <p className="text-xs text-muted-foreground">{m.description}</p>}
-                                            </div>
-                                            <Button variant="ghost" size="icon" onClick={() => handleDeleteMlModel(m.id)}>
-                                                <Trash2 className="h-4 w-4 text-destructive" />
-                                            </Button>
-                                        </div>
-                                        ))}
-                                        </div>
-                                    ) : <p className="text-center p-4 text-muted-foreground">No models in catalog.</p>}
-                                </ScrollArea>
-                            </div>
-
-                            <div className="space-y-4">
-                                <h3 className="font-semibold text-lg">Training Datasets</h3>
-                                <div className="flex gap-2">
-                                    <Input placeholder="New dataset name..." value={newTrainDataSet.name || ''} onChange={(e) => setNewTrainDataSet(p => ({...p, name: e.target.value}))} />
-                                    <Button onClick={handleAddTrainDataSet}><PackagePlus className="h-4 w-4" /></Button>
-                                </div>
-                                <ScrollArea className="h-40 border rounded-md p-2 bg-background/50">
-                                    {isTrainDataSetsLoading ? <p className="text-center p-4">Loading...</p> : trainDataSets && trainDataSets.length > 0 ? (
-                                    <div className="space-y-2">
-                                    {trainDataSets.map(d => (
-                                        <div key={d.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted">
-                                            <p className="font-medium">{d.name}</p>
-                                            <Button variant="ghost" size="icon" onClick={() => handleDeleteTrainDataSet(d.id)}>
-                                                <Trash2 className="h-4 w-4 text-destructive" />
-                                            </Button>
-                                        </div>
-                                    ))}
-                                    </div>
-                                    ): <p className="text-center p-4 text-muted-foreground">No datasets in catalog.</p>}
-                                </ScrollArea>
-                            </div>
-                        </div>
-                        <div className="border-t pt-6 space-y-4">
-                            <h3 className="font-semibold text-lg">Manual Model Training</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className='space-y-2'>
-                                <Label htmlFor="model-select">Select Model to Update</Label>
-                                <Select onValueChange={setSelectedModelId} value={selectedModelId || ''}>
-                                <SelectTrigger id="model-select">
-                                    <SelectValue placeholder="Select a model to train/update" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {isMlModelsLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                                    mlModels?.map(m => <SelectItem key={m.id} value={m.id}>{m.name} v{m.version}</SelectItem>)}
-                                </SelectContent>
-                                </Select>
-                            </div>
-                            <div className='space-y-2'>
-                                <Label>Select Training Datasets (Classified Test Sessions)</Label>
-                                <ScrollArea className="h-32 border rounded-md p-2 bg-background/50">
-                                    <div className="space-y-2">
-                                    {isTestSessionsLoading ? <p className="p-4 text-center">Loading...</p> :
-                                    testSessions?.filter(s => s.classification && s.status === 'COMPLETED').map(d => (
-                                        <div key={d.id} className="flex items-center space-x-2 p-2">
-                                            <Checkbox
-                                                id={d.id}
-                                                checked={selectedDataSetIds.includes(d.id)}
-                                                onCheckedChange={(checked) => {
-                                                    return checked
-                                                        ? setSelectedDataSetIds([...selectedDataSetIds, d.id])
-                                                        : setSelectedDataSetIds(selectedDataSetIds.filter(id => id !== d.id))
-                                                }}
-                                            />
-                                            <label htmlFor={d.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                                {d.vesselTypeName} (S/N: {d.serialNumber}) - <span className="text-xs text-muted-foreground">{new Date(d.startTime).toLocaleDateString()}</span>
-                                            </label>
-                                        </div>
-                                    ))}
-                                    </div>
-                                </ScrollArea>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                Generate demo sessions or classify real sessions to create training data.
-                                </p>
-                            </div>
-                            </div>
-
-                            <div>
-                            <Button onClick={handleTrainModel} className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md" disabled={isTraining || !selectedModelId || selectedDataSetIds.length === 0}>
-                                {isTraining ? 'Training...' : 'Train & Update Selected Model'}
-                            </Button>
-                            </div>
-                            {isTraining && (
-                                <div className="space-y-2">
-                                <Label>Training Progress</Label>
-                                <Progress value={trainingProgress} />
-                                <div className="flex justify-between text-xs text-muted-foreground">
-                                    <span>Epoch: {trainingStatus.epoch}</span>
-                                    <span>Loss: {trainingStatus.loss.toFixed(4)} | Acc: {trainingStatus.accuracy.toFixed(2)}%</span>
-                                    <span>Val_Loss: {trainingStatus.val_loss.toFixed(4)} | Val_Acc: {trainingStatus.val_acc.toFixed(2)}%</span>
-                                </div>
-                                </div>
-                            )}
-                        </div>
-                        </CardContent>
-                    </AccordionContent>
-                </AccordionItem>
-            </Accordion>
-          </Card>
-           <Card className="lg:col-span-3 animate-in">
-             <Accordion type="single" collapsible>
-                <AccordionItem value="auto-train">
-                    <AccordionTrigger className="flex w-full p-6">
-                        <div className="flex items-center gap-4 text-left">
-                            <BrainCircuit className="h-6 w-6 text-primary" />
-                            <div>
-                                <CardTitle>Automated Training Pipeline</CardTitle>
-                                <CardDescription>Generate data, train a model, and save it to the catalog.</CardDescription>
-                            </div>
-                        </div>
-                    </AccordionTrigger>
-                    <AccordionContent>
-                        <CardContent className="p-6 pt-4 space-y-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="auto-model-size">Model Size</Label>
-                                <Select onValueChange={(value) => setAutoModelSize(value as 'small' | 'medium' | 'large')} defaultValue="medium" disabled={isAutoTraining}>
-                                <SelectTrigger id="auto-model-size">
-                                    <SelectValue placeholder="Select model size" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="small">Small (1x25)</SelectItem>
-                                    <SelectItem value="medium">Medium (2x50)</SelectItem>
-                                    <SelectItem value="large">Large (2x100)</SelectItem>
-                                </SelectContent>
-                                </Select>
-                            </div>
-                            <Button onClick={handleAutomatedTraining} disabled={isAutoTraining} className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
-                            {isAutoTraining ? 'Pipeline Running...' : 'Start Automated Training'}
-                            </Button>
-                            {isAutoTraining && autoTrainingStatus && (
-                            <div className="space-y-2 pt-4">
-                                <Label>Pipeline Progress ({autoTrainingStatus.step})</Label>
-                                <Progress value={autoTrainingStatus.progress} />
-                                <p className="text-xs text-muted-foreground text-center">{autoTrainingStatus.details}</p>
-                            </div>
-                            )}
-                        </CardContent>
-                    </AccordionContent>
-                </AccordionItem>
-             </Accordion>
-           </Card>
       </main>
     </div>
   );
 }
-
