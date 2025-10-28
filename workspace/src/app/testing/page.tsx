@@ -452,7 +452,7 @@ function TestingComponent() {
             return curve[curve.length - 1].y;
         };
 
-        sessionData.forEach((d) => {
+        sessionData.forEach((d, index) => {
             const timeInSeconds = (new Date(d.timestamp).getTime() - startTime) / 1000;
             const time = timeInSeconds / timeDivisor;
             const value = convertRawValue(d.value, config || null);
@@ -473,7 +473,7 @@ function TestingComponent() {
     
             const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
 
-            point[`${session.id}-pass`] = !isFailed ? value : null;
+            point[session.id] = value;
             point[`${session.id}-fail`] = isFailed ? value : null;
         });
     });
@@ -1305,7 +1305,7 @@ function TestingComponent() {
                                 backdropFilter: 'blur(4px)',
                             }}
                             formatter={(value: number, name: string) => {
-                                const sessionId = name.replace('-pass', '').replace('-fail', '');
+                                const sessionId = name.replace('-fail', '');
                                 const session = comparisonSessions.find(s => s.id === sessionId);
                                 const config = sensorConfigs?.find(c => c.id === session?.sensorConfigurationId);
                                 const unit = config?.unit || '';
@@ -1323,19 +1323,19 @@ function TestingComponent() {
                             <React.Fragment key={session.id}>
                                 <Line
                                     type="monotone"
-                                    dataKey={`${session.id}-pass`}
+                                    dataKey={session.id}
                                     stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                     name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`}
                                     dot={false}
                                     strokeWidth={2}
-                                    connectNulls={false}
+                                    connectNulls
                                 />
                                 <Line
                                     type="monotone"
                                     dataKey={`${session.id}-fail`}
                                     stroke={"hsl(var(--destructive))"}
                                     name="Failed segment"
-                                    dot={false}
+                                    dot={false} 
                                     strokeWidth={3}
                                     connectNulls={false}
                                 />

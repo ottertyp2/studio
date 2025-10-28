@@ -288,6 +288,7 @@ export default function AdminPage() {
   const [pdfChartData, setPdfChartData] = useState<any[]>([]);
   const [pdfChartSessions, setPdfChartSessions] = useState<TestSession[]>([]);
   const pdfChartRef = useRef<HTMLDivElement>(null);
+  const [pdfTimeUnit, setPdfTimeUnit] = useState<'seconds' | 'minutes'>('seconds');
   const sessionImportRef = useRef<HTMLInputElement>(null);
 
   // Batch State
@@ -878,7 +879,7 @@ export default function AdminPage() {
             
             switch (sessionSortOrder) {
                 case 'startTime-desc':
-                    return new Date(b.startTime).getTime() - new Date(b.startTime).getTime();
+                    return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
                 case 'startTime-asc':
                     return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
                 case 'vesselTypeName-asc':
@@ -1142,6 +1143,23 @@ export default function AdminPage() {
             allSensorData[session.id] = snapshot.docs.map(doc => doc.data() as SensorData);
         }
         
+        let maxTime = 0;
+        relevantSessions.forEach(session => {
+            const data = allSensorData[session.id];
+            if (data && data.length > 1) {
+                const startTime = new Date(data[0].timestamp).getTime();
+                const endTime = new Date(data[data.length - 1].timestamp).getTime();
+                const duration = (endTime - startTime) / 1000;
+                if (duration > maxTime) {
+                    maxTime = duration;
+                }
+            }
+        });
+
+        const useMinutes = maxTime > 60;
+        const timeDivisor = useMinutes ? 60 : 1;
+        setPdfTimeUnit(useMinutes ? 'minutes' : 'seconds');
+
         const vt = vesselTypes?.find(vt => vt.id === vesselType.id);
         const interpolate = (curve: { x: number, y: number }[], x: number) => {
             if (!curve || curve.length === 0) return undefined;
@@ -1149,53 +1167,47 @@ export default function AdminPage() {
             if (x > curve[curve.length - 1].x) return curve[curve.length - 1].y;
             for (let i = 0; i < curve.length - 1; i++) {
                 if (x >= curve[i].x && x <= curve[i + 1].x) {
-                    const x1 = curve[i].x; const y1 = curve[i].y;
-                    const x2 = curve[i+1].x; const y2 = curve[i+1].y;
-                    const t = (x - x1) / (x2 - x1);
-                    return y1 + t * (y2 - y1);
+                    const t = (x - curve[i].x) / (curve[i + 1].x - curve[i].x);
+                    return curve[i].y + t * (curve[i + 1].y - curve[i].y);
                 }
             }
             return curve[curve.length - 1].y;
         };
         
-        const chartDataForPdf = relevantSessions.flatMap((session, sessionIndex) => {
+        const mergedDataMap: { [key: string]: any } = {};
+
+        relevantSessions.forEach(session => {
             const data = allSensorData[session.id];
-            if (!data || data.length === 0) return [];
+            if (!data || data.length === 0) return;
             
             const sessionStartTime = new Date(data[0].timestamp).getTime();
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-            const dataKey = session.serialNumber || session.id;
+            const dataKey = session.id;
 
-            return data.map((d, index) => {
-                const time = (new Date(d.timestamp).getTime() - sessionStartTime) / 1000;
+            data.forEach(d => {
+                const timeInSeconds = (new Date(d.timestamp).getTime() - sessionStartTime) / 1000;
+                const time = timeInSeconds / timeDivisor;
                 const value = convertRawValue(d.value, config || null);
 
-                const minGuideline = vt?.minCurve ? interpolate(vt.minCurve, time) : undefined;
-                const maxGuideline = vt?.maxCurve ? interpolate(vt.maxCurve, time) : undefined;
+                const minGuideline = vt?.minCurve ? interpolate(vt.minCurve, timeInSeconds) : undefined;
+                const maxGuideline = vt?.maxCurve ? interpolate(vt.maxCurve, timeInSeconds) : undefined;
                 
-                const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
-
-                const point: any = {
-                    name: time,
-                    minGuideline,
-                    maxGuideline,
-                };
+                const timeKey = time.toFixed(5);
+                if (!mergedDataMap[timeKey]) {
+                    mergedDataMap[timeKey] = { name: time };
+                }
+                const point = mergedDataMap[timeKey];
+                
+                if (vt) {
+                    point.minGuideline = minGuideline;
+                    point.maxGuideline = maxGuideline;
+                }
                 
                 point[dataKey] = value;
-                point[`${dataKey}-failed`] = isFailed ? value : null;
-
-                return point;
             });
-        }).filter(Boolean);
-
-        const mergedChartDataMap: Record<string, any> = {};
-        for (const dp of chartDataForPdf) {
-            if (!dp) continue;
-            const key = dp.name.toFixed(3);
-            if (!mergedChartDataMap[key]) mergedChartDataMap[key] = { name: dp.name };
-            Object.assign(mergedChartDataMap[key], dp);
-        }
-        const finalChartData = Object.values(mergedChartDataMap).sort((a, b) => a.name - b.name);
+        });
+        
+        const finalChartData = Object.values(mergedDataMap).sort((a, b) => a.name - b.name);
         
         setPdfChartSessions(relevantSessions);
         setPdfChartData(finalChartData);
@@ -1252,7 +1264,7 @@ export default function AdminPage() {
                 avgValue = (sum / data.length).toFixed(decimalPlaces);
             }
             
-            const color = CHART_COLORS[pdfChartSessions.findIndex(s => s.serialNumber === session.serialNumber) % CHART_COLORS.length];
+            const color = CHART_COLORS[index % CHART_COLORS.length];
 
             return [
                 batchName ?? 'N/A',
@@ -2051,7 +2063,7 @@ export default function AdminPage() {
                                     <Button size="sm" variant="outline" disabled={session.status === 'RUNNING'}>Actions</Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
-                                     <DropdownMenuItem onClick={() => router.push(`/testing?sessionId=${session.id}`)}>
+                                    <DropdownMenuItem onClick={() => router.push(`/testing?sessionId=${session.id}`)}>
                                         <FileSignature className="mr-2 h-4 w-4" />
                                         <span>View Session</span>
                                     </DropdownMenuItem>
@@ -2060,7 +2072,7 @@ export default function AdminPage() {
                                         <span>Export as CSV</span>
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
-                                     <DropdownMenuSub>
+                                    <DropdownMenuSub>
                                       <DropdownMenuSubTrigger>
                                         <Sparkles className="mr-2 h-4 w-4" />
                                         <span>Classify...</span>
@@ -2093,7 +2105,7 @@ export default function AdminPage() {
                                       </DropdownMenuPortal>
                                     </DropdownMenuSub>
                                     <DropdownMenuSeparator />
-                                     <AlertDialog>
+                                    <AlertDialog>
                                         <AlertDialogTrigger asChild>
                                             <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
                                                 <Trash2 className="mr-2 h-4 w-4 text-destructive" />
@@ -2119,7 +2131,8 @@ export default function AdminPage() {
                             </div>
                         </div>
                     </Card>
-                ))}
+                );
+                })}
                 </div>
               ) : (
                  <p className="text-sm text-muted-foreground text-center pt-10">No test sessions found.</p>
@@ -2532,37 +2545,30 @@ const renderAIModelManagement = () => (
                 <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={pdfChartData}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} />
+                        <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} label={{ value: `Time (${pdfTimeUnit})`, position: 'insideBottom', offset: -5 }} />
                         <YAxis domain={['dataMin', 'dataMax + 10']} />
                         <Tooltip />
-                        <Legend />
+                        <Legend verticalAlign="bottom" height={36}/>
                         <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
-                        {pdfChartSessions.map((session, index) => (
-                            <Line 
-                                key={session.id}
-                                type="monotone" 
-                                dataKey={session.serialNumber || session.id} 
-                                stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                                name={session.serialNumber || session.id}
-                                dot={false} 
-                                strokeWidth={2}
-                                connectNulls={false}
-                            />
-                        ))}
-                         {pdfChartSessions.map((session, index) => (
-                            <Line 
-                                key={`${session.id}-failed`}
-                                type="monotone" 
-                                dataKey={`${session.serialNumber || session.id}-failed`} 
-                                stroke="hsl(var(--destructive))"
-                                name={`${session.serialNumber || session.id} (Failed)`}
-                                dot={false} 
-                                strokeWidth={3}
-                                connectNulls={false}
-                            />
-                        ))}
+                        {pdfChartSessions.map((session, index) => {
+                            const dataKey = session.id;
+
+                            return (
+                                <g key={session.id}>
+                                    <Line
+                                        type="monotone" 
+                                        dataKey={dataKey} 
+                                        stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                        name={session.serialNumber || session.id}
+                                        dot={false} 
+                                        strokeWidth={2}
+                                        connectNulls
+                                    />
+                                </g>
+                            )
+                        })}
                     </LineChart>
                 </ResponsiveContainer>
             </div>
@@ -2738,4 +2744,3 @@ const renderAIModelManagement = () => (
 
 
 
-    
