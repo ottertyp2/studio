@@ -1,5 +1,4 @@
 
-
 'use client';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -98,6 +97,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
+import { Bytes } from 'firebase/firestore';
 
 if (pdfFonts.pdfMake) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
@@ -139,6 +139,10 @@ type MLModel = {
     description: string;
     fileSize: number;
     storagePath?: string;
+    modelData?: {
+        modelTopology: string;
+        weightData: string; // base64 encoded
+    };
 };
 
 type TrainDataSet = {
@@ -615,15 +619,23 @@ export default function AdminPage() {
       return;
     }
     
-    if (!modelToUse.storagePath) {
-        toast({ variant: 'destructive', title: 'AI Classification Failed', description: `Model "${modelToUse.name}" is missing a storage path. It may need to be retrained.` });
+    if (modelToUse.storagePath) {
+        toast({ variant: 'destructive', title: 'AI Classification Failed', description: `Model "${modelToUse.name}" is using an unsupported storage format (Firebase Storage). Please retrain the model to store it in Firestore.` });
+        return;
+    }
+    if (!modelToUse.modelData) {
+        toast({ variant: 'destructive', title: 'AI Classification Failed', description: `Model "${modelToUse.name}" is missing model data. Please retrain it.` });
         return;
     }
 
+
     try {
-        const storage = getStorage(firebaseApp);
-        const modelUrl = await getDownloadURL(storageRef(storage, modelToUse.storagePath));
-        const model = await tf.loadLayersModel(modelUrl);
+        const { modelTopology, weightData } = modelToUse.modelData;
+        const weights = Bytes.fromBase64String(weightData).toUint8Array().buffer;
+        
+        const model = await tf.loadLayersModel(
+            tf.io.fromMemory(JSON.parse(modelTopology), weights)
+        );
         
         const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
         const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
@@ -901,28 +913,24 @@ export default function AdminPage() {
 
         toast({ title: 'Training Complete!', description: 'Now saving model to cloud...' });
 
-        const storage = getStorage(firebaseApp);
-        const modelPath = `models/${selectedModel.name}/model.json`;
-        const modelRef = storageRef(storage, modelPath);
+        const modelArtifacts = await model.save(tf.io.memory());
+        if (!modelArtifacts.weightData) {
+            throw new Error('Model training did not produce weight data.');
+        }
 
-        const saveData = await model.save(tf.io.withSaveHandler(async (modelArtifacts) => {
-            const modelBlob = new Blob([JSON.stringify(modelArtifacts.modelTopology)], { type: 'application/json' });
-            await uploadBytes(storageRef(storage, modelPath), modelBlob);
-
-            if (modelArtifacts.weightData) {
-                const weightsPath = `models/${selectedModel.name}/weights.bin`;
-                const weightsBlob = new Blob([modelArtifacts.weightData], { type: 'application/octet-stream' });
-                await uploadBytes(storageRef(storage, weightsPath), weightsBlob);
-            }
-            return { modelArtifactsInfo: { dateSaved: new Date(), modelTopologyType: 'JSON' }};
-        }));
+        const weightDataAsBase64 = Bytes.fromUint8Array(new Uint8Array(modelArtifacts.weightData)).toBase64();
+        
+        const modelData = {
+            modelTopology: JSON.stringify(modelArtifacts.modelTopology),
+            weightData: weightDataAsBase64,
+        };
 
         const modelDocRef = doc(firestore, 'mlModels', selectedModelId);
         await updateDoc(modelDocRef, {
             description: `Manually trained on ${new Date().toLocaleDateString()}. Final Val Acc: ${finalValAcc.toFixed(2)}%`,
             version: `${selectedModel.version.split('-')[0]}-trained`,
-            storagePath: modelPath,
-            fileSize: 0, // You might want to calculate the actual size
+            storagePath: '',
+            modelData: modelData,
         });
 
         toast({ title: 'Model Saved', description: `Model "${selectedModel.name}" updated in catalog and saved to Firebase Storage.` });
@@ -942,6 +950,16 @@ export default function AdminPage() {
     let num = Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
     return num * std + mean;
   }
+
+    const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+    }
 
   const handleAutomatedTraining = async () => {
     if (!mlModelsCollectionRef || !firestore || !firebaseApp) return;
@@ -1041,40 +1059,37 @@ export default function AdminPage() {
           }
       });
       
-      setAutoTrainingStatus({ step: 'Saving Model', progress: 90, details: 'Saving model to cloud storage...' });
+      setAutoTrainingStatus({ step: 'Saving Model', progress: 90, details: 'Saving model to Firestore...' });
 
-      const modelName = `auto-model-${autoModelSize}-${new Date().toISOString().split('T')[0]}`;
-      const storage = getStorage(firebaseApp);
-      const modelPath = `models/${modelName}/model.json`;
-      
-      const saveData = await model.save(tf.io.withSaveHandler(async (modelArtifacts) => {
-        // This is a custom save handler for Firebase Storage
-        const modelBlob = new Blob([JSON.stringify(modelArtifacts.modelTopology)], { type: 'application/json' });
-        await uploadBytes(storageRef(storage, modelPath), modelBlob);
-        if (modelArtifacts.weightData) {
-            const weightsPath = `models/${modelName}/weights.bin`;
-            const weightsBlob = new Blob([modelArtifacts.weightData], { type: 'application/octet-stream' });
-            await uploadBytes(storageRef(storage, weightsPath), weightsBlob);
+        const modelArtifacts = await model.save(tf.io.memory());
+
+        if (!modelArtifacts.weightData) {
+            throw new Error('Model training did not produce weight data.');
         }
-        // Return a ModelArtifactsInfo object.
-        return { modelArtifactsInfo: { dateSaved: new Date(), modelTopologyType: 'JSON' } };
-      }));
-      
-      const newId = doc(collection(firestore, '_')).id;
-      const modelMetaData: MLModel = {
-          id: newId,
-          name: modelName,
-          version: '1.0-auto',
-          description: `Automatically trained on ${new Date().toLocaleDateString()}. Accuracy: ${finalAccuracy.toFixed(2)}%`,
-          fileSize: 0,
-          storagePath: modelPath
-      };
 
-      addDocumentNonBlocking(mlModelsCollectionRef, modelMetaData);
-      
-      toast({ title: 'Automated Training Complete!', description: `New model "${modelName}" is now available.` });
+        const weightDataAsBase64 = arrayBufferToBase64(modelArtifacts.weightData);
+        
+        const modelData = {
+            modelTopology: JSON.stringify(modelArtifacts.modelTopology),
+            weightData: weightDataAsBase64,
+        };
 
-      setAutoTrainingStatus({ step: 'Complete', progress: 100, details: `Finished with ${finalAccuracy.toFixed(2)}% accuracy.` });
+        const newId = doc(collection(firestore, '_')).id;
+        const modelName = `auto-model-${autoModelSize}-${new Date().toISOString().split('T')[0]}`;
+        const modelMetaData: MLModel = {
+            id: newId,
+            name: modelName,
+            version: '1.0-auto',
+            description: `Automatically trained on ${new Date().toLocaleDateString()}. Accuracy: ${finalAccuracy.toFixed(2)}%`,
+            fileSize: JSON.stringify(modelData).length,
+            modelData: modelData
+        };
+
+        addDocumentNonBlocking(mlModelsCollectionRef, modelMetaData);
+      
+        toast({ title: 'Automated Training Complete!', description: `New model "${modelName}" is now available.` });
+
+        setAutoTrainingStatus({ step: 'Complete', progress: 100, details: `Finished with ${finalAccuracy.toFixed(2)}% accuracy.` });
 
     } catch (e: any) {
         toast({variant: 'destructive', title: 'Automated Training Failed', description: e.message});
@@ -2866,4 +2881,3 @@ const renderBatchManagement = () => (
     </div>
   );
 }
-
