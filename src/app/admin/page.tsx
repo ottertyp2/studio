@@ -68,11 +68,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Edit, Upload, FileSignature, Layers, Calendar as CalendarIcon, RotateCcw, ShieldCheck } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Edit, Upload, FileSignature, Layers, Calendar as CalendarIcon, RotateCcw, ShieldCheck, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
-import { getStorage, ref as storageRef, getDownloadURL, uploadBytes } from 'firebase/storage';
 import { signOut, adminCreateUser } from '@/firebase/non-blocking-login';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
@@ -98,7 +97,6 @@ import {
 } from 'recharts';
 import Papa from 'papaparse';
 import * as tf from '@tensorflow/tfjs';
-import { memory } from '@tensorflow/tfjs';
 
 if (pdfFonts.pdfMake) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
@@ -229,7 +227,7 @@ const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
     return bytes.buffer;
 }
 
-async function serializeWeights(tensors: tf.Tensor[]): Promise<ArrayBuffer> {
+async function serializeWeights(tensors: tf.Tensor[]): Promise<string> {
     const weightData = tensors.map(tensor => ({
       data: Array.from(tensor.dataSync()),
       shape: tensor.shape,
@@ -238,7 +236,8 @@ async function serializeWeights(tensors: tf.Tensor[]): Promise<ArrayBuffer> {
 
     const jsonString = JSON.stringify(weightData);
     const textEncoder = new TextEncoder();
-    return textEncoder.encode(jsonString).buffer;
+    const buffer = textEncoder.encode(jsonString).buffer;
+    return arrayBufferToBase64(buffer);
 }
 
 
@@ -1219,12 +1218,8 @@ export default function AdminPage() {
         Object.values(sessionsByReactor).forEach(sessions => sessions.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
 
         const tableBody = relevantSessions.map(session => {
-            const data = allSensorData[session.id] ?? [];
-            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
             const batchName = batches?.find(b => b.id === session.batchId)?.name;
-
             const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
-
             const classificationText = getClassificationText(session.classification);
             const statusStyle = {
                 text: classificationText,
@@ -1514,6 +1509,199 @@ export default function AdminPage() {
       }
   };
 
+  const handleAutomatedTraining = async () => {
+    if (!firestore || !testSessions || !sensorConfigs) {
+        toast({ variant: 'destructive', title: 'Error', description: 'Prerequisites for training not met.' });
+        return;
+    }
+    setIsTraining(true);
+    setAutomatedTrainingStatus({ step: 'Preparing Data', progress: 0, details: 'Fetching classified sessions...' });
+
+    try {
+        const classifiedSessions = testSessions.filter(s => s.classification && s.status === 'COMPLETED');
+        if (classifiedSessions.length < 10) {
+            throw new Error(`Not enough classified data. Need at least 10 sessions, found ${classifiedSessions.length}.`);
+        }
+
+        let allSensorData: { value: number[], classification: number }[] = [];
+
+        for (let i = 0; i < classifiedSessions.length; i++) {
+            const session = classifiedSessions[i];
+            setAutomatedTrainingStatus({ step: 'Preparing Data', progress: (i / classifiedSessions.length) * 20, details: `Processing session ${i + 1}/${classifiedSessions.length}` });
+
+            const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+            const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
+            const snapshot = await getDocs(q);
+            const dataPoints = snapshot.docs.map(d => d.data().value);
+
+            if (dataPoints.length > 5) { // Ensure there's enough data
+                allSensorData.push({
+                    value: dataPoints,
+                    classification: session.classification === 'LEAK' ? 1 : 0
+                });
+            }
+        }
+
+        if (allSensorData.length === 0) {
+            throw new Error('No valid sensor data found in classified sessions.');
+        }
+
+        const maxLen = Math.max(...allSensorData.map(d => d.value.length));
+        
+        const paddedData = allSensorData.map(d => {
+            const padded = [...d.value];
+            while (padded.length < maxLen) {
+                padded.push(0); 
+            }
+            return padded.slice(0, maxLen);
+        });
+
+        const labels = allSensorData.map(d => d.classification);
+
+        const tf = await import('@tensorflow/tfjs');
+
+        const xs = tf.tensor2d(paddedData);
+        const ys = tf.oneHot(tf.tensor1d(labels, 'int32'), 2);
+
+        setAutomatedTrainingStatus({ step: 'Building Model', progress: 25, details: 'Creating neural network...' });
+        const model = tf.sequential();
+        model.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [maxLen] }));
+        model.add(tf.layers.dropout({ rate: 0.2 }));
+        model.add(tf.layers.dense({ units: 64, activation: 'relu' }));
+        model.add(tf.layers.dense({ units: 2, activation: 'softmax' }));
+        model.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
+
+        setAutomatedTrainingStatus({ step: 'Training Model', progress: 30, details: 'Starting training...' });
+        await model.fit(xs, ys, {
+            epochs: 50,
+            validationSplit: 0.2,
+            callbacks: {
+                onEpochEnd: (epoch, logs) => {
+                    if (logs) {
+                      setAutomatedTrainingStatus({
+                          step: 'Training Model',
+                          progress: 30 + (epoch / 50) * 60,
+                          details: `Epoch ${epoch + 1}/50: Accuracy = ${logs.acc?.toFixed(4)}, Val Accuracy = ${logs.val_acc?.toFixed(4)}`
+                      });
+                    }
+                }
+            }
+        });
+
+        setAutomatedTrainingStatus({ step: 'Saving Model', progress: 95, details: 'Serializing model...' });
+
+        const modelTopology = model.toJSON();
+        const weightDataAsBase64 = await serializeWeights(model.getWeights());
+        
+        const modelDoc: Omit<MLModel, 'id' | 'fileSize'> = {
+            name: newModelName,
+            version: new Date().toISOString(),
+            description: `Trained on ${classifiedSessions.length} sessions. Max sequence length: ${maxLen}.`,
+            modelData: {
+                modelTopology,
+                weightData: weightDataAsBase64
+            }
+        };
+
+        if (modelsCollectionRef) {
+            await addDocumentNonBlocking(modelsCollectionRef, modelDoc);
+        }
+
+        setAutomatedTrainingStatus({ step: 'Completed', progress: 100, details: `Model "${newModelName}" saved successfully.` });
+
+    } catch (e: any) {
+        console.error(e);
+        setAutomatedTrainingStatus({ step: 'Error', progress: 100, details: e.message });
+    } finally {
+        setIsTraining(false);
+    }
+  };
+
+  const handleClassifyWithAI = async (session: TestSession) => {
+    if (!firestore || !activeModel || !activeModel.modelData || !sensorConfigs) {
+        toast({ variant: 'destructive', title: 'Prerequisites Missing', description: 'No active AI model, model data, or sensor configurations.' });
+        return;
+    }
+    
+    setIsClassifying(true);
+    
+    try {
+        const tf = await import('@tensorflow/tfjs');
+        
+        const weightData = base64ToArrayBuffer(activeModel.modelData.weightData);
+        
+        const model = await tf.models.modelFromJSON(activeModel.modelData.modelTopology as any, {weightData: weightData});
+
+        const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+        const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
+        const snapshot = await getDocs(q);
+        const sensorDataValues = snapshot.docs.map(doc => doc.data().value);
+
+        if (sensorDataValues.length < 5) {
+            throw new Error('Not enough data to classify.');
+        }
+
+        const modelInputShape = (model.input as tf.SymbolicTensor).shape[1];
+        if (!modelInputShape) {
+          throw new Error('Could not determine model input shape.');
+        }
+
+        let inputData = [...sensorDataValues];
+        while (inputData.length < modelInputShape) {
+            inputData.push(0);
+        }
+        inputData = inputData.slice(0, modelInputShape);
+
+        const inputTensor = tf.tensor2d([inputData]);
+        const prediction = model.predict(inputTensor) as tf.Tensor;
+        const [leakProb, diffusionProb] = await prediction.data();
+
+        const classification = leakProb > diffusionProb ? 'LEAK' : 'DIFFUSION';
+        handleSetSessionClassification(session.id, classification);
+
+        toast({
+            title: `AI Classification: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'}`,
+            description: `Leak Probability: ${leakProb.toFixed(3)}, Pass Probability: ${diffusionProb.toFixed(3)}`
+        });
+        
+    } catch (e: any) {
+        toast({ variant: 'destructive', title: 'AI Classification Failed', description: e.message });
+    } finally {
+        setIsClassifying(false);
+        setClassificationSession(null);
+    }
+  };
+
+  const handleBulkClassifyWithAI = async () => {
+    if (!testSessions || !activeModel) {
+      toast({ variant: 'destructive', title: 'Cannot Bulk Classify', description: 'No active AI model or test sessions loaded.' });
+      return;
+    }
+
+    const unclassifiedSessions = testSessions.filter(s => !s.classification && s.status === 'COMPLETED');
+    if (unclassifiedSessions.length === 0) {
+      toast({ title: 'No Sessions to Classify', description: 'All completed sessions have already been classified by AI.' });
+      return;
+    }
+
+    toast({ title: `Starting AI Bulk Classification`, description: `Attempting to classify ${unclassifiedSessions.length} sessions...` });
+    
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const session of unclassifiedSessions) {
+      try {
+        await handleClassifyWithAI(session);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        successCount++;
+      } catch (error) {
+        console.error(`Failed to classify session ${session.id} with AI:`, error);
+        failCount++;
+      }
+    }
+    toast({ title: 'AI Bulk Classification Finished', description: `${successCount} sessions classified. ${failCount} failed.` });
+  };
+  
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
     return (
@@ -1639,7 +1827,7 @@ export default function AdminPage() {
                 onChange={(e) => setSessionSearchTerm(e.target.value)}
                 className="flex-grow"
               />
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                  <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" className="w-full sm:w-auto">
@@ -1778,14 +1966,19 @@ export default function AdminPage() {
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>Bulk Classify by Guideline</AlertDialogTitle>
+                      <AlertDialogTitle>Bulk Classification</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This will attempt to classify all unclassified, completed sessions by checking their data against the defined guidelines for their vessel type. This action cannot be undone.
+                        Choose a method to classify all unclassified, completed sessions. This action cannot be undone.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleBulkClassifyByGuideline}>Confirm & Run</AlertDialogAction>
+                      <AlertDialogAction onClick={handleBulkClassifyByGuideline}>
+                        <ShieldCheck className="mr-2 h-4 w-4"/> By Guideline
+                      </AlertDialogAction>
+                      <AlertDialogAction onClick={handleBulkClassifyWithAI}>
+                        <BrainCircuit className="mr-2 h-4 w-4"/> With AI
+                      </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
@@ -2224,6 +2417,76 @@ const renderBatchManagement = () => (
     </Card>
 );
 
+const renderAIModelManagement = () => (
+    <Card className="animate-in">
+      <Accordion type="single" collapsible className="w-full">
+        <AccordionItem value="item-1">
+          <AccordionTrigger className="p-6">
+            <div className="text-left">
+              <CardTitle>AI Model Management</CardTitle>
+              <CardDescription>Manage and train leak detection models.</CardDescription>
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="p-6 pt-0 space-y-4">
+            <div>
+              <h3 className="font-semibold mb-2">Automated Training</h3>
+              <div className="p-4 border rounded-lg bg-background/50 space-y-3">
+                <div className="space-y-1">
+                  <Label htmlFor="model-name">New Model Name</Label>
+                  <Input id="model-name" value={newModelName} onChange={(e) => setNewModelName(e.target.value)} />
+                </div>
+                <Button onClick={handleAutomatedTraining} disabled={isTraining} className="w-full">
+                  {isTraining ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
+                  {isTraining ? 'Training in Progress...' : 'Start Automated Training'}
+                </Button>
+                {automatedTrainingStatus.step !== 'Idle' && (
+                  <div className="space-y-2 pt-2">
+                    <Progress value={automatedTrainingStatus.progress} />
+                    <p className="text-xs text-muted-foreground">[{automatedTrainingStatus.step}] {automatedTrainingStatus.details}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+             <div>
+                <h3 className="font-semibold mb-2">Model Catalog</h3>
+                <ScrollArea className="h-48">
+                  <div className="space-y-2">
+                    {mlModels?.map(model => (
+                      <Card key={model.id} className={`p-3 cursor-pointer ${activeModel?.id === model.id ? 'border-primary' : ''}`} onClick={() => setActiveModel(model)}>
+                        <p className="font-semibold">{model.name}</p>
+                        <p className="text-xs text-muted-foreground">Version: {new Date(model.version).toLocaleDateString()}</p>
+                        <p className="text-xs text-muted-foreground">{model.description}</p>
+                      </Card>
+                    ))}
+                  </div>
+                </ScrollArea>
+             </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+        <Dialog open={!!classificationSession} onOpenChange={(isOpen) => !isOpen && setClassificationSession(null)}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>AI Classification</DialogTitle>
+                    <DialogDescription>
+                        Classifying session for "{classificationSession?.vesselTypeName} - {classificationSession?.serialNumber}" using model "{activeModel?.name}".
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="flex justify-center items-center h-24">
+                    {isClassifying ? (
+                        <>
+                         <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                         <p className="ml-4">Running analysis...</p>
+                        </>
+                    ) : (
+                         <Button onClick={() => classificationSession && handleClassifyWithAI(classificationSession)}>Start Classification</Button>
+                    )}
+                </div>
+            </DialogContent>
+        </Dialog>
+    </Card>
+  );
+
   if (isUserLoading || !user) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950">
@@ -2256,7 +2519,7 @@ const renderBatchManagement = () => (
                             type="monotone" 
                             dataKey={session.id} 
                             stroke={'#000000'}
-                            name={`${session.serialNumber}`} 
+                            name={session.serialNumber || session.id}
                             dot={false} 
                             strokeWidth={2}
                             connectNulls={false}
@@ -2430,6 +2693,7 @@ const renderBatchManagement = () => (
                       </AccordionItem>
                   </Accordion>
               </Card>
+               {userRole === 'superadmin' && renderAIModelManagement()}
           </div>
           <div className="lg:col-span-2 space-y-6">
               {renderTestSessionManager()}
