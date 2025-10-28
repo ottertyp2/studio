@@ -38,7 +38,7 @@ const ValveRow = ({ valveName, valveId, status, onToggle, isLocked, isDisabled }
 
 
 export default function ValveControl() {
-  const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves, sequence1Running, sequence2Running, sendSequenceCommand, lockedSequences } = useTestBench();
+  const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves, sequence1Running, sequence2Running, sendSequenceCommand } = useTestBench();
 
   const handleToggle = (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!isConnected) return;
@@ -76,47 +76,47 @@ export default function ValveControl() {
             />
             <Separator />
             <div className="flex flex-col gap-2 pt-2">
+                {/* Sequence 1 Button Logic */}
                 {sequence1Running ? (
-                    <Button 
-                        onClick={() => handleSequence('sequence1', false)} 
-                        disabled={!isConnected || lockedSequences.includes('sequence1')}
-                        variant="destructive"
-                        className="transition-all btn-shine"
-                    >
-                         {lockedSequences.includes('sequence1') ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
-                        Stop Sequence 1
-                    </Button>
-                 ) : (
-                    <Button 
-                        onClick={() => handleSequence('sequence1', true)} 
-                        disabled={!isConnected || lockedSequences.includes('sequence1') || sequence2Running}
-                        className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
-                    >
-                        {lockedSequences.includes('sequence1') ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
-                        Run Sequence 1
-                    </Button>
-                 )}
+                  <Button
+                    variant="destructive"
+                    onClick={() => handleSequence('sequence1', false)}
+                    disabled={!isConnected}
+                  >
+                    <Square className="mr-2 h-4 w-4" />
+                    Stop Sequence 1
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => handleSequence('sequence1', true)}
+                    disabled={!isConnected || sequence2Running}
+                    className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
+                  >
+                    <Zap className="mr-2 h-4 w-4" />
+                    Run Sequence 1
+                  </Button>
+                )}
 
-                 {sequence2Running ? (
-                    <Button 
-                        onClick={() => handleSequence('sequence2', false)} 
-                        disabled={!isConnected || lockedSequences.includes('sequence2')}
-                        variant="destructive"
-                        className="transition-all btn-shine"
-                    >
-                        {lockedSequences.includes('sequence2') ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
-                        Stop Sequence 2
-                    </Button>
-                 ) : (
-                    <Button 
-                        onClick={() => handleSequence('sequence2', true)} 
-                        disabled={!isConnected || lockedSequences.includes('sequence2') || sequence1Running}
-                        className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
-                    >
-                        {lockedSequences.includes('sequence2') ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
-                        Run Sequence 2
-                    </Button>
-                 )}
+                {/* Sequence 2 Button Logic */}
+                {sequence2Running ? (
+                  <Button
+                    variant="destructive"
+                    onClick={() => handleSequence('sequence2', false)}
+                    disabled={!isConnected}
+                  >
+                    <Square className="mr-2 h-4 w-4" />
+                    Stop Sequence 2
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => handleSequence('sequence2', true)}
+                    disabled={!isConnected || sequence1Running}
+                    className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
+                  >
+                    <Zap className="mr-2 h-4 w-4" />
+                    Run Sequence 2
+                  </Button>
+                )}
             </div>
         </CardContent>
     </Card>

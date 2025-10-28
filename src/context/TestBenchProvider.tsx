@@ -34,7 +34,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const runningTestSessionRef = useRef<WithId<DocumentData> | null>(null);
 
   const [lockedValves, setLockedValves] = useState<('VALVE1' | 'VALVE2')[]>([]);
-  const [lockedSequences, setLockedSequences] = useState<('sequence1' | 'sequence2')[]>([]);
 
   const [startTime, setStartTime] = useState<number | null>(null);
   const [totalDowntime, setTotalDowntime] = useState(0); // in milliseconds
@@ -108,13 +107,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     
     setSequence1Running(data.sequence1_running === true);
     setSequence2Running(data.sequence2_running === true);
-
-    if (data.sequence1_running === false) {
-      setLockedSequences(prev => prev.filter(s => s !== 'sequence1'));
-    }
-    if (data.sequence2_running === false) {
-        setLockedSequences(prev => prev.filter(s => s !== 'sequence2'));
-    }
 
     setCurrentValue(data.sensor ?? null);
     setIsRecording(data.recording === true);
@@ -193,16 +185,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
           return;
       }
       
-      setLockedSequences(prev => [...prev, sequence]);
-
       const commandPath = `commands/${sequence}`;
       try {
           await set(ref(database, commandPath), state);
-          // Lock is removed when device reports sequence is no longer running
       } catch (error: any) {
           console.error('Failed to send sequence command:', error);
           toast({ variant: 'destructive', title: 'Sequence Command Failed', description: error.message });
-          setLockedSequences(prev => prev.filter(s => s !== sequence));
       }
   }, [database, toast]);
 
@@ -274,7 +262,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     sequence1Running,
     sequence2Running,
     sendSequenceCommand,
-    lockedSequences,
   };
 
   return (
