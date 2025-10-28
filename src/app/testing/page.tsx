@@ -446,11 +446,10 @@ function TestingComponent() {
   
         const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
   
+        point[session.id] = value;
         if (isFailed) {
-            point[session.id] = null;
             point[`${session.id}-failed`] = value;
         } else {
-            point[session.id] = value;
             point[`${session.id}-failed`] = null;
         }
       });
@@ -696,6 +695,8 @@ function TestingComponent() {
                         text: classificationText,
                         color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
                     };
+                    
+                    const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
 
                     return [
                         session.serialNumber || 'N/A',
@@ -703,6 +704,7 @@ function TestingComponent() {
                         passResult,
                         session.username,
                         new Date(session.startTime).toLocaleString(),
+                        duration,
                         statusStyle
                     ];
                 });
@@ -712,9 +714,9 @@ function TestingComponent() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', '*', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto'],
                         body: [
-                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
                             ...tableBody
                         ]
                     },
@@ -1226,6 +1228,7 @@ function TestingComponent() {
                                 const config = sensorConfigs?.find(c => c.id === session?.sensorConfigurationId);
                                 const unit = config?.unit || '';
                                 const legendName = session ? `${session.vesselTypeName} - ${session.serialNumber}`: name;
+                                if (name.endsWith('-failed')) return null;
                                 return [`${value.toFixed(config?.decimalPlaces || 2)} ${unit}`, legendName];
                             }}
                             labelFormatter={(label) => `Time: ${label}s`}
@@ -1244,7 +1247,7 @@ function TestingComponent() {
                             name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`} 
                             dot={false} 
                             strokeWidth={2} 
-                            connectNulls={false}
+                            connectNulls
                            />
                         ))}
                          {comparisonSessions.map((session, index) => (
@@ -1288,3 +1291,4 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+

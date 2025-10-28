@@ -68,9 +68,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Edit, Upload, FileSignature, Layers, Calendar as CalendarIcon, RotateCcw, ShieldCheck, Loader2 } from 'lucide-react';
+import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Upload, FileSignature, Layers, Calendar as CalendarIcon, RotateCcw, ShieldCheck, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser } from '@/firebase';
+import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser, addDocument } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
 import { signOut, adminCreateUser } from '@/firebase/non-blocking-login';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -1179,12 +1179,12 @@ export default function AdminPage() {
             newPoint.maxGuideline = maxGuideline;
 
             relevantSessions.forEach(session => {
-                if (newPoint[session.id] !== undefined) {
-                    if (minGuideline !== undefined && maxGuideline !== undefined && (newPoint[session.id] < minGuideline || newPoint[session.id] > maxGuideline)) {
-                        newPoint[`${session.id}-failed`] = newPoint[session.id];
-                        newPoint[session.id] = null;
+                const value = newPoint[session.id];
+                 if (value !== undefined && value !== null) {
+                    if (minGuideline !== undefined && maxGuideline !== undefined && (value < minGuideline || value > maxGuideline)) {
+                        newPoint[`${session.id}-failed`] = value; // Data for red line
                     } else {
-                        newPoint[`${session.id}-failed`] = null;
+                        newPoint[`${session.id}-failed`] = null; // No data for red line
                     }
                 }
             });
@@ -1604,7 +1604,7 @@ export default function AdminPage() {
         };
 
         if (modelsCollectionRef) {
-            await addDocumentNonBlocking(modelsCollectionRef, modelDoc);
+            await addDocument(modelsCollectionRef, modelDoc);
         }
 
         setAutomatedTrainingStatus({ step: 'Completed', progress: 100, details: `Model "${newModelName}" saved successfully.` });
@@ -2509,7 +2509,12 @@ const renderAIModelManagement = () => (
                       <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} />
                       <YAxis domain={['dataMin', 'dataMax + 10']} />
                       <Tooltip />
-                      <Legend />
+                      <Legend formatter={(value, entry) => {
+                          const { color, dataKey } = entry;
+                          if (value.endsWith('-failed')) return null;
+                          const session = pdfChartSessions.find(s => s.id === dataKey);
+                          return <span style={{ color }}>{session?.serialNumber || value}</span>;
+                      }} />
                         <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
@@ -2518,11 +2523,11 @@ const renderAIModelManagement = () => (
                             key={session.id}
                             type="monotone" 
                             dataKey={session.id} 
-                            stroke={'#000000'}
+                            stroke={'#8884d8'}
                             name={session.serialNumber || session.id}
                             dot={false} 
                             strokeWidth={2}
-                            connectNulls={false}
+                            connectNulls
                            />
                         ))}
                          {pdfChartSessions.map((session, index) => (
@@ -2707,3 +2712,4 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
+
