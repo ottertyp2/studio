@@ -94,9 +94,10 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  ReferenceArea,
 } from 'recharts';
 import Papa from 'papaparse';
-
+import * as tf from '@tensorflow/tfjs';
 
 if (pdfFonts.pdfMake) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
@@ -139,8 +140,8 @@ type MLModel = {
     fileSize: number;
     storagePath?: string;
     modelData?: {
-        modelTopology: any; // Can be complex JSON
-        weightData: string; // base64 encoded
+        modelTopology: any; 
+        weightData: string; 
     };
 };
 
@@ -229,13 +230,12 @@ const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
 }
 
 // New helper function to serialize weights
-async function serializeWeights(tensors: any[]): Promise<ArrayBuffer> {
+async function serializeWeights(tensors: tf.Tensor[]): Promise<ArrayBuffer> {
     const buffers: ArrayBuffer[] = [];
     for (const tensor of tensors) {
         const data = await tensor.data();
         buffers.push(data.buffer);
     }
-    // Simple concatenation
     const totalLength = buffers.reduce((acc, val) => acc + val.byteLength, 0);
     const result = new Uint8Array(totalLength);
     let offset = 0;
@@ -292,8 +292,22 @@ export default function AdminPage() {
     return collection(firestore, 'batches');
   }, [firestore]);
   const { data: batches, isLoading: isBatchesLoading } = useCollection<Batch>(batchesCollectionRef);
-
   
+  const [automatedTrainingStatus, setAutomatedTrainingStatus] = useState<AutomatedTrainingStatus>({ step: 'Idle', progress: 0, details: '' });
+  const [isTraining, setIsTraining] = useState(false);
+  const [newModelName, setNewModelName] = useState(`Leak-Diffusion-Model-${new Date().toISOString().split('T')[0]}`);
+  const [classificationSession, setClassificationSession] = useState<TestSession | null>(null);
+  const [activeModel, setActiveModel] = useState<MLModel | null>(null);
+
+  const modelsCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'mlModels') : null, [firestore]);
+  const { data: mlModels } = useCollection<MLModel>(modelsCollectionRef);
+
+  useEffect(() => {
+      if (mlModels && !activeModel) {
+          setActiveModel(mlModels[0] || null);
+      }
+  }, [mlModels, activeModel]);
+
   useEffect(() => {
     if (!isUserLoading) {
       if (!user) {
@@ -670,6 +684,8 @@ export default function AdminPage() {
 
         const minGuideline = interpolate(vesselType.minCurve, timeElapsed);
         const maxGuideline = interpolate(vesselType.maxCurve, timeElapsed);
+
+        if (minGuideline === undefined || maxGuideline === undefined) continue;
 
         if (convertedValue < minGuideline || convertedValue > maxGuideline) {
           hasFailed = true;
@@ -1125,10 +1141,11 @@ export default function AdminPage() {
             if (!data || data.length === 0) return [];
             
             const sessionStartTime = new Date(data[0].timestamp).getTime();
+            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
 
             return data.map(d => ({
                 name: (new Date(d.timestamp).getTime() - sessionStartTime) / 1000,
-                [session.id]: d.value
+                [session.id]: convertRawValue(d.value, config || null),
             }));
         }).filter(Boolean);
 
@@ -1140,9 +1157,40 @@ export default function AdminPage() {
             if (!temp[roundedTime]) temp[roundedTime] = { name: roundedTime };
             Object.assign(temp[roundedTime], dp);
         }
-        mergedChartData.push(...Object.values(temp).sort((a,b) => a.name - b.name));
+        
+        const sortedData = Object.values(temp).sort((a, b) => a.name - b.name);
+        
+        const vt = vesselTypes?.find(vt => vt.id === vesselType.id);
+        const interpolate = (curve: { x: number, y: number }[], x: number) => {
+            if (!curve || curve.length === 0) return undefined;
+            if (x < curve[0].x) return curve[0].y;
+            if (x > curve[curve.length - 1].x) return curve[curve.length - 1].y;
+            for (let i = 0; i < curve.length - 1; i++) {
+                if (x >= curve[i].x && x <= curve[i + 1].x) {
+                    const t = (x - curve[i].x) / (curve[i + 1].x - curve[i].x);
+                    return curve[i].y + t * (curve[i + 1].y - curve[i].y);
+                }
+            }
+            return curve[curve.length - 1].y;
+        };
 
-        setPdfChartData(mergedChartData);
+        const finalChartData = sortedData.map(point => {
+            const newPoint = {...point};
+            if(vt?.minCurve) newPoint.minGuideline = interpolate(vt.minCurve, point.name);
+            if(vt?.maxCurve) newPoint.maxGuideline = interpolate(vt.maxCurve, point.name);
+
+            relevantSessions.forEach(session => {
+                if (newPoint[session.id] !== undefined && newPoint.minGuideline !== undefined && newPoint.maxGuideline !== undefined) {
+                    if (newPoint[session.id] < newPoint.minGuideline || newPoint[session.id] > newPoint.maxGuideline) {
+                        newPoint[`${session.id}-failed`] = newPoint[session.id];
+                        delete newPoint[session.id];
+                    }
+                }
+            });
+            return newPoint;
+        });
+
+        setPdfChartData(finalChartData);
         
         await new Promise(resolve => setTimeout(resolve, 500));
         
@@ -1780,10 +1828,24 @@ export default function AdminPage() {
                                         <span>Export as CSV</span>
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
-                                    <DropdownMenuItem onClick={() => handleClassifyByGuideline(session)}>
-                                        <ShieldCheck className="mr-2 h-4 w-4" />
-                                        <span>Classify by Guideline</span>
-                                    </DropdownMenuItem>
+                                     <DropdownMenuSub>
+                                      <DropdownMenuSubTrigger>
+                                        <Sparkles className="mr-2 h-4 w-4" />
+                                        <span>Classify...</span>
+                                      </DropdownMenuSubTrigger>
+                                      <DropdownMenuPortal>
+                                        <DropdownMenuSubContent>
+                                          <DropdownMenuItem onClick={() => handleClassifyByGuideline(session)}>
+                                              <ShieldCheck className="mr-2 h-4 w-4" />
+                                              <span>By Guideline</span>
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem onClick={() => setClassificationSession(session)}>
+                                              <BrainCircuit className="mr-2 h-4 w-4" />
+                                              <span>With AI</span>
+                                          </DropdownMenuItem>
+                                        </DropdownMenuSubContent>
+                                      </DropdownMenuPortal>
+                                    </DropdownMenuSub>
                                     <DropdownMenuSub>
                                       <DropdownMenuSubTrigger>
                                         <Tag className="mr-2 h-4 w-4" />
@@ -2162,16 +2224,19 @@ const renderBatchManagement = () => (
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-4">
-       <div ref={pdfChartRef} className="fixed -left-[9999px] top-0 w-[800px] h-[400px] bg-white">
+      <div ref={pdfChartRef} className="fixed -left-[9999px] top-0 w-[800px] h-[400px] bg-white">
           {pdfChartData.length > 0 && (
               <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={pdfChartData}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis />
+                      <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} />
+                      <YAxis domain={['dataMin', 'dataMax + 10']} />
                       <Tooltip />
                       <Legend />
-                      {filteredAndSortedSessions.map((session, index) => (
+                        <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
+                        <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
+
+                        {filteredAndSortedSessions.map((session, index) => (
                            <Line 
                             key={session.id}
                             type="monotone" 
@@ -2179,7 +2244,20 @@ const renderBatchManagement = () => (
                             stroke={'#000000'}
                             name={`${session.serialNumber}`} 
                             dot={false} 
+                            strokeWidth={2}
+                            connectNulls 
+                           />
+                        ))}
+                         {filteredAndSortedSessions.map((session, index) => (
+                           <Line 
+                            key={`${session.id}-failed`}
+                            type="monotone" 
+                            dataKey={`${session.id}-failed`}
+                            stroke="hsl(var(--destructive))" 
+                            name={`${session.serialNumber} (Failed)`}
+                            dot={false} 
                             strokeWidth={2} 
+                            connectNulls
                            />
                         ))}
                   </LineChart>

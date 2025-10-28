@@ -401,102 +401,59 @@ function TestingComponent() {
 
   const chartData = useMemo(() => {
     if (comparisonSessions.length === 0) return [];
-
-    let allTimestamps = new Set<number>();
-    const processedSessionData: Record<string, { time: number; value: number }[]> = {};
-    
-    // Step 1: Normalize each session's data to start at t=0 and collect all timestamps
-    comparisonSessions.forEach(session => {
-        const sessionData = comparisonData[session.id] || [];
-        if (sessionData.length === 0) return;
-
-        const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-        const startTime = new Date(sessionData[0].timestamp).getTime();
-
-        const processedData = sessionData.map(d => {
-            const time = (new Date(d.timestamp).getTime() - startTime) / 1000;
-            allTimestamps.add(time);
-            return {
-                time: time,
-                value: convertRawValue(d.value, config || null)
-            };
-        });
-        processedSessionData[session.id] = processedData;
-    });
-
-    const unifiedTimeline = Array.from(allTimestamps).sort((a, b) => a - b);
-    if (unifiedTimeline.length === 0) return [];
-
-    // Step 2: Create the final chart data structure with interpolated values
-    const finalChartData = unifiedTimeline.map(time => {
-        const dataPoint: ChartDataPoint = { name: time };
-
-        comparisonSessions.forEach(session => {
-            const sessionData = processedSessionData[session.id];
-            if (!sessionData || sessionData.length === 0) return;
-
-            // Find surrounding data points for interpolation
-            let p1 = sessionData.findLast(p => p.time <= time);
-            let p2 = sessionData.find(p => p.time >= time);
-
-            let value: number | undefined;
-            if (p1 && p1.time === time) {
-                value = p1.value;
-            } else if (p1 && p2) {
-                // Linear interpolation
-                const timeDiff = p2.time - p1.time;
-                if (timeDiff > 0) {
-                    const weight = (time - p1.time) / timeDiff;
-                    value = p1.value + (p2.value - p1.value) * weight;
-                } else {
-                    value = p1.value;
-                }
-            } else if (p1) {
-                value = p1.value;
-            } else if (p2) {
-                value = p2.value;
-            }
-            
-            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-            if (value !== undefined) {
-                 dataPoint[session.id] = parseFloat(value.toFixed(config?.decimalPlaces || 2));
-            }
-        });
-        return dataPoint;
-    });
-
-
-    // Step 3. Add guideline curves (normalized to start at t=0)
-    const firstSessionForGuidelines = comparisonSessions.length > 0 ? comparisonSessions[0] : null;
-    const vesselTypeForGuidelines = vesselTypes?.find(vt => vt.id === firstSessionForGuidelines?.vesselTypeId);
-
-    const interpolateCurve = (curve: {x: number, y: number}[], x: number) => {
-        if (!curve || curve.length === 0) return undefined;
-        for(let i = 0; i < curve.length - 1; i++) {
-            if (x >= curve[i].x && x <= curve[i+1].x) {
-                const x1 = curve[i].x;
-                const y1 = curve[i].y;
-                const x2 = curve[i+1].x;
-                const y2 = curve[i+1].y;
-                const t = (x - x1) / (x2 - x1);
-                return y1 + t * (y2 - y1);
-            }
-        }
-        if (x < curve[0]?.x) return curve[0].y;
-        if (x > curve[curve.length - 1]?.x) return curve[curve.length - 1].y;
-        return undefined;
-    };
   
-    finalChartData.forEach(point => {
-      if (vesselTypeForGuidelines) {
-        point.minGuideline = interpolateCurve(vesselTypeForGuidelines.minCurve, point.name);
-        point.maxGuideline = interpolateCurve(vesselTypeForGuidelines.maxCurve, point.name);
-      }
+    const dataPoints: ChartDataPoint[] = [];
+  
+    comparisonSessions.forEach(session => {
+      const sessionData = comparisonData[session.id] || [];
+      if (sessionData.length === 0) return;
+  
+      const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+      const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+      const startTime = new Date(sessionData[0].timestamp).getTime();
+  
+      const interpolateCurve = (curve: {x: number, y: number}[], x: number) => {
+          if (!curve || curve.length === 0) return undefined;
+          if (x < curve[0].x) return curve[0].y;
+          if (x > curve[curve.length - 1].x) return curve[curve.length - 1].y;
+          for(let i = 0; i < curve.length - 1; i++) {
+              if (x >= curve[i].x && x <= curve[i+1].x) {
+                  const x1 = curve[i].x; const y1 = curve[i].y;
+                  const x2 = curve[i+1].x; const y2 = curve[i+1].y;
+                  const t = (x - x1) / (x2 - x1);
+                  return y1 + t * (y2 - y1);
+              }
+          }
+          return curve[curve.length - 1].y;
+      };
+  
+      sessionData.forEach(d => {
+        const time = (new Date(d.timestamp).getTime() - startTime) / 1000;
+        const value = convertRawValue(d.value, config || null);
+        
+        const minGuideline = vesselType ? interpolateCurve(vesselType.minCurve, time) : undefined;
+        const maxGuideline = vesselType ? interpolateCurve(vesselType.maxCurve, time) : undefined;
+        
+        const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
+  
+        const point: ChartDataPoint = {
+            name: time,
+            minGuideline: minGuideline,
+            maxGuideline: maxGuideline,
+        };
+
+        if (isFailed) {
+            point[`${session.id}-failed`] = value;
+        } else {
+            point[session.id] = value;
+        }
+        
+        dataPoints.push(point);
+      });
     });
 
-    return finalChartData;
-}, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
-
+    return dataPoints.sort((a, b) => a.name - b.name);
+  }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
   const setTimeframe = (frame: '1m' | '5m' | 'all') => {
       setActiveTimeframe(frame);
@@ -597,7 +554,10 @@ function TestingComponent() {
                 sessionToReport = sessionHistory.find(s => s.id === selectedReportSessionId);
                 if (!sessionToReport) throw new Error('Selected session not found.');
                 
-                const sessionData = comparisonData[sessionToReport.id] || (await getDocs(query(collection(firestore, `test_sessions/${sessionToReport.id}/sensor_data`), orderBy('timestamp')))).docs.map(d => ({id: d.id, ...d.data()} as SensorData));
+                const sessionDocRef = doc(firestore, `test_sessions/${sessionToReport.id}`);
+                const dataSnapshot = await getDocs(query(collection(sessionDocRef, 'sensor_data'), orderBy('timestamp')));
+
+                const sessionData = dataSnapshot.docs.map(d => ({id: d.id, ...d.data()} as SensorData));
                 if (sessionData.length === 0) throw new Error('No data found for the selected session.');
 
                 allSensorDataForReport[sessionToReport.id] = sessionData;
@@ -660,27 +620,6 @@ function TestingComponent() {
                 columnGap: 10,
             });
             docDefinition.content.push({ text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' });
-            
-            const firstData = comparisonData[comparisonSessions[0]?.id] || [];
-            
-            const pdfChartData = Object.entries(comparisonData).flatMap(([sessionId, data]) => {
-                const session = comparisonSessions.find(s => s.id === sessionId);
-                if (!session || data.length === 0) return [];
-                const sessionStart = new Date(data[0].timestamp).getTime();
-                return data.map(d => ({
-                    [session.id]: d.value,
-                    name: (new Date(d.timestamp).getTime() - sessionStart) / 1000
-                }));
-            });
-
-            const mergedChartData: any[] = [];
-            const tempMap: Record<string, any> = {};
-            pdfChartData.forEach(dp => {
-                const key = dp.name.toFixed(2);
-                if (!tempMap[key]) tempMap[key] = { name: dp.name };
-                Object.assign(tempMap[key], dp);
-            });
-            mergedChartData.push(...Object.values(tempMap).sort((a,b) => a.name - b.name));
             
             docDefinition.content.push({ image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] });
 
@@ -1261,9 +1200,7 @@ function TestingComponent() {
                 <div id="chart-container" ref={chartRef} className="h-96 w-full bg-background rounded-md p-2">
                   <ResponsiveContainer width="100%" height="100%">
                       <LineChart 
-                        data={chartData} 
                         margin={{ top: 5, right: 30, left: 20, bottom: 20 }}
-                        isAnimationActive={!isGeneratingReport}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                         <XAxis 
@@ -1272,6 +1209,7 @@ function TestingComponent() {
                             stroke="hsl(var(--muted-foreground))"
                             domain={xAxisDomain}
                             allowDataOverflow
+                            data={chartData}
                             label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -10 }}
                         />
                         <YAxis
@@ -1287,10 +1225,12 @@ function TestingComponent() {
                                 backdropFilter: 'blur(4px)',
                             }}
                             formatter={(value: number, name: string) => {
-                                const session = comparisonSessions.find(s => s.id === name);
+                                const sessionId = name.replace('-failed', '');
+                                const session = comparisonSessions.find(s => s.id === sessionId);
                                 const config = sensorConfigs?.find(c => c.id === session?.sensorConfigurationId);
                                 const unit = config?.unit || '';
-                                return [`${value.toFixed(config?.decimalPlaces || 2)} ${unit}`, session ? `${session.vesselTypeName} - ${session.serialNumber}`: name];
+                                const legendName = session ? `${session.vesselTypeName} - ${session.serialNumber}`: name;
+                                return [`${value.toFixed(config?.decimalPlaces || 2)} ${unit}`, legendName];
                             }}
                             labelFormatter={(label) => `Time: ${label}s`}
                         />
@@ -1300,6 +1240,7 @@ function TestingComponent() {
                            <Line 
                             key={session.id}
                             type="monotone" 
+                            data={chartData.filter(d => d[session.id] !== undefined)}
                             dataKey={session.id} 
                             stroke={CHART_COLORS[index % CHART_COLORS.length]} 
                             name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`} 
@@ -1308,9 +1249,22 @@ function TestingComponent() {
                             connectNulls={false}
                            />
                         ))}
+                         {comparisonSessions.map((session, index) => (
+                           <Line 
+                            key={`${session.id}-failed`}
+                            type="monotone" 
+                             data={chartData.filter(d => d[`${session.id}-failed`] !== undefined)}
+                            dataKey={`${session.id}-failed`} 
+                            stroke="hsl(var(--destructive))"
+                            name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'} (Failed)`}
+                            dot={false} 
+                            strokeWidth={2} 
+                            connectNulls={false}
+                           />
+                        ))}
 
-                        <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
-                        <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
+                        <Line type="monotone" data={chartData} dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
+                        <Line type="monotone" data={chartData} dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
                       </LineChart>
                   </ResponsiveContainer>
                 </div>
