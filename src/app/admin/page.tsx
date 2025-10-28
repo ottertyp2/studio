@@ -1172,20 +1172,10 @@ export default function AdminPage() {
                 const maxGuideline = vt?.maxCurve ? interpolate(vt.maxCurve, time) : undefined;
                 
                 const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
-                
-                let prevIsFailed = false;
-                if (index > 0) {
-                    const prevDataPoint = data[index - 1];
-                    const prevTime = (new Date(prevDataPoint.timestamp).getTime() - sessionStartTime) / 1000;
-                    const prevValue = convertRawValue(prevDataPoint.value, config || null);
-                    const prevMinGuideline = vt?.minCurve ? interpolate(vt.minCurve, prevTime) : undefined;
-                    const prevMaxGuideline = vt?.maxCurve ? interpolate(vt.maxCurve, prevTime) : undefined;
-                    prevIsFailed = (prevMinGuideline !== undefined && prevValue < prevMinGuideline) || (prevMaxGuideline !== undefined && prevValue > prevMaxGuideline);
-                }
 
                 return {
                     name: time,
-                    [`${dataKey}-passed`]: !isFailed ? value : null,
+                    [`${dataKey}`]: value,
                     [`${dataKey}-failed`]: isFailed ? value : null,
                     minGuideline,
                     maxGuideline,
@@ -2063,253 +2053,252 @@ export default function AdminPage() {
                                     <DropdownMenuItem onClick={() => handleExportSessionCSV(session)}>
                                         <Download className="mr-2 h-4 w-4" />
                                         <span>Export as CSV</span>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
+                                    DropdownMenuItem>
+                                    DropdownMenuSeparator />
                                      <DropdownMenuSub>
-                                      <DropdownMenuSubTrigger>
-                                        <Sparkles className="mr-2 h-4 w-4" />
-                                        <span>Classify...</span>
-                                      </DropdownMenuSubTrigger>
-                                      <DropdownMenuPortal>
-                                        <DropdownMenuSubContent>
-                                          <DropdownMenuItem onClick={() => handleClassifyByGuideline(session)}>
-                                              <ShieldCheck className="mr-2 h-4 w-4" />
-                                              <span>By Guideline</span>
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem onClick={() => setClassificationSession(session)}>
-                                              <BrainCircuit className="mr-2 h-4 w-4" />
-                                              <span>With AI</span>
-                                          </DropdownMenuItem>
-                                        </DropdownMenuSubContent>
-                                      </DropdownMenuPortal>
-                                    </DropdownMenuSub>
-                                    <DropdownMenuSub>
-                                      <DropdownMenuSubTrigger>
-                                        <Tag className="mr-2 h-4 w-4" />
-                                        <span>Manual Override</span>
-                                      </DropdownMenuSubTrigger>
-                                      <DropdownMenuPortal>
-                                          <DropdownMenuSubContent>
-                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'LEAK')}>Not Passed</DropdownMenuItem>
-                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'DIFFUSION')}>Passed</DropdownMenuItem>
-                                            <DropdownMenuSeparator />
-                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, null)}>Clear Classification</DropdownMenuItem>
-                                          </DropdownMenuSubContent>
-                                      </DropdownMenuPortal>
-                                    </DropdownMenuSub>
-                                    <DropdownMenuSeparator />
-                                     <AlertDialog>
-                                        <AlertDialogTrigger asChild>
-                                            <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                                                <Trash2 className="mr-2 h-4 w-4 text-destructive" />
-                                                <span className="text-destructive">Delete Session</span>
-                                            </DropdownMenuItem>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogContent>
-                                            <AlertDialogHeader>
-                                                <AlertDialogTitle className="text-destructive">Permanently Delete Session?</AlertDialogTitle>
-                                                <AlertDialogDescription>
+                                      DropdownMenuSubTrigger>
+                                        Sparkles className="mr-2 h-4 w-4" />
+                                        spanClassify.../span
+                                      /DropdownMenuSubTrigger
+                                      DropdownMenuPortal>
+                                        DropdownMenuSubContent>
+                                          DropdownMenuItem onClick={() => handleClassifyByGuideline(session)}>
+                                              ShieldCheck className="mr-2 h-4 w-4" />
+                                              spanBy Guideline/span
+                                          /DropdownMenuItem
+                                          DropdownMenuItem onClick={() => setClassificationSession(session)}>
+                                              BrainCircuit className="mr-2 h-4 w-4" />
+                                              spanWith AI/span
+                                          /DropdownMenuItem
+                                        /DropdownMenuSubContent
+                                      /DropdownMenuPortal
+                                    /DropdownMenuSub
+                                    DropdownMenuSub>
+                                      DropdownMenuSubTrigger>
+                                        Tag className="mr-2 h-4 w-4" />
+                                        spanManual Override/span
+                                      /DropdownMenuSubTrigger
+                                      DropdownMenuPortal>
+                                          DropdownMenuSubContent>
+                                            DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'LEAK')}>Not Passed/DropdownMenuItem
+                                            DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'DIFFUSION')}>Passed/DropdownMenuItem
+                                            DropdownMenuSeparator />
+                                            DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, null)}>Clear Classification/DropdownMenuItem
+                                          /DropdownMenuSubContent
+                                      /DropdownMenuPortal
+                                    /DropdownMenuSub
+                                    DropdownMenuSeparator />
+                                     AlertDialog>
+                                        AlertDialogTrigger asChild>
+                                            DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                                                Trash2 className="mr-2 h-4 w-4 text-destructive" />
+                                                span className="text-destructive">Delete Session/span
+                                            /DropdownMenuItem
+                                        /AlertDialogTrigger
+                                        AlertDialogContent>
+                                            AlertDialogHeader>
+                                                AlertDialogTitle className="text-destructive">Permanently Delete Session?/AlertDialogTitle
+                                                AlertDialogDescription>
                                                     This will permanently delete the session for "{session.vesselTypeName} - S/N: {session.serialNumber}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
-                                                </AlertDialogDescription>
-                                            </AlertDialogHeader>
-                                            <AlertDialogFooter>
-                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                <AlertDialogAction variant="destructive" onClick={() => handleDeleteTestSession(session)}>Confirm Delete</AlertDialogAction>
-                                            </AlertDialogFooter>
-                                        </AlertDialogContent>
-                                    </AlertDialog>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                                                /AlertDialogDescription
+                                            /AlertDialogHeader
+                                            AlertDialogFooter>
+                                                AlertDialogCancel>Cancel/AlertDialogCancel
+                                                AlertDialogAction variant="destructive" onClick={() => handleDeleteTestSession(session)}>Confirm Delete/AlertDialogAction
+                                            /AlertDialogFooter
+                                        /AlertDialogContent
+                                    /AlertDialog
+                                  /DropdownMenuContent
+                                /DropdownMenu
                                 </div>
-                            </div>
-                        </div>
-                    </Card>
-                )})}
-                </div>
+                            /div
+                        /div
+                    /Card
+                ))}
+                /div
               ) : (
-                 <p className="text-sm text-muted-foreground text-center pt-10">No test sessions found.</p>
+                 p className="text-sm text-muted-foreground text-center pt-10">No test sessions found./p
               )}
-            </ScrollArea>
-          </div>
+            /ScrollArea
+          /div
 
-        </CardContent>
-      </Card>
+        /CardContent
+      /Card
     );
   }
 
   const renderUserManagement = () => {
     return (
-        <Card className="animate-in">
-             <Accordion type="single" collapsible className="w-full">
-                <AccordionItem value="item-1">
-                    <AccordionTrigger className="p-6">
-                        <div className="text-left">
-                            <CardTitle>User Management</CardTitle>
-                            <CardDescription>Create users, manage roles, and access.</CardDescription>
-                        </div>
-                    </AccordionTrigger>
-                    <AccordionContent className="p-6 pt-0">
-                        <div className="mb-6 p-4 border rounded-lg bg-background/50">
-                            <h3 className="text-lg font-semibold mb-2">Create New User</h3>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="new-username">Username</Label>
-                                    <Input id="new-username" placeholder="e.g. test_operator" value={newUser.username} onChange={(e) => setNewUser(p => ({ ...p, username: e.target.value }))} />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="new-password">Password</Label>
-                                    <Input id="new-password" type="password" placeholder="••••••••" value={newUser.password} onChange={(e) => setNewUser(p => ({ ...p, password: e.target.value }))} />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="new-role">Role</Label>
-                                    <Select value={newUser.role} onValueChange={(value) => setNewUser(p => ({ ...p, role: value }))}>
-                                        <SelectTrigger id="new-role"><SelectValue /></SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="user">User</SelectItem>
-                                            <SelectItem value="superadmin">Superadmin</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-                            <Button onClick={handleCreateUser} className="mt-4">Create User Account</Button>
-                        </div>
-                        <ScrollArea className="h-64">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Username</TableHead>
-                                        <TableHead>Email</TableHead>
-                                        <TableHead>Role</TableHead>
-                                        <TableHead className="text-right">Actions</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
+        Card className="animate-in">
+             Accordion type="single" collapsible className="w-full">
+                AccordionItem value="item-1">
+                    AccordionTrigger className="p-6">
+                        div className="text-left">
+                            CardTitle>User Management/CardTitle
+                            CardDescription>Create users, manage roles, and access./CardDescription
+                        /div
+                    /AccordionTrigger
+                    AccordionContent className="p-6 pt-0">
+                        div className="mb-6 p-4 border rounded-lg bg-background/50">
+                            h3 className="text-lg font-semibold mb-2">Create New User/h3
+                            div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                div className="space-y-2">
+                                    Label htmlFor="new-username">Username/Label
+                                    Input id="new-username" placeholder="e.g. test_operator" value={newUser.username} onChange={(e) => setNewUser(p => ({ ...p, username: e.target.value }))} />
+                                /div
+                                div className="space-y-2">
+                                    Label htmlFor="new-password">Password/Label
+                                    Input id="new-password" type="password" placeholder="••••••••" value={newUser.password} onChange={(e) => setNewUser(p => ({ ...p, password: e.target.value }))} />
+                                /div
+                                div className="space-y-2">
+                                    Label htmlFor="new-role">Role/Label
+                                    Select value={newUser.role} onValueChange={(value) => setNewUser(p => ({ ...p, role: value }))}>
+                                        SelectTrigger id="new-role">SelectValue //SelectTrigger
+                                        SelectContent>
+                                            SelectItem value="user">User/SelectItem
+                                            SelectItem value="superadmin">Superadmin/SelectItem
+                                        /SelectContent
+                                    /Select
+                                /div
+                            /div
+                            Button onClick={handleCreateUser} className="mt-4">Create User Account/Button
+                        /div
+                        ScrollArea className="h-64">
+                            Table>
+                                TableHeader>
+                                    TableRow>
+                                        TableHead>Username/TableHead
+                                        TableHead>Email/TableHead
+                                        TableHead>Role/TableHead
+                                        TableHead className="text-right">Actions/TableHead
+                                    /TableRow
+                                /TableHeader
+                                TableBody>
                                     {isUsersLoading ? (
-                                        <TableRow><TableCell colSpan={4} className="text-center">Loading users...</TableCell></TableRow>
+                                        TableRow>TableCell colSpan={4} className="text-center">Loading users.../TableCell/TableRow
                                     ) : (
                                         users?.map((u) => (
-                                            <TableRow key={u.id} className="hover:bg-muted/50">
-                                                <TableCell className="font-medium">{u.username}</TableCell>
-                                                <TableCell>{u.email}</TableCell>
-                                                <TableCell>
-                                                    <Select
+                                            TableRow key={u.id} className="hover:bg-muted/50">
+                                                TableCell className="font-medium">{u.username}/TableCell
+                                                TableCell>{u.email}/TableCell
+                                                TableCell>
+                                                    Select
                                                         value={u.role}
                                                         onValueChange={(newRole) => handleSetUserRole(u.id, newRole as 'user' | 'superadmin')}
                                                         disabled={u.id === user?.uid}
                                                     >
-                                                        <SelectTrigger className="w-[120px]">
-                                                            <SelectValue />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="user">User</SelectItem>
-                                                            <SelectItem value="superadmin">Superadmin</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    <AlertDialog>
-                                                        <AlertDialogTrigger asChild>
-                                                            <Button variant="ghost" size="sm" disabled={u.id === user?.uid}>Delete Profile</Button>
-                                                        </AlertDialogTrigger>
-                                                        <AlertDialogContent>
-                                                            <AlertDialogHeader>
-                                                                <AlertDialogTitle className="text-destructive">Delete User Profile?</AlertDialogTitle>
-                                                                <AlertDialogDescription>
+                                                        SelectTrigger className="w-[120px]">
+                                                            SelectValue //SelectTrigger
+                                                        SelectContent>
+                                                            SelectItem value="user">User/SelectItem
+                                                            SelectItem value="superadmin">Superadmin/SelectItem
+                                                        /SelectContent
+                                                    /Select
+                                                /TableCell
+                                                TableCell className="text-right">
+                                                    AlertDialog>
+                                                        AlertDialogTrigger asChild>
+                                                            Button variant="ghost" size="sm" disabled={u.id === user?.uid}>Delete Profile/Button
+                                                        /AlertDialogTrigger
+                                                        AlertDialogContent>
+                                                            AlertDialogHeader>
+                                                                AlertDialogTitle className="text-destructive">Delete User Profile?/AlertDialogTitle
+                                                                AlertDialogDescription>
                                                                     This will delete the Firestore profile data for "{u.username}". The user's authentication account will remain, and they will still be able to log in. This action cannot be undone.
-                                                                </AlertDialogDescription>
-                                                            </AlertDialogHeader>
-                                                            <AlertDialogFooter>
-                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                <AlertDialogAction variant="destructive" onClick={() => handleDeleteUserProfile(u.id)}>Confirm Delete</AlertDialogAction>
-                                                            </AlertDialogFooter>
-                                                        </AlertDialogContent>
-                                                    </AlertDialog>
-                                                </TableCell>
-                                            </TableRow>
+                                                                /AlertDialogDescription
+                                                            /AlertDialogHeader
+                                                            AlertDialogFooter>
+                                                                AlertDialogCancel>Cancel/AlertDialogCancel
+                                                                AlertDialogAction variant="destructive" onClick={() => handleDeleteUserProfile(u.id)}>Confirm Delete/AlertDialogAction
+                                                            /AlertDialogFooter
+                                                        /AlertDialogContent
+                                                    /AlertDialog
+                                                /TableCell
+                                            /TableRow
                                         ))
                                     )}
-                                </TableBody>
-                            </Table>
-                        </ScrollArea>
-                    </AccordionContent>
-                </AccordionItem>
-            </Accordion>
-        </Card>
+                                /TableBody
+                            /Table
+                        /ScrollArea
+                    /AccordionContent
+                /AccordionItem
+            /Accordion
+        /Card
     );
   };
   
   const renderVesselTypeManagement = () => (
-    <Card className="animate-in">
-        <Accordion type="single" collapsible className="w-full">
-            <AccordionItem value="item-1">
-                <AccordionTrigger className="p-6">
-                    <div className="text-left">
-                        <CardTitle>Vessel Type Management</CardTitle>
-                        <CardDescription>Create and manage vessel types and their test guidelines.</CardDescription>
-                    </div>
-                </AccordionTrigger>
-                <AccordionContent className="p-6 pt-0">
-                    <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
-                        <h3 className="font-semibold text-center">New Vessel Type</h3>
-                        <div className="space-y-2">
-                            <Label htmlFor="new-vessel-type-name">Name</Label>
-                            <Input id="new-vessel-type-name" placeholder="e.g., A-Series V1" value={newVesselType.name || ''} onChange={(e) => setNewVesselType({ name: e.target.value })} />
-                        </div>
-                        <Button onClick={handleAddVesselType} size="sm" className="w-full mt-2">Add Vessel Type</Button>
-                    </div>
-                    <div className="flex justify-center gap-2 mb-4">
-                        <Button onClick={() => handleExportGuidelines()} variant="outline" size="sm">
-                            <Download className="mr-2 h-4 w-4" />
+    Card className="animate-in">
+        Accordion type="single" collapsible className="w-full">
+            AccordionItem value="item-1">
+                AccordionTrigger className="p-6">
+                    div className="text-left">
+                        CardTitle>Vessel Type Management/CardTitle
+                        CardDescription>Create and manage vessel types and their test guidelines./CardDescription
+                    /div
+                /AccordionTrigger
+                AccordionContent className="p-6 pt-0">
+                    div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
+                        h3 className="font-semibold text-center">New Vessel Type/h3
+                        div className="space-y-2">
+                            Label htmlFor="new-vessel-type-name">Name/Label
+                            Input id="new-vessel-type-name" placeholder="e.g., A-Series V1" value={newVesselType.name || ''} onChange={(e) => setNewVesselType({ name: e.target.value })} />
+                        /div
+                        Button onClick={handleAddVesselType} size="sm" className="w-full mt-2">Add Vessel Type/Button
+                    /div
+                    div className="flex justify-center gap-2 mb-4">
+                        Button onClick={() => handleExportGuidelines()} variant="outline" size="sm">
+                            Download className="mr-2 h-4 w-4" />
                             Export All Guidelines
-                        </Button>
-                        <Button onClick={() => guidelineImportRef.current?.click()} variant="outline" size="sm">
-                            <Upload className="mr-2 h-4 w-4" />
+                        /Button
+                        Button onClick={() => guidelineImportRef.current?.click()} variant="outline" size="sm">
+                            Upload className="mr-2 h-4 w-4" />
                             Import Guidelines
-                        </Button>
-                        <input type="file" ref={guidelineImportRef} onChange={handleImportGuidelines} accept=".csv" className="hidden" />
-                    </div>
-                    {isVesselTypesLoading ? <p className="text-center pt-10">Loading vessel types...</p> : (
-                        <ScrollArea className="h-56">
-                            <div className="space-y-2">
+                        /Button
+                        input type="file" ref={guidelineImportRef} onChange={handleImportGuidelines} accept=".csv" className="hidden" />
+                    /div
+                    {isVesselTypesLoading ? p className="text-center pt-10">Loading vessel types.../p : (
+                        ScrollArea className="h-56">
+                            div className="space-y-2">
                                 {vesselTypes?.map(p => (
-                                    <Card key={p.id} className='p-3 hover:bg-muted/50 hover:scale-[1.02] hover:shadow-lg'>
-                                        <div className='flex justify-between items-center'>
-                                            <p className='font-semibold'>{p.name}</p>
-                                            <div className="flex flex-wrap gap-2">
-                                                <Button size="sm" variant="outline" onClick={() => handleExportGuidelines(p)}>CSV</Button>
-                                                <Button 
+                                    Card key={p.id} className='p-3 hover:bg-muted/50 hover:scale-[1.02] hover:shadow-lg'>
+                                        div className='flex justify-between items-center'>
+                                            p className='font-semibold'>{p.name}/p
+                                            div className="flex flex-wrap gap-2">
+                                                Button size="sm" variant="outline" onClick={() => handleExportGuidelines(p)}>CSV/Button
+                                                Button 
                                                     size="sm" 
                                                     variant="outline" 
                                                     onClick={() => handleGenerateVesselTypeReport(p)}
                                                     disabled={generatingVesselTypeReport === p.id}
                                                 >
-                                                  {generatingVesselTypeReport === p.id ? <Loader2 className="h-4 w-4 animate-spin"/> : 'Report'}
-                                                </Button>
-                                                <Dialog>
-                                                    <DialogTrigger asChild>
-                                                        <Button size="sm" variant="outline" onClick={() => setEditingVesselType(p)}>Edit</Button>
-                                                    </DialogTrigger>
-                                                    <DialogContent className="max-w-4xl">
-                                                        <DialogHeader>
-                                                            <DialogTitle>Edit Guidelines for {editingVesselType?.name}</DialogTitle>
-                                                            <DialogDescription>
+                                                  {generatingVesselTypeReport === p.id ? Loader2 className="h-4 w-4 animate-spin"/> : 'Report'}
+                                                /Button
+                                                Dialog>
+                                                    DialogTrigger asChild>
+                                                        Button size="sm" variant="outline" onClick={() => setEditingVesselType(p)}>Edit/Button
+                                                    /DialogTrigger
+                                                    DialogContent className="max-w-4xl">
+                                                        DialogHeader>
+                                                            DialogTitle>Edit Guidelines for {editingVesselType?.name}/DialogTitle
+                                                            DialogDescription>
                                                                 Click twice to set start/end points. Drag points to adjust the curve. Double-click a point to delete it.
-                                                            </DialogDescription>
-                                                        </DialogHeader>
-                                                        <div className="grid grid-cols-2 gap-4">
-                                                            <div className="space-y-2">
-                                                                <Label>Maximum Time (s)</Label>
-                                                                <Input type="number" value={guidelineEditorMaxX} onChange={e => setGuidelineEditorMaxX(Number(e.target.value))} />
-                                                            </div>
-                                                             <div className="space-y-2">
-                                                                <Label>Maximum Pressure</Label>
-                                                                <Input type="number" value={guidelineEditorMaxY} onChange={e => setGuidelineEditorMaxY(Number(e.target.value))} />
-                                                            </div>
-                                                        </div>
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
-                                                            <div>
-                                                                <h3 className="font-semibold text-center mb-2">Minimum Curve (Green)</h3>
-                                                                <GuidelineCurveEditor
+                                                            /DialogDescription
+                                                        /DialogHeader
+                                                        div className="grid grid-cols-2 gap-4">
+                                                            div className="space-y-2">
+                                                                Label>Maximum Time (s)/Label
+                                                                Input type="number" value={guidelineEditorMaxX} onChange={e => setGuidelineEditorMaxX(Number(e.target.value))} />
+                                                            /div
+                                                             div className="space-y-2">
+                                                                Label>Maximum Pressure/Label
+                                                                Input type="number" value={guidelineEditorMaxY} onChange={e => setGuidelineEditorMaxY(Number(e.target.value))} />
+                                                            /div
+                                                        /div
+                                                        div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+                                                            div>
+                                                                h3 className="font-semibold text-center mb-2">Minimum Curve (Green)/h3
+                                                                GuidelineCurveEditor
                                                                     points={minCurvePoints}
                                                                     setPoints={setMinCurvePoints}
                                                                     className="h-64"
@@ -2317,10 +2306,10 @@ export default function AdminPage() {
                                                                     maxX={guidelineEditorMaxX}
                                                                     maxY={guidelineEditorMaxY}
                                                                 />
-                                                            </div>
-                                                            <div>
-                                                                <h3 className="font-semibold text-center mb-2">Maximum Curve (Red)</h3>
-                                                                <GuidelineCurveEditor
+                                                            /div
+                                                            div>
+                                                                h3 className="font-semibold text-center mb-2">Maximum Curve (Red)/h3
+                                                                GuidelineCurveEditor
                                                                     points={maxCurvePoints}
                                                                     setPoints={setMaxCurvePoints}
                                                                     className="h-64"
@@ -2328,227 +2317,224 @@ export default function AdminPage() {
                                                                     maxX={guidelineEditorMaxX}
                                                                     maxY={guidelineEditorMaxY}
                                                                 />
-                                                            </div>
-                                                        </div>
-                                                        <DialogFooter>
-                                                            <DialogClose asChild>
-                                                                <Button variant="ghost" onClick={() => setEditingVesselType(null)}>Cancel</Button>
-                                                            </DialogClose>
-                                                            <DialogClose asChild>
-                                                                <Button onClick={handleSaveGuidelines}>Save Guidelines</Button>
-                                                            </DialogClose>
-                                                        </DialogFooter>
-                                                    </DialogContent>
-                                                </Dialog>
-                                                <AlertDialog>
-                                                    <AlertDialogTrigger asChild>
-                                                        <Button size="sm" variant="destructive">Del</Button>
-                                                    </AlertDialogTrigger>
-                                                    <AlertDialogContent>
-                                                        <AlertDialogHeader>
-                                                            <AlertDialogTitle className="text-destructive">Delete Vessel Type?</AlertDialogTitle>
-                                                            <AlertDialogDescription>
+                                                            /div
+                                                        /div
+                                                        DialogFooter>
+                                                            DialogClose asChild>
+                                                                Button variant="ghost" onClick={() => setEditingVesselType(null)}>Cancel/Button
+                                                            /DialogClose
+                                                            DialogClose asChild>
+                                                                Button onClick={handleSaveGuidelines}>Save Guidelines/Button
+                                                            /DialogClose
+                                                        /DialogFooter
+                                                    /DialogContent
+                                                /Dialog
+                                                AlertDialog>
+                                                    AlertDialogTrigger asChild>
+                                                        Button size="sm" variant="destructive">Del/Button
+                                                    /AlertDialogTrigger
+                                                    AlertDialogContent>
+                                                        AlertDialogHeader>
+                                                            AlertDialogTitle className="text-destructive">Delete Vessel Type?/AlertDialogTitle
+                                                            AlertDialogDescription>
                                                                 Are you sure you want to delete "{p.name}"? This action cannot be undone. Associated test sessions will not be deleted.
-                                                            </AlertDialogDescription>
-                                                        </AlertDialogHeader>
-                                                        <AlertDialogFooter>
-                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteVesselType(p.id)}>Delete</AlertDialogAction>
-                                                        </AlertDialogFooter>
-                                                    </AlertDialogContent>
-                                                </AlertDialog>
-                                            </div>
-                                        </div>
-                                    </Card>
+                                                            /AlertDialogDescription
+                                                        /AlertDialogHeader
+                                                        AlertDialogFooter>
+                                                            AlertDialogCancel>Cancel/AlertDialogCancel
+                                                            AlertDialogAction variant="destructive" onClick={() => handleDeleteVesselType(p.id)}>Delete/AlertDialogAction
+                                                        /AlertDialogFooter
+                                                    /AlertDialogContent
+                                                /AlertDialog
+                                            /div
+                                        /div
+                                    /Card
                                 ))}
-                            </div>
-                        </ScrollArea>
+                            /div
+                        /ScrollArea
                     )}
-                </AccordionContent>
-            </AccordionItem>
-        </Accordion>
-    </Card>
+                /AccordionContent
+            /AccordionItem
+        /Accordion
+    /Card
 );
 
 const renderBatchManagement = () => (
-    <Card className="animate-in">
-        <Accordion type="single" collapsible className="w-full">
-            <AccordionItem value="item-1">
-                <AccordionTrigger className="p-6">
-                    <div className="text-left">
-                        <CardTitle>Batch Management</CardTitle>
-                        <CardDescription>Create and manage production batches and assign them to vessel types.</CardDescription>
-                    </div>
-                </AccordionTrigger>
-                <AccordionContent className="p-6 pt-0">
-                    <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
-                        <h3 className="font-semibold text-center">New Batch</h3>
-                        <div className="space-y-2">
-                            <Label htmlFor="new-batch-name">Batch Name/ID</Label>
-                            <Input id="new-batch-name" placeholder="e.g., 2024-Q3-PROD" value={newBatch.name || ''} onChange={(e) => setNewBatch(p => ({ ...p, name: e.target.value }))} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="new-batch-vessel-type">Vessel Type</Label>
-                            <Select onValueChange={(value) => setNewBatch(p => ({ ...p, vesselTypeId: value }))}>
-                                <SelectTrigger id="new-batch-vessel-type">
-                                    <SelectValue placeholder="Select a vessel type" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {isVesselTypesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                                    vesselTypes?.map(vt => <SelectItem key={vt.id} value={vt.id}>{vt.name}</SelectItem>)}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <Button onClick={handleAddBatch} size="sm" className="w-full mt-2" disabled={!newBatch.name || !newBatch.vesselTypeId}>Add Batch</Button>
-                    </div>
-                    {isBatchesLoading ? <p className="text-center pt-10">Loading batches...</p> : (
-                        <ScrollArea className="h-56">
-                            <div className="space-y-2">
+    Card className="animate-in">
+        Accordion type="single" collapsible className="w-full">
+            AccordionItem value="item-1">
+                AccordionTrigger className="p-6">
+                    div className="text-left">
+                        CardTitle>Batch Management/CardTitle
+                        CardDescription>Create and manage production batches and assign them to vessel types./CardDescription
+                    /div
+                /AccordionTrigger
+                AccordionContent className="p-6 pt-0">
+                    div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
+                        h3 className="font-semibold text-center">New Batch/h3
+                        div className="space-y-2">
+                            Label htmlFor="new-batch-name">Batch Name/ID/Label
+                            Input id="new-batch-name" placeholder="e.g., 2024-Q3-PROD" value={newBatch.name || ''} onChange={(e) => setNewBatch(p => ({ ...p, name: e.target.value }))} />
+                        /div
+                        div className="space-y-2">
+                            Label htmlFor="new-batch-vessel-type">Vessel Type/Label
+                            Select onValueChange={(value) => setNewBatch(p => ({ ...p, vesselTypeId: value }))}>
+                                SelectTrigger id="new-batch-vessel-type">
+                                    SelectValue placeholder="Select a vessel type" //SelectTrigger
+                                SelectContent>
+                                    {isVesselTypesLoading ? SelectItem value="loading" disabled>Loading.../SelectItem :
+                                    vesselTypes?.map(vt => SelectItem key={vt.id} value={vt.id}>{vt.name}/SelectItem)}
+                                /SelectContent
+                            /Select
+                        /div
+                        Button onClick={handleAddBatch} size="sm" className="w-full mt-2" disabled={!newBatch.name || !newBatch.vesselTypeId}>Add Batch/Button
+                    /div
+                    {isBatchesLoading ? p className="text-center pt-10">Loading batches.../p : (
+                        ScrollArea className="h-56">
+                            div className="space-y-2">
                                 {batches?.map(b => (
-                                    <Card key={b.id} className='p-3 hover:bg-muted/50 hover:scale-[1.02] hover:shadow-lg'>
-                                        <div className='flex justify-between items-center gap-2'>
-                                            <p className='font-semibold'>{b.name}</p>
-                                            <div className="flex items-center gap-2">
-                                                <Select value={b.vesselTypeId} onValueChange={(newVesselTypeId) => handleUpdateBatchVesselType(b.id, newVesselTypeId)}>
-                                                    <SelectTrigger className="w-[150px] bg-background">
-                                                        <SelectValue placeholder="Assign Vessel Type" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {vesselTypes?.map(vt => <SelectItem key={vt.id} value={vt.id}>{vt.name}</SelectItem>)}
-                                                    </SelectContent>
-                                                </Select>
-                                                <AlertDialog>
-                                                    <AlertDialogTrigger asChild>
-                                                        <Button size="sm" variant="destructive">Delete</Button>
-                                                    </AlertDialogTrigger>
-                                                    <AlertDialogContent>
-                                                        <AlertDialogHeader>
-                                                            <AlertDialogTitle className="text-destructive">Delete Batch?</AlertDialogTitle>
-                                                            <AlertDialogDescription>
+                                    Card key={b.id} className='p-3 hover:bg-muted/50 hover:scale-[1.02] hover:shadow-lg'>
+                                        div className='flex justify-between items-center gap-2'>
+                                            p className='font-semibold'>{b.name}/p
+                                            div className="flex items-center gap-2">
+                                                Select value={b.vesselTypeId} onValueChange={(newVesselTypeId) => handleUpdateBatchVesselType(b.id, newVesselTypeId)}>
+                                                    SelectTrigger className="w-[150px] bg-background">
+                                                        SelectValue placeholder="Assign Vessel Type" //SelectTrigger
+                                                    SelectContent>
+                                                        {vesselTypes?.map(vt => SelectItem key={vt.id} value={vt.id}>{vt.name}/SelectItem)}
+                                                    /SelectContent
+                                                /Select
+                                                AlertDialog>
+                                                    AlertDialogTrigger asChild>
+                                                        Button size="sm" variant="destructive">Delete/Button
+                                                    /AlertDialogTrigger
+                                                    AlertDialogContent>
+                                                        AlertDialogHeader>
+                                                            AlertDialogTitle className="text-destructive">Delete Batch?/AlertDialogTitle
+                                                            AlertDialogDescription>
                                                                 Are you sure you want to delete batch "{b.name}"? This action cannot be undone. Associated test sessions will not be deleted.
-                                                            </AlertDialogDescription>
-                                                        </AlertDialogHeader>
-                                                        <AlertDialogFooter>
-                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteBatch(b.id)}>Delete</AlertDialogAction>
-                                                        </AlertDialogFooter>
-                                                    </AlertDialogContent>
-                                                </AlertDialog>
-                                            </div>
-                                        </div>
-                                    </Card>
+                                                            /AlertDialogDescription
+                                                        /AlertDialogHeader
+                                                        AlertDialogFooter>
+                                                            AlertDialogCancel>Cancel/AlertDialogCancel
+                                                            AlertDialogAction variant="destructive" onClick={() => handleDeleteBatch(b.id)}>Delete/AlertDialogAction
+                                                        /AlertDialogFooter
+                                                    /AlertDialogContent
+                                                /AlertDialog
+                                            /div
+                                        /div
+                                    /Card
                                 ))}
-                            </div>
-                        </ScrollArea>
+                            /div
+                        /ScrollArea
                     )}
-                </AccordionContent>
-            </AccordionItem>
-        </Accordion>
-    </Card>
+                /AccordionContent
+            /AccordionItem
+        /Accordion
+    /Card
 );
 
 const renderAIModelManagement = () => (
-    <Card className="animate-in">
-      <Accordion type="single" collapsible className="w-full">
-        <AccordionItem value="item-1">
-          <AccordionTrigger className="p-6">
-            <div className="text-left">
-              <CardTitle>AI Model Management</CardTitle>
-              <CardDescription>Manage and train leak detection models.</CardDescription>
-            </div>
-          </AccordionTrigger>
-          <AccordionContent className="p-6 pt-0 space-y-4">
-            <div>
-              <h3 className="font-semibold mb-2">Automated Training</h3>
-              <div className="p-4 border rounded-lg bg-background/50 space-y-3">
-                <div className="space-y-1">
-                  <Label htmlFor="model-name">New Model Name</Label>
-                  <Input id="model-name" value={newModelName} onChange={(e) => setNewModelName(e.target.value)} />
-                </div>
-                <Button onClick={handleAutomatedTraining} disabled={isTraining} className="w-full">
-                  {isTraining ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
+    Card className="animate-in">
+      Accordion type="single" collapsible className="w-full">
+        AccordionItem value="item-1">
+          AccordionTrigger className="p-6">
+            div className="text-left">
+              CardTitle>AI Model Management/CardTitle
+              CardDescription>Manage and train leak detection models./CardDescription
+            /div
+          /AccordionTrigger
+          AccordionContent className="p-6 pt-0 space-y-4">
+            div>
+              h3 className="font-semibold mb-2">Automated Training/h3
+              div className="p-4 border rounded-lg bg-background/50 space-y-3">
+                div className="space-y-1">
+                  Label htmlFor="model-name">New Model Name/Label
+                  Input id="model-name" value={newModelName} onChange={(e) => setNewModelName(e.target.value)} />
+                /div
+                Button onClick={handleAutomatedTraining} disabled={isTraining} className="w-full">
+                  {isTraining ? Loader2 className="mr-2 h-4 w-4 animate-spin" /> : BrainCircuit className="mr-2 h-4 w-4" /}
                   {isTraining ? 'Training in Progress...' : 'Start Automated Training'}
-                </Button>
+                /Button
                 {automatedTrainingStatus.step !== 'Idle' && (
-                  <div className="space-y-2 pt-2">
-                    <Progress value={automatedTrainingStatus.progress} />
-                    <p className="text-xs text-muted-foreground">[{automatedTrainingStatus.step}] {automatedTrainingStatus.details}</p>
-                  </div>
+                  div className="space-y-2 pt-2">
+                    Progress value={automatedTrainingStatus.progress} />
+                    p className="text-xs text-muted-foreground">[{automatedTrainingStatus.step}] {automatedTrainingStatus.details}/p
+                  /div
                 )}
-              </div>
-            </div>
-             <div>
-                <h3 className="font-semibold mb-2">Model Catalog</h3>
-                <ScrollArea className="h-48">
-                  <div className="space-y-2">
+              /div
+            /div
+             div>
+                h3 className="font-semibold mb-2">Model Catalog/h3
+                ScrollArea className="h-48">
+                  div className="space-y-2">
                     {mlModels?.map(model => (
-                      <Card key={model.id} className={`p-3 cursor-pointer ${activeModel?.id === model.id ? 'border-primary' : ''}`} onClick={() => setActiveModel(model)}>
-                        <p className="font-semibold">{model.name}</p>
-                        <p className="text-xs text-muted-foreground">Version: {new Date(model.version).toLocaleDateString()}</p>
-                        <p className="text-xs text-muted-foreground">{model.description}</p>
-                      </Card>
+                      Card key={model.id} className={`p-3 cursor-pointer ${activeModel?.id === model.id ? 'border-primary' : ''}`} onClick={() => setActiveModel(model)}>
+                        p className="font-semibold">{model.name}/p
+                        p className="text-xs text-muted-foreground">Version: {new Date(model.version).toLocaleDateString()}/p
+                        p className="text-xs text-muted-foreground">{model.description}/p
+                      /Card
                     ))}
-                  </div>
-                </ScrollArea>
-             </div>
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
-        <Dialog open={!!classificationSession} onOpenChange={(isOpen) => !isOpen && setClassificationSession(null)}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>AI Classification</DialogTitle>
-                    <DialogDescription>
+                  /div
+                /ScrollArea
+             /div
+          /AccordionContent
+        /AccordionItem
+      /Accordion
+        Dialog open={!!classificationSession} onOpenChange={(isOpen) => !isOpen && setClassificationSession(null)}>
+            DialogContent>
+                DialogHeader>
+                    DialogTitle>AI Classification/DialogTitle
+                    DialogDescription>
                         Classifying session for "{classificationSession?.vesselTypeName} - {classificationSession?.serialNumber}" using model "{activeModel?.name}".
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="flex justify-center items-center h-24">
+                    /DialogDescription
+                /DialogHeader
+                div className="flex justify-center items-center h-24">
                     {isClassifying ? (
-                        <>
-                         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                         <p className="ml-4">Running analysis...</p>
-                        </>
+                        >
+                         Loader2 className="h-8 w-8 animate-spin text-primary" />
+                         p className="ml-4">Running analysis.../p
+                        /
                     ) : (
-                         <Button onClick={() => classificationSession && handleClassifyWithAI(classificationSession)}>Start Classification</Button>
+                         Button onClick={() => classificationSession && handleClassifyWithAI(classificationSession)}>Start Classification/Button
                     )}
-                </div>
-            </DialogContent>
-        </Dialog>
-    </Card>
+                /div
+            /DialogContent
+        /Dialog
+    /Card
   );
 
   if (isUserLoading || !user) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950">
-        <div className="text-center">
-            <p className="text-lg font-semibold">Loading Management Panel...</p>
-            <p className="text-sm text-muted-foreground">Please wait a moment.</p>
-        </div>
-      </div>
+      div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950">
+        div className="text-center">
+            p className="text-lg font-semibold">Loading Management Panel.../p
+            p className="text-sm text-muted-foreground">Please wait a moment./p
+        /div
+      /div
     );
   }
 
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-4">
-       <div ref={pdfChartRef} className="fixed -left-[9999px] top-0 w-[800px] h-auto bg-white p-4">
+    div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-4">
+       div ref={pdfChartRef} className="fixed -left-[9999px] top-0 w-[800px] h-auto bg-white p-4">
           {pdfChartData.length > 0 && (
-            <div className='w-full h-[400px] relative'>
-                <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={pdfChartData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} />
-                        <YAxis domain={['dataMin', 'dataMax + 10']} />
-                        <Tooltip />
-                        <Legend verticalAlign="bottom" wrapperStyle={{paddingTop: '10px'}} />
-                        <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
-                        <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
+             div className='w-full h-[400px] relative'>
+                ResponsiveContainer width="100%" height="100%">
+                    LineChart data={pdfChartData}>
+                        CartesianGrid strokeDasharray="3 3" />
+                        XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} />
+                        YAxis domain={['dataMin', 'dataMax + 10']} />
+                        Tooltip />
+                        Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
+                        Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
                         {pdfChartSessions.map((session, index) => (
-                            <Line 
-                                key={`${session.serialNumber}-passed`}
+                            Line 
+                                key={session.serialNumber}
                                 type="monotone" 
-                                dataKey={`${session.serialNumber}-passed`} 
+                                dataKey={session.serialNumber || session.id} 
                                 stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                 name={session.serialNumber || session.id}
                                 dot={false} 
@@ -2557,186 +2543,187 @@ const renderAIModelManagement = () => (
                             />
                         ))}
                          {pdfChartSessions.map((session, index) => (
-                            <Line 
-                                key={`${session.serialNumber}-failed`}
+                            Line 
+                                key={`{session.serialNumber}-failed`}
                                 type="monotone" 
-                                dataKey={`${session.serialNumber}-failed`} 
+                                dataKey={`{session.serialNumber}-failed`} 
                                 stroke="hsl(var(--destructive))"
-                                name={`${session.serialNumber || session.id} (Failed)`}
+                                name={`{session.serialNumber || session.id} (Failed)`}
                                 dot={false} 
                                 strokeWidth={2}
                                 connectNulls={false}
                             />
                         ))}
-                    </LineChart>
-                </ResponsiveContainer>
-            </div>
+                    /LineChart
+                /ResponsiveContainer
+            /div
           )}
-      </div>
-      <header className="w-full max-w-7xl mx-auto mb-6 animate-in">
-        <Card>
-          <CardHeader className="p-6">
-            <div className="flex justify-between items-center">
-                <CardTitle className="text-2xl bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
+      /div
+      header className="w-full max-w-7xl mx-auto mb-6 animate-in">
+        Card>
+          CardHeader className="p-6">
+            div className="flex justify-between items-center">
+                CardTitle className="text-2xl bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
                 Management Panel
-                </CardTitle>
-                <div className="flex items-center gap-2">
+                /CardTitle
+                div className="flex items-center gap-2">
                     {user && (
-                      <Button onClick={() => router.push('/testing')} variant="outline" className="transition-transform transform hover:-translate-y-1">
-                          <FlaskConical className="h-4 w-4 mr-2" />
+                      Button onClick={() => router.push('/testing')} variant="outline" className="transition-transform transform hover:-translate-y-1">
+                          FlaskConical className="h-4 w-4 mr-2" />
                           Go to Testing
-                      </Button>
+                      /Button
                     )}
-                    <Button onClick={handleSignOut} variant="ghost">
-                        <LogOut className="h-4 w-4 mr-2" />
+                    Button onClick={handleSignOut} variant="ghost">
+                        LogOut className="h-4 w-4 mr-2" />
                         Logout
-                    </Button>
-                </div>
-            </div>
-            <CardDescription>
+                    /Button
+                /div
+            /div
+            CardDescription>
               Manage sensor configurations and test sessions.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </header>
+            /CardDescription
+          /CardHeader
+        /Card
+      /header
 
-      <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1 space-y-6">
-             <Card className="animate-in">
-                  <Accordion type="single" collapsible className="w-full">
-                      <AccordionItem value="item-1">
-                          <AccordionTrigger className="p-6">
-                            <div className="text-left">
-                                <CardTitle>Test Bench Management</CardTitle>
-                                <CardDescription>Manage physical test benches.</CardDescription>
-                            </div>
-                          </AccordionTrigger>
-                          <AccordionContent className="p-6 pt-0">
-                              <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
-                                  <h3 className="font-semibold text-center">New Test Bench</h3>
-                                  <div className="space-y-2">
-                                    <Label htmlFor="new-bench-name">Name</Label>
-                                    <Input id="new-bench-name" placeholder="e.g. Bench 01" value={newTestBench.name || ''} onChange={(e) => setNewTestBench(p => ({...p, name: e.target.value}))} />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label htmlFor="new-bench-location">Location</Label>
-                                    <Input id="new-bench-location" placeholder="e.g. Lab A" value={newTestBench.location || ''} onChange={(e) => setNewTestBench(p => ({...p, location: e.target.value}))} />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label htmlFor="new-bench-desc">Description</Label>
-                                    <Input id="new-bench-desc" placeholder="e.g. High-pressure testing" value={newTestBench.description || ''} onChange={(e) => setNewTestBench(p => ({...p, description: e.target.value}))} />
-                                  </div>
-                                  <Button onClick={handleAddTestBench} size="sm" className="w-full mt-2">Add Bench</Button>
-                              </div>
-                              {isTestBenchesLoading ? <p className="text-center pt-10">Loading test benches...</p> :
-                              <ScrollArea className="h-56">
-                                  <div className="space-y-2">
+      main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+          div className="lg:col-span-1 space-y-6">
+             Card className="animate-in">
+                  Accordion type="single" collapsible className="w-full">
+                      AccordionItem value="item-1">
+                          AccordionTrigger className="p-6">
+                            div className="text-left">
+                                CardTitle>Test Bench Management/CardTitle
+                                CardDescription>Manage physical test benches./CardDescription
+                            /div
+                          /AccordionTrigger
+                          AccordionContent className="p-6 pt-0">
+                              div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
+                                  h3 className="font-semibold text-center">New Test Bench/h3
+                                  div className="space-y-2">
+                                    Label htmlFor="new-bench-name">Name/Label
+                                    Input id="new-bench-name" placeholder="e.g. Bench 01" value={newTestBench.name || ''} onChange={(e) => setNewTestBench(p => ({...p, name: e.target.value}))} />
+                                  /div
+                                  div className="space-y-2">
+                                    Label htmlFor="new-bench-location">Location/Label
+                                    Input id="new-bench-location" placeholder="e.g. Lab A" value={newTestBench.location || ''} onChange={(e) => setNewTestBench(p => ({...p, location: e.target.value}))} />
+                                  /div
+                                  div className="space-y-2">
+                                    Label htmlFor="new-bench-desc">Description/Label
+                                    Input id="new-bench-desc" placeholder="e.g. High-pressure testing" value={newTestBench.description || ''} onChange={(e) => setNewTestBench(p => ({...p, description: e.target.value}))} />
+                                  /div
+                                  Button onClick={handleAddTestBench} size="sm" className="w-full mt-2">Add Bench/Button
+                              /div
+                              {isTestBenchesLoading ? p className="text-center pt-10">Loading test benches.../p :
+                              ScrollArea className="h-56">
+                                  div className="space-y-2">
                                       {testBenches?.map(b => (
-                                          <Card key={b.id} className='p-3 hover:bg-muted/50 hover:scale-[1.02] hover:shadow-lg'>
-                                              <div className='flex justify-between items-center'>
-                                                  <div>
-                                                      <p className='font-semibold'>{b.name}</p>
-                                                      <p className="text-sm text-muted-foreground">{b.location}</p>
-                                                  </div>
-                                                    <AlertDialog>
-                                                      <AlertDialogTrigger asChild>
-                                                          <Button size="sm" variant="destructive">Delete</Button>
-                                                      </AlertDialogTrigger>
-                                                      <AlertDialogContent>
-                                                          <AlertDialogHeader>
-                                                              <AlertDialogTitle className="text-destructive">Delete Test Bench?</AlertDialogTitle>
-                                                              <AlertDialogDescription>
+                                          Card key={b.id} className='p-3 hover:bg-muted/50 hover:scale-[1.02] hover:shadow-lg'>
+                                              div className='flex justify-between items-center'>
+                                                  div>
+                                                      p className='font-semibold'>{b.name}/p
+                                                      p className="text-sm text-muted-foreground">{b.location}/p
+                                                  /div
+                                                    AlertDialog>
+                                                      AlertDialogTrigger asChild>
+                                                          Button size="sm" variant="destructive">Delete/Button
+                                                      /AlertDialogTrigger
+                                                      AlertDialogContent>
+                                                          AlertDialogHeader>
+                                                              AlertDialogTitle className="text-destructive">Delete Test Bench?/AlertDialogTitle
+                                                              AlertDialogDescription>
                                                                   Are you sure you want to delete "{b.name}"? This action cannot be undone.
-                                                              </AlertDialogDescription>
-                                                          </AlertDialogHeader>
-                                                          <AlertDialogFooter>
-                                                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                              <AlertDialogAction variant="destructive" onClick={() => handleDeleteTestBench(b.id)}>Delete</AlertDialogAction>
-                                                          </AlertDialogFooter>
-                                                      </AlertDialogContent>
-                                                  </AlertDialog>
-                                              </div>
-                                          </Card>
+                                                              /AlertDialogDescription
+                                                          /AlertDialogHeader
+                                                          AlertDialogFooter>
+                                                              AlertDialogCancel>Cancel/AlertDialogCancel
+                                                              AlertDialogAction variant="destructive" onClick={() => handleDeleteTestBench(b.id)}>Delete/AlertDialogAction
+                                                          /AlertDialogFooter
+                                                      /AlertDialogContent
+                                                  /AlertDialog
+                                              /div
+                                          /Card
                                       ))}
-                                  </div>
-                              </ScrollArea>
+                                  /div
+                              /ScrollArea
                               }
-                          </AccordionContent>
-                      </AccordionItem>
-                  </Accordion>
-              </Card>
+                          /AccordionContent
+                      /AccordionItem
+                  /Accordion
+              /Card
               {renderBatchManagement()}
               {renderVesselTypeManagement()}
-              <Card className="animate-in">
-                  <Accordion type="single" collapsible className="w-full">
-                      <AccordionItem value="item-1">
-                          <AccordionTrigger className="p-6">
-                            <div className="text-left">
-                                <CardTitle>Sensor Management</CardTitle>
-                                <CardDescription>
+              Card className="animate-in">
+                  Accordion type="single" collapsible className="w-full">
+                      AccordionItem value="item-1">
+                          AccordionTrigger className="p-6">
+                            div className="text-left">
+                                CardTitle>Sensor Management/CardTitle
+                                CardDescription>
                                     Manage all sensor configurations.
-                                </CardDescription>
-                            </div>
-                          </AccordionTrigger>
-                          <AccordionContent className="p-6 pt-0">
-                              <div className="flex justify-center mb-4">
-                                  <Button onClick={handleNewSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">New Configuration</Button>
-                              </div>
-                              {isSensorConfigsLoading ? <p className="text-center pt-10">Loading sensors...</p> :
-                              <ScrollArea className="h-72">
-                                  <div className="space-y-2">
+                                /CardDescription
+                            /div
+                          /AccordionTrigger
+                          AccordionContent className="p-6 pt-0">
+                              div className="flex justify-center mb-4">
+                                  Button onClick={handleNewSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">New Configuration/Button
+                              /div
+                              {isSensorConfigsLoading ? p className="text-center pt-10">Loading sensors.../p :
+                              ScrollArea className="h-72">
+                                  div className="space-y-2">
                                       {sensorConfigs?.map(c => (
-                                          <Card key={c.id} className='p-3 hover:bg-muted/50 hover:scale-[1.02] hover:shadow-lg'>
-                                              <div className='flex justify-between items-center'>
-                                                  <div>
-                                                      <p className='font-semibold'>{c.name}</p>
-                                                      <p className="text-sm text-muted-foreground">{c.mode} ({c.unit})</p>
-                                                      <p className="text-xs text-muted-foreground">Bench: {testBenches?.find(b => b.id === c.testBenchId)?.name || 'N/A'}</p>
-                                                  </div>
-                                                  <div className='flex gap-2'>
-                                                      <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
-                                                      <AlertDialog>
-                                                          <AlertDialogTrigger asChild>
-                                                          <Button size="sm" variant="destructive">Delete</Button>
-                                                          </AlertDialogTrigger>
-                                                          <AlertDialogContent>
-                                                          <AlertDialogHeader>
-                                                              <AlertDialogTitle className="text-destructive">Permanently Delete Configuration?</AlertDialogTitle>
-                                                              <AlertDialogDescription>
+                                          Card key={c.id} className='p-3 hover:bg-muted/50 hover:scale-[1.02] hover:shadow-lg'>
+                                              div className='flex justify-between items-center'>
+                                                  div>
+                                                      p className='font-semibold'>{c.name}/p
+                                                      p className="text-sm text-muted-foreground">{c.mode} ({c.unit})/p
+                                                      p className="text-xs text-muted-foreground">Bench: {testBenches?.find(b => b.id === c.testBenchId)?.name || 'N/A'}/p
+                                                  /div
+                                                  div className='flex gap-2'>
+                                                      Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit/Button
+                                                      AlertDialog>
+                                                          AlertDialogTrigger asChild>
+                                                          Button size="sm" variant="destructive">Delete/Button
+                                                          /AlertDialogTrigger
+                                                          AlertDialogContent>
+                                                          AlertDialogHeader>
+                                                              AlertDialogTitle className="text-destructive">Permanently Delete Configuration?/AlertDialogTitle
+                                                              AlertDialogDescription>
                                                                Are you sure you want to delete the configuration "{c.name}"? This will also delete all associated sensor data and test sessions. This action cannot be undone.
-                                                              </AlertDialogDescription>
-                                                          </AlertDialogHeader>
-                                                          <AlertDialogFooter>
-                                                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                              <AlertDialogAction variant="destructive" onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
-                                                          </AlertDialogFooter>
-                                                          </AlertDialogContent>
-                                                      </AlertDialog>
+                                                              /AlertDialogDescription
+                                                          /AlertDialogHeader
+                                                          AlertDialogFooter>
+                                                              AlertDialogCancel>Cancel/AlertDialogCancel
+                                                              AlertDialogAction variant="destructive" onClick={() => handleDeleteSensorConfig(c.id)}>Delete/AlertDialogAction
+                                                          /AlertDialogFooter
+                                                          /AlertDialogContent
+                                                      /AlertDialog
 
-                                                  </div>
-                                              </div>
-                                          </Card>
+                                                  /div
+                                              /div
+                                          /Card
                                       ))}
-                                  </div>
-                              </ScrollArea>
+                                  /div
+                              /ScrollArea
                               }
                               {renderSensorConfigurator()}
-                          </AccordionContent>
-                      </AccordionItem>
-                  </Accordion>
-              </Card>
+                          /AccordionContent
+                      /AccordionItem
+                  /Accordion
+              /Card
                {userRole === 'superadmin' && renderAIModelManagement()}
-          </div>
-          <div className="lg:col-span-2 space-y-6">
+          /div
+          div className="lg:col-span-2 space-y-6">
               {renderTestSessionManager()}
-          </div>
+          /div
           {userRole === 'superadmin' && (
-            <div className="lg:col-span-3">
+            div className="lg:col-span-3">
                 {renderUserManagement()}
-            </div>
+            /div
           )}
-      </main>
-    </div>
+      /main
+    /div
   );
 }
+
 
