@@ -560,15 +560,9 @@ function TestingComponent() {
   }, [isDuringDowntime, lastDataPointTimestamp]);
 
     const generateReport = async () => {
-        if (!firestore || !reportType) {
+        if (!firestore || !chartRef.current || !reportType) {
             toast({ variant: 'destructive', title: 'Report Failed', description: 'Please select a report type and make a selection.' });
             return;
-        }
-        
-        let nodeToCapture = chartRef.current;
-        if (!nodeToCapture) {
-             toast({ variant: 'destructive', title: 'Report Failed', description: 'Chart element not found.' });
-             return;
         }
 
         setIsGeneratingReport(true);
@@ -597,54 +591,37 @@ function TestingComponent() {
         }
         
         try {
-            // STEP 1: Determine sessions and fetch data if needed
             if (reportType === 'single' && selectedReportSessionId) {
                 sessionToReport = sessionHistory.find(s => s.id === selectedReportSessionId);
                 if (!sessionToReport) throw new Error('Selected session not found.');
-                sessionsForBatchReport = [sessionToReport];
+                
+                const sessionData = comparisonData[sessionToReport.id] || (await getDocs(query(collection(firestore, `test_sessions/${sessionToReport.id}/sensor_data`), orderBy('timestamp')))).docs.map(d => ({id: d.id, ...d.data()} as WithId<SensorData>));
+                if (sessionData.length === 0) throw new Error('No data found for the selected session.');
+
+                setComparisonData(prev => ({...prev, [sessionToReport!.id]: sessionData}));
+                setComparisonSessions([sessionToReport]);
                 reportTitle = `Single Vessel Pressure Test Report`;
                 reportFilename = `report-session-${sessionToReport.serialNumber || sessionToReport.id}`;
+
             } else if (reportType === 'batch' && selectedReportBatchId) {
                  batchToReport = batches?.find(b => b.id === selectedReportBatchId);
                  if (!batchToReport) throw new Error('Selected batch not found.');
                  sessionsForBatchReport = sessionHistory.filter(s => s.batchId === selectedReportBatchId && s.status === 'COMPLETED');
                  if(sessionsForBatchReport.length === 0) throw new Error('No completed sessions found for this batch.');
+                 setComparisonSessions(sessionsForBatchReport);
                  reportTitle = `Batch Pressure Test Report`;
                  reportFilename = `report-batch-${batchToReport.name.replace(/\s+/g, '_')}`;
             } else {
                 throw new Error('Invalid report selection.');
             }
             
-            // Centralized Data Fetching
-            const dataPromises = sessionsForBatchReport.map(session => {
-                if (comparisonData[session.id] && comparisonData[session.id].length > 0) {
-                    return Promise.resolve({ sessionId: session.id, data: comparisonData[session.id] });
-                }
-                const dataQuery = query(collection(firestore, `test_sessions/${session.id}/sensor_data`), orderBy('timestamp'));
-                return getDocs(dataQuery).then(snapshot => ({
-                    sessionId: session.id,
-                    data: snapshot.docs.map(d => ({ id: d.id, ...d.data() } as WithId<SensorData>))
-                }));
-            });
-
-            const allSessionDataResults = await Promise.all(dataPromises);
-            const freshComparisonData: Record<string, WithId<SensorData>[]> = {};
-            allSessionDataResults.forEach(result => {
-                freshComparisonData[result.sessionId] = result.data;
-            });
-            
-            setComparisonData(prev => ({ ...prev, ...freshComparisonData }));
-            setComparisonSessions(sessionsForBatchReport);
-            
-            // STEP 2: Wait for re-render and capture chart image
             await new Promise(resolve => setTimeout(resolve, 1500));
 
-            const chartImage = await htmlToImage.toPng(nodeToCapture, {
+            const chartImage = await htmlToImage.toPng(chartRef.current, {
                 quality: 0.95,
                 backgroundColor: '#ffffff'
             });
 
-            // STEP 3: Build PDF Document
             const docDefinition: any = {
                 pageSize: 'A4',
                 pageMargins: [40, 40, 40, 40],
@@ -673,17 +650,38 @@ function TestingComponent() {
                 columnGap: 10,
             });
             docDefinition.content.push({ text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' });
+            
+            const firstData = comparisonData[comparisonSessions[0]?.id] || [];
+            
+            const pdfChartData = Object.entries(comparisonData).flatMap(([sessionId, data]) => {
+                const session = comparisonSessions.find(s => s.id === sessionId);
+                if (!session || data.length === 0) return [];
+                const sessionStart = new Date(data[0].timestamp).getTime();
+                return data.map(d => ({
+                    [session.id]: d.value,
+                    name: (new Date(d.timestamp).getTime() - sessionStart) / 1000
+                }));
+            });
+
+            const mergedChartData: any[] = [];
+            const tempMap: Record<string, any> = {};
+            pdfChartData.forEach(dp => {
+                const key = dp.name.toFixed(2);
+                if (!tempMap[key]) tempMap[key] = { name: dp.name };
+                Object.assign(tempMap[key], dp);
+            });
+            mergedChartData.push(...Object.values(tempMap).sort((a,b) => a.name - b.name));
+            
             docDefinition.content.push({ image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] });
 
             // Table Content
             if (reportType === 'single' && sessionToReport) {
-                const session = sessionToReport;
-                const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-                const batch = batches?.find(b => b.id === session.batchId);
-                const data = freshComparisonData[session.id] || [];
+                const config = sensorConfigs?.find(c => c.id === sessionToReport.sensorConfigurationId);
+                const batch = batches?.find(b => b.id === sessionToReport.batchId);
+                const data = comparisonData[sessionToReport.id] || [];
                 
-                const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(session.startTime).getTime();
-                const sessionEndTime = session.endTime ? new Date(session.endTime).getTime() : (data.length > 0 ? new Date(data[data.length-1].timestamp).getTime() : sessionStartTime);
+                const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(sessionToReport.startTime).getTime();
+                const sessionEndTime = sessionToReport.endTime ? new Date(sessionToReport.endTime).getTime() : (data.length > 0 ? new Date(data[data.length-1].timestamp).getTime() : sessionStartTime);
                 const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
 
                 const values = data.map(d => d.value);
@@ -691,7 +689,9 @@ function TestingComponent() {
                 const endValue = values.length > 0 ? values[values.length-1] : undefined;
                 const avgValue = values.length > 0 ? values.reduce((a,b) => a + b, 0) / values.length : undefined;
 
-                let startPressure = 'N/A', endPressure = 'N/A', avgPressure = 'N/A';
+                let startPressure = 'N/A';
+                let endPressure = 'N/A';
+                let avgPressure = 'N/A';
                 if (config) {
                     const unitLabel = config.unit || '';
                     if (startValue !== undefined) startPressure = `${convertRawValue(startValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
@@ -699,61 +699,82 @@ function TestingComponent() {
                     if (avgValue !== undefined) avgPressure = `${convertRawValue(avgValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
                 }
 
-                const classificationText = getClassificationText(session.classification);
-                const statusStyle = { text: classificationText, color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black') };
+                const classificationText = getClassificationText(sessionToReport.classification);
+                const statusStyle = {
+                    text: classificationText,
+                    color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
+                };
 
                 docDefinition.content.push({ text: 'Session Summary', style: 'subheader', margin: [0, 10, 0, 5] });
                 docDefinition.content.push({
-                    style: 'tableExample', table: { headerRows: 1, widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                    style: 'tableExample',
+                    table: {
+                        headerRows: 1,
+                        widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Avg Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
-                            [{ text: batch?.name || 'N/A'}, { text: session.serialNumber || 'N/A' }, {text: session.description || 'N/A'}, {text: new Date(session.startTime).toLocaleString()}, {text: duration}, {text: startPressure}, {text: endPressure}, {text: avgPressure}, statusStyle]
+                            [{ text: batch?.name || 'N/A'}, { text: sessionToReport.serialNumber || 'N/A' }, {text: sessionToReport.description || 'N/A'}, {text: new Date(sessionToReport.startTime).toLocaleString()}, {text: duration}, {text: startPressure}, {text: endPressure}, {text: avgPressure}, statusStyle]
                         ]
-                    }, layout: 'lightHorizontalLines' });
+                    },
+                    layout: 'lightHorizontalLines'
+                });
 
             } else if (reportType === 'batch' && batchToReport) {
-                const sessionsBySerial = sessionsForBatchReport.reduce((acc, session) => {
-                    const sn = session.serialNumber || 'Unknown';
-                    if (!acc[sn]) acc[sn] = [];
-                    acc[sn].push(session);
-                    return acc;
-                }, {} as Record<string, WithId<TestSession>[]>);
+                const tableBody = sessionsForBatchReport.map(session => {
+                    const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+                    const data = comparisonData[session.id] || [];
 
-                const tableBody = Object.values(sessionsBySerial).flatMap(sessions => {
-                    sessions.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-                    const firstPassIndex = sessions.findIndex(s => s.classification === 'DIFFUSION');
-                    const passAttempt = firstPassIndex !== -1 ? `Passed on attempt ${firstPassIndex + 1}` : (sessions.some(s => s.classification === 'LEAK') ? 'Failed' : 'N/A');
+                    const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(session.startTime).getTime();
+                    const sessionEndTime = session.endTime ? new Date(session.endTime).getTime() : (data.length > 0 ? new Date(data[data.length - 1].timestamp).getTime() : sessionStartTime);
+                    
+                    const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
+                    
+                    const values = data.map(d => d.value);
+                    const startValue = values.length > 0 ? values[0] : undefined;
+                    const endValue = values.length > 0 ? values[values.length-1] : undefined;
+                    const avgValue = values.length > 0 ? values.reduce((a,b) => a + b, 0) / values.length : undefined;
 
-                    return sessions.map((session, index) => {
-                        const data = freshComparisonData[session.id] || [];
-                        const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-                        
-                        const values = data.map(d => d.value);
-                        const startValue = values.length > 0 ? values[0] : undefined;
-                        const endValue = values.length > 0 ? values[values.length-1] : undefined;
-                        
-                        let startPressure = 'N/A', endPressure = 'N/A';
-                        if (config && data.length > 0) {
-                            const unitLabel = config.unit || '';
-                            if (startValue !== undefined) startPressure = `${convertRawValue(startValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
-                            if (endValue !== undefined) endPressure = `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
-                        }
-                        
-                        const classificationText = getClassificationText(session.classification);
-                        const statusStyle = { text: classificationText, color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black') };
+                    let startPressure = 'N/A';
+                    let endPressure = 'N/A';
+                    let avgPressure = 'N/A';
+                    if (config) {
+                        const unitLabel = config.unit || '';
+                        if (startValue !== undefined) startPressure = `${convertRawValue(startValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                        if (endValue !== undefined) endPressure = `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                        if (avgValue !== undefined) avgPressure = `${convertRawValue(avgValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                    }
 
-                        return [ session.serialNumber || 'N/A', index + 1, new Date(session.startTime).toLocaleString(), startPressure, endPressure, statusStyle, index === 0 ? passAttempt : '' ];
-                    });
+                    const classificationText = getClassificationText(session.classification);
+                    const statusStyle = {
+                        text: classificationText,
+                        color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
+                    };
+
+                    return [
+                        session.serialNumber || 'N/A',
+                        session.description || 'N/A',
+                        new Date(session.startTime).toLocaleString(),
+                        duration,
+                        startPressure,
+                        endPressure,
+                        avgPressure,
+                        statusStyle
+                    ];
                 });
 
                 docDefinition.content.push({ text: `Batch: ${batchToReport.name} - Summary`, style: 'subheader', margin: [0, 10, 0, 5] });
                 docDefinition.content.push({
-                    style: 'tableExample', table: { headerRows: 1, widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'],
+                    style: 'tableExample',
+                    table: {
+                        headerRows: 1,
+                        widths: ['auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
-                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}, {text: 'Final Result', style: 'tableHeader'}],
+                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Avg Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
                             ...tableBody
                         ]
-                    }, layout: { ...pdfMake.tableLayouts.lightHorizontalLines, hLineColor: (i: number, node: any) => (i === 0 || i === node.table.body.length) ? 'black' : '#aaa', vLineColor: () => '#aaa' } });
+                    },
+                    layout: 'lightHorizontalLines'
+                });
             }
 
             pdfMake.createPdf(docDefinition).download(`${reportFilename}.pdf`);
@@ -1008,7 +1029,15 @@ function TestingComponent() {
                     </p>
                     <p className="text-lg text-muted-foreground">{isConnected && currentValue !== null ? (convertedValue?.unit ?? '') : ''}</p>
                      <p className="text-xs text-muted-foreground h-4 mt-1">
-                        {isConnected && lastDataPointTimestamp ? `(Updated ${formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true, includeSeconds: true })})` : ''}
+                        {isConnected ? (
+                            <span className="flex items-center justify-center gap-1.5 text-green-600">
+                                <span className="relative flex h-2 w-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                                </span>
+                                Live
+                            </span>
+                        ) : ''}
                     </p>
                     
                     <div className={`text-sm mt-2 flex items-center justify-center gap-1 ${isConnected ? 'text-green-600' : 'text-destructive'}`}>
@@ -1299,5 +1328,5 @@ export default function TestingPage() {
         <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
             <TestingComponent />
         </Suspense>
-    );
+    )
 }
