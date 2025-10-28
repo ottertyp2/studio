@@ -1,5 +1,4 @@
 
-
 'use client';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -980,102 +979,101 @@ export default function AdminPage() {
     setAutoTrainingStatus({ step: 'Initializing', progress: 0, details: 'Starting pipeline...' });
 
     try {
-      const tf = await import('@tensorflow/tfjs');
-      const generateData = (type: 'LEAK' | 'DIFFUSION', numPoints = 200) => {
-          let data = [];
-          if (type === 'LEAK') {
-              const startValue = 900;
-              const endValue = 200;
-              const baseValueDrop = (startValue - endValue) / numPoints;
-              for (let i = 0; i < numPoints; i++) {
-                  const baseValue = startValue - (i * baseValueDrop);
-                  data.push(baseValue + gaussianNoise(0, 2));
-              }
-          } else {
-              const startValue = 950;
-              const endValue = 800;
-              const tau = numPoints / 4;
-              for (let i = 0; i < numPoints; i++) {
-                  const rawValue = endValue + (startValue - endValue) * Math.exp(-i / tau);
-                  data.push(rawValue + gaussianNoise(0, 1.5));
-              }
-          }
-          return data.map(v => Math.min(1023, Math.max(0, v)));
-      };
+        const tf = await import('@tensorflow/tfjs');
+        const generateData = (type: 'LEAK' | 'DIFFUSION', numPoints = 200) => {
+            let data = [];
+            if (type === 'LEAK') {
+                const startValue = 900;
+                const endValue = 200;
+                const baseValueDrop = (startValue - endValue) / numPoints;
+                for (let i = 0; i < numPoints; i++) {
+                    const baseValue = startValue - (i * baseValueDrop);
+                    data.push(baseValue + gaussianNoise(0, 2));
+                }
+            } else {
+                const startValue = 950;
+                const endValue = 800;
+                const tau = numPoints / 4;
+                for (let i = 0; i < numPoints; i++) {
+                    const rawValue = endValue + (startValue - endValue) * Math.exp(-i / tau);
+                    data.push(rawValue + gaussianNoise(0, 1.5));
+                }
+            }
+            return data.map(v => Math.min(1023, Math.max(0, v)));
+        };
 
-      setAutoTrainingStatus({ step: 'Data Generation', progress: 10, details: 'Generating "Passed" and "Not Passed" datasets...' });
-      
-      const leakData = generateData('LEAK', 500);
-      const diffusionData = generateData('DIFFUSION', 500);
-      
-      await new Promise(res => setTimeout(res, 500));
+        setAutoTrainingStatus({ step: 'Data Generation', progress: 10, details: 'Generating "Passed" and "Not Passed" datasets...' });
+        
+        const leakData = generateData('LEAK', 500);
+        const diffusionData = generateData('DIFFUSION', 500);
+        
+        await new Promise(res => setTimeout(res, 500));
 
-      setAutoTrainingStatus({ step: 'Data Preparation', progress: 30, details: 'Preparing data for training...' });
+        setAutoTrainingStatus({ step: 'Data Preparation', progress: 30, details: 'Preparing data for training...' });
 
-      const features = [...leakData, ...diffusionData];
-      const labels = [...Array(leakData.length).fill(1), ...Array(diffusionData.length).fill(0)];
-      
-      const indices = tf.util.createShuffledIndices(features.length);
-      const shuffledFeatures = Array.from(indices).map(i => features[i]);
-      const shuffledLabels = Array.from(indices).map(i => labels[i]);
+        const features = [...leakData, ...diffusionData];
+        const labels = [...Array(leakData.length).fill(1), ...Array(diffusionData.length).fill(0)];
+        
+        const indices = tf.util.createShuffledIndices(features.length);
+        const shuffledFeatures = Array.from(indices).map(i => features[i]);
+        const shuffledLabels = Array.from(indices).map(i => labels[i]);
 
-      const featureMatrix = shuffledFeatures.map(v => [v]);
-      const labelMatrix = shuffledLabels.map(v => [v]);
+        const featureMatrix = shuffledFeatures.map(v => [v]);
+        const labelMatrix = shuffledLabels.map(v => [v]);
 
-      const inputTensor = tf.tensor2d(featureMatrix, [featureMatrix.length, 1]);
-      const labelTensor = tf.tensor2d(labelMatrix, [labelMatrix.length, 1]);
-      
-      const { mean, variance } = tf.moments(inputTensor);
-      const normalizedInput = inputTensor.sub(mean).div(variance.sqrt());
+        const inputTensor = tf.tensor2d(featureMatrix, [featureMatrix.length, 1]);
+        const labelTensor = tf.tensor2d(labelMatrix, [labelMatrix.length, 1]);
+        
+        const { mean, variance } = tf.moments(inputTensor);
+        const normalizedInput = inputTensor.sub(mean).div(variance.sqrt());
 
-      setAutoTrainingStatus({ step: 'Model Training', progress: 50, details: 'Compiling model...' });
-      
-      const model = tf.sequential();
-      switch (autoModelSize) {
-        case 'small':
-          model.add(tf.layers.dense({ inputShape: [1], units: 25, activation: 'relu' }));
-          break;
-        case 'large':
-          model.add(tf.layers.dense({ inputShape: [1], units: 100, activation: 'relu' }));
-          model.add(tf.layers.dense({ units: 100, activation: 'relu' }));
-          break;
-        case 'medium':
-        default:
-          model.add(tf.layers.dense({ inputShape: [1], units: 50, activation: 'relu' }));
-          model.add(tf.layers.dense({ units: 50, activation: 'relu' }));
-          break;
-      }
-      model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }));
+        setAutoTrainingStatus({ step: 'Model Training', progress: 50, details: 'Compiling model...' });
+        
+        const model = tf.sequential();
+        switch (autoModelSize) {
+            case 'small':
+            model.add(tf.layers.dense({ inputShape: [1], units: 25, activation: 'relu' }));
+            break;
+            case 'large':
+            model.add(tf.layers.dense({ inputShape: [1], units: 100, activation: 'relu' }));
+            model.add(tf.layers.dense({ units: 100, activation: 'relu' }));
+            break;
+            case 'medium':
+            default:
+            model.add(tf.layers.dense({ inputShape: [1], units: 50, activation: 'relu' }));
+            model.add(tf.layers.dense({ units: 50, activation: 'relu' }));
+            break;
+        }
+        model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }));
 
-      model.compile({
-          optimizer: tf.train.adam(),
-          loss: 'binaryCrossentropy',
-          metrics: ['accuracy'],
-      });
-      
-      let finalAccuracy = 0;
-      await model.fit(normalizedInput, labelTensor, {
-          epochs: 25,
-          batchSize: 64,
-          callbacks: {
-              onEpochEnd: (epoch, logs) => {
-                  if (logs) {
-                      const progress = 50 + ((epoch + 1) / 25) * 40;
-                      finalAccuracy = (logs.acc || 0) * 100;
-                      setAutoTrainingStatus({
-                          step: 'Model Training',
-                          progress,
-                          details: `Epoch ${epoch + 1}/25 - Loss: ${logs.loss?.toFixed(4)}, Acc: ${finalAccuracy.toFixed(2)}%`
-                      });
-                  }
-              }
-          }
-      });
-      
-      setAutoTrainingStatus({ step: 'Saving Model', progress: 90, details: 'Saving model to Firestore...' });
+        model.compile({
+            optimizer: tf.train.adam(),
+            loss: 'binaryCrossentropy',
+            metrics: ['accuracy'],
+        });
+        
+        let finalAccuracy = 0;
+        await model.fit(normalizedInput, labelTensor, {
+            epochs: 25,
+            batchSize: 64,
+            callbacks: {
+                onEpochEnd: (epoch, logs) => {
+                    if (logs) {
+                        const progress = 50 + ((epoch + 1) / 25) * 40;
+                        finalAccuracy = (logs.acc || 0) * 100;
+                        setAutoTrainingStatus({
+                            step: 'Model Training',
+                            progress,
+                            details: `Epoch ${epoch + 1}/25 - Loss: ${logs.loss?.toFixed(4)}, Acc: ${finalAccuracy.toFixed(2)}%`
+                        });
+                    }
+                }
+            }
+        });
+        
+        setAutoTrainingStatus({ step: 'Saving Model', progress: 90, details: 'Saving model to Firestore...' });
 
         const modelArtifacts = await model.save(tf.io.memory());
-
         if (!modelArtifacts.weightData) {
             throw new Error('Model training did not produce weight data.');
         }
@@ -1448,7 +1446,6 @@ export default function AdminPage() {
             allSensorData[session.id] = snapshot.docs.map(doc => doc.data() as SensorData);
         }
 
-        const firstSessionForChart = relevantSessions[0];
         const chartDataForPdf = relevantSessions.flatMap(session => {
             const data = allSensorData[session.id];
             if (!data || data.length === 0) return [];
@@ -1500,11 +1497,11 @@ export default function AdminPage() {
             let endPressure = 'N/A';
             let avgPressure = 'N/A';
 
-            if (config) {
+            if (config && startValue !== undefined && endValue !== undefined && avgValue !== undefined) {
                 const unitLabel = config.unit || '';
-                if (startValue !== undefined) startPressure = `${convertRawValue(startValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
-                if (endValue !== undefined) endPressure = `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
-                if (avgValue !== undefined) avgPressure = `${convertRawValue(avgValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                startPressure = `${convertRawValue(startValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                endPressure = `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                avgPressure = `${convertRawValue(avgValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
             }
 
             const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
@@ -2894,3 +2891,5 @@ const renderBatchManagement = () => (
     </div>
   );
 }
+
+    
