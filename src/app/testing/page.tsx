@@ -560,23 +560,33 @@ function TestingComponent() {
   }, [isDuringDowntime, lastDataPointTimestamp]);
 
     const generateReport = async () => {
-        if (!firestore || !chartRef.current) {
-            toast({ variant: 'destructive', title: 'Report Failed', description: 'Required services are not available.' });
+        if (!firestore || !reportType) {
+            toast({ variant: 'destructive', title: 'Report Failed', description: 'Please select a report type and make a selection.' });
             return;
+        }
+        
+        let nodeToCapture = chartRef.current;
+        if (!nodeToCapture) {
+             toast({ variant: 'destructive', title: 'Report Failed', description: 'Chart element not found.' });
+             return;
         }
 
         setIsGeneratingReport(true);
         toast({ title: 'Generating Report...', description: 'Please wait, this can take a moment.' });
 
         const originalComparisonSessions = [...comparisonSessions];
-
+        let sessionToReport: WithId<TestSession> | undefined;
+        let batchToReport: WithId<Batch> | undefined;
+        let sessionsForBatchReport: WithId<TestSession>[] = [];
         let reportTitle = '';
         let reportFilename = 'report';
-        let logoBase64: string | null = null;
-        let sessionsToInclude: WithId<TestSession>[] = [];
 
+        let logoBase64: string | null = null;
         try {
             logoBase64 = await toBase64('/images/logo.png');
+            if (!logoBase64.startsWith('data:image')) {
+                 throw new Error("Conversion to base64 failed or returned invalid format.");
+            }
         } catch (error: any) {
             console.error("PDF Logo Generation Error:", error);
             toast({
@@ -587,25 +597,27 @@ function TestingComponent() {
         }
         
         try {
+            // STEP 1: Determine sessions and fetch data if needed
             if (reportType === 'single' && selectedReportSessionId) {
-                const foundSession = sessionHistory.find(s => s.id === selectedReportSessionId);
-                if (!foundSession) throw new Error('Selected session not found.');
-                sessionsToInclude = [foundSession];
+                sessionToReport = sessionHistory.find(s => s.id === selectedReportSessionId);
+                if (!sessionToReport) throw new Error('Selected session not found.');
+                sessionsForBatchReport = [sessionToReport];
                 reportTitle = `Single Vessel Pressure Test Report`;
-                reportFilename = `report-session-${foundSession.serialNumber || foundSession.id}`;
+                reportFilename = `report-session-${sessionToReport.serialNumber || sessionToReport.id}`;
             } else if (reportType === 'batch' && selectedReportBatchId) {
-                sessionsToInclude = sessionHistory.filter(s => s.batchId === selectedReportBatchId && s.status === 'COMPLETED');
-                if (sessionsToInclude.length === 0) throw new Error('No completed sessions found for this batch.');
-                const batchInfo = batches?.find(b => b.id === selectedReportBatchId);
-                reportTitle = `Batch Pressure Test Report`;
-                reportFilename = `report-batch-${batchInfo?.name.replace(/\s+/g, '_') || selectedReportBatchId}`;
+                 batchToReport = batches?.find(b => b.id === selectedReportBatchId);
+                 if (!batchToReport) throw new Error('Selected batch not found.');
+                 sessionsForBatchReport = sessionHistory.filter(s => s.batchId === selectedReportBatchId && s.status === 'COMPLETED');
+                 if(sessionsForBatchReport.length === 0) throw new Error('No completed sessions found for this batch.');
+                 reportTitle = `Batch Pressure Test Report`;
+                 reportFilename = `report-batch-${batchToReport.name.replace(/\s+/g, '_')}`;
             } else {
                 throw new Error('Invalid report selection.');
             }
-
+            
             // Centralized Data Fetching
-            const dataPromises = sessionsToInclude.map(session => {
-                if (comparisonData[session.id]) {
+            const dataPromises = sessionsForBatchReport.map(session => {
+                if (comparisonData[session.id] && comparisonData[session.id].length > 0) {
                     return Promise.resolve({ sessionId: session.id, data: comparisonData[session.id] });
                 }
                 const dataQuery = query(collection(firestore, `test_sessions/${session.id}/sensor_data`), orderBy('timestamp'));
@@ -622,16 +634,17 @@ function TestingComponent() {
             });
             
             setComparisonData(prev => ({ ...prev, ...freshComparisonData }));
-            setComparisonSessions(sessionsToInclude);
+            setComparisonSessions(sessionsForBatchReport);
             
-            await new Promise(resolve => setTimeout(resolve, 1500)); // Wait for chart re-render
+            // STEP 2: Wait for re-render and capture chart image
+            await new Promise(resolve => setTimeout(resolve, 1500));
 
-            if (!chartRef.current) throw new Error("Chart reference is not available for imaging.");
-            const chartImage = await htmlToImage.toPng(chartRef.current, {
+            const chartImage = await htmlToImage.toPng(nodeToCapture, {
                 quality: 0.95,
                 backgroundColor: '#ffffff'
             });
 
+            // STEP 3: Build PDF Document
             const docDefinition: any = {
                 pageSize: 'A4',
                 pageMargins: [40, 40, 40, 40],
@@ -646,14 +659,14 @@ function TestingComponent() {
                 defaultStyle: { font: 'Roboto' }
             };
 
-            const vesselTypeName = sessionsToInclude.length > 0 ? sessionsToInclude[0].vesselTypeName : '';
+            // Common Header
             docDefinition.content.push({
                 columns: [
                    logoBase64 ? { image: logoBase64, width: 70 } : { text: '' },
                     {
                         stack: [
                         { text: reportTitle, style: 'header', alignment: 'right' },
-                        { text: vesselTypeName, style: 'subheader', alignment: 'right', margin: [0, 0, 0, 10] },
+                        { text: (sessionToReport?.vesselTypeName || vesselTypes?.find(vt => vt.id === batchToReport?.vesselTypeId)?.name) || '', style: 'subheader', alignment: 'right', margin: [0, 0, 0, 10] },
                         ],
                     },
                 ],
@@ -662,8 +675,9 @@ function TestingComponent() {
             docDefinition.content.push({ text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' });
             docDefinition.content.push({ image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] });
 
-            if (reportType === 'single' && sessionsToInclude.length === 1) {
-                const session = sessionsToInclude[0];
+            // Table Content
+            if (reportType === 'single' && sessionToReport) {
+                const session = sessionToReport;
                 const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
                 const batch = batches?.find(b => b.id === session.batchId);
                 const data = freshComparisonData[session.id] || [];
@@ -697,8 +711,8 @@ function TestingComponent() {
                         ]
                     }, layout: 'lightHorizontalLines' });
 
-            } else if (reportType === 'batch' && sessionsToInclude.length > 0) {
-                const sessionsBySerial = sessionsToInclude.reduce((acc, session) => {
+            } else if (reportType === 'batch' && batchToReport) {
+                const sessionsBySerial = sessionsForBatchReport.reduce((acc, session) => {
                     const sn = session.serialNumber || 'Unknown';
                     if (!acc[sn]) acc[sn] = [];
                     acc[sn].push(session);
@@ -719,7 +733,7 @@ function TestingComponent() {
                         const endValue = values.length > 0 ? values[values.length-1] : undefined;
                         
                         let startPressure = 'N/A', endPressure = 'N/A';
-                        if (config) {
+                        if (config && data.length > 0) {
                             const unitLabel = config.unit || '';
                             if (startValue !== undefined) startPressure = `${convertRawValue(startValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
                             if (endValue !== undefined) endPressure = `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
@@ -732,8 +746,7 @@ function TestingComponent() {
                     });
                 });
 
-                const batchInfo = batches?.find(b => b.id === selectedReportBatchId);
-                docDefinition.content.push({ text: `Batch: ${batchInfo?.name || ''} - Summary`, style: 'subheader', margin: [0, 10, 0, 5] });
+                docDefinition.content.push({ text: `Batch: ${batchToReport.name} - Summary`, style: 'subheader', margin: [0, 10, 0, 5] });
                 docDefinition.content.push({
                     style: 'tableExample', table: { headerRows: 1, widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'],
                         body: [
@@ -995,7 +1008,7 @@ function TestingComponent() {
                     </p>
                     <p className="text-lg text-muted-foreground">{isConnected && currentValue !== null ? (convertedValue?.unit ?? '') : ''}</p>
                      <p className="text-xs text-muted-foreground h-4 mt-1">
-                        {isConnected && lastDataPointTimestamp ? `(Updated ${formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true, includeSeconds: true })}` : ''}
+                        {isConnected && lastDataPointTimestamp ? `(Updated ${formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true, includeSeconds: true })})` : ''}
                     </p>
                     
                     <div className={`text-sm mt-2 flex items-center justify-center gap-1 ${isConnected ? 'text-green-600' : 'text-destructive'}`}>
