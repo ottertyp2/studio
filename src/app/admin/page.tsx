@@ -1,4 +1,5 @@
 
+
 'use client';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -207,6 +208,16 @@ type AutomatedTrainingStatus = {
   step: string;
   progress: number;
   details: string;
+}
+
+const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
 }
 
 export default function AdminPage() {
@@ -918,7 +929,7 @@ export default function AdminPage() {
             throw new Error('Model training did not produce weight data.');
         }
 
-        const weightDataAsBase64 = Bytes.fromUint8Array(new Uint8Array(modelArtifacts.weightData)).toBase64();
+        const weightDataAsBase64 = arrayBufferToBase64(modelArtifacts.weightData);
         
         const modelData = {
             modelTopology: JSON.stringify(modelArtifacts.modelTopology),
@@ -933,7 +944,7 @@ export default function AdminPage() {
             modelData: modelData,
         });
 
-        toast({ title: 'Model Saved', description: `Model "${selectedModel.name}" updated in catalog and saved to Firebase Storage.` });
+        toast({ title: 'Model Saved', description: `Model "${selectedModel.name}" updated in catalog and saved to Firestore.` });
 
     } catch (e: any) {
         toast({variant: 'destructive', title: 'Training Failed', description: e.message});
@@ -950,16 +961,6 @@ export default function AdminPage() {
     let num = Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
     return num * std + mean;
   }
-
-    const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
-        let binary = '';
-        const bytes = new Uint8Array(buffer);
-        const len = bytes.byteLength;
-        for (let i = 0; i < len; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        return window.btoa(binary);
-    }
 
   const handleAutomatedTraining = async () => {
     if (!mlModelsCollectionRef || !firestore || !firebaseApp) return;
@@ -1398,7 +1399,7 @@ export default function AdminPage() {
     });
   };
 
-  const handleGenerateVesselTypeReport = async (vesselType: VesselType) => {
+    const handleGenerateVesselTypeReport = async (vesselType: VesselType) => {
     if (!firestore || !firebaseApp || !testSessions || !sensorConfigs || !batches || !pdfChartRef.current) {
         toast({ variant: 'destructive', title: 'Report Failed', description: 'Required data is not loaded. Please wait and try again.' });
         return;

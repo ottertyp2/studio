@@ -574,6 +574,8 @@ function TestingComponent() {
         let sessionsForBatchReport: WithId<TestSession>[] = [];
         let reportTitle = '';
         let reportFilename = 'report';
+        const allSensorDataForReport: Record<string, SensorData[]> = {};
+
 
         let logoBase64: string | null = null;
         try {
@@ -595,9 +597,10 @@ function TestingComponent() {
                 sessionToReport = sessionHistory.find(s => s.id === selectedReportSessionId);
                 if (!sessionToReport) throw new Error('Selected session not found.');
                 
-                const sessionData = comparisonData[sessionToReport.id] || (await getDocs(query(collection(firestore, `test_sessions/${sessionToReport.id}/sensor_data`), orderBy('timestamp')))).docs.map(d => ({id: d.id, ...d.data()} as WithId<SensorData>));
+                const sessionData = comparisonData[sessionToReport.id] || (await getDocs(query(collection(firestore, `test_sessions/${sessionToReport.id}/sensor_data`), orderBy('timestamp')))).docs.map(d => ({id: d.id, ...d.data()} as SensorData));
                 if (sessionData.length === 0) throw new Error('No data found for the selected session.');
 
+                allSensorDataForReport[sessionToReport.id] = sessionData;
                 setComparisonData(prev => ({...prev, [sessionToReport!.id]: sessionData}));
                 setComparisonSessions([sessionToReport]);
                 reportTitle = `Single Vessel Pressure Test Report`;
@@ -608,6 +611,13 @@ function TestingComponent() {
                  if (!batchToReport) throw new Error('Selected batch not found.');
                  sessionsForBatchReport = sessionHistory.filter(s => s.batchId === selectedReportBatchId && s.status === 'COMPLETED');
                  if(sessionsForBatchReport.length === 0) throw new Error('No completed sessions found for this batch.');
+                 
+                 for (const session of sessionsForBatchReport) {
+                    const dataSnapshot = await getDocs(query(collection(firestore, `test_sessions/${session.id}/sensor_data`), orderBy('timestamp')));
+                    allSensorDataForReport[session.id] = dataSnapshot.docs.map(d => d.data() as SensorData);
+                 }
+
+                 setComparisonData(allSensorDataForReport);
                  setComparisonSessions(sessionsForBatchReport);
                  reportTitle = `Batch Pressure Test Report`;
                  reportFilename = `report-batch-${batchToReport.name.replace(/\s+/g, '_')}`;
@@ -678,7 +688,7 @@ function TestingComponent() {
             if (reportType === 'single' && sessionToReport) {
                 const config = sensorConfigs?.find(c => c.id === sessionToReport.sensorConfigurationId);
                 const batch = batches?.find(b => b.id === sessionToReport.batchId);
-                const data = comparisonData[sessionToReport.id] || [];
+                const data = allSensorDataForReport[sessionToReport.id] || [];
                 
                 const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(sessionToReport.startTime).getTime();
                 const sessionEndTime = sessionToReport.endTime ? new Date(sessionToReport.endTime).getTime() : (data.length > 0 ? new Date(data[data.length-1].timestamp).getTime() : sessionStartTime);
@@ -722,7 +732,7 @@ function TestingComponent() {
             } else if (reportType === 'batch' && batchToReport) {
                 const tableBody = sessionsForBatchReport.map(session => {
                     const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-                    const data = comparisonData[session.id] || [];
+                    const data = allSensorDataForReport[session.id] || [];
 
                     const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(session.startTime).getTime();
                     const sessionEndTime = session.endTime ? new Date(session.endTime).getTime() : (data.length > 0 ? new Date(data[data.length - 1].timestamp).getTime() : sessionStartTime);
