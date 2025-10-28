@@ -1156,12 +1156,13 @@ export default function AdminPage() {
             return curve[curve.length - 1].y;
         };
         
-        const chartDataForPdf = relevantSessions.flatMap(session => {
+        const chartDataForPdf = relevantSessions.flatMap((session, sessionIndex) => {
             const data = allSensorData[session.id];
             if (!data || data.length === 0) return [];
             
             const sessionStartTime = new Date(data[0].timestamp).getTime();
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+            const dataKey = session.serialNumber || session.id;
 
             return data.map((d, index) => {
                 const time = (new Date(d.timestamp).getTime() - sessionStartTime) / 1000;
@@ -1172,45 +1173,34 @@ export default function AdminPage() {
                 
                 const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
                 
-                const prevPoint = index > 0 ? data[index-1] : null;
-                const prevTime = prevPoint ? (new Date(prevPoint.timestamp).getTime() - sessionStartTime) / 1000 : time;
-                const prevValue = prevPoint ? convertRawValue(prevPoint.value, config || null) : value;
-                const prevMinGuideline = vt?.minCurve ? interpolate(vt.minCurve, prevTime) : undefined;
-                const prevMaxGuideline = vt?.maxCurve ? interpolate(vt.maxCurve, prevTime) : undefined;
-                const prevIsFailed = (prevMinGuideline !== undefined && prevValue < prevMinGuideline) || (prevMaxGuideline !== undefined && prevValue > prevMaxGuideline);
+                let prevIsFailed = false;
+                if (index > 0) {
+                    const prevDataPoint = data[index - 1];
+                    const prevTime = (new Date(prevDataPoint.timestamp).getTime() - sessionStartTime) / 1000;
+                    const prevValue = convertRawValue(prevDataPoint.value, config || null);
+                    const prevMinGuideline = vt?.minCurve ? interpolate(vt.minCurve, prevTime) : undefined;
+                    const prevMaxGuideline = vt?.maxCurve ? interpolate(vt.maxCurve, prevTime) : undefined;
+                    prevIsFailed = (prevMinGuideline !== undefined && prevValue < prevMinGuideline) || (prevMaxGuideline !== undefined && prevValue > prevMaxGuideline);
+                }
 
                 return {
                     name: time,
-                    [session.id]: value,
-                    [`${session.id}-failed`]: isFailed ? value : null,
-                    [`${session.id}-passed`]: !isFailed ? value : null,
-                    isTransition: isFailed !== prevIsFailed,
+                    [`${dataKey}-passed`]: !isFailed ? value : null,
+                    [`${dataKey}-failed`]: isFailed ? value : null,
                     minGuideline,
                     maxGuideline,
                 };
             });
         }).filter(Boolean);
 
-
-        const mergedChartData: any[] = [];
-        const temp: Record<number, any> = {};
+        const mergedChartDataMap: Record<string, any> = {};
         for (const dp of chartDataForPdf) {
             if (!dp) continue;
-            const roundedTime = Math.round(dp.name);
-            if (!temp[roundedTime]) temp[roundedTime] = { name: roundedTime };
-            
-            if (dp.isTransition) {
-                const existing = temp[roundedTime][Object.keys(dp).find(k => k.includes(dp.sessionId)) as string];
-                if (existing) {
-                    temp[roundedTime][`${dp.sessionId}-passed`] = existing;
-                    temp[roundedTime][`${dp.sessionId}-failed`] = existing;
-                }
-            }
-            
-            Object.assign(temp[roundedTime], dp);
+            const key = dp.name.toFixed(3);
+            if (!mergedChartDataMap[key]) mergedChartDataMap[key] = { name: dp.name };
+            Object.assign(mergedChartDataMap[key], dp);
         }
-        
-        const finalChartData = Object.values(temp).sort((a, b) => a.name - b.name);
+        const finalChartData = Object.values(mergedChartDataMap).sort((a, b) => a.name - b.name);
         
         setPdfChartSessions(relevantSessions);
         setPdfChartData(finalChartData);
@@ -1267,7 +1257,7 @@ export default function AdminPage() {
                 avgValue = (sum / data.length).toFixed(decimalPlaces);
             }
             
-            const color = CHART_COLORS[index % CHART_COLORS.length];
+            const color = CHART_COLORS[pdfChartSessions.findIndex(s => s.serialNumber === session.serialNumber) % CHART_COLORS.length];
 
             return [
                 batchName ?? 'N/A',
@@ -2541,47 +2531,46 @@ const renderAIModelManagement = () => (
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-4">
-      <div ref={pdfChartRef} className="fixed -left-[9999px] top-0 w-[800px] h-auto bg-white p-4 flex flex-col">
+       <div ref={pdfChartRef} className="fixed -left-[9999px] top-0 w-[800px] h-auto bg-white p-4">
           {pdfChartData.length > 0 && (
-              <>
-                <div className='w-full h-[350px] relative'>
-                    <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={pdfChartData}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} />
-                            <YAxis domain={['dataMin', 'dataMax + 10']} />
-                            <Tooltip />
-                            <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
-                            <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
+            <div className='w-full h-[400px] relative'>
+                <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={pdfChartData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} />
+                        <YAxis domain={['dataMin', 'dataMax + 10']} />
+                        <Tooltip />
+                        <Legend verticalAlign="bottom" wrapperStyle={{paddingTop: '10px'}} />
+                        <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
+                        <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
-                            {pdfChartSessions.map((session, index) => (
-                                <Line 
-                                    key={`${session.id}-passed`}
-                                    type="monotone" 
-                                    dataKey={`${session.id}-passed`} 
-                                    stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                                    name={session.serialNumber || session.id}
-                                    dot={false} 
-                                    strokeWidth={2}
-                                    connectNulls={false}
-                                />
-                            ))}
-                             {pdfChartSessions.map((session, index) => (
-                                <Line 
-                                    key={`${session.id}-failed`}
-                                    type="monotone" 
-                                    dataKey={`${session.id}-failed`} 
-                                    stroke="hsl(var(--destructive))"
-                                    name={`${session.serialNumber || session.id} (Failed)`}
-                                    dot={false} 
-                                    strokeWidth={2}
-                                    connectNulls={false}
-                                />
-                            ))}
-                        </LineChart>
-                    </ResponsiveContainer>
-                </div>
-              </>
+                        {pdfChartSessions.map((session, index) => (
+                            <Line 
+                                key={`${session.serialNumber}-passed`}
+                                type="monotone" 
+                                dataKey={`${session.serialNumber}-passed`} 
+                                stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                name={session.serialNumber || session.id}
+                                dot={false} 
+                                strokeWidth={2}
+                                connectNulls={false}
+                            />
+                        ))}
+                         {pdfChartSessions.map((session, index) => (
+                            <Line 
+                                key={`${session.serialNumber}-failed`}
+                                type="monotone" 
+                                dataKey={`${session.serialNumber}-failed`} 
+                                stroke="hsl(var(--destructive))"
+                                name={`${session.serialNumber || session.id} (Failed)`}
+                                dot={false} 
+                                strokeWidth={2}
+                                connectNulls={false}
+                            />
+                        ))}
+                    </LineChart>
+                </ResponsiveContainer>
+            </div>
           )}
       </div>
       <header className="w-full max-w-7xl mx-auto mb-6 animate-in">
@@ -2751,4 +2740,3 @@ const renderAIModelManagement = () => (
   );
 }
 
-    
