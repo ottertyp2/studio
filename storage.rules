@@ -1,0 +1,17 @@
+rules_version = '2';
+
+// By default, deny all reads and writes
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Allow authenticated users to read and write to the 'models' directory.
+    // This is necessary for saving and loading TensorFlow.js models.
+    match /models/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+    // You can add other rules for other paths here.
+    // For example, to allow reading public images:
+    // match /images/{allPaths=**} {
+    //   allow read;
+    // }
+  }
+}
