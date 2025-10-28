@@ -905,17 +905,24 @@ export default function AdminPage() {
         const modelPath = `models/${selectedModel.name}/model.json`;
         const modelRef = storageRef(storage, modelPath);
 
-        await model.save(tf.io.browserHTTPRequest(
-            `https://firebasestorage.googleapis.com/v0/b/${modelRef.bucket}/o?name=${encodeURIComponent(modelRef.fullPath)}`, 
-            { method: 'POST', headers: { 'Content-Type': 'application/json' } }
-        ));
+        const saveData = await model.save(tf.io.withSaveHandler(async (modelArtifacts) => {
+            const modelBlob = new Blob([JSON.stringify(modelArtifacts.modelTopology)], { type: 'application/json' });
+            await uploadBytes(storageRef(storage, modelPath), modelBlob);
+
+            if (modelArtifacts.weightData) {
+                const weightsPath = `models/${selectedModel.name}/weights.bin`;
+                const weightsBlob = new Blob([modelArtifacts.weightData], { type: 'application/octet-stream' });
+                await uploadBytes(storageRef(storage, weightsPath), weightsBlob);
+            }
+            return { modelArtifactsInfo: { dateSaved: new Date(), modelTopologyType: 'JSON' }};
+        }));
 
         const modelDocRef = doc(firestore, 'mlModels', selectedModelId);
         await updateDoc(modelDocRef, {
             description: `Manually trained on ${new Date().toLocaleDateString()}. Final Val Acc: ${finalValAcc.toFixed(2)}%`,
             version: `${selectedModel.version.split('-')[0]}-trained`,
             storagePath: modelPath,
-            fileSize: 0,
+            fileSize: 0, // You might want to calculate the actual size
         });
 
         toast({ title: 'Model Saved', description: `Model "${selectedModel.name}" updated in catalog and saved to Firebase Storage.` });
@@ -1039,12 +1046,19 @@ export default function AdminPage() {
       const modelName = `auto-model-${autoModelSize}-${new Date().toISOString().split('T')[0]}`;
       const storage = getStorage(firebaseApp);
       const modelPath = `models/${modelName}/model.json`;
-      const modelRef = storageRef(storage, modelPath);
-
-      await model.save(tf.io.browserHTTPRequest(
-        `https://firebasestorage.googleapis.com/v0/b/${modelRef.bucket}/o?name=${encodeURIComponent(modelRef.fullPath)}`, 
-        { method: 'POST', headers: { 'Content-Type': 'application/json' } }
-      ));
+      
+      const saveData = await model.save(tf.io.withSaveHandler(async (modelArtifacts) => {
+        // This is a custom save handler for Firebase Storage
+        const modelBlob = new Blob([JSON.stringify(modelArtifacts.modelTopology)], { type: 'application/json' });
+        await uploadBytes(storageRef(storage, modelPath), modelBlob);
+        if (modelArtifacts.weightData) {
+            const weightsPath = `models/${modelName}/weights.bin`;
+            const weightsBlob = new Blob([modelArtifacts.weightData], { type: 'application/octet-stream' });
+            await uploadBytes(storageRef(storage, weightsPath), weightsBlob);
+        }
+        // Return a ModelArtifactsInfo object.
+        return { modelArtifactsInfo: { dateSaved: new Date(), modelTopologyType: 'JSON' } };
+      }));
       
       const newId = doc(collection(firestore, '_')).id;
       const modelMetaData: MLModel = {
@@ -1435,7 +1449,12 @@ export default function AdminPage() {
         
         let chartImage = '';
         if (pdfChartRef.current) {
-            chartImage = await htmlToImage.toPng(pdfChartRef.current, { quality: 0.95, backgroundColor: '#ffffff' });
+            try {
+                chartImage = await htmlToImage.toPng(pdfChartRef.current, { quality: 0.95, backgroundColor: '#ffffff' });
+            } catch (e) {
+                console.error("Chart to image conversion failed", e);
+                toast({variant: 'destructive', title: 'Chart Image Failed', description: 'Could not generate chart image for PDF.'});
+            }
         }
 
 
@@ -1498,7 +1517,7 @@ export default function AdminPage() {
                 },
                 { text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' },
                 { text: `Total Sessions: ${relevantSessions.length}`, style: 'body', margin: [0, 0, 0, 10] },
-                { image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] },
+                chartImage ? { image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] } : {text: '[Chart generation failed]', alignment: 'center', margin: [0, 20, 0, 20]},
                 {
                     style: 'tableExample',
                     table: {
@@ -2847,3 +2866,4 @@ const renderBatchManagement = () => (
     </div>
   );
 }
+
