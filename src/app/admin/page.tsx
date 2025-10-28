@@ -4,9 +4,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import * as tf from '@tensorflow/tfjs';
-import { memory } from '@tensorflow/tfjs';
-import Papa from 'papaparse';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -99,7 +96,8 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Bytes } from 'firebase/firestore';
+import Papa from 'papaparse';
+
 
 if (pdfFonts.pdfMake) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
@@ -652,6 +650,7 @@ export default function AdminPage() {
 
 
     try {
+        const tf = await import('@tensorflow/tfjs');
         const { modelTopology, weightData } = modelToUse.modelData;
         const weights = base64ToArrayBuffer(weightData);
         
@@ -852,6 +851,7 @@ export default function AdminPage() {
     setTrainingStatus({ epoch: 0, loss: 0, accuracy: 0, val_loss: 0, val_acc: 0 });
 
     try {
+        const tf = await import('@tensorflow/tfjs');
         let allWindows: number[][] = [];
         let allLabels: number[] = [];
         const windowSize = 20;
@@ -980,6 +980,7 @@ export default function AdminPage() {
     setAutoTrainingStatus({ step: 'Initializing', progress: 0, details: 'Starting pipeline...' });
 
     try {
+      const tf = await import('@tensorflow/tfjs');
       const generateData = (type: 'LEAK' | 'DIFFUSION', numPoints = 200) => {
           let data = [];
           if (type === 'LEAK') {
