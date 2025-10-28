@@ -116,7 +116,7 @@ type ChartDataPoint = {
   name: number; // time in seconds
   minGuideline?: number;
   maxGuideline?: number;
-  [key: string]: number | undefined; // SessionID as key for value
+  [key: string]: number | undefined | null; // SessionID as key for value, allowing null
 };
 
 type VesselType = {
@@ -399,10 +399,11 @@ function TestingComponent() {
     }
   };
 
-  const chartData = useMemo(() => {
+  const chartData = useMemo((): ChartDataPoint[] => {
     if (comparisonSessions.length === 0) return [];
   
-    const dataPoints: ChartDataPoint[] = [];
+    const allPoints: ChartDataPoint[] = [];
+    const timeMap: { [time: number]: ChartDataPoint } = {};
   
     comparisonSessions.forEach(session => {
       const sessionData = comparisonData[session.id] || [];
@@ -413,46 +414,49 @@ function TestingComponent() {
       const startTime = new Date(sessionData[0].timestamp).getTime();
   
       const interpolateCurve = (curve: {x: number, y: number}[], x: number) => {
-          if (!curve || curve.length === 0) return undefined;
-          if (x < curve[0].x) return curve[0].y;
-          if (x > curve[curve.length - 1].x) return curve[curve.length - 1].y;
-          for(let i = 0; i < curve.length - 1; i++) {
-              if (x >= curve[i].x && x <= curve[i+1].x) {
-                  const x1 = curve[i].x; const y1 = curve[i].y;
-                  const x2 = curve[i+1].x; const y2 = curve[i+1].y;
-                  const t = (x - x1) / (x2 - x1);
-                  return y1 + t * (y2 - y1);
-              }
+        if (!curve || curve.length === 0) return undefined;
+        if (x < curve[0].x) return curve[0].y;
+        if (x > curve[curve.length - 1].x) return curve[curve.length - 1].y;
+        for (let i = 0; i < curve.length - 1; i++) {
+          if (x >= curve[i].x && x <= curve[i + 1].x) {
+            const x1 = curve[i].x; const y1 = curve[i].y;
+            const x2 = curve[i + 1].x; const y2 = curve[i + 1].y;
+            const t = (x - x1) / (x2 - x1);
+            return y1 + t * (y2 - y1);
           }
-          return curve[curve.length - 1].y;
+        }
+        return curve[curve.length - 1].y;
       };
   
       sessionData.forEach(d => {
         const time = (new Date(d.timestamp).getTime() - startTime) / 1000;
         const value = convertRawValue(d.value, config || null);
         
+        if (!timeMap[time]) {
+          timeMap[time] = { name: time };
+        }
+        
+        const point = timeMap[time];
+  
         const minGuideline = vesselType ? interpolateCurve(vesselType.minCurve, time) : undefined;
         const maxGuideline = vesselType ? interpolateCurve(vesselType.maxCurve, time) : undefined;
         
+        point.minGuideline = minGuideline;
+        point.maxGuideline = maxGuideline;
+  
         const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
   
-        const point: ChartDataPoint = {
-            name: time,
-            minGuideline: minGuideline,
-            maxGuideline: maxGuideline,
-        };
-
         if (isFailed) {
+            point[session.id] = null;
             point[`${session.id}-failed`] = value;
         } else {
             point[session.id] = value;
+            point[`${session.id}-failed`] = null;
         }
-        
-        dataPoints.push(point);
       });
     });
-
-    return dataPoints.sort((a, b) => a.name - b.name);
+  
+    return Object.values(timeMap).sort((a, b) => a.name - b.name);
   }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
   const setTimeframe = (frame: '1m' | '5m' | 'all') => {
@@ -635,21 +639,6 @@ function TestingComponent() {
                 const sessionEndTime = sessionToReport.endTime ? new Date(sessionToReport.endTime).getTime() : (data.length > 0 ? new Date(data[data.length-1].timestamp).getTime() : sessionStartTime);
                 const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
 
-                const values = data.map(d => d.value);
-                const startValue = values.length > 0 ? values[0] : undefined;
-                const endValue = values.length > 0 ? values[values.length-1] : undefined;
-                const avgValue = values.length > 0 ? values.reduce((a,b) => a + b, 0) / values.length : undefined;
-
-                let startPressure = 'N/A';
-                let endPressure = 'N/A';
-                let avgPressure = 'N/A';
-                if (config) {
-                    const unitLabel = config.unit || '';
-                    if (startValue !== undefined) startPressure = `${convertRawValue(startValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
-                    if (endValue !== undefined) endPressure = `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
-                    if (avgValue !== undefined) avgPressure = `${convertRawValue(avgValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
-                }
-
                 const classificationText = getClassificationText(sessionToReport.classification);
                 const statusStyle = {
                     text: classificationText,
@@ -670,10 +659,10 @@ function TestingComponent() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', 'auto', '*', 'auto', 'auto'],
                         body: [
-                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
-                            [{ text: batch?.name || 'N/A'}, { text: sessionToReport.serialNumber || 'N/A' }, `${attemptNumber} of ${totalAttempts}`, passResult, {text: sessionToReport.username}, {text: new Date(sessionToReport.startTime).toLocaleString()}, {text: duration}, {text: startPressure}, {text: endPressure}, statusStyle]
+                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            [{ text: batch?.name || 'N/A'}, { text: sessionToReport.serialNumber || 'N/A' }, `${attemptNumber} of ${totalAttempts}`, passResult, {text: sessionToReport.username}, {text: new Date(sessionToReport.startTime).toLocaleString()}, statusStyle]
                         ]
                     },
                     layout: 'lightHorizontalLines'
@@ -693,9 +682,6 @@ function TestingComponent() {
                 Object.values(sessionsByReactor).forEach(sessions => sessions.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
 
                 const tableBody = sessionsForBatchReport.map(session => {
-                    const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-                    const data = allSensorDataForReport[session.id] || [];
-
                     const reactorSessions = sessionsByReactor[session.serialNumber || session.id] || [];
                     const attemptNumber = reactorSessions.findIndex(s => s.id === session.id) + 1;
                     const totalAttempts = reactorSessions.length;
@@ -1210,6 +1196,7 @@ function TestingComponent() {
                 <div id="chart-container" ref={chartRef} className="h-96 w-full bg-background rounded-md p-2">
                   <ResponsiveContainer width="100%" height="100%">
                       <LineChart 
+                        data={chartData}
                         margin={{ top: 5, right: 30, left: 20, bottom: 20 }}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
@@ -1219,7 +1206,6 @@ function TestingComponent() {
                             stroke="hsl(var(--muted-foreground))"
                             domain={xAxisDomain}
                             allowDataOverflow
-                            data={chartData}
                             label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -10 }}
                         />
                         <YAxis
@@ -1246,11 +1232,13 @@ function TestingComponent() {
                         />
                         <Legend content={renderLegendContent} />
                         
+                        <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
+                        <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
+
                         {comparisonSessions.map((session, index) => (
                            <Line 
                             key={session.id}
                             type="monotone" 
-                            data={chartData.filter(d => d[session.id] !== undefined)}
                             dataKey={session.id} 
                             stroke={CHART_COLORS[index % CHART_COLORS.length]} 
                             name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`} 
@@ -1263,7 +1251,6 @@ function TestingComponent() {
                            <Line 
                             key={`${session.id}-failed`}
                             type="monotone" 
-                             data={chartData.filter(d => d[`${session.id}-failed`] !== undefined)}
                             dataKey={`${session.id}-failed`} 
                             stroke="hsl(var(--destructive))"
                             name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'} (Failed)`}
@@ -1272,9 +1259,6 @@ function TestingComponent() {
                             connectNulls={false}
                            />
                         ))}
-
-                        <Line type="monotone" data={chartData} dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
-                        <Line type="monotone" data={chartData} dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
                       </LineChart>
                   </ResponsiveContainer>
                 </div>

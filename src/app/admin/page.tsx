@@ -230,19 +230,15 @@ const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
 }
 
 async function serializeWeights(tensors: tf.Tensor[]): Promise<ArrayBuffer> {
-    const buffers: ArrayBuffer[] = [];
-    for (const tensor of tensors) {
-        const data = await tensor.data();
-        buffers.push(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
-    }
-    const totalLength = buffers.reduce((acc, val) => acc + val.byteLength, 0);
-    const result = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const buffer of buffers) {
-        result.set(new Uint8Array(buffer), offset);
-        offset += buffer.byteLength;
-    }
-    return result.buffer;
+    const weightData = tensors.map(tensor => ({
+      data: Array.from(tensor.dataSync()),
+      shape: tensor.shape,
+      dtype: tensor.dtype
+    }));
+
+    const jsonString = JSON.stringify(weightData);
+    const textEncoder = new TextEncoder();
+    return textEncoder.encode(jsonString).buffer;
 }
 
 
@@ -281,6 +277,7 @@ export default function AdminPage() {
 
   const [generatingVesselTypeReport, setGeneratingVesselTypeReport] = useState<string | null>(null);
   const [pdfChartData, setPdfChartData] = useState<any[]>([]);
+  const [pdfChartSessions, setPdfChartSessions] = useState<TestSession[]>([]);
   const pdfChartRef = useRef<HTMLDivElement>(null);
   const sessionImportRef = useRef<HTMLInputElement>(null);
 
@@ -1173,23 +1170,29 @@ export default function AdminPage() {
             }
             return curve[curve.length - 1].y;
         };
-
+        
         const finalChartData = sortedData.map(point => {
             const newPoint = {...point};
-            if(vt?.minCurve) newPoint.minGuideline = interpolate(vt.minCurve, point.name);
-            if(vt?.maxCurve) newPoint.maxGuideline = interpolate(vt.maxCurve, point.name);
+            const minGuideline = vt?.minCurve ? interpolate(vt.minCurve, point.name) : undefined;
+            const maxGuideline = vt?.maxCurve ? interpolate(vt.maxCurve, point.name) : undefined;
+            
+            newPoint.minGuideline = minGuideline;
+            newPoint.maxGuideline = maxGuideline;
 
             relevantSessions.forEach(session => {
-                if (newPoint[session.id] !== undefined && newPoint.minGuideline !== undefined && newPoint.maxGuideline !== undefined) {
-                    if (newPoint[session.id] < newPoint.minGuideline || newPoint[session.id] > newPoint.maxGuideline) {
+                if (newPoint[session.id] !== undefined) {
+                    if (minGuideline !== undefined && maxGuideline !== undefined && (newPoint[session.id] < minGuideline || newPoint[session.id] > maxGuideline)) {
                         newPoint[`${session.id}-failed`] = newPoint[session.id];
-                        delete newPoint[session.id];
+                        newPoint[session.id] = null;
+                    } else {
+                        newPoint[`${session.id}-failed`] = null;
                     }
                 }
             });
             return newPoint;
         });
-
+        
+        setPdfChartSessions(relevantSessions);
         setPdfChartData(finalChartData);
         
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -1219,22 +1222,6 @@ export default function AdminPage() {
             const data = allSensorData[session.id] ?? [];
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
             const batchName = batches?.find(b => b.id === session.batchId)?.name;
-            
-            const values = data.map(d => d.value);
-            const startValue = values.length > 0 ? values[0] : undefined;
-            const endValue = values.length > 0 ? values[values.length - 1] : undefined;
-            const avgValue = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : undefined;
-
-            let startPressure = 'N/A';
-            let endPressure = 'N/A';
-            let avgPressure = 'N/A';
-
-            if (config && startValue !== undefined && endValue !== undefined && avgValue !== undefined) {
-                const unitLabel = config.unit || '';
-                startPressure = `${convertRawValue(startValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
-                endPressure = `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
-                avgPressure = `${convertRawValue(avgValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
-            }
 
             const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
 
@@ -1322,6 +1309,7 @@ export default function AdminPage() {
     } finally {
         setGeneratingVesselTypeReport(null);
         setPdfChartData([]);
+        setPdfChartSessions([]);
     }
 };
 
@@ -2259,10 +2247,10 @@ const renderBatchManagement = () => (
                       <YAxis domain={['dataMin', 'dataMax + 10']} />
                       <Tooltip />
                       <Legend />
-                        <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
-                        <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" />
+                        <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
+                        <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
-                        {filteredAndSortedSessions.map((session, index) => (
+                        {pdfChartSessions.map((session, index) => (
                            <Line 
                             key={session.id}
                             type="monotone" 
@@ -2271,10 +2259,10 @@ const renderBatchManagement = () => (
                             name={`${session.serialNumber}`} 
                             dot={false} 
                             strokeWidth={2}
-                            connectNulls 
+                            connectNulls={false}
                            />
                         ))}
-                         {filteredAndSortedSessions.map((session, index) => (
+                         {pdfChartSessions.map((session, index) => (
                            <Line 
                             key={`${session.id}-failed`}
                             type="monotone" 
@@ -2283,7 +2271,7 @@ const renderBatchManagement = () => (
                             name={`${session.serialNumber} (Failed)`}
                             dot={false} 
                             strokeWidth={2} 
-                            connectNulls
+                            connectNulls={false}
                            />
                         ))}
                   </LineChart>
