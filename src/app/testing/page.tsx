@@ -48,7 +48,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle, Square, Zap } from 'lucide-react';
+import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle, Square, Zap, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, WithId } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
@@ -152,6 +152,12 @@ type CrashReport = {
     };
 };
 
+type CrashAnalysisErrorState = {
+  isError: boolean;
+  message: string;
+  isRetryable: boolean;
+};
+
 const CHART_COLORS = [
   'hsl(var(--chart-1))',
   'hsl(var(--chart-2))',
@@ -206,10 +212,12 @@ function TestingComponent() {
   const [reportType, setReportType] = useState<'single' | 'batch' | null>(null);
   const [selectedReportSessionId, setSelectedReportSessionId] = useState<string | null>(null);
   const [selectedReportBatchId, setSelectedReportBatchId] = useState<string | null>(null);
+  
   const [isCrashPanelOpen, setIsCrashPanelOpen] = useState(false);
   const [crashReport, setCrashReport] = useState<CrashReport | null>(null);
   const [crashAnalysis, setCrashAnalysis] = useState<AnalyzeArduinoCrashesOutput | null>(null);
   const [isAnalyzingCrash, setIsAnalyzingCrash] = useState(false);
+  const [crashAnalysisError, setCrashAnalysisError] = useState<CrashAnalysisErrorState | null>(null);
 
 
   // Data fetching hooks
@@ -428,7 +436,7 @@ function TestingComponent() {
         return curve[curve.length - 1].y;
       };
   
-      sessionData.forEach(d => {
+      sessionData.forEach((d, i) => {
         const time = (new Date(d.timestamp).getTime() - startTime) / 1000;
         const value = convertRawValue(d.value, config || null);
         
@@ -446,12 +454,9 @@ function TestingComponent() {
   
         const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
   
+        // Store both values. One for the main line, one for the red overlay.
         point[session.id] = value;
-        if (isFailed) {
-            point[`${session.id}-failed`] = value;
-        } else {
-            point[`${session.id}-failed`] = null;
-        }
+        point[`${session.id}-failed`] = isFailed ? value : null;
       });
     });
   
@@ -818,12 +823,12 @@ function TestingComponent() {
     });
   };
 
-  const handleOpenCrashPanel = async () => {
+  const performCrashAnalysis = async () => {
     if (!database) return;
-    setIsCrashPanelOpen(true);
-    setCrashAnalysis(null);
-    setCrashReport(null);
+
     setIsAnalyzingCrash(true);
+    setCrashAnalysis(null);
+    setCrashAnalysisError(null);
 
     try {
         const crashReportRef = ref(database, '/system/lastCrashReport');
@@ -836,13 +841,30 @@ function TestingComponent() {
             setCrashAnalysis(analysis);
         } else {
             setCrashReport(null);
-            toast({ title: "No Crash Reports Found", description: "The device has not reported any reconnect events yet." });
+            setCrashAnalysisError({ isError: true, message: "The device has not reported any reconnect events yet.", isRetryable: false });
         }
     } catch (error: any) {
-        toast({ variant: 'destructive', title: "Failed to Fetch Crash Data", description: error.message });
+        let isRetryable = false;
+        let message = "An unexpected error occurred while analyzing the crash report.";
+
+        if (typeof error.message === 'string') {
+            if (error.message.includes('503') || error.message.toLowerCase().includes('overloaded')) {
+                message = "The AI analysis service is temporarily unavailable. Please try again in a few moments.";
+                isRetryable = true;
+            } else {
+                message = error.message;
+            }
+        }
+        
+        setCrashAnalysisError({ isError: true, message, isRetryable });
     } finally {
         setIsAnalyzingCrash(false);
     }
+  };
+
+  const handleOpenCrashPanel = () => {
+    setIsCrashPanelOpen(true);
+    performCrashAnalysis();
   };
 
   const getLatencyColor = (ping: number | null) => {
@@ -1047,6 +1069,17 @@ function TestingComponent() {
                                     <div className="flex items-center justify-center h-40">
                                         <Loader2 className="h-8 w-8 animate-spin text-primary"/>
                                         <p className="ml-4">Analyzing crash data...</p>
+                                    </div>
+                                ) : crashAnalysisError?.isError ? (
+                                    <div className="text-center h-40 flex flex-col justify-center items-center gap-4">
+                                        <p className="font-semibold text-destructive">Analysis Failed</p>
+                                        <p className="text-sm text-muted-foreground">{crashAnalysisError.message}</p>
+                                        {crashAnalysisError.isRetryable && (
+                                          <Button onClick={performCrashAnalysis} variant="outline">
+                                            <RefreshCw className="mr-2 h-4 w-4" />
+                                            Retry
+                                          </Button>
+                                        )}
                                     </div>
                                 ) : crashAnalysis ? (
                                     <div className="space-y-4">
@@ -1262,28 +1295,26 @@ function TestingComponent() {
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
                         {comparisonSessions.map((session, index) => (
-                           <Line 
-                            key={session.id}
-                            type="monotone" 
-                            dataKey={session.id} 
-                            stroke={CHART_COLORS[index % CHART_COLORS.length]} 
-                            name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`} 
-                            dot={false} 
-                            strokeWidth={2} 
-                            connectNulls
-                           />
-                        ))}
-                         {comparisonSessions.map((session, index) => (
-                           <Line 
-                            key={`${session.id}-failed`}
-                            type="monotone" 
-                            dataKey={`${session.id}-failed`} 
-                            stroke="hsl(var(--destructive))"
-                            name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'} (Failed)`}
-                            dot={false} 
-                            strokeWidth={2} 
-                            connectNulls={false}
-                           />
+                          <React.Fragment key={session.id}>
+                            <Line 
+                              type="monotone" 
+                              dataKey={session.id} 
+                              stroke={CHART_COLORS[index % CHART_COLORS.length]} 
+                              name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`} 
+                              dot={false} 
+                              strokeWidth={2} 
+                              connectNulls
+                            />
+                            <Line 
+                              type="monotone" 
+                              dataKey={`${session.id}-failed`} 
+                              stroke={"hsl(var(--destructive))"}
+                              name="Failed segment"
+                              dot={false} 
+                              strokeWidth={3}
+                              connectNulls={false}
+                            />
+                          </React.Fragment>
                         ))}
                       </LineChart>
                   </ResponsiveContainer>
