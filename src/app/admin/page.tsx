@@ -139,7 +139,7 @@ type MLModel = {
     fileSize: number;
     storagePath?: string;
     modelData?: {
-        modelTopology: string;
+        modelTopology: any; // Can be complex JSON
         weightData: string; // base64 encoded
     };
 };
@@ -208,7 +208,7 @@ type AutomatedTrainingStatus = {
   details: string;
 }
 
-const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
     let binary = '';
     const bytes = new Uint8Array(buffer);
     const len = bytes.byteLength;
@@ -218,7 +218,7 @@ const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
     return window.btoa(binary);
 }
 
-const base64ToArrayBuffer = (base64: string) => {
+const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
     const binary_string = window.atob(base64);
     const len = binary_string.length;
     const bytes = new Uint8Array(len);
@@ -227,6 +227,25 @@ const base64ToArrayBuffer = (base64: string) => {
     }
     return bytes.buffer;
 }
+
+// New helper function to serialize weights
+async function serializeWeights(tensors: any[]): Promise<ArrayBuffer> {
+    const buffers: ArrayBuffer[] = [];
+    for (const tensor of tensors) {
+        const data = await tensor.data();
+        buffers.push(data.buffer);
+    }
+    // Simple concatenation
+    const totalLength = buffers.reduce((acc, val) => acc + val.byteLength, 0);
+    const result = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const buffer of buffers) {
+        result.set(new Uint8Array(buffer), offset);
+        offset += buffer.byteLength;
+    }
+    return result.buffer;
+}
+
 
 export default function AdminPage() {
   const router = useRouter();
@@ -651,10 +670,9 @@ export default function AdminPage() {
     try {
         const tf = await import('@tensorflow/tfjs');
         const { modelTopology, weightData } = modelToUse.modelData;
-        const weights = base64ToArrayBuffer(weightData);
         
         const model = await tf.loadLayersModel(
-            tf.io.fromMemory(JSON.parse(modelTopology), weights)
+            tf.io.fromMemory(modelTopology, base64ToArrayBuffer(weightData))
         );
         
         const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
@@ -934,15 +952,12 @@ export default function AdminPage() {
 
         toast({ title: 'Training Complete!', description: 'Now saving model to cloud...' });
 
-        const modelArtifacts = await model.save(tf.io.memory());
-        if (!modelArtifacts.weightData) {
-            throw new Error('Model training did not produce weight data.');
-        }
+        const modelTopology = model.toJSON(null, false);
+        const weightData = await serializeWeights(model.getWeights());
+        const weightDataAsBase64 = arrayBufferToBase64(weightData);
 
-        const weightDataAsBase64 = arrayBufferToBase64(modelArtifacts.weightData);
-        
         const modelData = {
-            modelTopology: JSON.stringify(modelArtifacts.modelTopology),
+            modelTopology: modelTopology,
             weightData: weightDataAsBase64,
         };
 
@@ -1073,15 +1088,12 @@ export default function AdminPage() {
         
         setAutoTrainingStatus({ step: 'Saving Model', progress: 90, details: 'Saving model to Firestore...' });
 
-        const modelArtifacts = await model.save(tf.io.memory());
-        if (!modelArtifacts.weightData) {
-            throw new Error('Model training did not produce weight data.');
-        }
-
-        const weightDataAsBase64 = arrayBufferToBase64(modelArtifacts.weightData);
+        const modelTopology = model.toJSON(null, false);
+        const weightData = await serializeWeights(model.getWeights());
+        const weightDataAsBase64 = arrayBufferToBase64(weightData);
         
         const modelData = {
-            modelTopology: JSON.stringify(modelArtifacts.modelTopology),
+            modelTopology: modelTopology,
             weightData: weightDataAsBase64,
         };
 
@@ -2892,4 +2904,3 @@ const renderBatchManagement = () => (
   );
 }
 
-    
