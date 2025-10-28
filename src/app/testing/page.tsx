@@ -1,3 +1,4 @@
+
 'use client';
 import { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -559,8 +560,8 @@ function TestingComponent() {
   }, [isDuringDowntime, lastDataPointTimestamp]);
 
     const generateReport = async () => {
-        if (!firestore || !chartRef.current || !reportType) {
-            toast({ variant: 'destructive', title: 'Report Failed', description: 'Please select a report type and make a selection.' });
+        if (!firestore || !chartRef.current) {
+            toast({ variant: 'destructive', title: 'Report Failed', description: 'Required services are not available.' });
             return;
         }
 
@@ -568,18 +569,14 @@ function TestingComponent() {
         toast({ title: 'Generating Report...', description: 'Please wait, this can take a moment.' });
 
         const originalComparisonSessions = [...comparisonSessions];
-        let sessionToReport: WithId<TestSession> | undefined;
-        let batchToReport: WithId<Batch> | undefined;
-        let sessionsForBatchReport: WithId<TestSession>[] = [];
+
         let reportTitle = '';
         let reportFilename = 'report';
-
         let logoBase64: string | null = null;
+        let sessionsToInclude: WithId<TestSession>[] = [];
+
         try {
             logoBase64 = await toBase64('/images/logo.png');
-            if (!logoBase64.startsWith('data:image')) {
-                 throw new Error("Conversion to base64 failed or returned invalid format.");
-            }
         } catch (error: any) {
             console.error("PDF Logo Generation Error:", error);
             toast({
@@ -591,41 +588,45 @@ function TestingComponent() {
         
         try {
             if (reportType === 'single' && selectedReportSessionId) {
-                sessionToReport = sessionHistory.find(s => s.id === selectedReportSessionId);
-                if (!sessionToReport) throw new Error('Selected session not found.');
-                
-                const sessionData = comparisonData[sessionToReport.id] || (await getDocs(query(collection(firestore, `test_sessions/${sessionToReport.id}/sensor_data`), orderBy('timestamp')))).docs.map(d => ({id: d.id, ...d.data()} as WithId<SensorData>));
-                if (sessionData.length === 0) throw new Error('No data found for the selected session.');
-
-                setComparisonData(prev => ({...prev, [sessionToReport!.id]: sessionData}));
-                setComparisonSessions([sessionToReport]);
+                const foundSession = sessionHistory.find(s => s.id === selectedReportSessionId);
+                if (!foundSession) throw new Error('Selected session not found.');
+                sessionsToInclude = [foundSession];
                 reportTitle = `Single Vessel Pressure Test Report`;
-                reportFilename = `report-session-${sessionToReport.serialNumber || sessionToReport.id}`;
-
+                reportFilename = `report-session-${foundSession.serialNumber || foundSession.id}`;
             } else if (reportType === 'batch' && selectedReportBatchId) {
-                 batchToReport = batches?.find(b => b.id === selectedReportBatchId);
-                 if (!batchToReport) throw new Error('Selected batch not found.');
-                 sessionsForBatchReport = sessionHistory.filter(s => s.batchId === selectedReportBatchId && s.status === 'COMPLETED');
-                 if(sessionsForBatchReport.length === 0) throw new Error('No completed sessions found for this batch.');
-                 
-                 // Fetch all data for the batch report
-                 for (const session of sessionsForBatchReport) {
-                     if (!comparisonData[session.id]) {
-                         const dataSnapshot = await getDocs(query(collection(firestore, `test_sessions/${session.id}/sensor_data`), orderBy('timestamp')));
-                         const data = dataSnapshot.docs.map(d => ({id: d.id, ...d.data()} as WithId<SensorData>));
-                         setComparisonData(prev => ({...prev, [session.id]: data}));
-                     }
-                 }
-                 
-                 setComparisonSessions(sessionsForBatchReport);
-                 reportTitle = `Batch Pressure Test Report`;
-                 reportFilename = `report-batch-${batchToReport.name.replace(/\s+/g, '_')}`;
+                sessionsToInclude = sessionHistory.filter(s => s.batchId === selectedReportBatchId && s.status === 'COMPLETED');
+                if (sessionsToInclude.length === 0) throw new Error('No completed sessions found for this batch.');
+                const batchInfo = batches?.find(b => b.id === selectedReportBatchId);
+                reportTitle = `Batch Pressure Test Report`;
+                reportFilename = `report-batch-${batchInfo?.name.replace(/\s+/g, '_') || selectedReportBatchId}`;
             } else {
                 throw new Error('Invalid report selection.');
             }
-            
-            await new Promise(resolve => setTimeout(resolve, 1500));
 
+            // Centralized Data Fetching
+            const dataPromises = sessionsToInclude.map(session => {
+                if (comparisonData[session.id]) {
+                    return Promise.resolve({ sessionId: session.id, data: comparisonData[session.id] });
+                }
+                const dataQuery = query(collection(firestore, `test_sessions/${session.id}/sensor_data`), orderBy('timestamp'));
+                return getDocs(dataQuery).then(snapshot => ({
+                    sessionId: session.id,
+                    data: snapshot.docs.map(d => ({ id: d.id, ...d.data() } as WithId<SensorData>))
+                }));
+            });
+
+            const allSessionDataResults = await Promise.all(dataPromises);
+            const freshComparisonData: Record<string, WithId<SensorData>[]> = {};
+            allSessionDataResults.forEach(result => {
+                freshComparisonData[result.sessionId] = result.data;
+            });
+            
+            setComparisonData(prev => ({ ...prev, ...freshComparisonData }));
+            setComparisonSessions(sessionsToInclude);
+            
+            await new Promise(resolve => setTimeout(resolve, 1500)); // Wait for chart re-render
+
+            if (!chartRef.current) throw new Error("Chart reference is not available for imaging.");
             const chartImage = await htmlToImage.toPng(chartRef.current, {
                 quality: 0.95,
                 backgroundColor: '#ffffff'
@@ -645,13 +646,14 @@ function TestingComponent() {
                 defaultStyle: { font: 'Roboto' }
             };
 
+            const vesselTypeName = sessionsToInclude.length > 0 ? sessionsToInclude[0].vesselTypeName : '';
             docDefinition.content.push({
                 columns: [
                    logoBase64 ? { image: logoBase64, width: 70 } : { text: '' },
                     {
                         stack: [
                         { text: reportTitle, style: 'header', alignment: 'right' },
-                        { text: (sessionToReport?.vesselTypeName || vesselTypes?.find(vt => vt.id === batchToReport?.vesselTypeId)?.name) || '', style: 'subheader', alignment: 'right', margin: [0, 0, 0, 10] },
+                        { text: vesselTypeName, style: 'subheader', alignment: 'right', margin: [0, 0, 0, 10] },
                         ],
                     },
                 ],
@@ -660,13 +662,14 @@ function TestingComponent() {
             docDefinition.content.push({ text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' });
             docDefinition.content.push({ image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] });
 
-            if (reportType === 'single' && sessionToReport) {
-                const config = sensorConfigs?.find(c => c.id === sessionToReport.sensorConfigurationId);
-                const batch = batches?.find(b => b.id === sessionToReport.batchId);
-                const data = comparisonData[sessionToReport.id] || [];
+            if (reportType === 'single' && sessionsToInclude.length === 1) {
+                const session = sessionsToInclude[0];
+                const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+                const batch = batches?.find(b => b.id === session.batchId);
+                const data = freshComparisonData[session.id] || [];
                 
-                const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(sessionToReport.startTime).getTime();
-                const sessionEndTime = sessionToReport.endTime ? new Date(sessionToReport.endTime).getTime() : (data.length > 0 ? new Date(data[data.length-1].timestamp).getTime() : sessionStartTime);
+                const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(session.startTime).getTime();
+                const sessionEndTime = session.endTime ? new Date(session.endTime).getTime() : (data.length > 0 ? new Date(data[data.length-1].timestamp).getTime() : sessionStartTime);
                 const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
 
                 const values = data.map(d => d.value);
@@ -674,9 +677,7 @@ function TestingComponent() {
                 const endValue = values.length > 0 ? values[values.length-1] : undefined;
                 const avgValue = values.length > 0 ? values.reduce((a,b) => a + b, 0) / values.length : undefined;
 
-                let startPressure = 'N/A';
-                let endPressure = 'N/A';
-                let avgPressure = 'N/A';
+                let startPressure = 'N/A', endPressure = 'N/A', avgPressure = 'N/A';
                 if (config) {
                     const unitLabel = config.unit || '';
                     if (startValue !== undefined) startPressure = `${convertRawValue(startValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
@@ -684,28 +685,20 @@ function TestingComponent() {
                     if (avgValue !== undefined) avgPressure = `${convertRawValue(avgValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
                 }
 
-                const classificationText = getClassificationText(sessionToReport.classification);
-                const statusStyle = {
-                    text: classificationText,
-                    color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
-                };
+                const classificationText = getClassificationText(session.classification);
+                const statusStyle = { text: classificationText, color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black') };
 
                 docDefinition.content.push({ text: 'Session Summary', style: 'subheader', margin: [0, 10, 0, 5] });
                 docDefinition.content.push({
-                    style: 'tableExample',
-                    table: {
-                        headerRows: 1,
-                        widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                    style: 'tableExample', table: { headerRows: 1, widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Avg Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
-                            [{ text: batch?.name || 'N/A'}, { text: sessionToReport.serialNumber || 'N/A' }, {text: sessionToReport.description || 'N/A'}, {text: new Date(sessionToReport.startTime).toLocaleString()}, {text: duration}, {text: startPressure}, {text: endPressure}, {text: avgPressure}, statusStyle]
+                            [{ text: batch?.name || 'N/A'}, { text: session.serialNumber || 'N/A' }, {text: session.description || 'N/A'}, {text: new Date(session.startTime).toLocaleString()}, {text: duration}, {text: startPressure}, {text: endPressure}, {text: avgPressure}, statusStyle]
                         ]
-                    },
-                    layout: 'lightHorizontalLines'
-                });
+                    }, layout: 'lightHorizontalLines' });
 
-            } else if (reportType === 'batch' && batchToReport) {
-                const sessionsBySerial = sessionsForBatchReport.reduce((acc, session) => {
+            } else if (reportType === 'batch' && sessionsToInclude.length > 0) {
+                const sessionsBySerial = sessionsToInclude.reduce((acc, session) => {
                     const sn = session.serialNumber || 'Unknown';
                     if (!acc[sn]) acc[sn] = [];
                     acc[sn].push(session);
@@ -714,25 +707,18 @@ function TestingComponent() {
 
                 const tableBody = Object.values(sessionsBySerial).flatMap(sessions => {
                     sessions.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-                    let passAttempt = 'N/A';
                     const firstPassIndex = sessions.findIndex(s => s.classification === 'DIFFUSION');
-                    if (firstPassIndex !== -1) {
-                        passAttempt = `Passed on attempt ${firstPassIndex + 1}`;
-                    } else if (sessions.some(s => s.classification === 'LEAK')) {
-                        passAttempt = 'Failed';
-                    }
+                    const passAttempt = firstPassIndex !== -1 ? `Passed on attempt ${firstPassIndex + 1}` : (sessions.some(s => s.classification === 'LEAK') ? 'Failed' : 'N/A');
 
                     return sessions.map((session, index) => {
-                        const data = comparisonData[session.id] || [];
+                        const data = freshComparisonData[session.id] || [];
                         const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
                         
                         const values = data.map(d => d.value);
                         const startValue = values.length > 0 ? values[0] : undefined;
                         const endValue = values.length > 0 ? values[values.length-1] : undefined;
                         
-                        let startPressure = 'N/A';
-                        let endPressure = 'N/A';
-
+                        let startPressure = 'N/A', endPressure = 'N/A';
                         if (config) {
                             const unitLabel = config.unit || '';
                             if (startValue !== undefined) startPressure = `${convertRawValue(startValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
@@ -740,41 +726,21 @@ function TestingComponent() {
                         }
                         
                         const classificationText = getClassificationText(session.classification);
-                        const statusStyle = {
-                            text: classificationText,
-                            color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
-                        };
+                        const statusStyle = { text: classificationText, color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black') };
 
-                        return [
-                            session.serialNumber || 'N/A',
-                            index + 1,
-                            new Date(session.startTime).toLocaleString(),
-                            startPressure,
-                            endPressure,
-                            statusStyle,
-                            index === 0 ? passAttempt : ''
-                        ];
+                        return [ session.serialNumber || 'N/A', index + 1, new Date(session.startTime).toLocaleString(), startPressure, endPressure, statusStyle, index === 0 ? passAttempt : '' ];
                     });
                 });
 
-
-                docDefinition.content.push({ text: `Batch: ${batchToReport.name} - Summary`, style: 'subheader', margin: [0, 10, 0, 5] });
+                const batchInfo = batches?.find(b => b.id === selectedReportBatchId);
+                docDefinition.content.push({ text: `Batch: ${batchInfo?.name || ''} - Summary`, style: 'subheader', margin: [0, 10, 0, 5] });
                 docDefinition.content.push({
-                    style: 'tableExample',
-                    table: {
-                        headerRows: 1,
-                        widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'],
+                    style: 'tableExample', table: { headerRows: 1, widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}, {text: 'Final Result', style: 'tableHeader'}],
                             ...tableBody
                         ]
-                    },
-                    layout: {
-                        ...pdfMake.tableLayouts.lightHorizontalLines,
-                        hLineColor: (i: number, node: any) => (i === 0 || i === node.table.body.length) ? 'black' : '#aaa',
-                        vLineColor: () => '#aaa',
-                    }
-                });
+                    }, layout: { ...pdfMake.tableLayouts.lightHorizontalLines, hLineColor: (i: number, node: any) => (i === 0 || i === node.table.body.length) ? 'black' : '#aaa', vLineColor: () => '#aaa' } });
             }
 
             pdfMake.createPdf(docDefinition).download(`${reportFilename}.pdf`);
@@ -1320,5 +1286,5 @@ export default function TestingPage() {
         <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
             <TestingComponent />
         </Suspense>
-    )
+    );
 }
