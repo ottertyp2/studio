@@ -102,6 +102,16 @@ if (pdfFonts.pdfMake) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
 }
 
+const CHART_COLORS = [
+  '#8884d8',
+  '#82ca9d',
+  '#ffc658',
+  '#ff7300',
+  '#00C49F',
+  '#FFBB28',
+  '#FF8042'
+];
+
 
 type SensorConfig = {
     id: string;
@@ -2511,20 +2521,15 @@ const renderAIModelManagement = () => (
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-4">
-      <div ref={pdfChartRef} className="fixed -left-[9999px] top-0 w-[800px] h-[400px] bg-white">
+      <div ref={pdfChartRef} className="fixed -left-[9999px] top-0 w-[800px] h-[400px] bg-white p-4">
           {pdfChartData.length > 0 && (
-              <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={pdfChartData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} />
-                      <YAxis domain={['dataMin', 'dataMax + 10']} />
-                      <Tooltip />
-                      <Legend formatter={(value, entry) => {
-                          const { color, dataKey } = entry;
-                          if (String(dataKey).endsWith('-failed')) return null;
-                          const session = pdfChartSessions.find(s => s.id === dataKey);
-                          return <span style={{ color }}>{session?.serialNumber || value}</span>;
-                      }} />
+              <div className='w-full h-full relative'>
+                <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={pdfChartData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} />
+                        <YAxis domain={['dataMin', 'dataMax + 10']} />
+                        <Tooltip />
                         <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
@@ -2533,7 +2538,7 @@ const renderAIModelManagement = () => (
                             key={session.id}
                             type="monotone" 
                             dataKey={session.id} 
-                            stroke={'#8884d8'}
+                            stroke={CHART_COLORS[index % CHART_COLORS.length]}
                             name={session.serialNumber || session.id}
                             dot={false} 
                             strokeWidth={2}
@@ -2552,8 +2557,17 @@ const renderAIModelManagement = () => (
                             connectNulls={false}
                            />
                         ))}
-                  </LineChart>
-              </ResponsiveContainer>
+                    </LineChart>
+                </ResponsiveContainer>
+                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex flex-wrap justify-center items-center text-xs">
+                    {pdfChartSessions.map((session, index) => (
+                        <div key={session.id} className="flex items-center mr-4">
+                            <div className="w-3 h-3 mr-1" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}></div>
+                            <span>{session.serialNumber || 'N/A'}</span>
+                        </div>
+                    ))}
+                </div>
+              </div>
           )}
       </div>
       <header className="w-full max-w-7xl mx-auto mb-6 animate-in">
@@ -2722,5 +2736,3 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
-
-    
