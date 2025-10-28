@@ -38,7 +38,7 @@ const ValveRow = ({ valveName, valveId, status, onToggle, isLocked, isDisabled }
 
 
 export default function ValveControl() {
-  const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves, sequence1Running, sequence2Running, sendSequenceCommand } = useTestBench();
+  const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves, sequence1Running, sequence2Running, sendSequenceCommand, lockedSequences } = useTestBench();
 
   const handleToggle = (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!isConnected) return;
@@ -49,6 +49,9 @@ export default function ValveControl() {
       if (!isConnected) return;
       sendSequenceCommand(sequence, state);
   };
+
+  const isSequence1Locked = lockedSequences.includes('sequence1');
+  const isSequence2Locked = lockedSequences.includes('sequence2');
 
   return (
     <Card className="w-full backdrop-blur-sm border-slate-300/80 shadow-lg">
@@ -76,44 +79,44 @@ export default function ValveControl() {
             />
             <Separator />
             <div className="flex flex-col gap-2 pt-2">
-                {/* Sequence 1 Button Logic */}
+                {/* Sequence 1 UI */}
                 {sequence1Running ? (
                   <Button
                     variant="destructive"
                     onClick={() => handleSequence('sequence1', false)}
-                    disabled={!isConnected}
+                    disabled={!isConnected || isSequence1Locked}
                   >
-                    <Square className="mr-2 h-4 w-4" />
+                    {isSequence1Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
                     Stop Sequence 1
                   </Button>
                 ) : (
                   <Button
                     onClick={() => handleSequence('sequence1', true)}
-                    disabled={!isConnected || sequence2Running}
+                    disabled={!isConnected || sequence1Running || sequence2Running || isSequence1Locked || isSequence2Locked}
                     className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
                   >
-                    <Zap className="mr-2 h-4 w-4" />
+                    {isSequence1Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
                     Run Sequence 1
                   </Button>
                 )}
 
-                {/* Sequence 2 Button Logic */}
+                {/* Sequence 2 UI */}
                 {sequence2Running ? (
                   <Button
                     variant="destructive"
                     onClick={() => handleSequence('sequence2', false)}
-                    disabled={!isConnected}
+                    disabled={!isConnected || isSequence2Locked}
                   >
-                    <Square className="mr-2 h-4 w-4" />
+                    {isSequence2Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
                     Stop Sequence 2
                   </Button>
                 ) : (
                   <Button
                     onClick={() => handleSequence('sequence2', true)}
-                    disabled={!isConnected || sequence1Running}
+                    disabled={!isConnected || sequence1Running || sequence2Running || isSequence1Locked || isSequence2Locked}
                     className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
                   >
-                    <Zap className="mr-2 h-4 w-4" />
+                    {isSequence2Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
                     Run Sequence 2
                   </Button>
                 )}

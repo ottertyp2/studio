@@ -1,5 +1,4 @@
 
-
 'use client';
 import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -34,6 +33,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const runningTestSessionRef = useRef<WithId<DocumentData> | null>(null);
 
   const [lockedValves, setLockedValves] = useState<('VALVE1' | 'VALVE2')[]>([]);
+  const [lockedSequences, setLockedSequences] = useState<('sequence1' | 'sequence2')[]>([]);
+
 
   const [startTime, setStartTime] = useState<number | null>(null);
   const [totalDowntime, setTotalDowntime] = useState(0); // in milliseconds
@@ -98,15 +99,23 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const handleNewDataPoint = useCallback((data: any) => {
     if (data === null || data === undefined) return;
 
-    if (!lockedValves.includes('VALVE1')) {
+    if (data.valve1 !== undefined) {
       setValve1Status(data.valve1 ? 'ON' : 'OFF');
+      setLockedValves(prev => prev.filter(v => v !== 'VALVE1'));
     }
-    if (!lockedValves.includes('VALVE2')) {
+    if (data.valve2 !== undefined) {
       setValve2Status(data.valve2 ? 'ON' : 'OFF');
+      setLockedValves(prev => prev.filter(v => v !== 'VALVE2'));
     }
     
-    setSequence1Running(data.sequence1_running === true);
-    setSequence2Running(data.sequence2_running === true);
+    if (data.sequence1_running !== undefined) {
+      setSequence1Running(data.sequence1_running === true);
+      setLockedSequences(prev => prev.filter(s => s !== 'sequence1'));
+    }
+    if (data.sequence2_running !== undefined) {
+      setSequence2Running(data.sequence2_running === true);
+      setLockedSequences(prev => prev.filter(s => s !== 'sequence2'));
+    }
 
     setCurrentValue(data.sensor ?? null);
     setIsRecording(data.recording === true);
@@ -141,7 +150,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       };
       addDocumentNonBlocking(sessionDataRef, dataToSave);
     }
-  }, [firestore, lockedValves]);
+  }, [firestore]);
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!database) {
@@ -154,15 +163,13 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const commandPath = valve === 'VALVE1' ? 'commands/valve1' : 'commands/valve2';
     try {
         await set(ref(database, commandPath), state === 'ON');
-        // The lock is now removed by the device sending back the new state, not a timer
+        setTimeout(() => {
+            setLockedValves(prev => prev.filter(v => v !== valve));
+        }, 2000); // Safety timeout
     } catch (error: any) {
         console.error('Failed to send command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
         setLockedValves(prev => prev.filter(v => v !== valve)); 
-    } finally {
-        setTimeout(() => {
-            setLockedValves(prev => prev.filter(v => v !== valve));
-        }, 2000); // safety timeout
     }
   }, [database, toast]);
 
@@ -185,12 +192,18 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
           return;
       }
       
+      setLockedSequences(prev => [...prev, sequence]);
       const commandPath = `commands/${sequence}`;
+
       try {
           await set(ref(database, commandPath), state);
+           setTimeout(() => {
+              setLockedSequences(prev => prev.filter(s => s !== sequence));
+          }, 3000); // Safety timeout
       } catch (error: any) {
           console.error('Failed to send sequence command:', error);
           toast({ variant: 'destructive', title: 'Sequence Command Failed', description: error.message });
+          setLockedSequences(prev => prev.filter(s => s !== sequence));
       }
   }, [database, toast]);
 
@@ -262,6 +275,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     sequence1Running,
     sequence2Running,
     sendSequenceCommand,
+    lockedSequences,
   };
 
   return (
