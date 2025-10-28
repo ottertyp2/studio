@@ -1131,30 +1131,6 @@ export default function AdminPage() {
             const snapshot = await getDocs(q);
             allSensorData[session.id] = snapshot.docs.map(doc => doc.data() as SensorData);
         }
-
-        const chartDataForPdf = relevantSessions.flatMap(session => {
-            const data = allSensorData[session.id];
-            if (!data || data.length === 0) return [];
-            
-            const sessionStartTime = new Date(data[0].timestamp).getTime();
-            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-
-            return data.map(d => ({
-                name: (new Date(d.timestamp).getTime() - sessionStartTime) / 1000,
-                [session.id]: convertRawValue(d.value, config || null),
-            }));
-        }).filter(Boolean);
-
-        const mergedChartData: any[] = [];
-        const temp: Record<number, any> = {};
-        for (const dp of chartDataForPdf) {
-            if (!dp) continue;
-            const roundedTime = Math.round(dp.name);
-            if (!temp[roundedTime]) temp[roundedTime] = { name: roundedTime };
-            Object.assign(temp[roundedTime], dp);
-        }
-        
-        const sortedData = Object.values(temp).sort((a, b) => a.name - b.name);
         
         const vt = vesselTypes?.find(vt => vt.id === vesselType.id);
         const interpolate = (curve: { x: number, y: number }[], x: number) => {
@@ -1170,26 +1146,43 @@ export default function AdminPage() {
             return curve[curve.length - 1].y;
         };
         
-        const finalChartData = sortedData.map(point => {
-            const newPoint = {...point};
-            const minGuideline = vt?.minCurve ? interpolate(vt.minCurve, point.name) : undefined;
-            const maxGuideline = vt?.maxCurve ? interpolate(vt.maxCurve, point.name) : undefined;
+        const chartDataForPdf = relevantSessions.flatMap(session => {
+            const data = allSensorData[session.id];
+            if (!data || data.length === 0) return [];
             
-            newPoint.minGuideline = minGuideline;
-            newPoint.maxGuideline = maxGuideline;
+            const sessionStartTime = new Date(data[0].timestamp).getTime();
+            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
 
-            relevantSessions.forEach(session => {
-                const value = newPoint[session.id];
-                 if (value !== undefined && value !== null) {
-                    if (minGuideline !== undefined && maxGuideline !== undefined && (value < minGuideline || value > maxGuideline)) {
-                        newPoint[`${session.id}-failed`] = value; // Data for red line
-                    } else {
-                        newPoint[`${session.id}-failed`] = null; // No data for red line
-                    }
-                }
+            return data.map(d => {
+                const time = (new Date(d.timestamp).getTime() - sessionStartTime) / 1000;
+                const value = convertRawValue(d.value, config || null);
+
+                const minGuideline = vt?.minCurve ? interpolate(vt.minCurve, time) : undefined;
+                const maxGuideline = vt?.maxCurve ? interpolate(vt.maxCurve, time) : undefined;
+                
+                const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
+
+                return {
+                    name: time,
+                    [session.id]: value,
+                    [`${session.id}-failed`]: isFailed ? value : null,
+                     minGuideline,
+                    maxGuideline,
+                };
             });
-            return newPoint;
-        });
+        }).filter(Boolean);
+
+
+        const mergedChartData: any[] = [];
+        const temp: Record<number, any> = {};
+        for (const dp of chartDataForPdf) {
+            if (!dp) continue;
+            const roundedTime = Math.round(dp.name);
+            if (!temp[roundedTime]) temp[roundedTime] = { name: roundedTime };
+            Object.assign(temp[roundedTime], dp);
+        }
+        
+        const finalChartData = Object.values(temp).sort((a, b) => a.name - b.name);
         
         setPdfChartSessions(relevantSessions);
         setPdfChartData(finalChartData);
@@ -1217,7 +1210,7 @@ export default function AdminPage() {
 
         Object.values(sessionsByReactor).forEach(sessions => sessions.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
 
-        const tableBody = relevantSessions.map(session => {
+        const tableBody = await Promise.all(relevantSessions.map(async session => {
             const batchName = batches?.find(b => b.id === session.batchId)?.name;
             const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
             const classificationText = getClassificationText(session.classification);
@@ -1235,6 +1228,17 @@ export default function AdminPage() {
                 passResult = `Passed on try #${passAttemptIndex + 1}`;
             }
 
+            const data = allSensorData[session.id] || [];
+            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+            const decimalPlaces = config?.decimalPlaces || 2;
+            let startValue = 'N/A', endValue = 'N/A', avgValue = 'N/A';
+            if (data.length > 0) {
+                startValue = convertRawValue(data[0].value, config || null).toFixed(decimalPlaces);
+                endValue = convertRawValue(data[data.length - 1].value, config || null).toFixed(decimalPlaces);
+                const sum = data.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
+                avgValue = (sum / data.length).toFixed(decimalPlaces);
+            }
+
             return [
                 batchName ?? 'N/A',
                 session.serialNumber || 'N/A',
@@ -1243,9 +1247,12 @@ export default function AdminPage() {
                 session.username || 'N/A',
                 new Date(session.startTime).toLocaleString(),
                 duration,
+                startValue,
+                endValue,
+                avgValue,
                 statusStyle
             ];
-        });
+        }));
 
         const docDefinition: any = {
             content: [
@@ -1268,7 +1275,7 @@ export default function AdminPage() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', 'auto', 'auto', '*', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [
                               {text: 'Batch', style: 'tableHeader'}, 
@@ -1278,6 +1285,9 @@ export default function AdminPage() {
                               {text: 'User', style: 'tableHeader'}, 
                               {text: 'Start Time', style: 'tableHeader'}, 
                               {text: 'Duration (s)', style: 'tableHeader'}, 
+                              {text: 'Start Value', style: 'tableHeader'},
+                              {text: 'End Value', style: 'tableHeader'},
+                              {text: 'Avg Value', style: 'tableHeader'},
                               {text: 'Status', style: 'tableHeader'}
                             ],
                             ...tableBody
@@ -2511,7 +2521,7 @@ const renderAIModelManagement = () => (
                       <Tooltip />
                       <Legend formatter={(value, entry) => {
                           const { color, dataKey } = entry;
-                          if (value.endsWith('-failed')) return null;
+                          if (String(dataKey).endsWith('-failed')) return null;
                           const session = pdfChartSessions.find(s => s.id === dataKey);
                           return <span style={{ color }}>{session?.serialNumber || value}</span>;
                       }} />
@@ -2712,4 +2722,3 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
-

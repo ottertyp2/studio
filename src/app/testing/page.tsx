@@ -637,6 +637,16 @@ function TestingComponent() {
                 const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(sessionToReport.startTime).getTime();
                 const sessionEndTime = sessionToReport.endTime ? new Date(sessionToReport.endTime).getTime() : (data.length > 0 ? new Date(data[data.length-1].timestamp).getTime() : sessionStartTime);
                 const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
+                
+                const decimalPlaces = config?.decimalPlaces || 2;
+                let startValue = 'N/A', endValue = 'N/A', avgValue = 'N/A';
+
+                if (data.length > 0) {
+                    startValue = convertRawValue(data[0].value, config || null).toFixed(decimalPlaces);
+                    endValue = convertRawValue(data[data.length - 1].value, config || null).toFixed(decimalPlaces);
+                    const sum = data.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
+                    avgValue = (sum / data.length).toFixed(decimalPlaces);
+                }
 
                 const classificationText = getClassificationText(sessionToReport.classification);
                 const statusStyle = {
@@ -658,10 +668,10 @@ function TestingComponent() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', 'auto', '*', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
-                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
-                            [{ text: batch?.name || 'N/A'}, { text: sessionToReport.serialNumber || 'N/A' }, `${attemptNumber} of ${totalAttempts}`, passResult, {text: sessionToReport.username}, {text: new Date(sessionToReport.startTime).toLocaleString()}, statusStyle]
+                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Avg Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            [{ text: batch?.name || 'N/A'}, { text: sessionToReport.serialNumber || 'N/A' }, `${attemptNumber} of ${totalAttempts}`, passResult, {text: sessionToReport.username}, {text: new Date(sessionToReport.startTime).toLocaleString()}, duration, startValue, endValue, avgValue, statusStyle]
                         ]
                     },
                     layout: 'lightHorizontalLines'
@@ -697,6 +707,16 @@ function TestingComponent() {
                     };
                     
                     const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
+                    const data = allSensorDataForReport[session.id] || [];
+                    const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+                    const decimalPlaces = config?.decimalPlaces || 2;
+                    let startValue = 'N/A', endValue = 'N/A', avgValue = 'N/A';
+                    if (data.length > 0) {
+                        startValue = convertRawValue(data[0].value, config || null).toFixed(decimalPlaces);
+                        endValue = convertRawValue(data[data.length - 1].value, config || null).toFixed(decimalPlaces);
+                        const sum = data.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
+                        avgValue = (sum / data.length).toFixed(decimalPlaces);
+                    }
 
                     return [
                         session.serialNumber || 'N/A',
@@ -705,6 +725,9 @@ function TestingComponent() {
                         session.username,
                         new Date(session.startTime).toLocaleString(),
                         duration,
+                        startValue,
+                        endValue,
+                        avgValue,
                         statusStyle
                     ];
                 });
@@ -714,9 +737,9 @@ function TestingComponent() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
-                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Avg Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
                             ...tableBody
                         ]
                     },
@@ -1291,4 +1314,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
