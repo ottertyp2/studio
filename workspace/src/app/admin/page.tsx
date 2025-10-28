@@ -878,7 +878,7 @@ export default function AdminPage() {
             
             switch (sessionSortOrder) {
                 case 'startTime-desc':
-                    return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
+                    return new Date(b.startTime).getTime() - new Date(b.startTime).getTime();
                 case 'startTime-asc':
                     return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
                 case 'vesselTypeName-asc':
@@ -1149,8 +1149,10 @@ export default function AdminPage() {
             if (x > curve[curve.length - 1].x) return curve[curve.length - 1].y;
             for (let i = 0; i < curve.length - 1; i++) {
                 if (x >= curve[i].x && x <= curve[i + 1].x) {
-                    const t = (x - curve[i].x) / (curve[i + 1].x - curve[i].x);
-                    return curve[i].y + t * (curve[i + 1].y - curve[i].y);
+                    const x1 = curve[i].x; const y1 = curve[i].y;
+                    const x2 = curve[i+1].x; const y2 = curve[i+1].y;
+                    const t = (x - x1) / (x2 - x1);
+                    return y1 + t * (y2 - y1);
                 }
             }
             return curve[curve.length - 1].y;
@@ -1173,13 +1175,16 @@ export default function AdminPage() {
                 
                 const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
 
-                return {
+                const point: any = {
                     name: time,
-                    [`${dataKey}`]: value,
-                    [`${dataKey}-failed`]: isFailed ? value : null,
                     minGuideline,
                     maxGuideline,
                 };
+                
+                point[dataKey] = value;
+                point[`${dataKey}-failed`] = isFailed ? value : null;
+
+                return point;
             });
         }).filter(Boolean);
 
@@ -1247,8 +1252,7 @@ export default function AdminPage() {
                 avgValue = (sum / data.length).toFixed(decimalPlaces);
             }
             
-            const color = CHART_COLORS[relevantSessions.findIndex(s => s.serialNumber === session.serialNumber) % CHART_COLORS.length];
-
+            const color = CHART_COLORS[pdfChartSessions.findIndex(s => s.serialNumber === session.serialNumber) % CHART_COLORS.length];
 
             return [
                 batchName ?? 'N/A',
@@ -2047,7 +2051,7 @@ export default function AdminPage() {
                                     <Button size="sm" variant="outline" disabled={session.status === 'RUNNING'}>Actions</Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => router.push(`/testing?sessionId=${session.id}`)}>
+                                     <DropdownMenuItem onClick={() => router.push(`/testing?sessionId=${session.id}`)}>
                                         <FileSignature className="mr-2 h-4 w-4" />
                                         <span>View Session</span>
                                     </DropdownMenuItem>
@@ -2056,7 +2060,7 @@ export default function AdminPage() {
                                         <span>Export as CSV</span>
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
-                                    <DropdownMenuSub>
+                                     <DropdownMenuSub>
                                       <DropdownMenuSubTrigger>
                                         <Sparkles className="mr-2 h-4 w-4" />
                                         <span>Classify...</span>
@@ -2089,7 +2093,7 @@ export default function AdminPage() {
                                       </DropdownMenuPortal>
                                     </DropdownMenuSub>
                                     <DropdownMenuSeparator />
-                                    <AlertDialog>
+                                     <AlertDialog>
                                         <AlertDialogTrigger asChild>
                                             <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
                                                 <Trash2 className="mr-2 h-4 w-4 text-destructive" />
@@ -2115,8 +2119,7 @@ export default function AdminPage() {
                             </div>
                         </div>
                     </Card>
-                );
-                })}
+                ))}
                 </div>
               ) : (
                  <p className="text-sm text-muted-foreground text-center pt-10">No test sessions found.</p>
@@ -2532,12 +2535,13 @@ const renderAIModelManagement = () => (
                         <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} />
                         <YAxis domain={['dataMin', 'dataMax + 10']} />
                         <Tooltip />
+                        <Legend />
                         <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
                         {pdfChartSessions.map((session, index) => (
                             <Line 
-                                key={session.serialNumber}
+                                key={session.id}
                                 type="monotone" 
                                 dataKey={session.serialNumber || session.id} 
                                 stroke={CHART_COLORS[index % CHART_COLORS.length]}
@@ -2549,13 +2553,13 @@ const renderAIModelManagement = () => (
                         ))}
                          {pdfChartSessions.map((session, index) => (
                             <Line 
-                                key={`{session.serialNumber}-failed`}
+                                key={`${session.id}-failed`}
                                 type="monotone" 
-                                dataKey={`{session.serialNumber}-failed`} 
+                                dataKey={`${session.serialNumber || session.id}-failed`} 
                                 stroke="hsl(var(--destructive))"
-                                name={`{session.serialNumber || session.id} (Failed)`}
+                                name={`${session.serialNumber || session.id} (Failed)`}
                                 dot={false} 
-                                strokeWidth={2}
+                                strokeWidth={3}
                                 connectNulls={false}
                             />
                         ))}
@@ -2730,3 +2734,8 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
+
+
+
+
+    
