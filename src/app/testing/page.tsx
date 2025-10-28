@@ -113,10 +113,11 @@ type SensorData = {
 };
 
 type ChartDataPoint = {
-  name: number; // time in seconds
+  name: number; // time in seconds or minutes
   minGuideline?: number;
   maxGuideline?: number;
-  [key: string]: number | undefined | null; // SessionID as key for value, allowing null
+  isFailed?: boolean;
+  [key: string]: number | undefined | null | boolean; 
 };
 
 type VesselType = {
@@ -407,60 +408,78 @@ function TestingComponent() {
     }
   };
 
-  const chartData = useMemo((): ChartDataPoint[] => {
-    if (comparisonSessions.length === 0) return [];
-  
-    const allPoints: ChartDataPoint[] = [];
+  const { chartData, timeUnit } = useMemo(() => {
+    if (comparisonSessions.length === 0) return { chartData: [], timeUnit: 'seconds' };
+
+    let maxTime = 0;
     const timeMap: { [time: number]: ChartDataPoint } = {};
-  
+
     comparisonSessions.forEach(session => {
       const sessionData = comparisonData[session.id] || [];
       if (sessionData.length === 0) return;
-  
-      const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-      const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+
       const startTime = new Date(sessionData[0].timestamp).getTime();
-  
-      const interpolateCurve = (curve: {x: number, y: number}[], x: number) => {
-        if (!curve || curve.length === 0) return undefined;
-        if (x < curve[0].x) return curve[0].y;
-        if (x > curve[curve.length - 1].x) return curve[curve.length - 1].y;
-        for (let i = 0; i < curve.length - 1; i++) {
-          if (x >= curve[i].x && x <= curve[i + 1].x) {
-            const x1 = curve[i].x; const y1 = curve[i].y;
-            const x2 = curve[i + 1].x; const y2 = curve[i + 1].y;
-            const t = (x - x1) / (x2 - x1);
-            return y1 + t * (y2 - y1);
-          }
-        }
-        return curve[curve.length - 1].y;
-      };
-  
-      sessionData.forEach((d, i) => {
-        const time = (new Date(d.timestamp).getTime() - startTime) / 1000;
-        const value = convertRawValue(d.value, config || null);
-        
-        if (!timeMap[time]) {
-          timeMap[time] = { name: time };
-        }
-        
-        const point = timeMap[time];
-  
-        const minGuideline = vesselType ? interpolateCurve(vesselType.minCurve, time) : undefined;
-        const maxGuideline = vesselType ? interpolateCurve(vesselType.maxCurve, time) : undefined;
-        
-        point.minGuideline = minGuideline;
-        point.maxGuideline = maxGuideline;
-  
-        const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
-  
-        // Store both values. One for the main line, one for the red overlay.
-        point[session.id] = value;
-        point[`${session.id}-failed`] = isFailed ? value : null;
-      });
+      const sessionMaxTime = (new Date(sessionData[sessionData.length - 1].timestamp).getTime() - startTime) / 1000;
+      if (sessionMaxTime > maxTime) {
+        maxTime = sessionMaxTime;
+      }
     });
-  
-    return Object.values(timeMap).sort((a, b) => a.name - b.name);
+
+    const useMinutes = maxTime > 60;
+    const timeDivisor = useMinutes ? 60 : 1;
+
+    comparisonSessions.forEach(session => {
+        const sessionData = comparisonData[session.id] || [];
+        if (sessionData.length === 0) return;
+        
+        const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+        const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+        const startTime = new Date(sessionData[0].timestamp).getTime();
+    
+        const interpolateCurve = (curve: {x: number, y: number}[], x: number) => {
+            if (!curve || curve.length === 0) return undefined;
+            if (x < curve[0].x) return curve[0].y;
+            if (x > curve[curve.length - 1].x) return curve[curve.length - 1].y;
+            for (let i = 0; i < curve.length - 1; i++) {
+                if (x >= curve[i].x && x <= curve[i + 1].x) {
+                const x1 = curve[i].x; const y1 = curve[i].y;
+                const x2 = curve[i + 1].x; const y2 = curve[i + 1].y;
+                const t = (x - x1) / (x2 - x1);
+                return y1 + t * (y2 - y1);
+                }
+            }
+            return curve[curve.length - 1].y;
+        };
+
+        sessionData.forEach((d, i) => {
+            const timeInSeconds = (new Date(d.timestamp).getTime() - startTime) / 1000;
+            const time = timeInSeconds / timeDivisor;
+            const value = convertRawValue(d.value, config || null);
+
+            const timeKey = time.toFixed(5);
+            if (!timeMap[timeKey]) {
+                timeMap[timeKey] = { name: time };
+            }
+            const point = timeMap[timeKey];
+            
+            const minGuideline = vesselType ? interpolateCurve(vesselType.minCurve, timeInSeconds) : undefined;
+            const maxGuideline = vesselType ? interpolateCurve(vesselType.maxCurve, timeInSeconds) : undefined;
+            
+            if (vesselType) {
+              point.minGuideline = minGuideline;
+              point.maxGuideline = maxGuideline;
+            }
+    
+            const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
+    
+            point[session.id] = value;
+            point.isFailed = (point.isFailed || isFailed);
+        });
+    });
+
+    const finalChartData = Object.values(timeMap).sort((a, b) => a.name - b.name);
+    return { chartData: finalChartData, timeUnit: useMinutes ? 'minutes' : 'seconds' };
+
   }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
   const setTimeframe = (frame: '1m' | '5m' | 'all') => {
@@ -473,8 +492,14 @@ function TestingComponent() {
       }
 
       let duration = 0;
-      if (frame === '1m') duration = 60;
-      if (frame === '5m') duration = 300;
+      if (timeUnit === 'minutes') {
+        if (frame === '1m') duration = 1;
+        if (frame === '5m') duration = 5;
+      } else {
+        if (frame === '1m') duration = 60;
+        if (frame === '5m') duration = 300;
+      }
+
 
       setXAxisDomain([Math.max(0, maxTime - duration), 'dataMax']);
   };
@@ -1264,7 +1289,7 @@ function TestingComponent() {
                             stroke="hsl(var(--muted-foreground))"
                             domain={xAxisDomain}
                             allowDataOverflow
-                            label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -10 }}
+                            label={{ value: `Time (${timeUnit})`, position: 'insideBottom', offset: -10 }}
                         />
                         <YAxis
                             stroke="hsl(var(--muted-foreground))"
@@ -1279,7 +1304,7 @@ function TestingComponent() {
                                 backdropFilter: 'blur(4px)',
                             }}
                             formatter={(value: number, name: string) => {
-                                const sessionId = name.replace('-failed', '');
+                                const sessionId = name;
                                 const session = comparisonSessions.find(s => s.id === sessionId);
                                 const config = sensorConfigs?.find(c => c.id === session?.sensorConfigurationId);
                                 const unit = config?.unit || '';
@@ -1287,35 +1312,43 @@ function TestingComponent() {
                                 if (name.endsWith('-failed')) return null;
                                 return [`${value.toFixed(config?.decimalPlaces || 2)} ${unit}`, legendName];
                             }}
-                            labelFormatter={(label) => `Time: ${label}s`}
+                            labelFormatter={(label) => `Time: ${label.toFixed(2)} ${timeUnit}`}
                         />
                         <Legend content={renderLegendContent} />
                         
                         <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
-                        {comparisonSessions.map((session, index) => (
-                          <React.Fragment key={session.id}>
-                            <Line 
-                              type="monotone" 
-                              dataKey={session.id} 
-                              stroke={CHART_COLORS[index % CHART_COLORS.length]} 
-                              name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`} 
-                              dot={false} 
-                              strokeWidth={2} 
-                              connectNulls
-                            />
-                            <Line 
-                              type="monotone" 
-                              dataKey={`${session.id}-failed`} 
-                              stroke={"hsl(var(--destructive))"}
-                              name="Failed segment"
-                              dot={false} 
-                              strokeWidth={3}
-                              connectNulls={false}
-                            />
-                          </React.Fragment>
-                        ))}
+                        {comparisonSessions.map((session, index) => {
+                            const dataKey = session.id;
+                            const passPoints = chartData.map(p => ({ ...p, [dataKey]: p.isFailed ? null : p[dataKey] }));
+                            const failPoints = chartData.map(p => ({ ...p, [dataKey]: !p.isFailed ? null : p[dataKey] }));
+
+                            return (
+                                <React.Fragment key={session.id}>
+                                    <Line
+                                        data={passPoints}
+                                        type="monotone"
+                                        dataKey={dataKey}
+                                        stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                        name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`}
+                                        dot={false}
+                                        strokeWidth={2}
+                                        connectNulls={false}
+                                    />
+                                    <Line
+                                        data={failPoints}
+                                        type="monotone"
+                                        dataKey={dataKey}
+                                        stroke={"hsl(var(--destructive))"}
+                                        name="Failed segment"
+                                        dot={false}
+                                        strokeWidth={3}
+                                        connectNulls={false}
+                                    />
+                                </React.Fragment>
+                            )
+                        })}
                       </LineChart>
                   </ResponsiveContainer>
                 </div>
