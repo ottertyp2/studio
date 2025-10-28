@@ -1193,8 +1193,6 @@ export default function AdminPage() {
                 const minGuideline = vt?.minCurve ? interpolate(vt.minCurve, timeInSeconds) : undefined;
                 const maxGuideline = vt?.maxCurve ? interpolate(vt.maxCurve, timeInSeconds) : undefined;
                 
-                const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
-
                 const timeKey = time.toFixed(5);
                 if (!mergedDataMap[timeKey]) {
                     mergedDataMap[timeKey] = { name: time };
@@ -1207,7 +1205,6 @@ export default function AdminPage() {
                 }
                 
                 point[dataKey] = value;
-                point.isFailed = point.isFailed || isFailed;
             });
         });
         
@@ -1268,7 +1265,7 @@ export default function AdminPage() {
                 avgValue = (sum / data.length).toFixed(decimalPlaces);
             }
             
-            const color = CHART_COLORS[pdfChartSessions.findIndex(s => s.serialNumber === session.serialNumber) % CHART_COLORS.length];
+            const color = CHART_COLORS[index % CHART_COLORS.length];
 
             return [
                 batchName ?? 'N/A',
@@ -1599,8 +1596,6 @@ export default function AdminPage() {
 
         const labels = allSensorData.map(d => d.classification);
 
-        const tf = await import('@tensorflow/tfjs');
-
         const xs = tf.tensor2d(paddedData);
         const ys = tf.oneHot(tf.tensor1d(labels, 'int32'), 2);
 
@@ -1848,11 +1843,11 @@ export default function AdminPage() {
             </div>
             <div className="flex gap-2">
                 <Button onClick={handleExportFilteredSessions} variant="outline">
-                    <Upload className="mr-2 h-4 w-4" />
+                    <Download className="mr-2 h-4 w-4" />
                     Export Filtered to CSV
                 </Button>
                 <Button onClick={() => sessionImportRef.current?.click()} variant="outline">
-                    <Download className="mr-2 h-4 w-4" />
+                    <Upload className="mr-2 h-4 w-4" />
                     Import Sessions
                 </Button>
                 <input type="file" ref={sessionImportRef} onChange={handleImportSessions} accept=".csv" multiple className="hidden" />
@@ -2545,49 +2540,38 @@ const renderAIModelManagement = () => (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-4">
        <div ref={pdfChartRef} className="fixed -left-[9999px] top-0 w-[800px] h-auto bg-white p-4">
           {pdfChartData.length > 0 && (
-             <div className='w-full h-[400px] relative'>
-                <ResponsiveContainer width="100%" height="100%">
+             <div className='w-full h-[400px] relative flex flex-col'>
+                <ResponsiveContainer width="100%" height={350}>
                     <LineChart data={pdfChartData}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} label={{ value: `Time (${pdfTimeUnit})`, position: 'insideBottom', offset: -5 }} />
-                        <YAxis domain={['dataMin', 'dataMax + 10']} />
+                        <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} label={{ value: `Time (${pdfTimeUnit})`, position: 'insideBottom', offset: -5, fontSize: 10 }} tick={{ fontSize: 10 }} />
+                        <YAxis domain={['dataMin', 'dataMax + 10']} tick={{ fontSize: 10 }} label={{ value: 'Pressure', angle: -90, position: 'insideLeft', fontSize: 10 }}/>
                         <Tooltip />
-                        <Legend />
                         <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
-                        {pdfChartSessions.map((session, index) => {
-                            const dataKey = session.id;
-                            const passPoints = pdfChartData.map(p => ({ ...p, [dataKey]: p.isFailed ? null : p[dataKey] }));
-                            const failPoints = pdfChartData.map(p => ({ ...p, [dataKey]: !p.isFailed ? null : p[dataKey] }));
-
-                            return (
-                                <g key={session.id}>
-                                    <Line
-                                        data={passPoints}
-                                        type="monotone" 
-                                        dataKey={dataKey} 
-                                        stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                                        name={session.serialNumber || session.id}
-                                        dot={false} 
-                                        strokeWidth={2}
-                                        connectNulls={false}
-                                    />
-                                    <Line
-                                        data={failPoints}
-                                        type="monotone" 
-                                        dataKey={dataKey} 
-                                        stroke="hsl(var(--destructive))"
-                                        name={`${session.serialNumber || session.id} (Failed)`}
-                                        dot={false} 
-                                        strokeWidth={3}
-                                        connectNulls={false}
-                                    />
-                                </g>
-                            )
-                        })}
+                        {pdfChartSessions.map((session, index) => (
+                            <Line 
+                                key={session.id}
+                                type="monotone" 
+                                dataKey={session.id} 
+                                name={session.serialNumber || session.id}
+                                stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                dot={false} 
+                                strokeWidth={2}
+                                connectNulls
+                            />
+                        ))}
                     </LineChart>
                 </ResponsiveContainer>
+                 <div className="h-[50px] w-full flex items-center justify-center flex-wrap gap-x-4 gap-y-2 text-xs pt-2">
+                    {pdfChartSessions.map((session, index) => (
+                        <div key={session.id} className="flex items-center gap-2">
+                            <div className="w-3 h-3" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }} />
+                            <span>{session.serialNumber || session.id}</span>
+                        </div>
+                    ))}
+                </div>
             </div>
           )}
       </div>
@@ -2757,3 +2741,4 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
+

@@ -1,5 +1,6 @@
 
 'use client';
+import * as React from 'react';
 import { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -48,7 +49,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle, Square, Zap } from 'lucide-react';
+import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle, Square, Zap, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, WithId } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
@@ -113,10 +114,10 @@ type SensorData = {
 };
 
 type ChartDataPoint = {
-  name: number; // time in seconds
+  name: number; // time in seconds or minutes
   minGuideline?: number;
   maxGuideline?: number;
-  [key: string]: number | undefined | null; // SessionID as key for value, allowing null
+  [key: string]: number | undefined | null | boolean; 
 };
 
 type VesselType = {
@@ -150,6 +151,12 @@ type CrashReport = {
       update: number;
       stream: number;
     };
+};
+
+type CrashAnalysisErrorState = {
+  isError: boolean;
+  message: string;
+  isRetryable: boolean;
 };
 
 const CHART_COLORS = [
@@ -206,10 +213,12 @@ function TestingComponent() {
   const [reportType, setReportType] = useState<'single' | 'batch' | null>(null);
   const [selectedReportSessionId, setSelectedReportSessionId] = useState<string | null>(null);
   const [selectedReportBatchId, setSelectedReportBatchId] = useState<string | null>(null);
+  
   const [isCrashPanelOpen, setIsCrashPanelOpen] = useState(false);
   const [crashReport, setCrashReport] = useState<CrashReport | null>(null);
   const [crashAnalysis, setCrashAnalysis] = useState<AnalyzeArduinoCrashesOutput | null>(null);
   const [isAnalyzingCrash, setIsAnalyzingCrash] = useState(false);
+  const [crashAnalysisError, setCrashAnalysisError] = useState<CrashAnalysisErrorState | null>(null);
 
 
   // Data fetching hooks
@@ -399,63 +408,78 @@ function TestingComponent() {
     }
   };
 
-  const chartData = useMemo((): ChartDataPoint[] => {
-    if (comparisonSessions.length === 0) return [];
-  
-    const allPoints: ChartDataPoint[] = [];
-    const timeMap: { [time: number]: ChartDataPoint } = {};
-  
+  const { chartData, timeUnit } = useMemo(() => {
+    if (comparisonSessions.length === 0) return { chartData: [], timeUnit: 'seconds' };
+
+    let maxTime = 0;
+    const timeMap: { [time: string]: ChartDataPoint } = {};
+
     comparisonSessions.forEach(session => {
       const sessionData = comparisonData[session.id] || [];
       if (sessionData.length === 0) return;
-  
-      const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-      const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+
       const startTime = new Date(sessionData[0].timestamp).getTime();
-  
-      const interpolateCurve = (curve: {x: number, y: number}[], x: number) => {
-        if (!curve || curve.length === 0) return undefined;
-        if (x < curve[0].x) return curve[0].y;
-        if (x > curve[curve.length - 1].x) return curve[curve.length - 1].y;
-        for (let i = 0; i < curve.length - 1; i++) {
-          if (x >= curve[i].x && x <= curve[i + 1].x) {
-            const x1 = curve[i].x; const y1 = curve[i].y;
-            const x2 = curve[i + 1].x; const y2 = curve[i + 1].y;
-            const t = (x - x1) / (x2 - x1);
-            return y1 + t * (y2 - y1);
-          }
-        }
-        return curve[curve.length - 1].y;
-      };
-  
-      sessionData.forEach(d => {
-        const time = (new Date(d.timestamp).getTime() - startTime) / 1000;
-        const value = convertRawValue(d.value, config || null);
-        
-        if (!timeMap[time]) {
-          timeMap[time] = { name: time };
-        }
-        
-        const point = timeMap[time];
-  
-        const minGuideline = vesselType ? interpolateCurve(vesselType.minCurve, time) : undefined;
-        const maxGuideline = vesselType ? interpolateCurve(vesselType.maxCurve, time) : undefined;
-        
-        point.minGuideline = minGuideline;
-        point.maxGuideline = maxGuideline;
-  
-        const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
-  
-        point[session.id] = value;
-        if (isFailed) {
-            point[`${session.id}-failed`] = value;
-        } else {
-            point[`${session.id}-failed`] = null;
-        }
-      });
+      const sessionMaxTime = (new Date(sessionData[sessionData.length - 1].timestamp).getTime() - startTime) / 1000;
+      if (sessionMaxTime > maxTime) {
+        maxTime = sessionMaxTime;
+      }
     });
-  
-    return Object.values(timeMap).sort((a, b) => a.name - b.name);
+
+    const useMinutes = maxTime > 60;
+    const timeDivisor = useMinutes ? 60 : 1;
+
+    comparisonSessions.forEach(session => {
+        const sessionData = comparisonData[session.id] || [];
+        if (sessionData.length === 0) return;
+        
+        const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+        const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+        const startTime = new Date(sessionData[0].timestamp).getTime();
+    
+        const interpolateCurve = (curve: {x: number, y: number}[], x: number) => {
+            if (!curve || curve.length === 0) return undefined;
+            if (x < curve[0].x) return curve[0].y;
+            if (x > curve[curve.length - 1].x) return curve[curve.length - 1].y;
+            for (let i = 0; i < curve.length - 1; i++) {
+                if (x >= curve[i].x && x <= curve[i + 1].x) {
+                const x1 = curve[i].x; const y1 = curve[i].y;
+                const x2 = curve[i + 1].x; const y2 = curve[i + 1].y;
+                const t = (x - x1) / (x2 - x1);
+                return y1 + t * (y2 - y1);
+                }
+            }
+            return curve[curve.length - 1].y;
+        };
+
+        sessionData.forEach((d, index) => {
+            const timeInSeconds = (new Date(d.timestamp).getTime() - startTime) / 1000;
+            const time = timeInSeconds / timeDivisor;
+            const value = convertRawValue(d.value, config || null);
+
+            const timeKey = time.toFixed(5);
+            if (!timeMap[timeKey]) {
+                timeMap[timeKey] = { name: time };
+            }
+            const point = timeMap[timeKey];
+            
+            const minGuideline = vesselType ? interpolateCurve(vesselType.minCurve, timeInSeconds) : undefined;
+            const maxGuideline = vesselType ? interpolateCurve(vesselType.maxCurve, timeInSeconds) : undefined;
+            
+            if (vesselType) {
+              point.minGuideline = minGuideline;
+              point.maxGuideline = maxGuideline;
+            }
+    
+            const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
+
+            point[session.id] = value;
+            point[`${session.id}-fail`] = isFailed ? value : null;
+        });
+    });
+
+    const finalChartData = Object.values(timeMap).sort((a, b) => a.name - b.name);
+    return { chartData: finalChartData, timeUnit: useMinutes ? 'minutes' : 'seconds' };
+
   }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
   const setTimeframe = (frame: '1m' | '5m' | 'all') => {
@@ -468,8 +492,14 @@ function TestingComponent() {
       }
 
       let duration = 0;
-      if (frame === '1m') duration = 60;
-      if (frame === '5m') duration = 300;
+      if (timeUnit === 'minutes') {
+        if (frame === '1m') duration = 1;
+        if (frame === '5m') duration = 5;
+      } else {
+        if (frame === '1m') duration = 60;
+        if (frame === '5m') duration = 300;
+      }
+
 
       setXAxisDomain([Math.max(0, maxTime - duration), 'dataMax']);
   };
@@ -818,12 +848,12 @@ function TestingComponent() {
     });
   };
 
-  const handleOpenCrashPanel = async () => {
+  const performCrashAnalysis = async () => {
     if (!database) return;
-    setIsCrashPanelOpen(true);
-    setCrashAnalysis(null);
-    setCrashReport(null);
+
     setIsAnalyzingCrash(true);
+    setCrashAnalysis(null);
+    setCrashAnalysisError(null);
 
     try {
         const crashReportRef = ref(database, '/system/lastCrashReport');
@@ -836,13 +866,30 @@ function TestingComponent() {
             setCrashAnalysis(analysis);
         } else {
             setCrashReport(null);
-            toast({ title: "No Crash Reports Found", description: "The device has not reported any reconnect events yet." });
+            setCrashAnalysisError({ isError: true, message: "The device has not reported any reconnect events yet.", isRetryable: false });
         }
     } catch (error: any) {
-        toast({ variant: 'destructive', title: "Failed to Fetch Crash Data", description: error.message });
+        let isRetryable = false;
+        let message = "An unexpected error occurred while analyzing the crash report.";
+
+        if (typeof error.message === 'string') {
+            if (error.message.includes('503') || error.message.toLowerCase().includes('overloaded')) {
+                message = "The AI analysis service is temporarily unavailable. Please try again in a few moments.";
+                isRetryable = true;
+            } else {
+                message = error.message;
+            }
+        }
+        
+        setCrashAnalysisError({ isError: true, message, isRetryable });
     } finally {
         setIsAnalyzingCrash(false);
     }
+  };
+
+  const handleOpenCrashPanel = () => {
+    setIsCrashPanelOpen(true);
+    performCrashAnalysis();
   };
 
   const getLatencyColor = (ping: number | null) => {
@@ -1048,6 +1095,17 @@ function TestingComponent() {
                                         <Loader2 className="h-8 w-8 animate-spin text-primary"/>
                                         <p className="ml-4">Analyzing crash data...</p>
                                     </div>
+                                ) : crashAnalysisError?.isError ? (
+                                    <div className="text-center h-40 flex flex-col justify-center items-center gap-4">
+                                        <p className="font-semibold text-destructive">Analysis Failed</p>
+                                        <p className="text-sm text-muted-foreground">{crashAnalysisError.message}</p>
+                                        {crashAnalysisError.isRetryable && (
+                                          <Button onClick={performCrashAnalysis} variant="outline">
+                                            <RefreshCw className="mr-2 h-4 w-4" />
+                                            Retry
+                                          </Button>
+                                        )}
+                                    </div>
                                 ) : crashAnalysis ? (
                                     <div className="space-y-4">
                                         <h3 className="font-semibold text-lg text-primary">{crashAnalysis.title}</h3>
@@ -1231,7 +1289,7 @@ function TestingComponent() {
                             stroke="hsl(var(--muted-foreground))"
                             domain={xAxisDomain}
                             allowDataOverflow
-                            label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -10 }}
+                            label={{ value: `Time (${timeUnit})`, position: 'insideBottom', offset: -10 }}
                         />
                         <YAxis
                             stroke="hsl(var(--muted-foreground))"
@@ -1246,15 +1304,14 @@ function TestingComponent() {
                                 backdropFilter: 'blur(4px)',
                             }}
                             formatter={(value: number, name: string) => {
-                                const sessionId = name.replace('-failed', '');
+                                const sessionId = name.replace('-fail', '');
                                 const session = comparisonSessions.find(s => s.id === sessionId);
                                 const config = sensorConfigs?.find(c => c.id === session?.sensorConfigurationId);
                                 const unit = config?.unit || '';
                                 const legendName = session ? `${session.vesselTypeName} - ${session.serialNumber}`: name;
-                                if (name.endsWith('-failed')) return null;
                                 return [`${value.toFixed(config?.decimalPlaces || 2)} ${unit}`, legendName];
                             }}
-                            labelFormatter={(label) => `Time: ${label}s`}
+                            labelFormatter={(label) => `Time: ${label.toFixed(2)} ${timeUnit}`}
                         />
                         <Legend content={renderLegendContent} />
                         
@@ -1262,28 +1319,26 @@ function TestingComponent() {
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
                         {comparisonSessions.map((session, index) => (
-                           <Line 
-                            key={session.id}
-                            type="monotone" 
-                            dataKey={session.id} 
-                            stroke={CHART_COLORS[index % CHART_COLORS.length]} 
-                            name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`} 
-                            dot={false} 
-                            strokeWidth={2} 
-                            connectNulls
-                           />
-                        ))}
-                         {comparisonSessions.map((session, index) => (
-                           <Line 
-                            key={`${session.id}-failed`}
-                            type="monotone" 
-                            dataKey={`${session.id}-failed`} 
-                            stroke="hsl(var(--destructive))"
-                            name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'} (Failed)`}
-                            dot={false} 
-                            strokeWidth={2} 
-                            connectNulls={false}
-                           />
+                            <React.Fragment key={session.id}>
+                                <Line
+                                    type="monotone"
+                                    dataKey={session.id}
+                                    stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                    name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`}
+                                    dot={false}
+                                    strokeWidth={2}
+                                    connectNulls
+                                />
+                                <Line
+                                    type="monotone"
+                                    dataKey={`${session.id}-fail`}
+                                    stroke={"hsl(var(--destructive))"}
+                                    name="Failed segment"
+                                    dot={false} 
+                                    strokeWidth={3}
+                                    connectNulls={false}
+                                />
+                            </React.Fragment>
                         ))}
                       </LineChart>
                   </ResponsiveContainer>
