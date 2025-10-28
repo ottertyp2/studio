@@ -99,24 +99,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const handleNewDataPoint = useCallback((data: any) => {
     if (data === null || data === undefined) return;
 
-    if (data.valve1 !== undefined) {
-      setValve1Status(data.valve1 ? 'ON' : 'OFF');
-      setLockedValves(prev => prev.filter(v => v !== 'VALVE1'));
-    }
-    if (data.valve2 !== undefined) {
-      setValve2Status(data.valve2 ? 'ON' : 'OFF');
-      setLockedValves(prev => prev.filter(v => v !== 'VALVE2'));
-    }
-    
-    if (data.sequence1_running !== undefined) {
-      setSequence1Running(data.sequence1_running === true);
-      setLockedSequences(prev => prev.filter(s => s !== 'sequence1'));
-    }
-    if (data.sequence2_running !== undefined) {
-      setSequence2Running(data.sequence2_running === true);
-      setLockedSequences(prev => prev.filter(s => s !== 'sequence2'));
-    }
-
     setCurrentValue(data.sensor ?? null);
     setIsRecording(data.recording === true);
     setDisconnectCount(data.disconnectCount || 0);
@@ -207,6 +189,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       }
   }, [database, toast]);
 
+  // Listener for /live data
   useEffect(() => {
     if (!database) return;
   
@@ -251,6 +234,39 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       }
     };
   }, [database, handleNewDataPoint, isConnected, currentDowntime]);
+
+  // Listener for /commands to get valve and sequence status
+  useEffect(() => {
+    if (!database) return;
+    const commandsRef = ref(database, 'commands');
+
+    const unsubscribe = onValue(commandsRef, (snap) => {
+        const data = snap.val();
+        if (data) {
+            // Update valve statuses from /commands
+            if (data.valve1 !== undefined) {
+                setValve1Status(data.valve1 ? 'ON' : 'OFF');
+                setLockedValves(prev => prev.filter(v => v !== 'VALVE1'));
+            }
+            if (data.valve2 !== undefined) {
+                setValve2Status(data.valve2 ? 'ON' : 'OFF');
+                setLockedValves(prev => prev.filter(v => v !== 'VALVE2'));
+            }
+
+            // Update sequence statuses from /commands
+            if (data.sequence1 !== undefined) {
+                setSequence1Running(data.sequence1 === true);
+                setLockedSequences(prev => prev.filter(s => s !== 'sequence1'));
+            }
+            if (data.sequence2 !== undefined) {
+                setSequence2Running(data.sequence2 === true);
+                setLockedSequences(prev => prev.filter(s => s !== 'sequence2'));
+            }
+        }
+    });
+
+    return () => unsubscribe();
+  }, [database]);
 
 
   const value = {

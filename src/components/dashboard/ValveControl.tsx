@@ -92,7 +92,7 @@ export default function ValveControl() {
                 ) : (
                   <Button
                     onClick={() => handleSequence('sequence1', true)}
-                    disabled={!isConnected || sequence1Running || sequence2Running || isSequence1Locked || isSequence2Locked}
+                    disabled={!isConnected || sequence2Running || isSequence1Locked}
                     className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
                   >
                     {isSequence1Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
@@ -113,7 +113,7 @@ export default function ValveControl() {
                 ) : (
                   <Button
                     onClick={() => handleSequence('sequence2', true)}
-                    disabled={!isConnected || sequence1Running || sequence2Running || isSequence1Locked || isSequence2Locked}
+                    disabled={!isConnected || sequence1Running || isSequence2Locked}
                     className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
                   >
                     {isSequence2Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
