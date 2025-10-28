@@ -1,4 +1,3 @@
-
 'use client';
 import { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -48,7 +47,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle } from 'lucide-react';
+import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle, Square, Zap } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, WithId } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
@@ -608,6 +607,16 @@ function TestingComponent() {
                  if (!batchToReport) throw new Error('Selected batch not found.');
                  sessionsForBatchReport = sessionHistory.filter(s => s.batchId === selectedReportBatchId && s.status === 'COMPLETED');
                  if(sessionsForBatchReport.length === 0) throw new Error('No completed sessions found for this batch.');
+                 
+                 // Fetch all data for the batch report
+                 for (const session of sessionsForBatchReport) {
+                     if (!comparisonData[session.id]) {
+                         const dataSnapshot = await getDocs(query(collection(firestore, `test_sessions/${session.id}/sensor_data`), orderBy('timestamp')));
+                         const data = dataSnapshot.docs.map(d => ({id: d.id, ...d.data()} as WithId<SensorData>));
+                         setComparisonData(prev => ({...prev, [session.id]: data}));
+                     }
+                 }
+                 
                  setComparisonSessions(sessionsForBatchReport);
                  reportTitle = `Batch Pressure Test Report`;
                  reportFilename = `report-batch-${batchToReport.name.replace(/\s+/g, '_')}`;
@@ -636,7 +645,6 @@ function TestingComponent() {
                 defaultStyle: { font: 'Roboto' }
             };
 
-            // Common Header
             docDefinition.content.push({
                 columns: [
                    logoBase64 ? { image: logoBase64, width: 70 } : { text: '' },
@@ -650,31 +658,8 @@ function TestingComponent() {
                 columnGap: 10,
             });
             docDefinition.content.push({ text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' });
-            
-            const firstData = comparisonData[comparisonSessions[0]?.id] || [];
-            
-            const pdfChartData = Object.entries(comparisonData).flatMap(([sessionId, data]) => {
-                const session = comparisonSessions.find(s => s.id === sessionId);
-                if (!session || data.length === 0) return [];
-                const sessionStart = new Date(data[0].timestamp).getTime();
-                return data.map(d => ({
-                    [session.id]: d.value,
-                    name: (new Date(d.timestamp).getTime() - sessionStart) / 1000
-                }));
-            });
-
-            const mergedChartData: any[] = [];
-            const tempMap: Record<string, any> = {};
-            pdfChartData.forEach(dp => {
-                const key = dp.name.toFixed(2);
-                if (!tempMap[key]) tempMap[key] = { name: dp.name };
-                Object.assign(tempMap[key], dp);
-            });
-            mergedChartData.push(...Object.values(tempMap).sort((a,b) => a.name - b.name));
-            
             docDefinition.content.push({ image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] });
 
-            // Table Content
             if (reportType === 'single' && sessionToReport) {
                 const config = sensorConfigs?.find(c => c.id === sessionToReport.sensorConfigurationId);
                 const batch = batches?.find(b => b.id === sessionToReport.batchId);
@@ -720,60 +705,75 @@ function TestingComponent() {
                 });
 
             } else if (reportType === 'batch' && batchToReport) {
-                const tableBody = sessionsForBatchReport.map(session => {
-                    const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-                    const data = comparisonData[session.id] || [];
+                const sessionsBySerial = sessionsForBatchReport.reduce((acc, session) => {
+                    const sn = session.serialNumber || 'Unknown';
+                    if (!acc[sn]) acc[sn] = [];
+                    acc[sn].push(session);
+                    return acc;
+                }, {} as Record<string, WithId<TestSession>[]>);
 
-                    const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(session.startTime).getTime();
-                    const sessionEndTime = session.endTime ? new Date(session.endTime).getTime() : (data.length > 0 ? new Date(data[data.length - 1].timestamp).getTime() : sessionStartTime);
-                    
-                    const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
-                    
-                    const values = data.map(d => d.value);
-                    const startValue = values.length > 0 ? values[0] : undefined;
-                    const endValue = values.length > 0 ? values[values.length-1] : undefined;
-                    const avgValue = values.length > 0 ? values.reduce((a,b) => a + b, 0) / values.length : undefined;
-
-                    let startPressure = 'N/A';
-                    let endPressure = 'N/A';
-                    let avgPressure = 'N/A';
-                    if (config) {
-                        const unitLabel = config.unit || '';
-                        if (startValue !== undefined) startPressure = `${convertRawValue(startValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
-                        if (endValue !== undefined) endPressure = `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
-                        if (avgValue !== undefined) avgPressure = `${convertRawValue(avgValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                const tableBody = Object.values(sessionsBySerial).flatMap(sessions => {
+                    sessions.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+                    let passAttempt = 'N/A';
+                    const firstPassIndex = sessions.findIndex(s => s.classification === 'DIFFUSION');
+                    if (firstPassIndex !== -1) {
+                        passAttempt = `Passed on attempt ${firstPassIndex + 1}`;
+                    } else if (sessions.some(s => s.classification === 'LEAK')) {
+                        passAttempt = 'Failed';
                     }
 
-                    const classificationText = getClassificationText(session.classification);
-                    const statusStyle = {
-                        text: classificationText,
-                        color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
-                    };
+                    return sessions.map((session, index) => {
+                        const data = comparisonData[session.id] || [];
+                        const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+                        
+                        const values = data.map(d => d.value);
+                        const startValue = values.length > 0 ? values[0] : undefined;
+                        const endValue = values.length > 0 ? values[values.length-1] : undefined;
+                        
+                        let startPressure = 'N/A';
+                        let endPressure = 'N/A';
 
-                    return [
-                        session.serialNumber || 'N/A',
-                        session.description || 'N/A',
-                        new Date(session.startTime).toLocaleString(),
-                        duration,
-                        startPressure,
-                        endPressure,
-                        avgPressure,
-                        statusStyle
-                    ];
+                        if (config) {
+                            const unitLabel = config.unit || '';
+                            if (startValue !== undefined) startPressure = `${convertRawValue(startValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                            if (endValue !== undefined) endPressure = `${convertRawValue(endValue, config).toFixed(config.decimalPlaces)} ${unitLabel}`;
+                        }
+                        
+                        const classificationText = getClassificationText(session.classification);
+                        const statusStyle = {
+                            text: classificationText,
+                            color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
+                        };
+
+                        return [
+                            session.serialNumber || 'N/A',
+                            index + 1,
+                            new Date(session.startTime).toLocaleString(),
+                            startPressure,
+                            endPressure,
+                            statusStyle,
+                            index === 0 ? passAttempt : ''
+                        ];
+                    });
                 });
+
 
                 docDefinition.content.push({ text: `Batch: ${batchToReport.name} - Summary`, style: 'subheader', margin: [0, 10, 0, 5] });
                 docDefinition.content.push({
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'],
                         body: [
-                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Description', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Avg Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}, {text: 'Final Result', style: 'tableHeader'}],
                             ...tableBody
                         ]
                     },
-                    layout: 'lightHorizontalLines'
+                    layout: {
+                        ...pdfMake.tableLayouts.lightHorizontalLines,
+                        hLineColor: (i: number, node: any) => (i === 0 || i === node.table.body.length) ? 'black' : '#aaa',
+                        vLineColor: () => '#aaa',
+                    }
                 });
             }
 
