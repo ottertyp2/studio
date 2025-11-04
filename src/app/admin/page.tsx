@@ -1174,7 +1174,6 @@ export default function AdminPage() {
             return curve[curve.length - 1].y;
         };
         
-        const chartDataForPdf: any[] = [];
         const mergedDataMap: { [key: string]: any } = {};
 
         relevantSessions.forEach(session => {
@@ -1193,9 +1192,9 @@ export default function AdminPage() {
                 const minGuideline = vt?.minCurve ? interpolate(vt.minCurve, timeInSeconds) : undefined;
                 const maxGuideline = vt?.maxCurve ? interpolate(vt.maxCurve, timeInSeconds) : undefined;
                 
-                const timeKey = time.toFixed(5);
+                const timeKey = useMinutes ? time.toFixed(1) : time.toFixed(0);
                 if (!mergedDataMap[timeKey]) {
-                    mergedDataMap[timeKey] = { name: time };
+                    mergedDataMap[timeKey] = { name: parseFloat(timeKey) };
                 }
                 const point = mergedDataMap[timeKey];
                 
@@ -2741,4 +2740,3 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
-

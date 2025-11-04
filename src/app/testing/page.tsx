@@ -412,17 +412,17 @@ function TestingComponent() {
     if (comparisonSessions.length === 0) return { chartData: [], timeUnit: 'seconds' };
 
     let maxTime = 0;
-    const timeMap: { [time: string]: ChartDataPoint } = {};
+    const timeMap: { [timeKey: string]: ChartDataPoint } = {};
 
     comparisonSessions.forEach(session => {
-      const sessionData = comparisonData[session.id] || [];
-      if (sessionData.length === 0) return;
+        const sessionData = comparisonData[session.id] || [];
+        if (sessionData.length === 0) return;
 
-      const startTime = new Date(sessionData[0].timestamp).getTime();
-      const sessionMaxTime = (new Date(sessionData[sessionData.length - 1].timestamp).getTime() - startTime) / 1000;
-      if (sessionMaxTime > maxTime) {
-        maxTime = sessionMaxTime;
-      }
+        const startTime = new Date(sessionData[0].timestamp).getTime();
+        const sessionMaxTime = (new Date(sessionData[sessionData.length - 1].timestamp).getTime() - startTime) / 1000;
+        if (sessionMaxTime > maxTime) {
+            maxTime = sessionMaxTime;
+        }
     });
 
     const useMinutes = maxTime > 60;
@@ -451,14 +451,14 @@ function TestingComponent() {
             return curve[curve.length - 1].y;
         };
 
-        sessionData.forEach((d, index) => {
+        sessionData.forEach(d => {
             const timeInSeconds = (new Date(d.timestamp).getTime() - startTime) / 1000;
             const time = timeInSeconds / timeDivisor;
             const value = convertRawValue(d.value, config || null);
 
-            const timeKey = time.toFixed(5);
+            const timeKey = useMinutes ? time.toFixed(1) : time.toFixed(0);
             if (!timeMap[timeKey]) {
-                timeMap[timeKey] = { name: time };
+                timeMap[timeKey] = { name: parseFloat(timeKey) };
             }
             const point = timeMap[timeKey];
             
@@ -473,7 +473,9 @@ function TestingComponent() {
             const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
 
             point[session.id] = value;
-            point[`${session.id}-fail`] = isFailed ? value : null;
+            if (isFailed) {
+              point[`${session.id}-fail`] = value;
+            }
         });
     });
 
@@ -1309,7 +1311,8 @@ function TestingComponent() {
                                 const config = sensorConfigs?.find(c => c.id === session?.sensorConfigurationId);
                                 const unit = config?.unit || '';
                                 const legendName = session ? `${session.vesselTypeName} - ${session.serialNumber}`: name;
-                                return [`${value.toFixed(config?.decimalPlaces || 2)} ${unit}`, legendName];
+                                const formattedValue = value.toFixed(config?.decimalPlaces || 2);
+                                return [`${formattedValue} ${unit}`, legendName];
                             }}
                             labelFormatter={(label) => `Time: ${label.toFixed(2)} ${timeUnit}`}
                         />
@@ -1336,7 +1339,7 @@ function TestingComponent() {
                                     name="Failed segment"
                                     dot={false} 
                                     strokeWidth={3}
-                                    connectNulls={false}
+                                    connectNulls
                                 />
                             </React.Fragment>
                         ))}
