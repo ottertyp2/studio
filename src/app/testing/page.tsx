@@ -410,32 +410,54 @@ function TestingComponent() {
   };
 
   const { chartData, timeUnit } = useMemo(() => {
+    console.log('=== CHART DATA MEMO TRIGGERED ===');
+    console.log('comparisonSessions:', comparisonSessions);
+    console.log('runningTestSession:', runningTestSession);
+    console.log('localDataLog length:', localDataLog.length);
+    console.log('comparisonData keys:', Object.keys(comparisonData));
+
     const allSessions = [...comparisonSessions];
     const dataSources: Record<string, { data: any[], startTime: number | null }> = {};
     let hasData = false;
 
-    // Prepare historical and live data sources
+    // Prepare historical data sources
     allSessions.forEach(session => {
-        if (session.id === runningTestSession?.id) {
-            if (localDataLog.length > 0) {
-                hasData = true;
-                dataSources[session.id] = {
-                    data: [...localDataLog].reverse(), // IMPORTANT: Reverse live data to be chronological
-                    startTime: new Date(session.startTime).getTime(),
-                };
-            }
-        } else {
-            const historicalData = comparisonData[session.id] || [];
-            if (historicalData.length > 0) {
-                hasData = true;
-                dataSources[session.id] = {
-                    data: historicalData,
-                    startTime: new Date(historicalData[0].timestamp).getTime()
-                };
-            }
+        if (session.id === runningTestSession?.id) return; // Skip live session for now
+        const historicalData = comparisonData[session.id] || [];
+        if (historicalData.length > 0) {
+            hasData = true;
+            dataSources[session.id] = {
+                data: historicalData,
+                startTime: new Date(historicalData[0].timestamp).getTime()
+            };
         }
     });
-    
+
+    // Prepare live data
+    if (runningTestSession) {
+      if (localDataLog.length > 0) {
+        hasData = true;
+        console.log('✅ Adding live data source:', {
+          sessionId: runningTestSession.id,
+          dataLength: localDataLog.length,
+          firstTimestamp: localDataLog[0]?.timestamp,
+          lastTimestamp: localDataLog[localDataLog.length - 1]?.timestamp,
+          startTime: runningTestSession.startTime
+        });
+        dataSources[runningTestSession.id] = {
+          data: [...localDataLog].reverse(), // UMKEHREN!
+          startTime: new Date(runningTestSession.startTime).getTime(),
+        };
+      } else {
+        console.log('❌ NO localDataLog for running session');
+      }
+    } else {
+      console.log('❌ NO runningTestSession');
+    }
+
+    console.log('hasData:', hasData);
+    console.log('dataSources:', Object.keys(dataSources));
+
     if (!hasData) {
       return { chartData: [], timeUnit: 'seconds' };
     }
@@ -502,6 +524,12 @@ function TestingComponent() {
     });
 
     const finalChartData = Object.values(timeMap).sort((a, b) => a.name - b.name);
+    
+    console.log('=== FINAL CHART DATA ===');
+    console.log('finalChartData length:', finalChartData.length);
+    console.log('First 3 points:', finalChartData.slice(0, 3));
+    console.log('Session IDs in first point:', finalChartData[0] ? Object.keys(finalChartData[0]) : 'NO DATA');
+
     return { chartData: finalChartData, timeUnit: useMinutes ? 'minutes' : 'seconds' };
 
   }, [comparisonSessions, comparisonData, runningTestSession, localDataLog, sensorConfigs, vesselTypes]);
@@ -1300,6 +1328,16 @@ function TestingComponent() {
                 </div>
             </CardHeader>
             <CardContent>
+                {/* DEBUG INFO - TEMPORÄR */}
+                <div className="p-4 bg-yellow-100 border border-yellow-400 rounded mb-4 text-black">
+                  <h3 className="font-bold">Debug Info:</h3>
+                  <p>comparisonSessions: {comparisonSessions.length}</p>
+                  <p>runningTestSession: {runningTestSession?.id || 'NONE'}</p>
+                  <p>localDataLog: {localDataLog.length} items</p>
+                  <p>chartData: {chartData.length} points</p>
+                  <p>isConnected: {isConnected ? 'YES' : 'NO'}</p>
+                  <p>currentValue: {currentValue !== null ? currentValue : 'NULL'}</p>
+                </div>
                 <div id="chart-container" ref={chartRef} className="h-96 w-full bg-background rounded-md p-2">
                   {isLoadingComparisonData ? (
                     <div className="flex items-center justify-center h-full">
