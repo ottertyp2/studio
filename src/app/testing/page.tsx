@@ -854,22 +854,7 @@ function TestingComponent() {
   };
 
   const renderLegendContent = () => {
-    return (
-      <div className="flex flex-wrap justify-center items-center gap-4 mt-2">
-        {comparisonSessions.map((session, index) => {
-          const legendText = `${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`;
-          return (
-            <div key={session.id} className="flex items-center text-xs">
-              <div
-                className="w-3 h-3 mr-2 rounded-full"
-                style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
-              ></div>
-              <span>{legendText}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
+    return null;
   };
   
     const yAxisLabel = useMemo(() => {
