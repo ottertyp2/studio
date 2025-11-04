@@ -522,7 +522,7 @@ const { chartData, timeUnit } = useMemo(() => {
           const timeInSeconds = (new Date(d.timestamp).getTime() - source.startTime!) / 1000;
           const time = timeInSeconds / timeDivisor;
           const value = convertRawValue(d.value, config || null);
-          const timeKey = time.toFixed(2); // Using 2 decimal places for better resolution
+          const timeKey = useMinutes ? time.toFixed(2) : time.toFixed(2); // Using 2 decimal places for better resolution
 
           if (!timeMap[timeKey]) {
             timeMap[timeKey] = { name: parseFloat(timeKey) };
