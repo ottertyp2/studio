@@ -184,6 +184,7 @@ function TestingComponent() {
     latency,
     startTime,
     totalDowntime,
+    localDataLog
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
@@ -269,7 +270,11 @@ function TestingComponent() {
         const runningSessionDoc = querySnapshot.docs[0];
         const session = { id: runningSessionDoc.id, ...runningSessionDoc.data() } as WithId<TestSession>;
         setRunningTestSession(session);
-        setComparisonSessions([session]);
+        setComparisonSessions(prev => {
+            // Avoid adding duplicates
+            if (prev.some(s => s.id === session.id)) return prev;
+            return [session, ...prev];
+        });
       } else {
         setRunningTestSession(null);
       }
@@ -337,13 +342,23 @@ function TestingComponent() {
   };
   
   useEffect(() => {
-    if (comparisonSessions.length === 0 || !firestore) {
-      setComparisonData({});
+    const historicalSessions = comparisonSessions.filter(s => s.id !== runningTestSession?.id);
+    if (historicalSessions.length === 0) {
+      setComparisonData(prev => {
+        const liveDataKey = runningTestSession?.id;
+        const newData = { ...prev };
+        if (liveDataKey) {
+            // Keep only the live session data if it exists
+            const liveData = newData[liveDataKey];
+            return liveData ? { [liveDataKey]: liveData } : {};
+        }
+        return {};
+      });
       return;
     }
   
     setIsLoadingComparisonData(true);
-    const promises = comparisonSessions.map(session => {
+    const promises = historicalSessions.map(session => {
         const dataQuery = query(
             collection(firestore, 'test_sessions', session.id, 'sensor_data'),
             orderBy('timestamp', 'asc')
@@ -354,10 +369,10 @@ function TestingComponent() {
     Promise.all(promises).then(snapshots => {
         const newData: Record<string, WithId<SensorData>[]> = {};
         snapshots.forEach((snapshot, index) => {
-            const sessionId = comparisonSessions[index].id;
+            const sessionId = historicalSessions[index].id;
             newData[sessionId] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
         });
-        setComparisonData(newData);
+        setComparisonData(prev => ({...prev, ...newData}));
         setIsLoadingComparisonData(false);
     }).catch(error => {
         console.error("Error fetching comparison data:", error);
@@ -365,7 +380,7 @@ function TestingComponent() {
         setIsLoadingComparisonData(false);
     });
   
-  }, [firestore, comparisonSessions, toast]);
+  }, [firestore, comparisonSessions, runningTestSession, toast]);
 
   const handleDeleteSession = async (sessionId: string) => {
     if (!firestore) return;
@@ -395,82 +410,100 @@ function TestingComponent() {
   };
 
   const { chartData, timeUnit } = useMemo(() => {
-    if (comparisonSessions.length === 0) return { chartData: [], timeUnit: 'seconds' };
+    const allSessions = [...comparisonSessions];
+    const dataSources: Record<string, { data: any[], startTime: number | null }> = {};
+    let hasData = false;
+
+    // Prepare historical data
+    allSessions.forEach(session => {
+        if (session.id !== runningTestSession?.id) {
+            const historicalData = comparisonData[session.id] || [];
+            if (historicalData.length > 0) {
+                hasData = true;
+                dataSources[session.id] = {
+                    data: historicalData,
+                    startTime: new Date(historicalData[0].timestamp).getTime()
+                };
+            }
+        }
+    });
+     // Prepare live data
+    if (runningTestSession) {
+        if (localDataLog.length > 0) {
+            hasData = true;
+            dataSources[runningTestSession.id] = {
+                data: localDataLog,
+                startTime: new Date(runningTestSession.startTime).getTime(),
+            };
+        }
+    }
+    
+    if (!hasData) return { chartData: [], timeUnit: 'seconds' };
 
     let maxTime = 0;
     const timeMap: { [timeKey: string]: ChartDataPoint } = {};
 
-    comparisonSessions.forEach(session => {
-        const sessionData = comparisonData[session.id] || [];
-        if (sessionData.length === 0) return;
-
-        const startTime = new Date(sessionData[0].timestamp).getTime();
-        const sessionMaxTime = (new Date(sessionData[sessionData.length - 1].timestamp).getTime() - startTime) / 1000;
-        if (sessionMaxTime > maxTime) {
-            maxTime = sessionMaxTime;
+    Object.values(dataSources).forEach(source => {
+        if (source.data.length > 1 && source.startTime) {
+            const lastTimestamp = new Date(source.data[0].timestamp).getTime(); // localDataLog is reversed
+            const sessionMaxTime = (lastTimestamp - source.startTime) / 1000;
+            if (sessionMaxTime > maxTime) maxTime = sessionMaxTime;
         }
     });
 
     const useMinutes = maxTime > 60;
     const timeDivisor = useMinutes ? 60 : 1;
 
-    comparisonSessions.forEach(session => {
-        const sessionData = comparisonData[session.id] || [];
-        if (sessionData.length === 0) return;
-        
+    allSessions.forEach(session => {
+        const source = dataSources[session.id];
+        if (!source || !source.startTime) return;
+
         const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
         const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-        const startTime = new Date(sessionData[0].timestamp).getTime();
-    
+        
         const interpolateCurve = (curve: {x: number, y: number}[], x: number) => {
             if (!curve || curve.length === 0) return undefined;
             if (x < curve[0].x) return curve[0].y;
             if (x > curve[curve.length - 1].x) return curve[curve.length - 1].y;
             for (let i = 0; i < curve.length - 1; i++) {
                 if (x >= curve[i].x && x <= curve[i + 1].x) {
-                const x1 = curve[i].x; const y1 = curve[i].y;
-                const x2 = curve[i + 1].x; const y2 = curve[i + 1].y;
-                const t = (x - x1) / (x2 - x1);
-                return y1 + t * (y2 - y1);
+                    const x1 = curve[i].x; const y1 = curve[i].y;
+                    const x2 = curve[i + 1].x; const y2 = curve[i + 1].y;
+                    const t = (x - x1) / (x2 - x1);
+                    return y1 + t * (y2 - y1);
                 }
             }
             return curve[curve.length - 1].y;
         };
 
-        sessionData.forEach(d => {
-            const timeInSeconds = (new Date(d.timestamp).getTime() - startTime) / 1000;
-            let time = timeInSeconds / timeDivisor;
+        source.data.forEach(d => {
+            const timeInSeconds = (new Date(d.timestamp).getTime() - source.startTime!) / 1000;
+            const time = timeInSeconds / timeDivisor;
+            const value = convertRawValue(d.value, config || null);
 
             const timeKey = useMinutes ? time.toFixed(1) : time.toFixed(0);
-            time = parseFloat(timeKey);
-
+            
             if (!timeMap[timeKey]) {
-                timeMap[timeKey] = { name: time };
+                timeMap[timeKey] = { name: parseFloat(timeKey) };
             }
             const point = timeMap[timeKey];
             
-            const value = convertRawValue(d.value, config || null);
-            const minGuideline = vesselType ? interpolateCurve(vesselType.minCurve, timeInSeconds) : undefined;
-            const maxGuideline = vesselType ? interpolateCurve(vesselType.maxCurve, timeInSeconds) : undefined;
-            
             if (vesselType) {
-              point.minGuideline = minGuideline;
-              point.maxGuideline = maxGuideline;
+                point.minGuideline = interpolateCurve(vesselType.minCurve, timeInSeconds);
+                point.maxGuideline = interpolateCurve(vesselType.maxCurve, timeInSeconds);
             }
     
-            const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
+            const isFailed = (point.minGuideline !== undefined && value < point.minGuideline) || (point.maxGuideline !== undefined && value > point.maxGuideline);
 
             point[session.id] = value;
-            if (isFailed) {
-              point[`${session.id}-fail`] = value;
-            }
+            point[`${session.id}-fail`] = isFailed ? value : null;
         });
     });
 
     const finalChartData = Object.values(timeMap).sort((a, b) => a.name - b.name);
     return { chartData: finalChartData, timeUnit: useMinutes ? 'minutes' : 'seconds' };
 
-  }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
+  }, [comparisonSessions, comparisonData, runningTestSession, localDataLog, sensorConfigs, vesselTypes]);
 
   const setTimeframe = (frame: '1m' | '5m' | 'all') => {
       setActiveTimeframe(frame);
@@ -846,7 +879,7 @@ function TestingComponent() {
     setCrashAnalysisError(null);
 
     try {
-        const crashReportRef = ref(database, 'system/lastCrashReport');
+        const crashReportRef = ref(database, 'data/system/lastCrashReport');
         const snapshot = await get(crashReportRef);
 
         if (snapshot.exists()) {
@@ -1272,7 +1305,7 @@ function TestingComponent() {
                       <Loader2 className="h-8 w-8 animate-spin text-primary" />
                       <p className="ml-4">Loading session data...</p>
                     </div>
-                  ) : (
+                  ) : chartData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                       <LineChart 
                         data={chartData}
@@ -1305,8 +1338,7 @@ function TestingComponent() {
                                 const config = sensorConfigs?.find(c => c.id === session?.sensorConfigurationId);
                                 const unit = config?.unit || '';
                                 const legendName = session ? `${session.vesselTypeName} - ${session.serialNumber}`: name;
-                                const formattedValue = value.toFixed(config?.decimalPlaces || 2);
-                                return [`${formattedValue} ${unit}`, legendName];
+                                return [`${value.toFixed(config?.decimalPlaces || 2)} ${unit}`, legendName];
                             }}
                             labelFormatter={(label) => `Time: ${label.toFixed(2)} ${timeUnit}`}
                         />
@@ -1333,12 +1365,16 @@ function TestingComponent() {
                                     name="Failed segment"
                                     dot={false} 
                                     strokeWidth={3}
-                                    connectNulls
+                                    connectNulls={true}
                                 />
                             </React.Fragment>
                         ))}
                       </LineChart>
                   </ResponsiveContainer>
+                  ) : (
+                     <div className="flex items-center justify-center h-full">
+                       <p className="text-muted-foreground">No data to display. Start a session or select one from the history.</p>
+                     </div>
                   )}
                 </div>
             </CardContent>
@@ -1367,3 +1403,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
