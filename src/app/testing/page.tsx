@@ -180,10 +180,9 @@ function TestingComponent() {
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
-  const [activeSensorConfig, setActiveSensorConfig] = useState<WithId<SensorConfig> | null>(null);
   
   const [isNewSessionDialogOpen, setIsNewSessionDialogOpen] = useState(false);
-  const [newSessionData, setNewSessionData] = useState({ vesselTypeId: '', batchId: '', serialNumber: '', description: '' });
+  const [newSessionData, setNewSessionData] = useState({ vesselTypeId: '', batchId: '', serialNumber: '', description: '', sensorConfigurationId: '' });
   const [runningTestSession, setRunningTestSession] = useState<WithId<TestSession> | null>(null);
   
   const [comparisonSessions, setComparisonSessions] = useState<WithId<TestSession>[]>([]);
@@ -211,6 +210,8 @@ function TestingComponent() {
   const [crashAnalysis, setCrashAnalysis] = useState<AnalyzeArduinoCrashesOutput | null>(null);
   const [isAnalyzingCrash, setIsAnalyzingCrash] = useState(false);
 
+  const [displaySensorConfigId, setDisplaySensorConfigId] = useState<string | null>(null);
+
 
   // Data fetching hooks
   const testBenchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'testbenches') : null, [firestore]);
@@ -225,6 +226,17 @@ function TestingComponent() {
   const batchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'batches') : null, [firestore]);
   const { data: batches } = useCollection<Batch>(batchesCollectionRef);
 
+  const availableSensorsForBench = useMemo(() => {
+    if (!sensorConfigs || !activeTestBench) return [];
+    return sensorConfigs.filter(c => c.testBenchId === activeTestBench.id);
+  }, [sensorConfigs, activeTestBench]);
+
+  useEffect(() => {
+    if (!displaySensorConfigId && availableSensorsForBench.length > 0) {
+      setDisplaySensorConfigId(availableSensorsForBench[0].id);
+    }
+  }, [availableSensorsForBench, displaySensorConfigId]);
+
   // Effect to update 'now' state every second for live counters
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
@@ -237,15 +249,6 @@ function TestingComponent() {
       setActiveTestBench(testBenches[0]);
     }
   }, [testBenches, activeTestBench]);
-
-  useEffect(() => {
-    if (activeTestBench && sensorConfigs) {
-      const benchConfig = sensorConfigs.find(c => c.testBenchId === activeTestBench.id);
-      setActiveSensorConfig(benchConfig || null);
-    } else {
-        setActiveSensorConfig(null);
-    }
-  }, [activeTestBench, sensorConfigs]);
 
   // Find and subscribe to a running session on load
   useEffect(() => {
@@ -269,7 +272,7 @@ function TestingComponent() {
   }, [firestore, user]);
 
   const handleStartSession = async () => {
-    if (!user || !activeTestBench || !activeSensorConfig || !newSessionData.vesselTypeId || !newSessionData.batchId || !database) {
+    if (!user || !activeTestBench || !newSessionData.sensorConfigurationId || !newSessionData.vesselTypeId || !newSessionData.batchId || !database) {
       toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select a test bench, sensor, vessel type, and batch.' });
       return;
     }
@@ -296,7 +299,7 @@ function TestingComponent() {
       startTime: new Date().toISOString(),
       status: 'RUNNING',
       testBenchId: activeTestBench.id,
-      sensorConfigurationId: activeSensorConfig.id,
+      sensorConfigurationId: newSessionData.sensorConfigurationId,
       measurementType: 'ARDUINO',
       userId: user.uid,
       username: user.displayName || user.email || 'Unknown User',
@@ -307,7 +310,7 @@ function TestingComponent() {
       await sendRecordingCommand(true);
       toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
       setIsNewSessionDialogOpen(false);
-      setNewSessionData({ vesselTypeId: '', batchId: '', serialNumber: '', description: '' });
+      setNewSessionData({ vesselTypeId: '', batchId: '', serialNumber: '', description: '', sensorConfigurationId: '' });
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Failed to Start Session', description: error.message });
     }
@@ -482,18 +485,16 @@ function TestingComponent() {
   };
 
   const convertedValue = useMemo(() => {
-      if (currentValue === null) return null;
-      const config = runningTestSession 
-          ? sensorConfigs?.find(c => c.id === runningTestSession.sensorConfigurationId) 
-          : activeSensorConfig;
-      if (!config) return { value: currentValue, unit: 'RAW' };
-      
-      const val = convertRawValue(currentValue, config);
-      return {
-          value: val.toFixed(config.decimalPlaces),
-          unit: config.unit
-      };
-  }, [currentValue, activeSensorConfig, runningTestSession, sensorConfigs]);
+    if (currentValue === null) return null;
+    const config = sensorConfigs?.find(c => c.id === displaySensorConfigId);
+    if (!config) return { value: currentValue, unit: 'RAW' };
+    
+    const val = convertRawValue(currentValue, config);
+    return {
+        value: val.toFixed(config.decimalPlaces),
+        unit: config.unit
+    };
+  }, [currentValue, displaySensorConfigId, sensorConfigs]);
   
   const downtimePercentage = useMemo(() => {
     if (!startTime) return 0;
@@ -853,7 +854,22 @@ function TestingComponent() {
   };
 
   const renderLegendContent = () => {
-    return null;
+    return (
+      <div className="flex flex-wrap justify-center items-center gap-4 mt-2">
+        {comparisonSessions.map((session, index) => {
+          const legendText = `${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`;
+          return (
+            <div key={session.id} className="flex items-center text-xs">
+              <div
+                className="w-3 h-3 mr-2 rounded-full"
+                style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
+              ></div>
+              <span>{legendText}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
   };
   
     const yAxisLabel = useMemo(() => {
