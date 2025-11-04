@@ -36,12 +36,15 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [lockedSequences, setLockedSequences] = useState<('sequence1' | 'sequence2')[]>([]);
 
   // State for downtime calculation relative to the current session
-  const [startTime, setStartTime] = useState<number>(Date.now());
+  const [startTime, setStartTime] = useState<number | null>(null);
   const [totalDowntime, setTotalDowntime] = useState(0);
   const downtimeSinceRef = useRef<number | null>(null);
 
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  useEffect(() => {
+    setStartTime(Date.now());
+  }, []);
 
   useEffect(() => {
     if (!firestore || !user) return;
@@ -169,20 +172,21 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       const data = snap.val();
   
       if (data && data.lastUpdate) {
-        if (!isConnected) {
-            // Came back online. If we were tracking downtime, add it to the total.
+        setIsConnected((prevIsConnected) => {
+          if (!prevIsConnected) { // Transitioning from offline to online
             if (downtimeSinceRef.current) {
-                const downtimeDuration = Date.now() - downtimeSinceRef.current;
-                setTotalDowntime(prev => prev + downtimeDuration);
-                downtimeSinceRef.current = null;
+              const downtimeDuration = Date.now() - downtimeSinceRef.current;
+              setTotalDowntime(prev => prev + downtimeDuration);
+              downtimeSinceRef.current = null;
             }
-        }
-        setIsConnected(true);
+          }
+          return true;
+        });
+
         handleNewDataPoint(data);
   
         connectionTimeoutRef.current = setTimeout(() => {
           setIsConnected(false);
-          // Went offline. Start tracking downtime.
           if (!downtimeSinceRef.current) {
               downtimeSinceRef.current = Date.now();
           }
@@ -214,7 +218,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         clearTimeout(connectionTimeoutRef.current);
       }
     };
-  }, [database, isConnected, handleNewDataPoint]);
+  }, [database, handleNewDataPoint]);
 
   // Listener for /commands to get valve and sequence status
   useEffect(() => {
@@ -267,7 +271,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     pendingValves: [],
     lockedValves,
     startTime,
-    totalDowntime: isConnected ? totalDowntime : totalDowntime + (Date.now() - (downtimeSinceRef.current || Date.now())),
+    totalDowntime,
     downtimeSinceRef,
     sequence1Running,
     sequence2Running,
