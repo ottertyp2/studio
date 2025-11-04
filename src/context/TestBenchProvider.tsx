@@ -38,35 +38,16 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   // State for downtime calculation relative to the current session
   const [startTime, setStartTime] = useState<number | null>(null);
   const [totalDowntime, setTotalDowntime] = useState(0);
+  
+  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const downtimeSinceRef = useRef<number | null>(null);
 
-  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     setStartTime(Date.now());
-
-    // Setup downtime calculation interval
-    const interval = setInterval(() => {
-        if (!downtimeSinceRef.current) return;
-        setTotalDowntime(Date.now() - downtimeSinceRef.current);
-    }, 1000);
-
-    return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    if (isConnected) {
-        if (downtimeSinceRef.current) {
-            setTotalDowntime(prev => prev + (Date.now() - (downtimeSinceRef.current ?? Date.now())));
-            downtimeSinceRef.current = null;
-        }
-    } else {
-        if (!downtimeSinceRef.current) {
-            downtimeSinceRef.current = Date.now();
-        }
-    }
-  }, [isConnected]);
-
+  // Find and subscribe to a running session on load
   useEffect(() => {
     if (!firestore || !user) return;
     const q = query(
@@ -98,9 +79,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const commandPath = `data/commands/${valve.toLowerCase()}`;
     try {
         await set(ref(database, commandPath), state === 'ON');
-        setTimeout(() => {
-            setLockedValves(prev => prev.filter(v => v !== valve));
-        }, 2000); // Safety timeout
     } catch (error: any) {
         console.error('Failed to send command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
@@ -132,9 +110,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
       try {
           await set(ref(database, commandPath), state);
-           setTimeout(() => {
-              setLockedSequences(prev => prev.filter(s => s !== sequence));
-          }, 3000); // Safety timeout
       } catch (error: any) {
           console.error('Failed to send sequence command:', error);
           toast({ variant: 'destructive', title: 'Sequence Command Failed', description: error.message });
@@ -151,14 +126,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
         setCurrentValue(data.sensor ?? null);
         
+        // This is now the single source of truth for valve status
         setValve1Status(data.valve1 ? 'ON' : 'OFF');
         setValve2Status(data.valve2 ? 'ON' : 'OFF');
-        setLockedValves(prev => {
-            let next = [...prev];
-            if (data.valve1 !== undefined) next = next.filter(v => v !== 'VALVE1');
-            if (data.valve2 !== undefined) next = next.filter(v => v !== 'VALVE2');
-            return next;
-        });
+        
+        // Unlock valves when we get an update, implying the command was received and acted upon
+        setLockedValves([]);
 
         setIsRecording(data.recording === true);
         setDisconnectCount(data.disconnectCount || 0);
@@ -211,7 +184,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         connectionTimeoutRef.current = setTimeout(() => {
           setIsConnected(false);
           setDisconnectCount(prev => prev + 1);
-        }, 5000); // 5 second timeout
+        }, 5000);
       } else {
         setIsConnected(false);
       }
@@ -257,6 +230,30 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       unsub2();
     };
   }, [database]);
+
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (downtimeSinceRef.current !== null) {
+      interval = setInterval(() => {
+        setTotalDowntime(Date.now() - (downtimeSinceRef.current || Date.now()));
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [downtimeSinceRef.current]);
+
+  useEffect(() => {
+    if (isConnected) {
+      if (downtimeSinceRef.current !== null) {
+        setTotalDowntime(prev => prev + (Date.now() - (downtimeSinceRef.current ?? Date.now())));
+        downtimeSinceRef.current = null;
+      }
+    } else {
+      if (downtimeSinceRef.current === null) {
+        downtimeSinceRef.current = Date.now();
+      }
+    }
+  }, [isConnected]);
 
 
   const value = {
