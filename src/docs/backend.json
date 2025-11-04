@@ -107,6 +107,10 @@
           "type": "number",
           "description": "The reference voltage of the Arduino (used for voltage conversion)."
         },
+        "minVoltage": {
+          "type": "number",
+          "description": "The voltage that corresponds to the 'min' value of the custom range."
+        },
         "adcBitResolution": {
           "type": "number",
           "description": "The bit resolution of the ADC (e.g., 10 for 0-1023, 12 for 0-4095)."

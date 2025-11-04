@@ -121,6 +121,7 @@ type SensorConfig = {
     min: number;
     max: number;
     arduinoVoltage: number;
+    minVoltage: number;
     adcBitResolution: number;
     decimalPlaces: number;
     ownerId?: string;
@@ -466,7 +467,7 @@ export default function AdminPage() {
         }
     }
     
-    if (field === 'min' || field === 'max' || field === 'arduinoVoltage') {
+    if (['min', 'max', 'arduinoVoltage', 'minVoltage'].includes(field)) {
         if (value === '') {
             (newConfig as any)[field] = '';
         } else {
@@ -506,6 +507,7 @@ export default function AdminPage() {
       min: typeof tempSensorConfig.min === 'number' ? tempSensorConfig.min : 0,
       max: typeof tempSensorConfig.max === 'number' ? tempSensorConfig.max : 1023,
       arduinoVoltage: typeof tempSensorConfig.arduinoVoltage === 'number' ? tempSensorConfig.arduinoVoltage : 5,
+      minVoltage: typeof tempSensorConfig.minVoltage === 'number' ? tempSensorConfig.minVoltage : 0,
       adcBitResolution: tempSensorConfig.adcBitResolution || 10,
       decimalPlaces: tempSensorConfig.decimalPlaces || 0,
       ownerId: tempSensorConfig.ownerId || user.uid,
@@ -538,6 +540,7 @@ export default function AdminPage() {
       min: 0,
       max: 1023,
       arduinoVoltage: 5,
+      minVoltage: 0,
       adcBitResolution: 10,
       decimalPlaces: 0,
       ownerId: user.uid,
@@ -1776,7 +1779,15 @@ export default function AdminPage() {
                     </div>
                  )}
                  {tempSensorConfig.mode !== 'RAW' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="minVoltageInput">Minimum Voltage (V)</Label>
+                            <Input id="minVoltageInput" type="number" value={tempSensorConfig.minVoltage ?? ''} onChange={(e) => handleConfigChange('minVoltage', e.target.value)} placeholder="e.g. 1.2"/>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="arduinoVoltageInput">Reference Voltage (V)</Label>
+                            <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage ?? ''} onChange={(e) => handleConfigChange('arduinoVoltage', e.target.value)} placeholder="e.g. 5 or 3.3"/>
+                        </div>
                         <div className="space-y-2">
                             <Label htmlFor="adcBitResolution">ADC Bit Resolution</Label>
                             <Select value={String(tempSensorConfig.adcBitResolution || 10)} onValueChange={(value) => handleConfigChange('adcBitResolution', value)}>
@@ -1791,10 +1802,6 @@ export default function AdminPage() {
                                     <SelectItem value="16">16-bit (0-65535)</SelectItem>
                                 </SelectContent>
                             </Select>
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="arduinoVoltageInput">Reference Voltage (V)</Label>
-                            <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage ?? ''} onChange={(e) => handleConfigChange('arduinoVoltage', e.target.value)} placeholder="e.g. 5 or 3.3"/>
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="decimalPlacesInput">Decimal Places</Label>

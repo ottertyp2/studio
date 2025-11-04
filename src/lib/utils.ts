@@ -1,3 +1,4 @@
+
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -8,6 +9,7 @@ export function cn(...inputs: ClassValue[]) {
 type SensorConfig = {
     mode: 'RAW' | 'VOLTAGE' | 'CUSTOM';
     arduinoVoltage: number;
+    minVoltage: number;
     adcBitResolution: number;
     min: number;
     max: number;
@@ -17,12 +19,22 @@ export function convertRawValue(rawValue: number, sensorConfig: SensorConfig | n
     if (!sensorConfig) return rawValue;
 
     const maxAdcValue = Math.pow(2, sensorConfig.adcBitResolution || 10) - 1;
+    const measuredVoltage = (rawValue / maxAdcValue) * sensorConfig.arduinoVoltage;
+    
+    // Ensure the effective voltage range is not zero to avoid division by zero
+    const voltageRange = sensorConfig.arduinoVoltage - (sensorConfig.minVoltage || 0);
+    if (voltageRange <= 0) return 0; // or handle as an error
 
     switch (sensorConfig.mode) {
         case 'VOLTAGE':
-            return (rawValue / maxAdcValue) * sensorConfig.arduinoVoltage;
+            return measuredVoltage;
         case 'CUSTOM':
-            return sensorConfig.min + (rawValue / maxAdcValue) * (sensorConfig.max - sensorConfig.min);
+            // Calculate the percentage of the measured voltage within the effective range
+            const voltageFraction = (measuredVoltage - (sensorConfig.minVoltage || 0)) / voltageRange;
+            // Apply this fraction to the custom unit range
+            const value = sensorConfig.min + (voltageFraction * (sensorConfig.max - sensorConfig.min));
+            // Clamp the value to be at least the minimum of the range
+            return Math.max(sensorConfig.min, value);
         case 'RAW':
         default:
             return rawValue;
@@ -70,4 +82,3 @@ export const toBase64 = (url: string): Promise<string> => {
       });
   });
 };
-
