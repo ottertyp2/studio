@@ -1120,7 +1120,7 @@ function TestingComponent() {
                                             <h4 className="font-semibold text-sm text-foreground pt-2">Raw Report Data</h4>
                                             <p><strong>Last Event:</strong> {crashReport?.reason} on {new Date(crashReport?.timestamp || 0).toLocaleString()}</p>
                                             <p><strong>Errors This Event:</strong> Latency ({crashReport?.errors.latency}), Update ({crashReport?.errors.update}), Stream ({crashReport?.errors.stream})</p>
-                                            <p><strong>Historical Totals:</strong> Latency Reconnects ({crashReport?.totals.latency}), Update Reconnects ({crashReport?.totals.update}), Stream Reconnects ({crashReport?.totals.stream})</p>
+                                            <p><strong>Historical Totals:</strong> Latency Reconnects ({crashReport?.totals.latency}), Update Reconnects ({crashReport?.totals.update}), Stream Reconnects ({crashReport?.totals.update})</p>
                                         </div>
                                     </div>
                                 ) : (
@@ -1279,6 +1279,12 @@ function TestingComponent() {
             </CardHeader>
             <CardContent>
                 <div id="chart-container" ref={chartRef} className="h-96 w-full bg-background rounded-md p-2">
+                  {isLoadingComparisonData ? (
+                    <div className="flex items-center justify-center h-full">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      <p className="ml-4">Loading session data...</p>
+                    </div>
+                  ) : (
                   <ResponsiveContainer width="100%" height="100%">
                       <LineChart 
                         data={chartData}
@@ -1345,6 +1351,7 @@ function TestingComponent() {
                         ))}
                       </LineChart>
                   </ResponsiveContainer>
+                  )}
                 </div>
             </CardContent>
             </Card>
@@ -1372,3 +1379,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
