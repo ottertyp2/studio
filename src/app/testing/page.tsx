@@ -69,6 +69,7 @@ import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
 import * as htmlToImage from 'html-to-image';
 import { analyzeArduinoCrashes, AnalyzeArduinoCrashesOutput } from '@/ai/flows/analyze-arduino-crashes';
+import { DB_ROOT_PATH } from '@/firebase/rtdb-paths';
 
 if (pdfFonts.pdfMake) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
@@ -342,43 +343,29 @@ function TestingComponent() {
       return;
     }
   
-    const unsubscribers: (() => void)[] = [];
     setIsLoadingComparisonData(true);
-    let loadedCount = 0;
-  
-    const checkAllLoaded = () => {
-        loadedCount++;
-        if (loadedCount >= comparisonSessions.length) {
-            setIsLoadingComparisonData(false);
-        }
-    };
-
-    comparisonSessions.forEach(session => {
+    const promises = comparisonSessions.map(session => {
         const dataQuery = query(
-          collection(firestore, 'test_sessions', session.id, 'sensor_data'),
-          orderBy('timestamp', 'asc')
+            collection(firestore, 'test_sessions', session.id, 'sensor_data'),
+            orderBy('timestamp', 'asc')
         );
+        return getDocs(dataQuery);
+    });
 
-        const unsubscribe = onSnapshot(dataQuery, (snapshot) => {
-            const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
-            setComparisonData(prev => ({ ...prev, [session.id]: data }));
-            if (session.status === 'COMPLETED') {
-                checkAllLoaded();
-            } else {
-                 setIsLoadingComparisonData(false);
-            }
-        }, (error) => {
-            console.error(`Error fetching data for ${session.id}:`, error);
-            toast({ variant: 'destructive', title: `Data Error for ${session.serialNumber}`, description: error.message });
-            checkAllLoaded();
+    Promise.all(promises).then(snapshots => {
+        const newData: Record<string, WithId<SensorData>[]> = {};
+        snapshots.forEach((snapshot, index) => {
+            const sessionId = comparisonSessions[index].id;
+            newData[sessionId] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorData>));
         });
-
-        unsubscribers.push(unsubscribe);
+        setComparisonData(newData);
+        setIsLoadingComparisonData(false);
+    }).catch(error => {
+        console.error("Error fetching comparison data:", error);
+        toast({ variant: 'destructive', title: 'Failed to Load Data', description: error.message });
+        setIsLoadingComparisonData(false);
     });
   
-    return () => {
-      unsubscribers.forEach(unsub => unsub());
-    };
   }, [firestore, comparisonSessions, toast]);
 
   const handleDeleteSession = async (sessionId: string) => {
@@ -858,7 +845,7 @@ function TestingComponent() {
     setCrashAnalysisError(null);
 
     try {
-        const crashReportRef = ref(database, '/system/lastCrashReport');
+        const crashReportRef = ref(database, `${DB_ROOT_PATH}/system/lastCrashReport`);
         const snapshot = await get(crashReportRef);
 
         if (snapshot.exists()) {
@@ -1120,7 +1107,7 @@ function TestingComponent() {
                                             <h4 className="font-semibold text-sm text-foreground pt-2">Raw Report Data</h4>
                                             <p><strong>Last Event:</strong> {crashReport?.reason} on {new Date(crashReport?.timestamp || 0).toLocaleString()}</p>
                                             <p><strong>Errors This Event:</strong> Latency ({crashReport?.errors.latency}), Update ({crashReport?.errors.update}), Stream ({crashReport?.errors.stream})</p>
-                                            <p><strong>Historical Totals:</strong> Latency Reconnects ({crashReport?.totals.latency}), Update Reconnects ({crashReport?.totals.update}), Stream Reconnects ({crashReport?.totals.update})</p>
+                                            <p><strong>Historical Totals:</strong> Latency Reconnects ({crashReport?.totals.latency}), Update Reconnects ({crashReport?.totals.update}), Stream Reconnects ({crashReport?.totals.stream})</p>
                                         </div>
                                     </div>
                                 ) : (
@@ -1379,5 +1366,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    

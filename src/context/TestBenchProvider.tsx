@@ -6,6 +6,7 @@ import { TestBenchContext, ValveStatus } from './TestBenchContext';
 import { useFirebase, useUser, addDocumentNonBlocking, WithId } from '@/firebase';
 import { ref, onValue, set } from 'firebase/database';
 import { collection, query, where, onSnapshot, limit, DocumentData } from 'firebase/firestore';
+import { DB_ROOT_PATH } from '@/firebase/rtdb-paths';
 
 export type RtdbSensorData = {
   timestamp: string;
@@ -49,8 +50,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   // Effect to calculate downtime when offline
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
-    if (!isConnected && downtimeSinceRef.current) {
-        const lastSeen = downtimeSinceRef.current;
+    if (!isConnected) {
         // Function to update downtime
         const updateDowntime = () => {
              if (downtimeSinceRef.current) { // Check if still offline
@@ -58,9 +58,13 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
              }
         };
         // Run immediately and then set interval
+        if (!downtimeSinceRef.current) {
+            downtimeSinceRef.current = Date.now();
+        }
         updateDowntime();
         interval = setInterval(updateDowntime, 1000);
     } else {
+        downtimeSinceRef.current = null;
         // Clear interval if connected
         if (interval) {
             clearInterval(interval);
@@ -102,7 +106,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     
     setLockedValves(prev => [...prev, valve]);
     
-    const commandPath = valve === 'VALVE1' ? 'commands/valve1' : 'commands/valve2';
+    const commandPath = `${DB_ROOT_PATH}/commands/${valve.toLowerCase()}`;
     try {
         await set(ref(database, commandPath), state === 'ON');
         setTimeout(() => {
@@ -121,7 +125,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         return;
     }
     try {
-        await set(ref(database, 'commands/recording'), shouldRecord);
+        await set(ref(database, `${DB_ROOT_PATH}/commands/recording`), shouldRecord);
     } catch (error: any) {
         console.error('Failed to send recording command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
@@ -135,7 +139,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       }
       
       setLockedSequences(prev => [...prev, sequence]);
-      const commandPath = `commands/${sequence}`;
+      const commandPath = `${DB_ROOT_PATH}/commands/${sequence}`;
 
       try {
           await set(ref(database, commandPath), state);
@@ -152,7 +156,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   // Listener for /live data
   useEffect(() => {
     if (!database) return;
-  
+
     const handleNewDataPoint = (data: any) => {
         if (data === null || data === undefined) return;
 
@@ -160,6 +164,25 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         setIsRecording(data.recording === true);
         setDisconnectCount(data.disconnectCount || 0);
         setLatency(data.latency !== undefined ? data.latency : null);
+        setValve1Status(data.valve1 ? 'ON' : 'OFF');
+        setValve2Status(data.valve2 ? 'ON' : 'OFF');
+        setSequence1Running(data.sequence1_running === true);
+        setSequence2Running(data.sequence2_running === true);
+
+        // Manage locks based on live feedback
+        setLockedValves(prev => {
+            let next = [...prev];
+            if (data.valve1 !== undefined) next = next.filter(v => v !== 'VALVE1');
+            if (data.valve2 !== undefined) next = next.filter(v => v !== 'VALVE2');
+            return next;
+        });
+
+        setLockedSequences(prev => {
+            let next = [...prev];
+            if (data.sequence1_running !== undefined) next = next.filter(s => s !== 'sequence1');
+            if (data.sequence2_running !== undefined) next = next.filter(s => s !== 'sequence2');
+            return next;
+        });
         
         const lastUpdateTimestamp = data.lastUpdate ? new Date(data.lastUpdate).getTime() : null;
         if (lastUpdateTimestamp) {
@@ -191,8 +214,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
           addDocumentNonBlocking(sessionDataRef, dataToSave);
         }
     };
-
-    const liveDataRef = ref(database, '/live');
+    
+    const liveDataRef = ref(database, `${DB_ROOT_PATH}/live`);
 
     const handleData = (snap: any) => {
       if (connectionTimeoutRef.current) {
@@ -203,20 +226,14 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   
       if (data && data.lastUpdate) {
         setIsConnected(true);
-        downtimeSinceRef.current = null; // Clear downtime start time
+  
         handleNewDataPoint(data);
   
         connectionTimeoutRef.current = setTimeout(() => {
           setIsConnected(false);
-          if (!downtimeSinceRef.current) {
-              downtimeSinceRef.current = Date.now();
-          }
         }, 5000); // 5 second timeout
       } else {
         setIsConnected(false);
-        if (!downtimeSinceRef.current) {
-            downtimeSinceRef.current = Date.now();
-        }
       }
     };
     
@@ -225,9 +242,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       setIsConnected(false);
       if (connectionTimeoutRef.current) {
         clearTimeout(connectionTimeoutRef.current);
-      }
-      if (!downtimeSinceRef.current) {
-        downtimeSinceRef.current = Date.now();
       }
     };
 
@@ -240,39 +254,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       }
     };
   }, [database, firestore]);
-
-  // Listener for /commands to get valve and sequence status
-  useEffect(() => {
-    if (!database) return;
-    const commandsRef = ref(database, 'commands');
-
-    const unsubscribe = onValue(commandsRef, (snap) => {
-        const data = snap.val();
-        if (data) {
-            // Update valve statuses from /commands
-            if (data.valve1 !== undefined) {
-                setValve1Status(data.valve1 ? 'ON' : 'OFF');
-                setLockedValves(prev => prev.filter(v => v !== 'VALVE1'));
-            }
-            if (data.valve2 !== undefined) {
-                setValve2Status(data.valve2 ? 'ON' : 'OFF');
-                setLockedValves(prev => prev.filter(v => v !== 'VALVE2'));
-            }
-
-            // Update sequence statuses from /commands
-            if (data.sequence1 !== undefined) {
-                setSequence1Running(data.sequence1 === true);
-                setLockedSequences(prev => prev.filter(s => s !== 'sequence1'));
-            }
-            if (data.sequence2 !== undefined) {
-                setSequence2Running(data.sequence2 === true);
-                setLockedSequences(prev => prev.filter(s => s !== 'sequence2'));
-            }
-        }
-    });
-
-    return () => unsubscribe();
-  }, [database]);
 
 
   const value = {
