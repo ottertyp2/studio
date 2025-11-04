@@ -233,7 +233,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         clearTimeout(connectionTimeoutRef.current);
       }
     };
-  }, [database, handleNewDataPoint, isConnected, currentDowntime]);
+  }, [database, handleNewDataPoint, currentDowntime]);
 
   // Listener for /commands to get valve and sequence status
   useEffect(() => {
