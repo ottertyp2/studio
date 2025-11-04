@@ -410,26 +410,19 @@ function TestingComponent() {
   };
 
   const { chartData, timeUnit } = useMemo(() => {
-    console.log('====== CHART DATA CALCULATION START ======');
-    console.log('Input: comparisonSessions', comparisonSessions.map(s => ({id: s.id, name: s.serialNumber})));
-    console.log('Input: runningTestSession', runningTestSession ? {id: runningTestSession.id, name: runningTestSession.serialNumber} : null);
-    console.log('Input: comparisonData keys', Object.keys(comparisonData));
-    console.log('Input: localDataLog length', localDataLog.length);
-
     const allSessions = [...comparisonSessions];
     const dataSources: Record<string, { data: any[], startTime: number | null }> = {};
     let hasData = false;
 
-    // Prepare historical data and live data
+    // Prepare historical and live data sources
     allSessions.forEach(session => {
         if (session.id === runningTestSession?.id) {
-             if (localDataLog.length > 0) {
+            if (localDataLog.length > 0) {
                 hasData = true;
                 dataSources[session.id] = {
-                    data: localDataLog,
+                    data: [...localDataLog].reverse(), // IMPORTANT: Reverse live data to be chronological
                     startTime: new Date(session.startTime).getTime(),
                 };
-                 console.log(`[DEBUG] Using localDataLog for running session ${session.id} (${localDataLog.length} points)`);
             }
         } else {
             const historicalData = comparisonData[session.id] || [];
@@ -439,14 +432,11 @@ function TestingComponent() {
                     data: historicalData,
                     startTime: new Date(historicalData[0].timestamp).getTime()
                 };
-                 console.log(`[DEBUG] Using comparisonData for historical session ${session.id} (${historicalData.length} points)`);
             }
         }
     });
     
     if (!hasData) {
-      console.log('No data sources found. Returning empty chart.');
-      console.log('====== CHART DATA CALCULATION END ======');
       return { chartData: [], timeUnit: 'seconds' };
     }
 
@@ -455,7 +445,7 @@ function TestingComponent() {
 
     Object.values(dataSources).forEach(source => {
         if (source.data.length > 1 && source.startTime) {
-            const lastTimestamp = new Date(source.data[0].timestamp).getTime(); // localDataLog is reversed
+            const lastTimestamp = new Date(source.data[source.data.length - 1].timestamp).getTime();
             const sessionMaxTime = (lastTimestamp - source.startTime) / 1000;
             if (sessionMaxTime > maxTime) maxTime = sessionMaxTime;
         }
@@ -463,16 +453,11 @@ function TestingComponent() {
 
     const useMinutes = maxTime > 60;
     const timeDivisor = useMinutes ? 60 : 1;
-    console.log(`[DEBUG] Max time is ${maxTime.toFixed(2)}s. Using timeUnit: ${useMinutes ? 'minutes' : 'seconds'}`);
 
 
     allSessions.forEach(session => {
-        console.log(`[DEBUG] Processing session: ${session.id}`);
         const source = dataSources[session.id];
-        if (!source || !source.startTime) {
-          console.log(`[DEBUG] -> No data source for session ${session.id}. Skipping.`);
-          return;
-        }
+        if (!source || !source.startTime) return;
 
         const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
         const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
@@ -514,15 +499,9 @@ function TestingComponent() {
             point[session.id] = value;
             point[`${session.id}-fail`] = isFailed ? value : null;
         });
-        console.log(`[DEBUG] -> Finished processing ${source.data.length} points for session ${session.id}.`);
     });
 
     const finalChartData = Object.values(timeMap).sort((a, b) => a.name - b.name);
-    console.log(`[DEBUG] Final chartData has ${finalChartData.length} points.`);
-    if (finalChartData.length > 0) {
-      console.log('[DEBUG] Sample chartData point:', finalChartData[Math.floor(finalChartData.length/2)]);
-    }
-    console.log('====== CHART DATA CALCULATION END ======');
     return { chartData: finalChartData, timeUnit: useMinutes ? 'minutes' : 'seconds' };
 
   }, [comparisonSessions, comparisonData, runningTestSession, localDataLog, sensorConfigs, vesselTypes]);
@@ -1425,3 +1404,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
