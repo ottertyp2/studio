@@ -96,7 +96,7 @@ export default function ValveControl() {
                     className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
                   >
                     {isSequence1Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
-                    Run Sequence 1
+                    Sequence 1
                   </Button>
                 )}
 
@@ -117,7 +117,7 @@ export default function ValveControl() {
                     className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
                   >
                     {isSequence2Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
-                    Run Sequence 2
+                    Sequence 2
                   </Button>
                 )}
             </div>
