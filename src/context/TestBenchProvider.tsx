@@ -46,6 +46,22 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setStartTime(Date.now());
   }, []);
 
+    // Effect to calculate downtime when offline
+    useEffect(() => {
+        let interval: NodeJS.Timeout | null = null;
+        if (!isConnected && downtimeSinceRef.current) {
+            interval = setInterval(() => {
+                setTotalDowntime((Date.now() - (downtimeSinceRef.current ?? Date.now())));
+            }, 1000);
+        }
+        return () => {
+            if (interval) {
+                clearInterval(interval);
+            }
+        };
+    }, [isConnected]);
+
+
   useEffect(() => {
     if (!firestore || !user) return;
     const q = query(
@@ -162,8 +178,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!database) return;
   
-    const liveDataRef = ref(database, 'live');
-  
     const handleData = (snap: any) => {
       if (connectionTimeoutRef.current) {
         clearTimeout(connectionTimeoutRef.current);
@@ -172,16 +186,14 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       const data = snap.val();
   
       if (data && data.lastUpdate) {
-        setIsConnected((prevIsConnected) => {
-          if (!prevIsConnected) { // Transitioning from offline to online
+        if (!isConnected) { // Transitioning from offline to online
             if (downtimeSinceRef.current) {
-              const downtimeDuration = Date.now() - downtimeSinceRef.current;
-              setTotalDowntime(prev => prev + downtimeDuration);
-              downtimeSinceRef.current = null;
+                const downtimeDuration = Date.now() - downtimeSinceRef.current;
+                setTotalDowntime(prev => prev + downtimeDuration);
+                downtimeSinceRef.current = null;
             }
-          }
-          return true;
-        });
+        }
+        setIsConnected(true);
 
         handleNewDataPoint(data);
   
@@ -218,7 +230,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         clearTimeout(connectionTimeoutRef.current);
       }
     };
-  }, [database, handleNewDataPoint]);
+  }, [database, handleNewDataPoint, isConnected]);
 
   // Listener for /commands to get valve and sequence status
   useEffect(() => {
