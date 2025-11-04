@@ -1,4 +1,3 @@
-
 'use client';
 import * as React from 'react';
 import { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
@@ -417,7 +416,7 @@ function TestingComponent() {
     console.log('comparisonData keys:', Object.keys(comparisonData));
 
     const allSessions = [...comparisonSessions];
-    const dataSources: Record<string, { data: any[], startTime: number | null }> = {};
+    const dataSources: Record<string, { data: any[]; startTime: number | null }> = {};
     let hasData = false;
 
     // Prepare historical data sources
@@ -440,8 +439,8 @@ function TestingComponent() {
         console.log('✅ Adding live data source:', {
           sessionId: runningTestSession.id,
           dataLength: localDataLog.length,
-          firstTimestamp: localDataLog[0]?.timestamp,
-          lastTimestamp: localDataLog[localDataLog.length - 1]?.timestamp,
+          firstTimestamp: localDataLog[localDataLog.length - 1]?.timestamp, // Corrected index
+          lastTimestamp: localDataLog[0]?.timestamp, // Corrected index
           startTime: runningTestSession.startTime
         });
         dataSources[runningTestSession.id] = {
@@ -1329,15 +1328,23 @@ function TestingComponent() {
             </CardHeader>
             <CardContent>
                 {/* DEBUG INFO - TEMPORÄR */}
-                <div className="p-4 bg-yellow-100 border border-yellow-400 rounded mb-4 text-black">
-                  <h3 className="font-bold">Debug Info:</h3>
-                  <p>comparisonSessions: {comparisonSessions.length}</p>
-                  <p>runningTestSession: {runningTestSession?.id || 'NONE'}</p>
-                  <p>localDataLog: {localDataLog.length} items</p>
-                  <p>chartData: {chartData.length} points</p>
-                  <p>isConnected: {isConnected ? 'YES' : 'NO'}</p>
-                  <p>currentValue: {currentValue !== null ? currentValue : 'NULL'}</p>
-                </div>
+<div className="p-4 bg-yellow-100 border border-yellow-400 rounded mb-4 text-black">
+  <h3 className="font-bold">Debug Info:</h3>
+  <p>comparisonSessions: {comparisonSessions.length}</p>
+  <p>runningTestSession: {runningTestSession?.id || 'NONE'}</p>
+  <p>localDataLog: {localDataLog.length} items</p>
+  <p>chartData: {chartData.length} points</p>
+  <p>isConnected: {isConnected ? 'YES' : 'NO'}</p>
+  <p>currentValue: {currentValue !== null ? currentValue : 'NULL'}</p>
+  <p>comparisonData keys: {Object.keys(comparisonData).join(', ')}</p>
+  <p>comparisonData sizes: {Object.entries(comparisonData).map(([k, v]) => `${k.substring(0,5)}: ${v.length}`).join(', ')}</p>
+  {chartData.length > 0 && (
+    <div className="mt-2 text-xs overflow-auto">
+      <p>First chart point: {JSON.stringify(chartData[0])}</p>
+      <p>Last chart point: {JSON.stringify(chartData[chartData.length - 1])}</p>
+    </div>
+  )}
+</div>
                 <div id="chart-container" ref={chartRef} className="h-96 w-full bg-background rounded-md p-2">
                   {isLoadingComparisonData ? (
                     <div className="flex items-center justify-center h-full">
@@ -1442,5 +1449,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
