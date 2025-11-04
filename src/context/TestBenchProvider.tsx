@@ -1,3 +1,4 @@
+
 'use client';
 import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -43,31 +44,28 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     setStartTime(Date.now());
+
+    // Setup downtime calculation interval
+    const interval = setInterval(() => {
+        if (!downtimeSinceRef.current) return;
+        setTotalDowntime(Date.now() - downtimeSinceRef.current);
+    }, 1000);
+
+    return () => clearInterval(interval);
   }, []);
 
-  // Effect to calculate downtime when offline
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
-    if (!isConnected) {
+    if (isConnected) {
+        if (downtimeSinceRef.current) {
+            setTotalDowntime(prev => prev + (Date.now() - (downtimeSinceRef.current ?? Date.now())));
+            downtimeSinceRef.current = null;
+        }
+    } else {
         if (!downtimeSinceRef.current) {
             downtimeSinceRef.current = Date.now();
         }
-        interval = setInterval(() => {
-            setTotalDowntime(Date.now() - (downtimeSinceRef.current || Date.now()));
-        }, 1000);
-    } else {
-        downtimeSinceRef.current = null;
-        if (interval) {
-            clearInterval(interval);
-        }
     }
-    return () => {
-        if (interval) {
-            clearInterval(interval);
-        }
-    };
-}, [isConnected]);
-
+  }, [isConnected]);
 
   useEffect(() => {
     if (!firestore || !user) return;
@@ -97,7 +95,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     
     setLockedValves(prev => [...prev, valve]);
     
-    const commandPath = `commands/${valve.toLowerCase()}`;
+    const commandPath = `data/commands/${valve.toLowerCase()}`;
     try {
         await set(ref(database, commandPath), state === 'ON');
         setTimeout(() => {
@@ -116,7 +114,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         return;
     }
     try {
-        await set(ref(database, `commands/recording`), shouldRecord);
+        await set(ref(database, `data/commands/recording`), shouldRecord);
     } catch (error: any) {
         console.error('Failed to send recording command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
@@ -130,7 +128,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       }
       
       setLockedSequences(prev => [...prev, sequence]);
-      const commandPath = `commands/${sequence}`;
+      const commandPath = `data/commands/${sequence}`;
 
       try {
           await set(ref(database, commandPath), state);
@@ -153,7 +151,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
         setCurrentValue(data.sensor ?? null);
         
-        // Use functional updates to avoid including setters in dependencies
         setValve1Status(data.valve1 ? 'ON' : 'OFF');
         setValve2Status(data.valve2 ? 'ON' : 'OFF');
         setLockedValves(prev => {
@@ -242,8 +239,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!database) return;
 
-    const seq1Ref = ref(database, 'commands/sequence1');
-    const seq2Ref = ref(database, 'commands/sequence2');
+    const seq1Ref = ref(database, 'data/commands/sequence1');
+    const seq2Ref = ref(database, 'data/commands/sequence2');
 
     const unsub1 = onValue(seq1Ref, (snapshot) => {
       setSequence1Running(snapshot.val() === true);

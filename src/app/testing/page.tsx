@@ -69,7 +69,6 @@ import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
 import * as htmlToImage from 'html-to-image';
 import { analyzeArduinoCrashes, AnalyzeArduinoCrashesOutput } from '@/ai/flows/analyze-arduino-crashes';
-import { DB_ROOT_PATH } from '@/firebase/rtdb-paths';
 
 if (pdfFonts.pdfMake) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
@@ -440,15 +439,17 @@ function TestingComponent() {
 
         sessionData.forEach(d => {
             const timeInSeconds = (new Date(d.timestamp).getTime() - startTime) / 1000;
-            const time = timeInSeconds / timeDivisor;
-            const value = convertRawValue(d.value, config || null);
+            let time = timeInSeconds / timeDivisor;
 
             const timeKey = useMinutes ? time.toFixed(1) : time.toFixed(0);
+            time = parseFloat(timeKey);
+
             if (!timeMap[timeKey]) {
-                timeMap[timeKey] = { name: parseFloat(timeKey) };
+                timeMap[timeKey] = { name: time };
             }
             const point = timeMap[timeKey];
             
+            const value = convertRawValue(d.value, config || null);
             const minGuideline = vesselType ? interpolateCurve(vesselType.minCurve, timeInSeconds) : undefined;
             const maxGuideline = vesselType ? interpolateCurve(vesselType.maxCurve, timeInSeconds) : undefined;
             
@@ -845,7 +846,7 @@ function TestingComponent() {
     setCrashAnalysisError(null);
 
     try {
-        const crashReportRef = ref(database, `${DB_ROOT_PATH}/system/lastCrashReport`);
+        const crashReportRef = ref(database, 'system/lastCrashReport');
         const snapshot = await get(crashReportRef);
 
         if (snapshot.exists()) {
