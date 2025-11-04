@@ -1,4 +1,3 @@
-
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -1263,8 +1262,8 @@ function TestingComponent() {
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
                         {comparisonSessions.map((session, index) => (
+                           <React.Fragment key={session.id}>
                            <Line 
-                            key={session.id}
                             type="monotone" 
                             dataKey={session.id} 
                             stroke={CHART_COLORS[index % CHART_COLORS.length]} 
@@ -1273,18 +1272,16 @@ function TestingComponent() {
                             strokeWidth={2} 
                             connectNulls
                            />
-                        ))}
-                         {comparisonSessions.map((session, index) => (
                            <Line 
-                            key={`${session.id}-failed`}
                             type="monotone" 
-                            dataKey={`${session.id}-failed`} 
+                            dataKey={`${session.id}-failed`}
                             stroke="hsl(var(--destructive))"
                             name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'} (Failed)`}
                             dot={false} 
                             strokeWidth={2} 
                             connectNulls={false}
                            />
+                           </React.Fragment>
                         ))}
                       </LineChart>
                   </ResponsiveContainer>
