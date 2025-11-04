@@ -203,19 +203,24 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       const data = snap.val();
   
       if (data && data.lastUpdate) {
-        if (!isConnected) {
-            setIsConnected(true);
-            setTotalDowntime(prev => prev + currentDowntime);
-            setCurrentDowntime(0);
-        }
+        setIsConnected(prevIsConnected => {
+            if (!prevIsConnected) {
+                // Transitioning from offline to online
+                setTotalDowntime(prevDowntime => {
+                    const newTotal = prevDowntime + currentDowntime;
+                    localStorage.setItem('totalDowntime', JSON.stringify(newTotal));
+                    return newTotal;
+                });
+                setCurrentDowntime(0);
+            }
+            return true;
+        });
+
         handleNewDataPoint(data);
   
         connectionTimeoutRef.current = setTimeout(() => {
           setIsConnected(false);
-          if (connectionTimeoutRef.current) {
-            clearTimeout(connectionTimeoutRef.current);
-          }
-        }, 5000);
+        }, 5000); // 5 second timeout
       } else {
         setIsConnected(false);
       }
@@ -233,7 +238,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         clearTimeout(connectionTimeoutRef.current);
       }
     };
-  }, [database, handleNewDataPoint, currentDowntime]);
+  }, [database, handleNewDataPoint]);
 
   // Listener for /commands to get valve and sequence status
   useEffect(() => {
