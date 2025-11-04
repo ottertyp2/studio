@@ -51,11 +51,20 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     let interval: NodeJS.Timeout | null = null;
     if (!isConnected && downtimeSinceRef.current) {
         const lastSeen = downtimeSinceRef.current;
-        interval = setInterval(() => {
-            setTotalDowntime(Date.now() - lastSeen);
-        }, 1000);
+        // Function to update downtime
+        const updateDowntime = () => {
+             if (downtimeSinceRef.current) { // Check if still offline
+                setTotalDowntime(Date.now() - downtimeSinceRef.current);
+             }
+        };
+        // Run immediately and then set interval
+        updateDowntime();
+        interval = setInterval(updateDowntime, 1000);
     } else {
-        setTotalDowntime(0);
+        // Clear interval if connected
+        if (interval) {
+            clearInterval(interval);
+        }
     }
     return () => {
         if (interval) {
@@ -84,46 +93,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     });
     return () => unsubscribe();
   }, [firestore, user]);
-
-
-  const handleNewDataPoint = useCallback((data: any) => {
-    if (data === null || data === undefined) return;
-
-    setCurrentValue(data.sensor ?? null);
-    setIsRecording(data.recording === true);
-    setDisconnectCount(data.disconnectCount || 0);
-    setLatency(data.latency !== undefined ? data.latency : null);
-    
-    const lastUpdateTimestamp = data.lastUpdate ? new Date(data.lastUpdate).getTime() : null;
-    if (lastUpdateTimestamp) {
-        setLastDataPointTimestamp(lastUpdateTimestamp);
-    }
-
-    if (data.sensor !== null && data.lastUpdate) {
-        setLocalDataLog(prevLog => {
-            const newDataPoint = { value: data.sensor, timestamp: new Date(data.lastUpdate).toISOString() };
-            if(prevLog.length > 0 && prevLog[0].timestamp === newDataPoint.timestamp) {
-                return prevLog;
-            }
-            return [newDataPoint, ...prevLog].slice(0, 1000)
-        });
-    }
-
-    if (
-      runningTestSessionRef.current &&
-      firestore &&
-      data.sensor != null &&
-      data.lastUpdate &&
-      data.recording === true // only save if recording is active
-    ) {
-      const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
-      const dataToSave = {
-        value: data.sensor,
-        timestamp: new Date(data.lastUpdate).toISOString(),
-      };
-      addDocumentNonBlocking(sessionDataRef, dataToSave);
-    }
-  }, [firestore]);
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!database) {
@@ -184,6 +153,45 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!database) return;
   
+    const handleNewDataPoint = (data: any) => {
+        if (data === null || data === undefined) return;
+
+        setCurrentValue(data.sensor ?? null);
+        setIsRecording(data.recording === true);
+        setDisconnectCount(data.disconnectCount || 0);
+        setLatency(data.latency !== undefined ? data.latency : null);
+        
+        const lastUpdateTimestamp = data.lastUpdate ? new Date(data.lastUpdate).getTime() : null;
+        if (lastUpdateTimestamp) {
+            setLastDataPointTimestamp(lastUpdateTimestamp);
+        }
+
+        if (data.sensor !== null && data.lastUpdate) {
+            setLocalDataLog(prevLog => {
+                const newDataPoint = { value: data.sensor, timestamp: new Date(data.lastUpdate).toISOString() };
+                if(prevLog.length > 0 && prevLog[0].timestamp === newDataPoint.timestamp) {
+                    return prevLog;
+                }
+                return [newDataPoint, ...prevLog].slice(0, 1000)
+            });
+        }
+
+        if (
+          runningTestSessionRef.current &&
+          firestore &&
+          data.sensor != null &&
+          data.lastUpdate &&
+          data.recording === true // only save if recording is active
+        ) {
+          const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
+          const dataToSave = {
+            value: data.sensor,
+            timestamp: new Date(data.lastUpdate).toISOString(),
+          };
+          addDocumentNonBlocking(sessionDataRef, dataToSave);
+        }
+    };
+
     const liveDataRef = ref(database, '/live');
 
     const handleData = (snap: any) => {
@@ -194,15 +202,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       const data = snap.val();
   
       if (data && data.lastUpdate) {
-        if (!isConnected) { // Transitioning from offline to online
-            if (downtimeSinceRef.current) {
-                // No need to add to totalDowntime, as the interval handles it.
-                // Just reset the reference.
-                downtimeSinceRef.current = null;
-            }
-        }
         setIsConnected(true);
-
+        downtimeSinceRef.current = null; // Clear downtime start time
         handleNewDataPoint(data);
   
         connectionTimeoutRef.current = setTimeout(() => {
@@ -238,7 +239,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         clearTimeout(connectionTimeoutRef.current);
       }
     };
-  }, [database, handleNewDataPoint, isConnected]);
+  }, [database, firestore]);
 
   // Listener for /commands to get valve and sequence status
   useEffect(() => {
