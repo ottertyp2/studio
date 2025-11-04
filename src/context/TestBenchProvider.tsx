@@ -142,7 +142,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     
     setLockedValves(prev => [...prev, valve]);
     
-    const commandPath = valve === 'VALVE1' ? 'commands/valve1' : 'commands/valve2';
+    const commandPath = `data/commands/${valve.toLowerCase()}`;
     try {
         await set(ref(database, commandPath), state === 'ON');
         setTimeout(() => {
@@ -161,7 +161,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         return;
     }
     try {
-        await set(ref(database, 'commands/recording'), shouldRecord);
+        await set(ref(database, 'data/commands/recording'), shouldRecord);
     } catch (error: any) {
         console.error('Failed to send recording command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
@@ -175,7 +175,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       }
       
       setLockedSequences(prev => [...prev, sequence]);
-      const commandPath = `commands/${sequence}`;
+      const commandPath = `data/commands/${sequence}`;
 
       try {
           await set(ref(database, commandPath), state);
@@ -189,11 +189,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       }
   }, [database, toast]);
 
-  // Listener for /live data
+  // Listener for /data/live data
   useEffect(() => {
     if (!database) return;
   
-    const liveDataRef = ref(database, 'live');
+    const liveDataRef = ref(database, 'data/live');
   
     const unsubscribe = onValue(liveDataRef, (snap) => {
       if (connectionTimeoutRef.current) {
@@ -235,15 +235,15 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [database, handleNewDataPoint, isConnected, currentDowntime]);
 
-  // Listener for /commands to get valve and sequence status
+  // Listener for /data/commands to get valve and sequence status
   useEffect(() => {
     if (!database) return;
-    const commandsRef = ref(database, 'commands');
+    const commandsRef = ref(database, 'data/commands');
 
     const unsubscribe = onValue(commandsRef, (snap) => {
         const data = snap.val();
         if (data) {
-            // Update valve statuses from /commands
+            // Update valve statuses from /data/commands
             if (data.valve1 !== undefined) {
                 setValve1Status(data.valve1 ? 'ON' : 'OFF');
                 setLockedValves(prev => prev.filter(v => v !== 'VALVE1'));
@@ -253,7 +253,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 setLockedValves(prev => prev.filter(v => v !== 'VALVE2'));
             }
 
-            // Update sequence statuses from /commands
+            // Update sequence statuses from /data/commands
             if (data.sequence1 !== undefined) {
                 setSequence1Running(data.sequence1 === true);
                 setLockedSequences(prev => prev.filter(s => s !== 'sequence1'));
