@@ -46,20 +46,23 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setStartTime(Date.now());
   }, []);
 
-    // Effect to calculate downtime when offline
-    useEffect(() => {
-        let interval: NodeJS.Timeout | null = null;
-        if (!isConnected && downtimeSinceRef.current) {
-            interval = setInterval(() => {
-                setTotalDowntime((Date.now() - (downtimeSinceRef.current ?? Date.now())));
-            }, 1000);
+  // Effect to calculate downtime when offline
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    if (!isConnected && downtimeSinceRef.current) {
+        const lastSeen = downtimeSinceRef.current;
+        interval = setInterval(() => {
+            setTotalDowntime(Date.now() - lastSeen);
+        }, 1000);
+    } else {
+        setTotalDowntime(0);
+    }
+    return () => {
+        if (interval) {
+            clearInterval(interval);
         }
-        return () => {
-            if (interval) {
-                clearInterval(interval);
-            }
-        };
-    }, [isConnected]);
+    };
+}, [isConnected]);
 
 
   useEffect(() => {
@@ -73,8 +76,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       if (!querySnapshot.empty) {
         const runningSessionDoc = querySnapshot.docs[0];
         runningTestSessionRef.current = { id: runningSessionDoc.id, ...runningSessionDoc.data() };
+        setIsRecording(true);
       } else {
         runningTestSessionRef.current = null;
+        setIsRecording(false);
       }
     });
     return () => unsubscribe();
@@ -108,7 +113,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       runningTestSessionRef.current &&
       firestore &&
       data.sensor != null &&
-      data.lastUpdate
+      data.lastUpdate &&
+      data.recording === true // only save if recording is active
     ) {
       const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
       const dataToSave = {
@@ -178,6 +184,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!database) return;
   
+    const liveDataRef = ref(database, '/live');
+
     const handleData = (snap: any) => {
       if (connectionTimeoutRef.current) {
         clearTimeout(connectionTimeoutRef.current);
@@ -188,8 +196,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       if (data && data.lastUpdate) {
         if (!isConnected) { // Transitioning from offline to online
             if (downtimeSinceRef.current) {
-                const downtimeDuration = Date.now() - downtimeSinceRef.current;
-                setTotalDowntime(prev => prev + downtimeDuration);
+                // No need to add to totalDowntime, as the interval handles it.
+                // Just reset the reference.
                 downtimeSinceRef.current = null;
             }
         }
