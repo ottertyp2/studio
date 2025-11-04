@@ -1,4 +1,3 @@
-
 'use client';
 import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -6,7 +5,6 @@ import { TestBenchContext, ValveStatus } from './TestBenchContext';
 import { useFirebase, useUser, addDocumentNonBlocking, WithId } from '@/firebase';
 import { ref, onValue, set } from 'firebase/database';
 import { collection, query, where, onSnapshot, limit, DocumentData } from 'firebase/firestore';
-import { DB_ROOT_PATH } from '@/firebase/rtdb-paths';
 
 export type RtdbSensorData = {
   timestamp: string;
@@ -51,21 +49,14 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     if (!isConnected) {
-        // Function to update downtime
-        const updateDowntime = () => {
-             if (downtimeSinceRef.current) { // Check if still offline
-                setTotalDowntime(Date.now() - downtimeSinceRef.current);
-             }
-        };
-        // Run immediately and then set interval
         if (!downtimeSinceRef.current) {
             downtimeSinceRef.current = Date.now();
         }
-        updateDowntime();
-        interval = setInterval(updateDowntime, 1000);
+        interval = setInterval(() => {
+            setTotalDowntime(Date.now() - (downtimeSinceRef.current || Date.now()));
+        }, 1000);
     } else {
         downtimeSinceRef.current = null;
-        // Clear interval if connected
         if (interval) {
             clearInterval(interval);
         }
@@ -106,7 +97,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     
     setLockedValves(prev => [...prev, valve]);
     
-    const commandPath = `${DB_ROOT_PATH}/commands/${valve.toLowerCase()}`;
+    const commandPath = `commands/${valve.toLowerCase()}`;
     try {
         await set(ref(database, commandPath), state === 'ON');
         setTimeout(() => {
@@ -125,7 +116,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         return;
     }
     try {
-        await set(ref(database, `${DB_ROOT_PATH}/commands/recording`), shouldRecord);
+        await set(ref(database, `commands/recording`), shouldRecord);
     } catch (error: any) {
         console.error('Failed to send recording command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
@@ -139,7 +130,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       }
       
       setLockedSequences(prev => [...prev, sequence]);
-      const commandPath = `${DB_ROOT_PATH}/commands/${sequence}`;
+      const commandPath = `commands/${sequence}`;
 
       try {
           await set(ref(database, commandPath), state);
@@ -161,15 +152,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         if (data === null || data === undefined) return;
 
         setCurrentValue(data.sensor ?? null);
-        setIsRecording(data.recording === true);
-        setDisconnectCount(data.disconnectCount || 0);
-        setLatency(data.latency !== undefined ? data.latency : null);
+        
+        // Use functional updates to avoid including setters in dependencies
         setValve1Status(data.valve1 ? 'ON' : 'OFF');
         setValve2Status(data.valve2 ? 'ON' : 'OFF');
-        setSequence1Running(data.sequence1_running === true);
-        setSequence2Running(data.sequence2_running === true);
-
-        // Manage locks based on live feedback
         setLockedValves(prev => {
             let next = [...prev];
             if (data.valve1 !== undefined) next = next.filter(v => v !== 'VALVE1');
@@ -177,12 +163,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             return next;
         });
 
-        setLockedSequences(prev => {
-            let next = [...prev];
-            if (data.sequence1_running !== undefined) next = next.filter(s => s !== 'sequence1');
-            if (data.sequence2_running !== undefined) next = next.filter(s => s !== 'sequence2');
-            return next;
-        });
+        setIsRecording(data.recording === true);
+        setDisconnectCount(data.disconnectCount || 0);
+        setLatency(data.latency !== undefined ? data.latency : null);
         
         const lastUpdateTimestamp = data.lastUpdate ? new Date(data.lastUpdate).getTime() : null;
         if (lastUpdateTimestamp) {
@@ -204,7 +187,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
           firestore &&
           data.sensor != null &&
           data.lastUpdate &&
-          data.recording === true // only save if recording is active
+          data.recording === true
         ) {
           const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
           const dataToSave = {
@@ -215,7 +198,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         }
     };
     
-    const liveDataRef = ref(database, `${DB_ROOT_PATH}/live`);
+    const liveDataRef = ref(database, 'data/live');
 
     const handleData = (snap: any) => {
       if (connectionTimeoutRef.current) {
@@ -226,11 +209,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   
       if (data && data.lastUpdate) {
         setIsConnected(true);
-  
         handleNewDataPoint(data);
   
         connectionTimeoutRef.current = setTimeout(() => {
           setIsConnected(false);
+          setDisconnectCount(prev => prev + 1);
         }, 5000); // 5 second timeout
       } else {
         setIsConnected(false);
@@ -254,6 +237,29 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       }
     };
   }, [database, firestore]);
+
+  // Listener for sequence commands
+  useEffect(() => {
+    if (!database) return;
+
+    const seq1Ref = ref(database, 'commands/sequence1');
+    const seq2Ref = ref(database, 'commands/sequence2');
+
+    const unsub1 = onValue(seq1Ref, (snapshot) => {
+      setSequence1Running(snapshot.val() === true);
+      setLockedSequences(prev => prev.filter(s => s !== 'sequence1'));
+    });
+
+    const unsub2 = onValue(seq2Ref, (snapshot) => {
+      setSequence2Running(snapshot.val() === true);
+      setLockedSequences(prev => prev.filter(s => s !== 'sequence2'));
+    });
+
+    return () => {
+      unsub1();
+      unsub2();
+    };
+  }, [database]);
 
 
   const value = {
