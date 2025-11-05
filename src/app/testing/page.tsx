@@ -182,6 +182,7 @@ function TestingComponent() {
     startTime,
     totalDowntime,
     sequenceFailureCount,
+    movingAverageLength,
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
@@ -1098,6 +1099,7 @@ function TestingComponent() {
                                 Latency: {latency !== null ? `${latency} ms` : 'N/A'}
                             </span>
                         </div>
+                        <p className="text-xs text-muted-foreground mt-1">Moving Avg: {movingAverageLength ?? 'N/A'}</p>
                       </>
                     )}
                     <Dialog open={isCrashPanelOpen} onOpenChange={setIsCrashPanelOpen}>
@@ -1387,3 +1389,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    

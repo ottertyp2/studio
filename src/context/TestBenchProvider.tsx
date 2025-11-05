@@ -30,6 +30,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [sequence1Running, setSequence1Running] = useState(false);
   const [sequence2Running, setSequence2Running] = useState(false);
   const [sequenceFailureCount, setSequenceFailureCount] = useState<number>(0);
+  const [movingAverageLength, setMovingAverageLength] = useState<number | null>(null);
   
   const runningTestSessionRef = useRef<WithId<DocumentData> | null>(null);
 
@@ -277,6 +278,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 setSequence2Running(data.sequence2 === true);
                 setLockedSequences(prev => prev.filter(s => s !== 'sequence2'));
             }
+            if (data.movingAverageLength !== undefined) {
+                setMovingAverageLength(data.movingAverageLength);
+            }
         }
     });
 
@@ -309,6 +313,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     sendSequenceCommand,
     lockedSequences,
     sequenceFailureCount,
+    movingAverageLength,
   };
 
   return (
@@ -317,3 +322,5 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
+
+    

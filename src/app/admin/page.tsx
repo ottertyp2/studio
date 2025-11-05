@@ -97,6 +97,9 @@ import {
 } from 'recharts';
 import Papa from 'papaparse';
 import * as tf from '@tensorflow/tfjs';
+import { set } from 'firebase/database';
+import { ref as rtdbRef } from 'firebase/database';
+
 
 if (pdfFonts.pdfMake) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
@@ -487,7 +490,7 @@ export default function AdminPage() {
     setTempSensorConfig(newConfig);
   }
 
-  const handleSaveSensorConfig = () => {
+  const handleSaveSensorConfig = async () => {
     if (!tempSensorConfig || !tempSensorConfig.name?.trim()) {
         toast({ variant: 'destructive', title: 'Invalid Input', description: 'Configuration name cannot be empty.'});
         return;
@@ -521,11 +524,23 @@ export default function AdminPage() {
     };
 
     const configRef = doc(firestore, `sensor_configurations`, configId);
-    setDocumentNonBlocking(configRef, configToSave, { merge: true });
-    
+    await setDocumentNonBlocking(configRef, configToSave, { merge: true });
+
+    // Also update the RTDB command value
+    try {
+        const commandRef = rtdbRef(database, 'data/commands/movingAverageLength');
+        await set(commandRef, configToSave.movingAverageLength);
+    } catch(e: any) {
+        toast({
+            variant: 'destructive',
+            title: 'RTDB Update Failed',
+            description: `Could not update moving average on device. ${e.message}`
+        });
+    }
+
     toast({
         title: 'Configuration Saved',
-        description: `The sensor configuration "${configToSave.name}" has been saved.`
+        description: `The sensor configuration "${configToSave.name}" has been saved and applied.`
     });
     setTempSensorConfig(null);
   };
@@ -638,18 +653,16 @@ export default function AdminPage() {
     }
   };
 
-  const handleSetSessionClassification = (sessionId: string, classification: 'LEAK' | 'DIFFUSION' | null, showToast = true) => {
+  const handleSetSessionClassification = (sessionId: string, classification: 'LEAK' | 'DIFFUSION' | null) => {
     if (!firestore) return;
     const sessionRef = doc(firestore, 'test_sessions', sessionId);
     const updateData: { classification: 'LEAK' | 'DIFFUSION' | null } = { classification };
     if (classification === null) {
       (updateData as any).classification = null;
     }
-    updateDoc(sessionRef, updateData)
+    updateDoc(sessionRef)
       .then(() => {
-        if(showToast) {
-          toast({ title: 'Classification Updated' })
-        }
+        // No toast here, handled by caller
       })
       .catch(e => toast({ variant: 'destructive', title: 'Update Failed', description: e.message }));
   };
@@ -725,8 +738,8 @@ export default function AdminPage() {
       const errorPercentage = (errorCount / sensorData.length) * 100;
       const classification = errorPercentage > 10 ? 'LEAK' : 'DIFFUSION';
 
-      handleSetSessionClassification(session.id, classification, false); // Don't show the generic toast
-      toast({ title: 'Classification Complete', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'} (${errorPercentage.toFixed(1)}% of points were outside guidelines).` });
+      handleSetSessionClassification(session.id, classification);
+      toast({ title: 'Classification Complete & Updated', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'} (${errorPercentage.toFixed(1)}% of points were outside guidelines).` });
 
     } catch (e: any) {
       toast({ variant: 'destructive', title: `Guideline Classification Failed`, description: e.message });
@@ -2138,10 +2151,10 @@ export default function AdminPage() {
                                       </DropdownMenuSubTrigger>
                                       <DropdownMenuPortal>
                                           <DropdownMenuSubContent>
-                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'LEAK', true)}>Not Passed</DropdownMenuItem>
-                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'DIFFUSION', true)}>Passed</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'LEAK')}>Not Passed</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'DIFFUSION')}>Passed</DropdownMenuItem>
                                             <DropdownMenuSeparator />
-                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, null, true)}>Clear Classification</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, null)}>Clear Classification</DropdownMenuItem>
                                           </DropdownMenuSubContent>
                                       </DropdownMenuPortal>
                                     </DropdownMenuSub>
@@ -2794,3 +2807,5 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
+
+    
