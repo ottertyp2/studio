@@ -36,6 +36,7 @@ export interface TestBenchContextType {
   sessions: Record<string, Session> | null;
   sendValveCommand: (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => Promise<void>;
   sendRecordingCommand: (shouldRecord: boolean) => Promise<void>;
+  sendMovingAverageCommand: (length: number) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   pendingValves: ('VALVE1' | 'VALVE2')[];
   lockedValves: ('VALVE1' | 'VALVE2')[];
@@ -58,5 +59,3 @@ export const useTestBench = () => {
   }
   return context;
 };
-
-    

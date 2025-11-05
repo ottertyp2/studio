@@ -127,6 +127,7 @@ type SensorConfig = {
     decimalPlaces: number;
     ownerId?: string;
     testBenchId: string;
+    movingAverageLength: number;
 };
 
 type AppUser = {
@@ -260,7 +261,7 @@ export default function AdminPage() {
   const { toast } = useToast();
 
   const { user, userRole, isUserLoading } = useUser();
-  const { firestore, auth, firebaseApp } = useFirebase();
+  const { firestore, auth, firebaseApp, database } = useFirebase();
 
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
   const [tempSensorConfig, setTempSensorConfig] = useState<Partial<SensorConfig> | null>(null);
@@ -457,7 +458,7 @@ export default function AdminPage() {
       }
     }
 
-    if (['decimalPlaces', 'adcBitResolution', 'min', 'max', 'customUnitMin', 'customUnitMax'].includes(field)) {
+    if (['decimalPlaces', 'adcBitResolution', 'min', 'max', 'customUnitMin', 'customUnitMax', 'movingAverageLength'].includes(field)) {
         if (value === '') {
             (newConfig as any)[field] = '';
         } else {
@@ -498,7 +499,7 @@ export default function AdminPage() {
     if (tempSensorConfig.mode === 'CUSTOM' && !tempSensorConfig.unit) {
        tempSensorConfig.unit = 'RAW';
     }
-    if (!firestore || !user) return;
+    if (!firestore || !user || !database) return;
 
     const configId = tempSensorConfig.id || doc(collection(firestore, '_')).id;
     
@@ -516,6 +517,7 @@ export default function AdminPage() {
       decimalPlaces: tempSensorConfig.decimalPlaces || 0,
       ownerId: tempSensorConfig.ownerId || user.uid,
       testBenchId: tempSensorConfig.testBenchId,
+      movingAverageLength: typeof tempSensorConfig.movingAverageLength === 'number' ? tempSensorConfig.movingAverageLength : 10,
     };
 
     const configRef = doc(firestore, `sensor_configurations`, configId);
@@ -550,6 +552,7 @@ export default function AdminPage() {
       decimalPlaces: 3,
       ownerId: user.uid,
       testBenchId: testBenches[0].id,
+      movingAverageLength: 10,
     });
   };
 
@@ -1853,6 +1856,10 @@ export default function AdminPage() {
                         }
                     </div>
                  )}
+                <div className="space-y-2">
+                    <Label htmlFor="movingAverageLength">Moving Average Length</Label>
+                    <Input id="movingAverageLength" type="number" value={tempSensorConfig.movingAverageLength ?? ''} onChange={(e) => handleConfigChange('movingAverageLength', e.target.value)} placeholder="e.g. 10" />
+                </div>
                  <div className="flex justify-end gap-4 pt-4">
                     <Button onClick={() => setTempSensorConfig(null)} variant="ghost">Cancel</Button>
                     <Button onClick={handleSaveSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">Save</Button>
@@ -2787,5 +2794,3 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
-
-    

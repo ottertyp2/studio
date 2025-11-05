@@ -81,11 +81,13 @@ type SensorConfig = {
     unit: string;
     min: number;
     max: number;
+    customUnitMin: number;
+    customUnitMax: number;
     arduinoVoltage: number;
-    minVoltage: number;
     adcBitResolution: number;
     decimalPlaces: number;
     testBenchId: string;
+    movingAverageLength: number;
 };
 
 type TestSession = {
@@ -175,6 +177,7 @@ function TestingComponent() {
     lastDataPointTimestamp,
     disconnectCount,
     sendRecordingCommand,
+    sendMovingAverageCommand,
     latency,
     startTime,
     totalDowntime,
@@ -287,6 +290,11 @@ function TestingComponent() {
     if (!vesselType) {
         toast({ variant: 'destructive', title: 'Error', description: 'Selected vessel type not found.' });
         return;
+    }
+
+    const sensorConfig = sensorConfigs?.find(sc => sc.id === newSessionData.sensorConfigurationId);
+    if (sensorConfig) {
+      await sendMovingAverageCommand(sensorConfig.movingAverageLength || 10);
     }
 
     setComparisonData({});
@@ -1379,5 +1387,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    

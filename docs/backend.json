@@ -98,18 +98,24 @@
             "type": "string"
         },
         "min": {
-            "type": "number"
+            "type": "number",
+            "description": "The raw ADC value that corresponds to the 'customUnitMin' value."
         },
         "max": {
-            "type": "number"
+            "type": "number",
+            "description": "The raw ADC value that corresponds to the 'customUnitMax' value."
+        },
+        "customUnitMin": {
+            "type": "number",
+            "description": "The minimum value of the custom unit range (e.g., 0 for 0 bar)."
+        },
+        "customUnitMax": {
+            "type": "number",
+            "description": "The maximum value of the custom unit range (e.g., 10 for 10 bar)."
         },
         "arduinoVoltage": {
           "type": "number",
           "description": "The reference voltage of the Arduino (used for voltage conversion)."
-        },
-        "minVoltage": {
-          "type": "number",
-          "description": "The voltage that corresponds to the 'min' value of the custom range."
         },
         "adcBitResolution": {
           "type": "number",
@@ -121,6 +127,10 @@
         "testBenchId": {
             "type": "string",
             "description": "Reference to the TestBench this configuration belongs to."
+        },
+        "movingAverageLength": {
+            "type": "number",
+            "description": "The number of samples to use in the moving average calculation on the Arduino."
         }
       },
       "required": [
@@ -228,6 +238,14 @@
                     },
                     "required": ["x", "y"]
                 }
+            },
+            "guidelineEditorMaxX": {
+                "type": "number",
+                "description": "The last used maximum X-axis value for the guideline editor."
+            },
+            "guidelineEditorMaxY": {
+                "type": "number",
+                "description": "The last used maximum Y-axis value for the guideline editor."
             }
         },
         "required": ["id", "name"]
@@ -475,7 +493,8 @@
               "valve2": { "type": "boolean" },
               "recording": { "type": "boolean" },
               "sequence1": { "type": "boolean" },
-              "sequence2": { "type": "boolean" }
+              "sequence2": { "type": "boolean" },
+              "movingAverageLength": { "type": "number" }
             }
         },
         {

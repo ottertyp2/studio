@@ -191,6 +191,19 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       }
   }, [database, toast]);
 
+  const sendMovingAverageCommand = useCallback(async (length: number) => {
+    if (!database) {
+        toast({ variant: 'destructive', title: 'Not Connected', description: 'Database service is not available.' });
+        return;
+    }
+    try {
+        await set(ref(database, 'data/commands/movingAverageLength'), length);
+    } catch (error: any) {
+        console.error('Failed to send moving average command:', error);
+        toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
+    }
+  }, [database, toast]);
+
   // Listener for /data/live data
   useEffect(() => {
     if (!database) return;
@@ -284,6 +297,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     sessions: null,
     sendValveCommand,
     sendRecordingCommand,
+    sendMovingAverageCommand,
     deleteSession: async () => {},
     pendingValves: [],
     lockedValves,
@@ -303,5 +317,3 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
-
-    
