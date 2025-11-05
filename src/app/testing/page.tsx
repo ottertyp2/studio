@@ -1289,7 +1289,7 @@ function TestingComponent() {
                         />
                         <YAxis
                             stroke="hsl(var(--muted-foreground))"
-                            domain={['dataMin - 10', 'dataMax + 10']}
+                            domain={['dataMin - (dataMax - dataMin) * 0.1', 'dataMax + (dataMax - dataMin) * 0.1']}
                             allowDataOverflow
                             label={{ value: yAxisLabel, angle: -90, position: 'insideLeft' }}
                         />
@@ -1368,5 +1368,7 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
 
     
