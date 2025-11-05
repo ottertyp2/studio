@@ -447,11 +447,11 @@ export default function AdminPage() {
           break;
         case 'VOLTAGE':
           newConfig.unit = 'V';
-          newConfig.decimalPlaces = 2;
+          newConfig.decimalPlaces = 3;
           break;
         case 'CUSTOM':
           newConfig.unit = tempSensorConfig.unit !== 'RAW' && tempSensorConfig.unit !== 'V' ? tempSensorConfig.unit : 'bar';
-          newConfig.decimalPlaces = 2;
+          newConfig.decimalPlaces = 3;
           break;
       }
     }
@@ -626,7 +626,7 @@ export default function AdminPage() {
     }
   };
 
-  const handleSetSessionClassification = (sessionId: string, classification: 'LEAK' | 'DIFFUSION' | null, showToast = false) => {
+  const handleSetSessionClassification = (sessionId: string, classification: 'LEAK' | 'DIFFUSION' | null, showToast = true) => {
     if (!firestore) return;
     const sessionRef = doc(firestore, 'test_sessions', sessionId);
     const updateData: { classification: 'LEAK' | 'DIFFUSION' | null } = { classification };
