@@ -1292,6 +1292,7 @@ function TestingComponent() {
                             domain={['dataMin - (dataMax - dataMin) * 0.1', 'dataMax + (dataMax - dataMin) * 0.1']}
                             allowDataOverflow
                             label={{ value: yAxisLabel, angle: -90, position: 'insideLeft' }}
+                            tickFormatter={(value) => value.toFixed(2)}
                         />
                         <Tooltip
                             contentStyle={{
@@ -1368,6 +1369,8 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
 
     
 
