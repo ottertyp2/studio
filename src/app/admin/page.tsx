@@ -668,8 +668,8 @@ export default function AdminPage() {
       }
       
       const sessionStartTime = new Date(sensorData[0].timestamp).getTime();
-
-      let hasFailed = false;
+      
+      let errorCount = 0;
       for (const dataPoint of sensorData) {
         const timeElapsed = (new Date(dataPoint.timestamp).getTime() - sessionStartTime) / 1000;
         const convertedValue = convertRawValue(dataPoint.value, config);
@@ -693,14 +693,15 @@ export default function AdminPage() {
         if (minGuideline === undefined || maxGuideline === undefined) continue;
 
         if (convertedValue < minGuideline || convertedValue > maxGuideline) {
-          hasFailed = true;
-          break;
+          errorCount++;
         }
       }
 
-      const classification = hasFailed ? 'LEAK' : 'DIFFUSION';
+      const errorPercentage = (errorCount / sensorData.length) * 100;
+      const classification = errorPercentage > 10 ? 'LEAK' : 'DIFFUSION';
+
       handleSetSessionClassification(session.id, classification);
-      toast({ title: 'Classification Complete', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'}` });
+      toast({ title: 'Classification Complete', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'} (${errorPercentage.toFixed(1)}% of points were outside guidelines).` });
 
     } catch (e: any) {
       toast({ variant: 'destructive', title: `Guideline Classification Failed`, description: e.message });
