@@ -108,7 +108,7 @@ const GuidelineCurveEditor: React.FC<GuidelineCurveEditorProps> = ({
             const y = padding.top + plotHeight - (plotHeight / yTicks) * i;
             ctx.moveTo(padding.left, y);
             ctx.lineTo(padding.left + plotWidth, y);
-            ctx.fillText(yVal.toFixed(0), padding.left - 5, y);
+            ctx.fillText(yVal.toFixed(1), padding.left - 5, y);
         }
         ctx.save();
         ctx.translate(15, padding.top + plotHeight / 2);
