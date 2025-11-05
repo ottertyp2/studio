@@ -29,6 +29,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [latency, setLatency] = useState<number | null>(null);
   const [sequence1Running, setSequence1Running] = useState(false);
   const [sequence2Running, setSequence2Running] = useState(false);
+  const [sequenceFailureCount, setSequenceFailureCount] = useState<number>(0);
   
   const runningTestSessionRef = useRef<WithId<DocumentData> | null>(null);
 
@@ -103,6 +104,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setIsRecording(data.recording === true);
     setDisconnectCount(data.disconnectCount || 0);
     setLatency(data.latency !== undefined ? data.latency : null);
+    setSequenceFailureCount(data.sequenceFailureCount || 0);
     
     const lastUpdateTimestamp = data.lastUpdate ? new Date(data.lastUpdate).getTime() : null;
     if (lastUpdateTimestamp) {
@@ -292,6 +294,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     sequence2Running,
     sendSequenceCommand,
     lockedSequences,
+    sequenceFailureCount,
   };
 
   return (
@@ -300,3 +303,5 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
+
+    

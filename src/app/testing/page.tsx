@@ -47,7 +47,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle, Square, Zap } from 'lucide-react';
+import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle, Square, GaugeCircle, SlidersHorizontal } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, WithId } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
@@ -177,6 +177,7 @@ function TestingComponent() {
     latency,
     startTime,
     totalDowntime,
+    sequenceFailureCount,
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
@@ -483,7 +484,7 @@ function TestingComponent() {
     signOut(auth);
     router.push('/login');
   };
-
+  
   const convertedValue = useMemo(() => {
     if (currentValue === null) return null;
     const config = sensorConfigs?.find(c => c.id === displaySensorConfigId);
@@ -924,6 +925,21 @@ function TestingComponent() {
       </header>
 
       <main className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {sequenceFailureCount > 0 && (
+          <div className="lg:col-span-3 animate-in">
+            <Card className="bg-destructive/10 border-destructive">
+              <CardHeader className="flex flex-row items-center gap-4">
+                <AlertCircle className="h-10 w-10 text-destructive" />
+                <div>
+                  <CardTitle className="text-destructive">Sequence Failure Detected</CardTitle>
+                  <CardDescription className="text-destructive/80">
+                    The Arduino restarted during a sequence. A total of {sequenceFailureCount} failure(s) have been recorded. Please check device and connections.
+                  </CardDescription>
+                </div>
+              </CardHeader>
+            </Card>
+          </div>
+        )}
         <div className="lg:col-span-2 flex flex-col animate-in">
             <Card className="shadow-lg flex-grow flex flex-col">
               <CardHeader>
@@ -1351,3 +1367,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    

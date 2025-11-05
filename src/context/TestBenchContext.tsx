@@ -46,6 +46,7 @@ export interface TestBenchContextType {
   sequence2Running: boolean;
   sendSequenceCommand: (sequence: 'sequence1' | 'sequence2', state: boolean) => Promise<void>;
   lockedSequences: ('sequence1' | 'sequence2')[];
+  sequenceFailureCount: number;
 }
 
 export const TestBenchContext = createContext<TestBenchContextType | undefined>(undefined);
@@ -57,3 +58,5 @@ export const useTestBench = () => {
   }
   return context;
 };
+
+    
