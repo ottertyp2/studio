@@ -645,8 +645,8 @@ export default function AdminPage() {
     }
 
     const vesselType = vesselTypes.find(vt => vt.id === session.vesselTypeId);
-    if (!vesselType || !vesselType.minCurve || !vesselType.maxCurve || vesselType.minCurve.length === 0 || vesselType.maxCurve.length === 0) {
-      toast({ variant: 'destructive', title: 'Guideline Missing', description: `No guidelines found for vessel type "${session.vesselTypeName}".` });
+    if (!vesselType || !vesselType.minCurve || !vesselType.maxCurve || vesselType.minCurve.length < 4 || vesselType.maxCurve.length < 4) {
+      toast({ variant: 'destructive', title: 'Guideline Missing', description: `Incomplete guidelines (must be a 4-point Bézier curve) for vessel type "${session.vesselTypeName}".` });
       return;
     }
 
@@ -669,26 +669,35 @@ export default function AdminPage() {
       
       const sessionStartTime = new Date(sensorData[0].timestamp).getTime();
       
+      const interpolateBezierCurve = (curve: { x: number, y: number }[], x: number) => {
+          if (!curve || curve.length !== 4) return undefined;
+          const [p0, p1, p2, p3] = curve;
+
+          const totalXRange = p3.x - p0.x;
+          if (totalXRange <= 0) return p0.y; 
+
+          const t = (x - p0.x) / totalXRange;
+          if (t < 0) return p0.y;
+          if (t > 1) return p3.y;
+          
+          const u = 1 - t;
+          const tt = t * t;
+          const uu = u * u;
+          const uuu = uu * u;
+          const ttt = tt * t;
+
+          const y = uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+
+          return y;
+      };
+
       let errorCount = 0;
       for (const dataPoint of sensorData) {
         const timeElapsed = (new Date(dataPoint.timestamp).getTime() - sessionStartTime) / 1000;
         const convertedValue = convertRawValue(dataPoint.value, config);
 
-        const interpolate = (curve: { x: number, y: number }[], x: number) => {
-          if (x < curve[0].x) return curve[0].y;
-          if (x > curve[curve.length - 1].x) return curve[curve.length - 1].y;
-
-          for (let i = 0; i < curve.length - 1; i++) {
-            if (x >= curve[i].x && x <= curve[i + 1].x) {
-              const t = (x - curve[i].x) / (curve[i + 1].x - curve[i].x);
-              return curve[i].y + t * (curve[i + 1].y - curve[i].y);
-            }
-          }
-          return curve[curve.length - 1].y;
-        };
-
-        const minGuideline = interpolate(vesselType.minCurve, timeElapsed);
-        const maxGuideline = interpolate(vesselType.maxCurve, timeElapsed);
+        const minGuideline = interpolateBezierCurve(vesselType.minCurve, timeElapsed);
+        const maxGuideline = interpolateBezierCurve(vesselType.maxCurve, timeElapsed);
 
         if (minGuideline === undefined || maxGuideline === undefined) continue;
 
