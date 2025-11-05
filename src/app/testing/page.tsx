@@ -81,6 +81,7 @@ type SensorConfig = {
     min: number;
     max: number;
     arduinoVoltage: number;
+    minVoltage: number;
     adcBitResolution: number;
     decimalPlaces: number;
     testBenchId: string;
@@ -826,7 +827,7 @@ function TestingComponent() {
     setIsAnalyzingCrash(true);
 
     try {
-        const crashReportRef = ref(database, '/system/lastCrashReport');
+        const crashReportRef = ref(database, '/data/system/lastCrashReport');
         const snapshot = await get(crashReportRef);
 
         if (snapshot.exists()) {
@@ -852,8 +853,23 @@ function TestingComponent() {
     return 'text-red-600';
   };
 
-  const renderLegendContent = () => {
-    return null;
+  const renderLegendContent = (props: any) => {
+      const { payload } = props;
+      const pdfSessions = comparisonSessions;
+
+      if (isGeneratingReport) {
+        return (
+          <div className="flex flex-wrap justify-center items-center text-xs" style={{ position: 'absolute', bottom: '0px', left: '50%', transform: 'translateX(-50%)' }}>
+            {pdfSessions.map((session, index) => (
+              <div key={session.id} className="flex items-center mr-4">
+                <div className="w-3 h-3 mr-1" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}></div>
+                <span>{session.serialNumber || 'N/A'}</span>
+              </div>
+            ))}
+          </div>
+        );
+      }
+      return null;
   };
   
     const yAxisLabel = useMemo(() => {
@@ -945,6 +961,17 @@ function TestingComponent() {
                             </DialogHeader>
                             <div className="grid gap-4 py-4">
                                 <div className="grid grid-cols-4 items-center gap-4">
+                                    <Label htmlFor="sensor-config" className="text-right">Sensor</Label>
+                                    <Select onValueChange={(value) => setNewSessionData(p => ({ ...p, sensorConfigurationId: value }))}>
+                                        <SelectTrigger id="sensor-config" className="col-span-3">
+                                            <SelectValue placeholder="Select a sensor" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {availableSensorsForBench.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.name}</SelectItem>)}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="grid grid-cols-4 items-center gap-4">
                                     <Label htmlFor="vessel-type" className="text-right">Vessel Type</Label>
                                     <Select onValueChange={(value) => setNewSessionData(p => ({ ...p, vesselTypeId: value, batchId: '' }))}>
                                         <SelectTrigger id="vessel-type" className="col-span-3">
@@ -976,7 +1003,7 @@ function TestingComponent() {
                                 </div>
                             </div>
                             <DialogFooter>
-                                <Button onClick={handleStartSession} disabled={!newSessionData.vesselTypeId || !newSessionData.batchId}>Start Session</Button>
+                                <Button onClick={handleStartSession} disabled={!newSessionData.vesselTypeId || !newSessionData.batchId || !newSessionData.sensorConfigurationId}>Start Session</Button>
                             </DialogFooter>
                         </DialogContent>
                     </Dialog>
@@ -989,8 +1016,18 @@ function TestingComponent() {
                 
         <div className="lg:col-span-1 space-y-6 flex flex-col animate-in">
             <Card className="flex flex-col justify-center items-center shadow-lg flex-grow">
-                <CardHeader>
-                <CardTitle className="text-lg">Current Value</CardTitle>
+                <CardHeader className="w-full">
+                    <div className='flex justify-between items-center'>
+                        <CardTitle className="text-lg">Current Value</CardTitle>
+                        <Select value={displaySensorConfigId || ''} onValueChange={setDisplaySensorConfigId}>
+                            <SelectTrigger className="w-[180px]">
+                                <SelectValue placeholder="Select Sensor" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {availableSensorsForBench.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.name}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    </div>
                 </CardHeader>
                 <CardContent className="flex flex-col items-center">
                 <div className="text-center">

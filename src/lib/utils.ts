@@ -19,18 +19,19 @@ export function convertRawValue(rawValue: number, sensorConfig: SensorConfig | n
     if (!sensorConfig) return rawValue;
 
     const maxAdcValue = Math.pow(2, sensorConfig.adcBitResolution || 10) - 1;
-    const measuredVoltage = (rawValue / maxAdcValue) * sensorConfig.arduinoVoltage;
     
     // Ensure the effective voltage range is not zero to avoid division by zero
-    const voltageRange = sensorConfig.arduinoVoltage - (sensorConfig.minVoltage || 0);
+    const voltageRange = sensorConfig.arduinoVoltage - sensorConfig.minVoltage;
     if (voltageRange <= 0) return 0; // or handle as an error
+
+    const measuredVoltage = (rawValue / maxAdcValue) * sensorConfig.arduinoVoltage;
 
     switch (sensorConfig.mode) {
         case 'VOLTAGE':
             return measuredVoltage;
         case 'CUSTOM':
             // Calculate the percentage of the measured voltage within the effective range
-            const voltageFraction = (measuredVoltage - (sensorConfig.minVoltage || 0)) / voltageRange;
+            const voltageFraction = (measuredVoltage - sensorConfig.minVoltage) / voltageRange;
             // Apply this fraction to the custom unit range
             const value = sensorConfig.min + (voltageFraction * (sensorConfig.max - sensorConfig.min));
             // Clamp the value to be at least the minimum of the range

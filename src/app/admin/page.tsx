@@ -1,6 +1,5 @@
-
 'use client';
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
@@ -1695,36 +1694,6 @@ export default function AdminPage() {
     }
   };
 
-  const handleBulkClassifyWithAI = async () => {
-    if (!testSessions || !activeModel) {
-      toast({ variant: 'destructive', title: 'Cannot Bulk Classify', description: 'No active AI model or test sessions loaded.' });
-      return;
-    }
-
-    const unclassifiedSessions = testSessions.filter(s => !s.classification && s.status === 'COMPLETED');
-    if (unclassifiedSessions.length === 0) {
-      toast({ title: 'No Sessions to Classify', description: 'All completed sessions have already been classified by AI.' });
-      return;
-    }
-
-    toast({ title: `Starting AI Bulk Classification`, description: `Attempting to classify ${unclassifiedSessions.length} sessions...` });
-    
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const session of unclassifiedSessions) {
-      try {
-        await handleClassifyWithAI(session);
-        await new Promise(resolve => setTimeout(resolve, 500));
-        successCount++;
-      } catch (error) {
-        console.error(`Failed to classify session ${session.id} with AI:`, error);
-        failCount++;
-      }
-    }
-    toast({ title: 'AI Bulk Classification Finished', description: `${successCount} sessions classified. ${failCount} failed.` });
-  };
-  
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
     return (
