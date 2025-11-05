@@ -65,7 +65,7 @@ const GuidelineCurveEditor: React.FC<GuidelineCurveEditorProps> = ({
         ctx.arc(point.x, point.y, radius, 0, 2 * Math.PI);
         ctx.fillStyle = color;
         ctx.fill();
-        ctx.strokeStyle = '#fff';
+        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--card').trim() || '#fff';
         ctx.lineWidth = 2;
         ctx.stroke();
     };
@@ -81,11 +81,18 @@ const GuidelineCurveEditor: React.FC<GuidelineCurveEditorProps> = ({
         const plotWidth = canvas.width - padding.left - padding.right;
         const plotHeight = canvas.height - padding.top - padding.bottom;
     
+        // Get theme-aware colors
+        const style = getComputedStyle(document.documentElement);
+        const gridColor = `hsl(${style.getPropertyValue('--border').trim()})`;
+        const textColor = `hsl(${style.getPropertyValue('--muted-foreground').trim()})`;
+        const foregroundColor = `hsl(${style.getPropertyValue('--foreground').trim()})`;
+
+
         // Draw grid lines and labels
         ctx.beginPath();
-        ctx.strokeStyle = 'hsl(var(--border))';
+        ctx.strokeStyle = gridColor;
         ctx.lineWidth = 0.5;
-        ctx.fillStyle = 'hsl(var(--muted-foreground))';
+        ctx.fillStyle = textColor;
         ctx.font = '10px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
@@ -151,7 +158,7 @@ const GuidelineCurveEditor: React.FC<GuidelineCurveEditorProps> = ({
         if (mousePos) {
             const dataPos = fromCanvasPos(mousePos, canvas);
             if (dataPos.x >= 0 && dataPos.x <= maxX && dataPos.y >= 0 && dataPos.y <= maxY) {
-                ctx.fillStyle = 'hsl(var(--foreground))';
+                ctx.fillStyle = foregroundColor;
                 ctx.font = '12px sans-serif';
                 ctx.textAlign = 'left';
                 ctx.fillText(`(${dataPos.x.toFixed(2)}, ${dataPos.y.toFixed(2)})`, mousePos.x + 10, mousePos.y - 10);
@@ -279,7 +286,7 @@ const GuidelineCurveEditor: React.FC<GuidelineCurveEditorProps> = ({
     }
 
     return (
-        <div className={`${className} bg-background border rounded-md`}>
+        <div className={`${className} bg-card border rounded-md`}>
             <canvas
                 ref={canvasRef}
                 className="w-full h-full"
@@ -295,3 +302,5 @@ const GuidelineCurveEditor: React.FC<GuidelineCurveEditorProps> = ({
 };
 
 export default GuidelineCurveEditor;
+
+    

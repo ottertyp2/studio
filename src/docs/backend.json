@@ -228,6 +228,14 @@
                     },
                     "required": ["x", "y"]
                 }
+            },
+            "guidelineEditorMaxX": {
+                "type": "number",
+                "description": "The last used maximum X-axis value for the guideline editor."
+            },
+            "guidelineEditorMaxY": {
+                "type": "number",
+                "description": "The last used maximum Y-axis value for the guideline editor."
             }
         },
         "required": ["id", "name"]
@@ -453,7 +461,7 @@
   "rtdb": {
     "structure": [
         {
-            "path": "/live",
+            "path": "/data/live",
             "description": "Live data from the ESP32 device, including valve and sequence status.",
             "properties": {
               "sensor": { "type": "number" },
@@ -468,7 +476,7 @@
             }
         },
         {
-            "path": "/commands",
+            "path": "/data/commands",
             "description": "Commands sent to the ESP32 device.",
             "properties": {
               "valve1": { "type": "boolean" },
@@ -479,7 +487,7 @@
             }
         },
         {
-            "path": "/system/lastCrashReport",
+            "path": "/data/system/lastCrashReport",
             "definition": {
                 "entityName": "CrashReport",
                 "schema": { "$ref": "#/entities/CrashReport" },
@@ -489,3 +497,5 @@
     ]
   }
 }
+
+    

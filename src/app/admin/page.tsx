@@ -1,3 +1,4 @@
+
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -203,6 +204,8 @@ type VesselType = {
     name: string;
     minCurve: {x: number, y: number}[];
     maxCurve: {x: number, y: number}[];
+    guidelineEditorMaxX?: number;
+    guidelineEditorMaxY?: number;
 }
 
 type Batch = {
@@ -281,8 +284,8 @@ export default function AdminPage() {
   const [minCurvePoints, setMinCurvePoints] = useState<{x: number, y: number}[]>([]);
   const [maxCurvePoints, setMaxCurvePoints] = useState<{x: number, y: number}[]>([]);
   const guidelineImportRef = useRef<HTMLInputElement>(null);
-  const [guidelineEditorMaxX, setGuidelineEditorMaxX] = useState(120);
-  const [guidelineEditorMaxY, setGuidelineEditorMaxY] = useState(1200);
+  const [guidelineEditorMaxX, setGuidelineEditorMaxX] = useState<number | string>(120);
+  const [guidelineEditorMaxY, setGuidelineEditorMaxY] = useState<number | string>(1200);
 
   const [generatingVesselTypeReport, setGeneratingVesselTypeReport] = useState<string | null>(null);
   const [pdfChartData, setPdfChartData] = useState<any[]>([]);
@@ -362,16 +365,10 @@ export default function AdminPage() {
         setMinCurvePoints(editingVesselType.minCurve || []);
         setMaxCurvePoints(editingVesselType.maxCurve || []);
         
-        const allPoints = [...(editingVesselType.minCurve || []), ...(editingVesselType.maxCurve || [])];
-        if (allPoints.length > 0) {
-            const maxX = Math.max(...allPoints.map(p => p.x));
-            const maxY = Math.max(...allPoints.map(p => p.y));
-            setGuidelineEditorMaxX(Math.ceil((maxX + 10) / 10) * 10);
-            setGuidelineEditorMaxY(Math.ceil((maxY + 100) / 100) * 100);
-        } else {
-            setGuidelineEditorMaxX(120);
-            setGuidelineEditorMaxY(1200);
-        }
+        // Use stored values if available, otherwise calculate from points or use default
+        setGuidelineEditorMaxX(editingVesselType.guidelineEditorMaxX || Math.ceil(Math.max(...[...editingVesselType.minCurve || [], ...editingVesselType.maxCurve || []].map(p => p.x), 110) / 10) * 10);
+        setGuidelineEditorMaxY(editingVesselType.guidelineEditorMaxY || Math.ceil(Math.max(...[...editingVesselType.minCurve || [], ...editingVesselType.maxCurve || []].map(p => p.y), 1100) / 100) * 100);
+
     }
   }, [editingVesselType]);
 
@@ -979,6 +976,8 @@ export default function AdminPage() {
     updateDocumentNonBlocking(profileRef, {
         minCurve: minCurvePoints,
         maxCurve: maxCurvePoints,
+        guidelineEditorMaxX: Number(guidelineEditorMaxX),
+        guidelineEditorMaxY: Number(guidelineEditorMaxY),
     });
     toast({ title: 'Guidelines Saved', description: `Guidelines for "${editingVesselType.name}" have been updated.`});
     setEditingVesselType(null);
@@ -2301,11 +2300,11 @@ export default function AdminPage() {
                                                         <div className="grid grid-cols-2 gap-4">
                                                             <div className="space-y-2">
                                                                 <Label>Maximum Time (s)</Label>
-                                                                <Input type="number" value={guidelineEditorMaxX} onChange={e => setGuidelineEditorMaxX(Number(e.target.value))} />
+                                                                <Input type="number" value={guidelineEditorMaxX} onChange={e => setGuidelineEditorMaxX(e.target.value === '' ? '' : Number(e.target.value))} />
                                                             </div>
                                                              <div className="space-y-2">
                                                                 <Label>Maximum Pressure</Label>
-                                                                <Input type="number" value={guidelineEditorMaxY} onChange={e => setGuidelineEditorMaxY(Number(e.target.value))} />
+                                                                <Input type="number" value={guidelineEditorMaxY} onChange={e => setGuidelineEditorMaxY(e.target.value === '' ? '' : Number(e.target.value))} />
                                                             </div>
                                                         </div>
                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
@@ -2316,8 +2315,8 @@ export default function AdminPage() {
                                                                     setPoints={setMinCurvePoints}
                                                                     className="h-64"
                                                                     lineColor="hsl(var(--chart-2))"
-                                                                    maxX={guidelineEditorMaxX}
-                                                                    maxY={guidelineEditorMaxY}
+                                                                    maxX={Number(guidelineEditorMaxX)}
+                                                                    maxY={Number(guidelineEditorMaxY)}
                                                                 />
                                                             </div>
                                                             <div>
@@ -2327,8 +2326,8 @@ export default function AdminPage() {
                                                                     setPoints={setMaxCurvePoints}
                                                                     className="h-64"
                                                                     lineColor="hsl(var(--destructive))"
-                                                                    maxX={guidelineEditorMaxX}
-                                                                    maxY={guidelineEditorMaxY}
+                                                                    maxX={Number(guidelineEditorMaxX)}
+                                                                    maxY={Number(guidelineEditorMaxY)}
                                                                 />
                                                             </div>
                                                         </div>
@@ -2748,3 +2747,5 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
+
+    
