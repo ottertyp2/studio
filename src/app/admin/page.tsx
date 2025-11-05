@@ -118,10 +118,11 @@ type SensorConfig = {
     name: string;
     mode: 'RAW' | 'VOLTAGE' | 'CUSTOM';
     unit: string;
-    min: number;
-    max: number;
+    min: number; // Represents the raw sensor value for the minimum of the custom unit range.
+    max: number; // Represents the raw sensor value for the maximum of the custom unit range.
+    customUnitMin: number; // The minimum value of the custom unit range (e.g., 0 for 0 bar).
+    customUnitMax: number; // The maximum value of the custom unit range (e.g., 10 for 10 bar).
     arduinoVoltage: number;
-    minVoltage: number;
     adcBitResolution: number;
     decimalPlaces: number;
     ownerId?: string;
@@ -456,14 +457,20 @@ export default function AdminPage() {
       }
     }
 
-    if (['decimalPlaces', 'adcBitResolution'].includes(field)) {
-        const num = parseInt(value, 10);
-        if (!isNaN(num) && num >= 0) {
-            (newConfig as any)[field] = num;
+    if (['decimalPlaces', 'adcBitResolution', 'min', 'max', 'customUnitMin', 'customUnitMax'].includes(field)) {
+        if (value === '') {
+            (newConfig as any)[field] = '';
+        } else {
+            const num = parseFloat(value);
+            if (!isNaN(num)) {
+                (newConfig as any)[field] = num;
+            } else {
+                (newConfig as any)[field] = '';
+            }
         }
     }
     
-    if (['min', 'max', 'arduinoVoltage', 'minVoltage'].includes(field)) {
+    if (['arduinoVoltage'].includes(field)) {
         if (value === '') {
             (newConfig as any)[field] = '';
         } else {
@@ -502,8 +509,9 @@ export default function AdminPage() {
       unit: tempSensorConfig.unit || 'RAW',
       min: typeof tempSensorConfig.min === 'number' ? tempSensorConfig.min : 0,
       max: typeof tempSensorConfig.max === 'number' ? tempSensorConfig.max : 1023,
+      customUnitMin: typeof tempSensorConfig.customUnitMin === 'number' ? tempSensorConfig.customUnitMin : 0,
+      customUnitMax: typeof tempSensorConfig.customUnitMax === 'number' ? tempSensorConfig.customUnitMax : 10,
       arduinoVoltage: typeof tempSensorConfig.arduinoVoltage === 'number' ? tempSensorConfig.arduinoVoltage : 5,
-      minVoltage: typeof tempSensorConfig.minVoltage === 'number' ? tempSensorConfig.minVoltage : 0,
       adcBitResolution: tempSensorConfig.adcBitResolution || 10,
       decimalPlaces: tempSensorConfig.decimalPlaces || 0,
       ownerId: tempSensorConfig.ownerId || user.uid,
@@ -535,10 +543,11 @@ export default function AdminPage() {
       unit: 'RAW',
       min: 0,
       max: 1023,
+      customUnitMin: 0,
+      customUnitMax: 10,
       arduinoVoltage: 5,
-      minVoltage: 0,
       adcBitResolution: 10,
-      decimalPlaces: 0,
+      decimalPlaces: 3,
       ownerId: user.uid,
       testBenchId: testBenches[0].id,
     });
@@ -1781,27 +1790,42 @@ export default function AdminPage() {
                   </Select>
                 </div>
                  {tempSensorConfig.mode === 'CUSTOM' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="sensorUnitInput">Unit</Label>
-                            <Input id="sensorUnitInput" value={tempSensorConfig.unit || ''} onChange={(e) => handleConfigChange('unit', e.target.value)} placeholder="e.g. 'bar' or 'psi'"/>
+                    <div className="p-4 border rounded-lg bg-background/50 space-y-4">
+                         <h4 className="text-sm font-medium text-center">Custom Unit Calibration</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                             <div className="space-y-2">
+                                <Label htmlFor="sensorUnitInput">Unit Name</Label>
+                                <Input id="sensorUnitInput" value={tempSensorConfig.unit || ''} onChange={(e) => handleConfigChange('unit', e.target.value)} placeholder="e.g. 'bar' or 'psi'"/>
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="decimalPlacesInput">Decimal Places</Label>
+                                <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces || 0} onChange={(e) => handleConfigChange('decimalPlaces', parseInt(e.target.value))} />
+                            </div>
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="minValueInput">Minimum Value</Label>
-                            <Input id="minValueInput" type="number" value={tempSensorConfig.min ?? ''} onChange={(e) => handleConfigChange('min', e.target.value)} placeholder="e.g. 0"/>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                             <div className="space-y-2">
+                                <Label htmlFor="minRawValueInput">Min Raw Value</Label>
+                                <Input id="minRawValueInput" type="number" value={tempSensorConfig.min ?? ''} onChange={(e) => handleConfigChange('min', e.target.value)} placeholder="e.g. 205"/>
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="customUnitMinInput">Min Unit Value</Label>
+                                <Input id="customUnitMinInput" type="number" value={tempSensorConfig.customUnitMin ?? ''} onChange={(e) => handleConfigChange('customUnitMin', e.target.value)} placeholder="e.g. 0"/>
+                            </div>
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="maxValueInput">Maximum Value</Label>
-                            <Input id="maxValueInput" type="number" value={tempSensorConfig.max ?? ''} onChange={(e) => handleConfigChange('max', e.target.value)} placeholder="e.g. 10"/>
+                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                             <div className="space-y-2">
+                                <Label htmlFor="maxRawValueInput">Max Raw Value</Label>
+                                <Input id="maxRawValueInput" type="number" value={tempSensorConfig.max ?? ''} onChange={(e) => handleConfigChange('max', e.target.value)} placeholder="e.g. 819"/>
+                            </div>
+                           <div className="space-y-2">
+                                <Label htmlFor="customUnitMaxInput">Max Unit Value</Label>
+                                <Input id="customUnitMaxInput" type="number" value={tempSensorConfig.customUnitMax ?? ''} onChange={(e) => handleConfigChange('customUnitMax', e.target.value)} placeholder="e.g. 10"/>
+                            </div>
                         </div>
                     </div>
                  )}
                  {tempSensorConfig.mode !== 'RAW' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="minVoltageInput">Minimum Voltage (V)</Label>
-                            <Input id="minVoltageInput" type="number" value={tempSensorConfig.minVoltage ?? ''} onChange={(e) => handleConfigChange('minVoltage', e.target.value)} placeholder="e.g. 1.2"/>
-                        </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <Label htmlFor="arduinoVoltageInput">Reference Voltage (V)</Label>
                             <Input id="arduinoVoltageInput" type="number" value={tempSensorConfig.arduinoVoltage ?? ''} onChange={(e) => handleConfigChange('arduinoVoltage', e.target.value)} placeholder="e.g. 5 or 3.3"/>
@@ -1821,10 +1845,12 @@ export default function AdminPage() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="decimalPlacesInput">Decimal Places</Label>
-                            <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces || 0} onChange={(e) => handleConfigChange('decimalPlaces', parseInt(e.target.value))} />
-                        </div>
+                        { tempSensorConfig.mode === 'VOLTAGE' &&
+                            <div className="space-y-2">
+                                <Label htmlFor="decimalPlacesInput">Decimal Places</Label>
+                                <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces || 0} onChange={(e) => handleConfigChange('decimalPlaces', parseInt(e.target.value))} />
+                            </div>
+                        }
                     </div>
                  )}
                  <div className="flex justify-end gap-4 pt-4">

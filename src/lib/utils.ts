@@ -9,10 +9,11 @@ export function cn(...inputs: ClassValue[]) {
 type SensorConfig = {
     mode: 'RAW' | 'VOLTAGE' | 'CUSTOM';
     arduinoVoltage: number;
-    minVoltage: number;
     adcBitResolution: number;
-    min: number;
-    max: number;
+    min: number; // Raw ADC value for custom min
+    max: number; // Raw ADC value for custom max
+    customUnitMin: number;
+    customUnitMax: number;
 };
 
 export function convertRawValue(rawValue: number, sensorConfig: SensorConfig | null): number {
@@ -20,22 +21,23 @@ export function convertRawValue(rawValue: number, sensorConfig: SensorConfig | n
 
     const maxAdcValue = Math.pow(2, sensorConfig.adcBitResolution || 10) - 1;
     
-    // Ensure the effective voltage range is not zero to avoid division by zero
-    const voltageRange = sensorConfig.arduinoVoltage - sensorConfig.minVoltage;
-    if (voltageRange <= 0) return 0; // or handle as an error
-
-    const measuredVoltage = (rawValue / maxAdcValue) * sensorConfig.arduinoVoltage;
-
     switch (sensorConfig.mode) {
         case 'VOLTAGE':
-            return measuredVoltage;
+            return (rawValue / maxAdcValue) * sensorConfig.arduinoVoltage;
         case 'CUSTOM':
-            // Calculate the percentage of the measured voltage within the effective range
-            const voltageFraction = (measuredVoltage - sensorConfig.minVoltage) / voltageRange;
-            // Apply this fraction to the custom unit range
-            const value = sensorConfig.min + (voltageFraction * (sensorConfig.max - sensorConfig.min));
-            // Clamp the value to be at least the minimum of the range
-            return Math.max(sensorConfig.min, value);
+            const rawRange = sensorConfig.max - sensorConfig.min;
+            const unitRange = sensorConfig.customUnitMax - sensorConfig.customUnitMin;
+
+            // Avoid division by zero if the raw range is not set
+            if (rawRange === 0) return sensorConfig.customUnitMin;
+            
+            // Calculate how far the rawValue is into its range (as a percentage)
+            const rawPercentage = (rawValue - sensorConfig.min) / rawRange;
+            
+            // Apply that percentage to the custom unit range
+            const customValue = sensorConfig.customUnitMin + (rawPercentage * unitRange);
+            
+            return customValue;
         case 'RAW':
         default:
             return rawValue;

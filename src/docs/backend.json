@@ -98,18 +98,24 @@
             "type": "string"
         },
         "min": {
-            "type": "number"
+            "type": "number",
+            "description": "The raw ADC value that corresponds to the 'customUnitMin' value."
         },
         "max": {
-            "type": "number"
+            "type": "number",
+            "description": "The raw ADC value that corresponds to the 'customUnitMax' value."
+        },
+        "customUnitMin": {
+            "type": "number",
+            "description": "The minimum value of the custom unit range (e.g., 0 for 0 bar)."
+        },
+        "customUnitMax": {
+            "type": "number",
+            "description": "The maximum value of the custom unit range (e.g., 10 for 10 bar)."
         },
         "arduinoVoltage": {
           "type": "number",
           "description": "The reference voltage of the Arduino (used for voltage conversion)."
-        },
-        "minVoltage": {
-          "type": "number",
-          "description": "The voltage that corresponds to the 'min' value of the custom range."
         },
         "adcBitResolution": {
           "type": "number",
@@ -497,5 +503,3 @@
     ]
   }
 }
-
-    
