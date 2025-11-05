@@ -626,7 +626,7 @@ export default function AdminPage() {
     }
   };
 
-  const handleSetSessionClassification = (sessionId: string, classification: 'LEAK' | 'DIFFUSION' | null) => {
+  const handleSetSessionClassification = (sessionId: string, classification: 'LEAK' | 'DIFFUSION' | null, showToast = false) => {
     if (!firestore) return;
     const sessionRef = doc(firestore, 'test_sessions', sessionId);
     const updateData: { classification: 'LEAK' | 'DIFFUSION' | null } = { classification };
@@ -634,7 +634,11 @@ export default function AdminPage() {
       (updateData as any).classification = null;
     }
     updateDoc(sessionRef, updateData)
-      .then(() => toast({ title: 'Classification Updated' }))
+      .then(() => {
+        if(showToast) {
+          toast({ title: 'Classification Updated' })
+        }
+      })
       .catch(e => toast({ variant: 'destructive', title: 'Update Failed', description: e.message }));
   };
 
@@ -709,7 +713,7 @@ export default function AdminPage() {
       const errorPercentage = (errorCount / sensorData.length) * 100;
       const classification = errorPercentage > 10 ? 'LEAK' : 'DIFFUSION';
 
-      handleSetSessionClassification(session.id, classification);
+      handleSetSessionClassification(session.id, classification, false); // Don't show the generic toast
       toast({ title: 'Classification Complete', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'} (${errorPercentage.toFixed(1)}% of points were outside guidelines).` });
 
     } catch (e: any) {
@@ -2101,10 +2105,10 @@ export default function AdminPage() {
                                       </DropdownMenuSubTrigger>
                                       <DropdownMenuPortal>
                                           <DropdownMenuSubContent>
-                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'LEAK')}>Not Passed</DropdownMenuItem>
-                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'DIFFUSION')}>Passed</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'LEAK', true)}>Not Passed</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'DIFFUSION', true)}>Passed</DropdownMenuItem>
                                             <DropdownMenuSeparator />
-                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, null)}>Clear Classification</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, null, true)}>Clear Classification</DropdownMenuItem>
                                           </DropdownMenuSubContent>
                                       </DropdownMenuPortal>
                                     </DropdownMenuSub>
