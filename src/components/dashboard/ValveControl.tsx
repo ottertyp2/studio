@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
-import { Loader2, Zap, Square } from 'lucide-react';
+import { Loader2, GaugeCircle, SlidersHorizontal, Square } from 'lucide-react';
 
 const ValveRow = ({ valveName, valveId, status, onToggle, isLocked, isDisabled }: { valveName: string, valveId: 'VALVE1' | 'VALVE2', status: ValveStatus, onToggle: (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => void, isLocked: boolean, isDisabled: boolean}) => {
     const isChecked = status === 'ON';
@@ -87,7 +87,7 @@ export default function ValveControl() {
                     disabled={!isConnected || isSequence1Locked}
                   >
                     {isSequence1Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
-                    Stop Sequence 1
+                    Stop Pressure Test
                   </Button>
                 ) : (
                   <Button
@@ -95,8 +95,8 @@ export default function ValveControl() {
                     disabled={!isConnected || sequence2Running || isSequence1Locked}
                     className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
                   >
-                    {isSequence1Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
-                    Sequence 1
+                    {isSequence1Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GaugeCircle className="mr-2 h-4 w-4" />}
+                    Pressure Test
                   </Button>
                 )}
 
@@ -108,7 +108,7 @@ export default function ValveControl() {
                     disabled={!isConnected || isSequence2Locked}
                   >
                     {isSequence2Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
-                    Stop Sequence 2
+                    Stop Setup Test
                   </Button>
                 ) : (
                   <Button
@@ -116,8 +116,8 @@ export default function ValveControl() {
                     disabled={!isConnected || sequence1Running || isSequence2Locked}
                     className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
                   >
-                    {isSequence2Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
-                    Sequence 2
+                    {isSequence2Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <SlidersHorizontal className="mr-2 h-4 w-4" />}
+                    Setup Test
                   </Button>
                 )}
             </div>
