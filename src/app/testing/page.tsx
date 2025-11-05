@@ -1,3 +1,4 @@
+
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -956,7 +957,7 @@ function TestingComponent() {
                             <p>S/N: <span className="font-medium text-foreground">{runningTestSession.serialNumber || 'N/A'}</span></p>
                         </div>
                         <Button onClick={handleStopSession} variant="destructive">
-                          ■ Stop Session
+                          <Square className="mr-2 h-4 w-4" /> Stop Session
                         </Button>
                     </div>
                 ) : (
@@ -1288,7 +1289,7 @@ function TestingComponent() {
                         />
                         <YAxis
                             stroke="hsl(var(--muted-foreground))"
-                            domain={[0, 'dataMax + 10']}
+                            domain={['dataMin - 10', 'dataMax + 10']}
                             allowDataOverflow
                             label={{ value: yAxisLabel, angle: -90, position: 'insideLeft' }}
                         />
