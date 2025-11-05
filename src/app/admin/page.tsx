@@ -1694,6 +1694,42 @@ export default function AdminPage() {
     }
   };
 
+  const handleBulkClassifyWithAI = async () => {
+    if (!testSessions || !activeModel) {
+      toast({ variant: 'destructive', title: 'Prerequisites Missing', description: 'No test sessions or active AI model loaded.' });
+      return;
+    }
+
+    const unclassifiedSessions = testSessions.filter(s => !s.classification && s.status === 'COMPLETED');
+    if (unclassifiedSessions.length === 0) {
+        toast({ title: 'No Sessions to Classify', description: 'All completed sessions have already been classified.' });
+        return;
+    }
+
+    toast({ title: `Starting Bulk AI Classification`, description: `Attempting to classify ${unclassifiedSessions.length} sessions...` });
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const session of unclassifiedSessions) {
+      try {
+        // We need to set the state for the modal to process one by one, even if the modal isn't visible
+        setClassificationSession(session);
+        await handleClassifyWithAI(session);
+        // Add a small delay to avoid overwhelming the UI/backend and to allow toasts to be seen.
+        await new Promise(resolve => setTimeout(resolve, 500)); 
+        successCount++;
+      } catch (error) {
+        console.error(`Failed to AI-classify session ${session.id}:`, error);
+        failCount++;
+      }
+    }
+    
+    setClassificationSession(null); // Clear after finishing
+    toast({ title: 'Bulk AI Classification Finished', description: `${successCount} sessions classified. ${failCount} failed.` });
+  };
+
+
   const renderSensorConfigurator = () => {
     if (!tempSensorConfig) return null;
     return (
