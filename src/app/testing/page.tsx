@@ -410,6 +410,31 @@ function TestingComponent() {
     const allPoints: ChartDataPoint[] = [];
     const timeMap: { [time: number]: ChartDataPoint } = {};
   
+    // Correct Bézier curve interpolation function
+    const interpolateBezierCurve = (curve: {x: number, y: number}[], x: number) => {
+      if (!curve || curve.length !== 4) return undefined;
+      const [p0, p1, p2, p3] = curve;
+  
+      // Normalize x to t (0 to 1) based on the curve's x-range
+      const totalXRange = p3.x - p0.x;
+      if (totalXRange <= 0) return p0.y; // Avoid division by zero
+  
+      const t = (x - p0.x) / totalXRange;
+      if (t < 0) return p0.y;
+      if (t > 1) return p3.y;
+      
+      const u = 1 - t;
+      const tt = t * t;
+      const uu = u * u;
+      const uuu = uu * u;
+      const ttt = tt * t;
+  
+      // Bézier formula for Y value
+      const y = uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+  
+      return y;
+    };
+  
     comparisonSessions.forEach(session => {
       const sessionData = comparisonData[session.id] || [];
       if (sessionData.length === 0) return;
@@ -417,21 +442,6 @@ function TestingComponent() {
       const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
       const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
       const startTime = new Date(sessionData[0].timestamp).getTime();
-  
-      const interpolateCurve = (curve: {x: number, y: number}[], x: number) => {
-        if (!curve || curve.length === 0) return undefined;
-        if (x < curve[0].x) return curve[0].y;
-        if (x > curve[curve.length - 1].x) return curve[curve.length - 1].y;
-        for (let i = 0; i < curve.length - 1; i++) {
-          if (x >= curve[i].x && x <= curve[i + 1].x) {
-            const x1 = curve[i].x; const y1 = curve[i].y;
-            const x2 = curve[i + 1].x; const y2 = curve[i + 1].y;
-            const t = (x - x1) / (x2 - x1);
-            return y1 + t * (y2 - y1);
-          }
-        }
-        return curve[curve.length - 1].y;
-      };
   
       sessionData.forEach(d => {
         const time = (new Date(d.timestamp).getTime() - startTime) / 1000;
@@ -443,8 +453,8 @@ function TestingComponent() {
         
         const point = timeMap[time];
   
-        const minGuideline = vesselType ? interpolateCurve(vesselType.minCurve, time) : undefined;
-        const maxGuideline = vesselType ? interpolateCurve(vesselType.maxCurve, time) : undefined;
+        const minGuideline = vesselType ? interpolateBezierCurve(vesselType.minCurve, time) : undefined;
+        const maxGuideline = vesselType ? interpolateBezierCurve(vesselType.maxCurve, time) : undefined;
         
         point.minGuideline = minGuideline;
         point.maxGuideline = maxGuideline;
@@ -1369,9 +1379,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
-
-    
 
     
