@@ -219,19 +219,6 @@ function TestingComponent() {
 
   const [displaySensorConfigId, setDisplaySensorConfigId] = useState<string | null>(null);
 
-  const measurementStartLines = useMemo<Record<string, AnalysisResult>>(() => {
-    const results: Record<string, AnalysisResult> = {};
-    comparisonSessions.forEach(session => {
-        const data = comparisonData[session.id];
-        if (data && data.length > 0) {
-            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-            results[session.id] = findMeasurementStart(data, config);
-        }
-    });
-    return results;
-}, [comparisonSessions, comparisonData, sensorConfigs]);
-
-
   // Data fetching hooks
   const testBenchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'testbenches') : null, [firestore]);
   const { data: testBenches } = useCollection<TestBench>(testBenchesCollectionRef);
@@ -244,6 +231,19 @@ function TestingComponent() {
   
   const batchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'batches') : null, [firestore]);
   const { data: batches } = useCollection<Batch>(batchesCollectionRef);
+
+  const measurementStartLines = useMemo<Record<string, AnalysisResult>>(() => {
+    const results: Record<string, AnalysisResult> = {};
+    comparisonSessions.forEach(session => {
+        const data = comparisonData[session.id];
+        if (data && data.length > 0) {
+            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+            results[session.id] = findMeasurementStart(data, config);
+        }
+    });
+    return results;
+  }, [comparisonSessions, comparisonData, sensorConfigs]);
+
 
   const availableSensorsForBench = useMemo(() => {
     if (!sensorConfigs || !activeTestBench) return [];
