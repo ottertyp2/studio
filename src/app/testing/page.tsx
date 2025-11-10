@@ -614,7 +614,16 @@ function TestingComponent() {
                  batchToReport = batches?.find(b => b.id === selectedReportBatchId);
                  if (!batchToReport) throw new Error('Selected batch not found.');
                  sessionsForBatchReport = sessionHistory.filter(s => s.batchId === selectedReportBatchId && s.status === 'COMPLETED');
-                 if(sessionsForBatchReport.length === 0) throw new Error('No completed sessions found for this batch.');
+                 if (sessionsForBatchReport.length === 0) {
+                     throw new Error('No completed sessions found for this batch.');
+                 }
+                 if (sessionsForBatchReport.length === 1) {
+                    toast({
+                        variant: 'default',
+                        title: 'Batch Report Notice',
+                        description: 'A batch report for a single session is not very useful. Consider generating a single session report instead.'
+                    });
+                 }
                  
                  for (const session of sessionsForBatchReport) {
                     const dataSnapshot = await getDocs(query(collection(firestore, `test_sessions/${session.id}/sensor_data`), orderBy('timestamp')));
@@ -781,9 +790,9 @@ function TestingComponent() {
                         session.username,
                         new Date(session.startTime).toLocaleString(),
                         duration,
-                        `${startValue} ${unit}`,
-                        `${endValue} ${unit}`,
-                        `${avgValue} ${unit}`,
+                        `${startValue}`,
+                        `${endValue}`,
+                        `${avgValue}`,
                         statusStyle
                     ];
                 });

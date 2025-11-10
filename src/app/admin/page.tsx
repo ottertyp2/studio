@@ -1318,9 +1318,9 @@ export default function AdminPage() {
                 session.username || 'N/A',
                 new Date(session.startTime).toLocaleString(),
                 duration,
-                `${startValue} ${unit}`,
-                `${endValue} ${unit}`,
-                `${avgValue} ${unit}`,
+                `${startValue}`,
+                `${endValue}`,
+                `${avgValue}`,
                 statusStyle
             ];
         }));
