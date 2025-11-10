@@ -334,7 +334,11 @@ function TestingComponent() {
       await sendRecordingCommand(true);
       toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
       setIsNewSessionDialogOpen(false);
-      setNewSessionData({ vesselTypeId: '', batchId: '', serialNumber: '', description: '', sensorConfigurationId: '' });
+      setNewSessionData(prev => ({ 
+        ...prev,
+        serialNumber: '', 
+        description: '' 
+      }));
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Failed to Start Session', description: error.message });
     }
@@ -1025,7 +1029,7 @@ function TestingComponent() {
                             <div className="grid gap-4 py-4">
                                 <div className="grid grid-cols-4 items-center gap-4">
                                     <Label htmlFor="sensor-config" className="text-right">Sensor</Label>
-                                    <Select onValueChange={(value) => setNewSessionData(p => ({ ...p, sensorConfigurationId: value }))}>
+                                    <Select value={newSessionData.sensorConfigurationId} onValueChange={(value) => setNewSessionData(p => ({ ...p, sensorConfigurationId: value }))}>
                                         <SelectTrigger id="sensor-config" className="col-span-3">
                                             <SelectValue placeholder="Select a sensor" />
                                         </SelectTrigger>
@@ -1036,7 +1040,7 @@ function TestingComponent() {
                                 </div>
                                 <div className="grid grid-cols-4 items-center gap-4">
                                     <Label htmlFor="vessel-type" className="text-right">Vessel Type</Label>
-                                    <Select onValueChange={(value) => setNewSessionData(p => ({ ...p, vesselTypeId: value, batchId: '' }))}>
+                                    <Select value={newSessionData.vesselTypeId} onValueChange={(value) => setNewSessionData(p => ({ ...p, vesselTypeId: value, batchId: '' }))}>
                                         <SelectTrigger id="vessel-type" className="col-span-3">
                                             <SelectValue placeholder="Select a vessel type" />
                                         </SelectTrigger>
@@ -1047,7 +1051,7 @@ function TestingComponent() {
                                 </div>
                                 <div className="grid grid-cols-4 items-center gap-4">
                                     <Label htmlFor="batch" className="text-right">Batch</Label>
-                                    <Select onValueChange={(value) => setNewSessionData(p => ({...p, batchId: value}))} disabled={!newSessionData.vesselTypeId}>
+                                    <Select value={newSessionData.batchId} onValueChange={(value) => setNewSessionData(p => ({...p, batchId: value}))} disabled={!newSessionData.vesselTypeId}>
                                         <SelectTrigger id="batch" className="col-span-3">
                                             <SelectValue placeholder="Select a batch" />
                                         </SelectTrigger>
@@ -1428,5 +1432,7 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
 
     
