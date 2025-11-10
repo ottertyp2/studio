@@ -116,21 +116,23 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
+      clearTimeout(connectionTimeoutRef.current);
     }
+
     connectionTimeoutRef.current = setTimeout(() => {
-        if (isConnected) {
-            setIsConnected(false);
-            if (downtimeStart === null) {
-                setDowntimeStart(Date.now());
-            }
+      // If this timeout runs, it means no new data has arrived in 3 seconds.
+      if (isConnected) {
+        setIsConnected(false);
+        if (downtimeStart === null) {
+            setDowntimeStart(Date.now());
         }
-    }, 3000); 
+      }
+    }, 3000);
 
     return () => {
-        if (connectionTimeoutRef.current) {
-            clearTimeout(connectionTimeoutRef.current);
-        }
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+      }
     };
   }, [lastDataPointTimestamp, isConnected, downtimeStart]);
 
