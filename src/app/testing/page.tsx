@@ -652,7 +652,7 @@ function TestingComponent() {
                     header: { fontSize: 16, bold: true, color: '#1E40AF' },
                     subheader: { fontSize: 12, bold: true },
                     body: { fontSize: 9 },
-                    tableExample: { fontSize: 8 },
+                    tableExample: { margin: [0, 5, 0, 15], fontSize: 8 },
                     tableHeader: { bold: true, fontSize: 9, color: 'black' },
                 },
                 defaultStyle: { font: 'Roboto' }
@@ -1453,5 +1453,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
