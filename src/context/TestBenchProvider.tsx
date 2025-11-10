@@ -70,7 +70,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         return;
     }
     
-    // If we were disconnected, now we are connected. Calculate downtime.
     if (!isConnected && downtimeStart !== null) {
       const downDuration = Date.now() - downtimeStart;
       setTotalDowntime(prev => {
@@ -115,7 +114,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [firestore, isConnected, downtimeStart]);
 
-  // Watchdog timer for connection
   useEffect(() => {
     if (connectionTimeoutRef.current) {
         clearTimeout(connectionTimeoutRef.current);
@@ -127,7 +125,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 setDowntimeStart(Date.now());
             }
         }
-    }, 3000); // 3-second timeout
+    }, 3000); 
 
     return () => {
         if (connectionTimeoutRef.current) {
