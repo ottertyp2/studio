@@ -43,7 +43,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [currentDowntime, setCurrentDowntime] = useState(0); // in milliseconds
 
   const downtimeIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const lastUpdateRef = useRef<number | null>(null);
 
 
   useEffect(() => {
@@ -105,17 +104,14 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const lastUpdateTimestamp = data.lastUpdate ? new Date(data.lastUpdate).getTime() : null;
     
     if (!lastUpdateTimestamp) {
-        setIsConnected(false);
         return;
     }
-
+    
     if (!isConnected) {
-        setIsConnected(true);
         setTotalDowntime(prev => prev + currentDowntime);
         setCurrentDowntime(0);
     }
     
-    lastUpdateRef.current = lastUpdateTimestamp;
     setLastDataPointTimestamp(lastUpdateTimestamp);
     setCurrentValue(data.sensor ?? null);
     setIsRecording(data.recording === true);
@@ -226,12 +222,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       const data = snap.val();
       if (data) {
         handleNewDataPoint(data);
-      } else {
-        setIsConnected(false);
       }
     }, (error) => {
       console.error("Firebase onValue error:", error);
-      setIsConnected(false);
     });
   
     return () => unsubscribe();
@@ -240,15 +233,15 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   // Periodic check for connection status
   useEffect(() => {
     const connectionCheckInterval = setInterval(() => {
-        if (lastUpdateRef.current && (Date.now() - lastUpdateRef.current > 5000)) {
-            if (isConnected) {
-                setIsConnected(false);
-            }
-        }
+      if (lastDataPointTimestamp && (Date.now() - lastDataPointTimestamp > 3000)) {
+        setIsConnected(false);
+      } else if (lastDataPointTimestamp) {
+        setIsConnected(true);
+      }
     }, 1000);
 
     return () => clearInterval(connectionCheckInterval);
-  }, [isConnected]);
+  }, [lastDataPointTimestamp]);
 
   // Listener for /data/commands to get valve and sequence status
   useEffect(() => {
