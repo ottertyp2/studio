@@ -1318,9 +1318,9 @@ export default function AdminPage() {
                 session.username || 'N/A',
                 new Date(session.startTime).toLocaleString(),
                 duration,
-                `${startValue}`,
-                `${endValue}`,
-                `${avgValue}`,
+                `${startValue} ${unit}`,
+                `${endValue} ${unit}`,
+                `${avgValue} ${unit}`,
                 statusStyle
             ];
         }));
@@ -1359,9 +1359,9 @@ export default function AdminPage() {
                               {text: 'User', style: 'tableHeader'}, 
                               {text: 'Start Time', style: 'tableHeader'}, 
                               {text: 'Duration (s)', style: 'tableHeader'}, 
-                              {text: `Start (${unit})`, style: 'tableHeader'},
-                              {text: `End (${unit})`, style: 'tableHeader'},
-                              {text: `Avg. (${unit})`, style: 'tableHeader'},
+                              {text: `Start Value`, style: 'tableHeader'},
+                              {text: `End Value`, style: 'tableHeader'},
+                              {text: `Avg. Value`, style: 'tableHeader'},
                               {text: 'Status', style: 'tableHeader'}
                             ],
                             ...tableBody
