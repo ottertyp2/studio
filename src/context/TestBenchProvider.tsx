@@ -42,8 +42,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [totalDowntime, setTotalDowntime] = useState(0); // in milliseconds
   const [currentDowntime, setCurrentDowntime] = useState(0); // in milliseconds
 
-  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const downtimeIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastUpdateRef = useRef<number | null>(null);
+
 
   useEffect(() => {
     const persistedStartTime = localStorage.getItem('startTime');
@@ -101,17 +102,27 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const handleNewDataPoint = useCallback((data: any) => {
     if (data === null || data === undefined) return;
 
+    const lastUpdateTimestamp = data.lastUpdate ? new Date(data.lastUpdate).getTime() : null;
+    
+    if (!lastUpdateTimestamp) {
+        setIsConnected(false);
+        return;
+    }
+
+    if (!isConnected) {
+        setIsConnected(true);
+        setTotalDowntime(prev => prev + currentDowntime);
+        setCurrentDowntime(0);
+    }
+    
+    lastUpdateRef.current = lastUpdateTimestamp;
+    setLastDataPointTimestamp(lastUpdateTimestamp);
     setCurrentValue(data.sensor ?? null);
     setIsRecording(data.recording === true);
     setDisconnectCount(data.disconnectCount || 0);
     setLatency(data.latency !== undefined ? data.latency : null);
     setSequenceFailureCount(data.sequenceFailureCount || 0);
     
-    const lastUpdateTimestamp = data.lastUpdate ? new Date(data.lastUpdate).getTime() : null;
-    if (lastUpdateTimestamp) {
-        setLastDataPointTimestamp(lastUpdateTimestamp);
-    }
-
     if (data.sensor !== null && data.lastUpdate) {
         setLocalDataLog(prevLog => {
             const newDataPoint = { value: data.sensor, timestamp: new Date(data.lastUpdate).toISOString() };
@@ -135,7 +146,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       };
       addDocumentNonBlocking(sessionDataRef, dataToSave);
     }
-  }, [firestore]);
+  }, [firestore, isConnected, currentDowntime]);
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!database) {
@@ -212,44 +223,32 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const liveDataRef = ref(database, 'data/live');
   
     const unsubscribe = onValue(liveDataRef, (snap) => {
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-      }
-  
       const data = snap.val();
-  
-      if (data && data.lastUpdate) {
-        if (!isConnected) {
-            setIsConnected(true);
-            setTotalDowntime(prev => prev + currentDowntime);
-            setCurrentDowntime(0);
-        }
+      if (data) {
         handleNewDataPoint(data);
-  
-        connectionTimeoutRef.current = setTimeout(() => {
-          setIsConnected(false);
-          if (connectionTimeoutRef.current) {
-            clearTimeout(connectionTimeoutRef.current);
-          }
-        }, 5000);
       } else {
         setIsConnected(false);
       }
     }, (error) => {
       console.error("Firebase onValue error:", error);
       setIsConnected(false);
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-      }
     });
   
-    return () => {
-      unsubscribe();
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-      }
-    };
-  }, [database, handleNewDataPoint, isConnected, currentDowntime]);
+    return () => unsubscribe();
+  }, [database, handleNewDataPoint]);
+
+  // Periodic check for connection status
+  useEffect(() => {
+    const connectionCheckInterval = setInterval(() => {
+        if (lastUpdateRef.current && (Date.now() - lastUpdateRef.current > 5000)) {
+            if (isConnected) {
+                setIsConnected(false);
+            }
+        }
+    }, 1000);
+
+    return () => clearInterval(connectionCheckInterval);
+  }, [isConnected]);
 
   // Listener for /data/commands to get valve and sequence status
   useEffect(() => {
@@ -322,5 +321,3 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
-
-    
