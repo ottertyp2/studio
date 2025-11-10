@@ -132,8 +132,11 @@ export const findMeasurementStart = (data: { value: number; timestamp: string }[
 
 
 export const findMeasurementEnd = (data: { value: number; timestamp: string }[], startIndex: number, config: SensorConfig | null | undefined): { endIndex: number, endTime: number } => {
-    if (startIndex >= data.length - 1) {
-        return { endIndex: data.length - 1, endTime: (new Date(data[data.length-1].timestamp).getTime() - new Date(data[0].timestamp).getTime())/1000 };
+    if (!data || data.length === 0 || startIndex >= data.length - 1) {
+        const lastIndex = data.length > 0 ? data.length - 1 : 0;
+        const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : 0;
+        const lastTime = data.length > 0 ? new Date(data[lastIndex].timestamp).getTime() : 0;
+        return { endIndex: lastIndex, endTime: (lastTime - sessionStartTime) / 1000 };
     }
 
     const analysisData = data.slice(startIndex);
@@ -150,26 +153,26 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
         }
     }
     
-    // Threshold to ensure the drop is significant
-    if (dropIndex !== -1 && minDerivative < -50) { // -50 is an arbitrary threshold for a significant drop
+    const sessionStartTime = new Date(data[0].timestamp).getTime();
+
+    // Threshold to ensure the drop is significant, e.g., -50 units/sec. Adjust as needed.
+    if (dropIndex !== -1 && minDerivative < -50) { 
         const dropTime = new Date(analysisData[dropIndex].timestamp).getTime();
         const endTimeWithBuffer = dropTime - 3000;
         
         let finalEndIndexInSlice = analysisData.findIndex(d => new Date(d.timestamp).getTime() >= endTimeWithBuffer);
         
-        if (finalEndIndexInSlice === -1) { // If buffer goes before start
+        if (finalEndIndexInSlice === -1 || finalEndIndexInSlice > dropIndex) {
             finalEndIndexInSlice = dropIndex;
         }
 
         const finalEndIndex = startIndex + finalEndIndexInSlice;
-        const sessionStartTime = new Date(data[0].timestamp).getTime();
         const finalEndTime = (new Date(data[finalEndIndex].timestamp).getTime() - sessionStartTime) / 1000;
         return { endIndex: finalEndIndex, endTime: finalEndTime };
     }
 
     // If no significant drop is found, return the end of the data
     const lastIndex = data.length - 1;
-    const sessionStartTime = new Date(data[0].timestamp).getTime();
     const finalEndTime = (new Date(data[lastIndex].timestamp).getTime() - sessionStartTime) / 1000;
     return { endIndex: lastIndex, endTime: finalEndTime };
 };
