@@ -1372,7 +1372,7 @@ export default function AdminPage() {
                 header: { fontSize: 16, bold: true, margin: [0, 0, 0, 5] },
                 subheader: { fontSize: 12, bold: true, margin: [0, 5, 0, 2] },
                 body: { fontSize: 9 },
-                tableExample: { margin: [0, 2, 0, 8], fontSize: 8 },
+                tableExample: { margin: [0, 5, 0, 15], fontSize: 8 },
                 tableHeader: { bold: true, fontSize: 9, color: 'black' }
             }
         };

@@ -1410,13 +1410,20 @@ function TestingComponent() {
                             if (!window) return null;
 
                             return (
-                                <ReferenceLine
-                                    key={`ref-line-${session.id}`}
-                                    x={window.start.startTime}
-                                    stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                                    strokeDasharray="3 3"
-                                    label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
-                                />
+                                <React.Fragment key={`ref-lines-${session.id}`}>
+                                    <ReferenceLine
+                                        x={window.start.startTime}
+                                        stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                        strokeDasharray="3 3"
+                                        label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
+                                    />
+                                    <ReferenceLine
+                                        x={window.end.endTime}
+                                        stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                        strokeDasharray="3 3"
+                                        label={{ value: "End", position: "insideTopRight", fill: "hsl(var(--muted-foreground))" }}
+                                    />
+                                </React.Fragment>
                             );
                         })}
                       </LineChart>
