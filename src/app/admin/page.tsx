@@ -667,7 +667,6 @@ export default function AdminPage() {
     }
   
     updateDocumentNonBlocking(sessionRef, updateData);
-    // Removed toast from here to prevent double-toast
   };
 
   const handleClassifyByGuideline = async (session: TestSession) => {
@@ -2290,7 +2289,7 @@ export default function AdminPage() {
                                                 <TableCell className="text-right">
                                                     <AlertDialog>
                                                         <AlertDialogTrigger asChild>
-                                                            <Button variant="ghost" size="sm" disabled={u.id === user?.uid}>Delete Profile</Button>
+                                                            <Button variant="ghost" size="sm" disabled={u.id === user?.uid} className="text-destructive">Delete Profile</Button>
                                                         </AlertDialogTrigger>
                                                         <AlertDialogContent>
                                                             <AlertDialogHeader>
@@ -2675,7 +2674,7 @@ const renderAIModelManagement = () => (
                           Go to Testing
                       </Button>
                     )}
-                    <Button onClick={handleSignOut} variant="ghost">
+                    <Button onClick={handleSignOut} variant="ghost" className="hover:bg-destructive/10 hover:text-destructive">
                         <LogOut className="h-4 w-4 mr-2" />
                         Logout
                     </Button>
