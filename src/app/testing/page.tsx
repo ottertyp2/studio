@@ -614,6 +614,7 @@ function TestingComponent() {
                  batchToReport = batches?.find(b => b.id === selectedReportBatchId);
                  if (!batchToReport) throw new Error('Selected batch not found.');
                  sessionsForBatchReport = sessionHistory.filter(s => s.batchId === selectedReportBatchId && s.status === 'COMPLETED');
+                 
                  if (sessionsForBatchReport.length === 0) {
                      throw new Error('No completed sessions found for this batch.');
                  }
@@ -621,7 +622,7 @@ function TestingComponent() {
                     toast({
                         variant: 'default',
                         title: 'Batch Report Notice',
-                        description: 'A batch report for a single session is not very useful. Consider generating a single session report instead.'
+                        description: 'Batch reports are for comparing multiple sessions. A single session report might be more useful.'
                     });
                  }
                  
@@ -1416,11 +1417,13 @@ function TestingComponent() {
                                         x={window.start.startTime}
                                         stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                         strokeDasharray="3 3"
+                                        label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
                                     />
                                     <ReferenceLine
                                         x={window.end.endTime}
                                         stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                         strokeDasharray="3 3"
+                                        label={{ value: "End", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
                                     />
                                 </React.Fragment>
                             );
