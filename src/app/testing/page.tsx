@@ -233,7 +233,7 @@ function TestingComponent() {
   const { data: batches } = useCollection<Batch>(batchesCollectionRef);
 
   const measurementWindows = useMemo(() => {
-    const results: Record<string, { start: { startIndex: number; }; end: { endIndex: number; }; }> = {};
+    const results: Record<string, { start: { startIndex: number; startTime: number }; end: { endIndex: number; endTime: number }; }> = {};
     comparisonSessions.forEach(session => {
         const data = comparisonData[session.id];
         if (data && data.length > 0) {
@@ -1408,28 +1408,17 @@ function TestingComponent() {
                         ))}
                         {comparisonSessions.map((session, index) => {
                             const window = measurementWindows[session.id];
-                            const sessionData = comparisonData[session.id];
-                            if (!window || !sessionData || sessionData.length === 0) return null;
-
-                            const sessionStartTime = new Date(sessionData[0].timestamp).getTime();
-                            
-                            const startDataPoint = sessionData[window.start.startIndex];
-                            const endDataPoint = sessionData[window.end.endIndex];
-                            
-                            if (!startDataPoint || !endDataPoint) return null;
-
-                            const lineStartTime = (new Date(startDataPoint.timestamp).getTime() - sessionStartTime) / 1000;
-                            const lineEndTime = (new Date(endDataPoint.timestamp).getTime() - sessionStartTime) / 1000;
+                            if (!window) return null;
 
                             return (
                                 <React.Fragment key={`ref-lines-${session.id}`}>
                                     <ReferenceLine
-                                        x={lineStartTime}
+                                        x={window.start.startTime}
                                         stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                         strokeDasharray="3 3"
                                     />
                                     <ReferenceLine
-                                        x={lineEndTime}
+                                        x={window.end.endTime}
                                         stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                         strokeDasharray="3 3"
                                     />
