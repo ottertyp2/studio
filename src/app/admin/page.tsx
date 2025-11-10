@@ -1359,9 +1359,9 @@ export default function AdminPage() {
                               {text: 'User', style: 'tableHeader'}, 
                               {text: 'Start Time', style: 'tableHeader'}, 
                               {text: 'Duration (s)', style: 'tableHeader'}, 
-                              {text: `Start`, style: 'tableHeader'},
-                              {text: `End`, style: 'tableHeader'},
-                              {text: `Avg.`, style: 'tableHeader'},
+                              {text: `Start (${unit})`, style: 'tableHeader'},
+                              {text: `End (${unit})`, style: 'tableHeader'},
+                              {text: `Avg. (${unit})`, style: 'tableHeader'},
                               {text: 'Status', style: 'tableHeader'}
                             ],
                             ...tableBody

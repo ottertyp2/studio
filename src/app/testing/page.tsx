@@ -233,7 +233,7 @@ function TestingComponent() {
   const { data: batches } = useCollection<Batch>(batchesCollectionRef);
 
   const measurementWindows = useMemo(() => {
-    const results: Record<string, { start: { startIndex: number; startTime: number; }; end: { endIndex: number; endTime: number; }; }> = {};
+    const results: Record<string, { start: { startIndex: number; }; end: { endIndex: number; }; }> = {};
     comparisonSessions.forEach(session => {
         const data = comparisonData[session.id];
         if (data && data.length > 0) {
@@ -1399,11 +1399,18 @@ function TestingComponent() {
                         ))}
                         {comparisonSessions.map((session, index) => {
                             const window = measurementWindows[session.id];
-                            if (!window || !comparisonData[session.id] || comparisonData[session.id].length === 0) return null;
+                            const sessionData = comparisonData[session.id];
+                            if (!window || !sessionData || sessionData.length === 0) return null;
+
+                            const sessionStartTime = new Date(sessionData[0].timestamp).getTime();
                             
-                            const sessionStartTime = new Date(comparisonData[session.id][0].timestamp).getTime();
-                            const lineStartTime = (new Date(comparisonData[session.id][window.start.startIndex].timestamp).getTime() - sessionStartTime) / 1000;
-                            const lineEndTime = (new Date(comparisonData[session.id][window.end.endIndex].timestamp).getTime() - sessionStartTime) / 1000;
+                            const startDataPoint = sessionData[window.start.startIndex];
+                            const endDataPoint = sessionData[window.end.endIndex];
+                            
+                            if (!startDataPoint || !endDataPoint) return null;
+
+                            const lineStartTime = (new Date(startDataPoint.timestamp).getTime() - sessionStartTime) / 1000;
+                            const lineEndTime = (new Date(endDataPoint.timestamp).getTime() - sessionStartTime) / 1000;
 
                             return (
                                 <React.Fragment key={`ref-lines-${session.id}`}>
