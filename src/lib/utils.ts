@@ -177,3 +177,5 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
     const endTimeInSeconds = (new Date(data[lastIndex].timestamp).getTime() - sessionStartTime) / 1000;
     return { endIndex: lastIndex, endTime: endTimeInSeconds };
 };
+
+    

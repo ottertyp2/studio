@@ -57,7 +57,7 @@ import { useTestBench } from '@/context/TestBenchContext';
 import { collection, query, where, onSnapshot, doc, getDocs, orderBy, limit, getDoc, writeBatch } from 'firebase/firestore';
 import { ref, get } from 'firebase/database';
 import { formatDistanceToNow } from 'date-fns';
-import { convertRawValue, findMeasurementStart, findMeasurementEnd, toBase64, AnalysisResult } from '@/lib/utils';
+import { convertRawValue, findMeasurementStart, findMeasurementEnd, toBase64 } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -686,8 +686,7 @@ function TestingComponent() {
                 const data = allSensorDataForReport[sessionToReport.id] || [];
 
                 const { startIndex } = findMeasurementStart(data, config);
-                const { endIndex } = findMeasurementEnd(data, startIndex, config);
-                const realData = data.slice(startIndex, endIndex + 1);
+                const realData = data.slice(startIndex);
                 
                 const sessionStartTime = realData.length > 0 ? new Date(realData[0].timestamp).getTime() : new Date(sessionToReport.startTime).getTime();
                 const sessionEndTime = realData.length > 0 ? new Date(realData[realData.length - 1].timestamp).getTime() : new Date(sessionToReport.endTime || sessionToReport.startTime).getTime();
@@ -766,8 +765,7 @@ function TestingComponent() {
                     const data = allSensorDataForReport[session.id] || [];
                     const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
                     const { startIndex } = findMeasurementStart(data, config);
-                    const { endIndex } = findMeasurementEnd(data, startIndex, config);
-                    const realData = data.slice(startIndex, endIndex + 1);
+                    const realData = data.slice(startIndex);
 
                     const sessionStartTime = realData.length > 0 ? new Date(realData[0].timestamp).getTime() : new Date(session.startTime).getTime();
                     const sessionEndTime = realData.length > 0 ? new Date(realData[realData.length-1].timestamp).getTime() : new Date(session.endTime || session.startTime).getTime();
@@ -1412,20 +1410,13 @@ function TestingComponent() {
                             if (!window) return null;
 
                             return (
-                                <React.Fragment key={`ref-lines-${session.id}`}>
-                                    <ReferenceLine
-                                        x={window.start.startTime}
-                                        stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                                        strokeDasharray="3 3"
-                                        label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
-                                    />
-                                    <ReferenceLine
-                                        x={window.end.endTime}
-                                        stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                                        strokeDasharray="3 3"
-                                        label={{ value: "End", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
-                                    />
-                                </React.Fragment>
+                                <ReferenceLine
+                                    key={`ref-line-${session.id}`}
+                                    x={window.start.startTime}
+                                    stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                    strokeDasharray="3 3"
+                                    label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
+                                />
                             );
                         })}
                       </LineChart>
@@ -1457,3 +1448,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    

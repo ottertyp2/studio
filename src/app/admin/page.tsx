@@ -699,8 +699,7 @@ export default function AdminPage() {
       }
       
       const { startIndex } = findMeasurementStart(sensorData, config);
-      const { endIndex } = findMeasurementEnd(sensorData, startIndex, config);
-      const analysisData = sensorData.slice(startIndex, endIndex + 1);
+      const analysisData = sensorData.slice(startIndex);
 
       if (analysisData.length === 0) {
         toast({ variant: 'warning', title: 'No Usable Data', description: 'No data available within the detected measurement window.' });
@@ -1292,8 +1291,7 @@ export default function AdminPage() {
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
 
             const { startIndex } = findMeasurementStart(data, config);
-            const { endIndex } = findMeasurementEnd(data, startIndex, config);
-            const realData = data.slice(startIndex, endIndex + 1);
+            const realData = data.slice(startIndex);
             
             const sessionStartTime = realData.length > 0 ? new Date(realData[0].timestamp).getTime() : new Date(session.startTime).getTime();
             const sessionEndTime = realData.length > 0 ? new Date(realData[realData.length - 1].timestamp).getTime() : new Date(session.endTime || session.startTime).getTime();
@@ -2841,3 +2839,5 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
+
+    
