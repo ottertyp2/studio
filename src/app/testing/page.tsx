@@ -686,7 +686,8 @@ function TestingComponent() {
                 const data = allSensorDataForReport[sessionToReport.id] || [];
 
                 const { startIndex } = findMeasurementStart(data, config);
-                const realData = data.slice(startIndex);
+                const { endIndex } = findMeasurementEnd(data, startIndex, config);
+                const realData = data.slice(startIndex, endIndex + 1);
                 
                 const sessionStartTime = realData.length > 0 ? new Date(realData[0].timestamp).getTime() : new Date(sessionToReport.startTime).getTime();
                 const sessionEndTime = realData.length > 0 ? new Date(realData[realData.length - 1].timestamp).getTime() : new Date(sessionToReport.endTime || sessionToReport.startTime).getTime();
@@ -765,7 +766,8 @@ function TestingComponent() {
                     const data = allSensorDataForReport[session.id] || [];
                     const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
                     const { startIndex } = findMeasurementStart(data, config);
-                    const realData = data.slice(startIndex);
+                    const { endIndex } = findMeasurementEnd(data, startIndex, config);
+                    const realData = data.slice(startIndex, endIndex + 1);
 
                     const sessionStartTime = realData.length > 0 ? new Date(realData[0].timestamp).getTime() : new Date(session.startTime).getTime();
                     const sessionEndTime = realData.length > 0 ? new Date(realData[realData.length-1].timestamp).getTime() : new Date(session.endTime || session.startTime).getTime();
