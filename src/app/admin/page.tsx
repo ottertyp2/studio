@@ -1335,7 +1335,7 @@ export default function AdminPage() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['*', '*', 'auto', '*', '*', '*', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['*', '*', 'auto', '*', '*', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [
                               {text: 'Batch', style: 'tableHeader'}, 
@@ -1964,86 +1964,100 @@ export default function AdminPage() {
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-[300px]">
-                        <div className="p-2 space-y-2">
-                             <div className="space-y-1">
-                                <Label>Date Range</Label>
-                                 <Popover>
-                                    <PopoverTrigger asChild>
-                                    <Button
-                                        id="date"
-                                        variant={"outline"}
-                                        className="w-full justify-start text-left font-normal"
-                                    >
-                                        <CalendarIcon className="mr-2 h-4 w-4" />
-                                        {sessionDateFilter?.from ? (
-                                        sessionDateFilter.to ? (
-                                            <>
-                                            {format(sessionDateFilter.from, "LLL dd, y")} -{" "}
-                                            {format(sessionDateFilter.to, "LLL dd, y")}
-                                            </>
-                                        ) : (
-                                            format(sessionDateFilter.from, "LLL dd, y")
-                                        )
-                                        ) : (
-                                        <span>Pick a date</span>
-                                        )}
-                                    </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-auto p-0" align="start">
-                                    <Calendar
-                                        initialFocus
-                                        mode="range"
-                                        defaultMonth={sessionDateFilter?.from}
-                                        selected={sessionDateFilter}
-                                        onSelect={setSessionDateFilter}
-                                        numberOfMonths={2}
-                                    />
-                                    <div className="p-2 border-t border-border">
-                                        <Button onClick={() => setSessionDateFilter(undefined)} variant="ghost" size="sm" className="w-full justify-center">Reset</Button>
-                                    </div>
-                                    </PopoverContent>
-                                </Popover>
+                        <ScrollArea className="h-[400px]">
+                            <div className="p-2 space-y-2">
+                                <div className="space-y-1">
+                                    <Label>Date Range</Label>
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                        <Button
+                                            id="date"
+                                            variant={"outline"}
+                                            className="w-full justify-start text-left font-normal"
+                                        >
+                                            <CalendarIcon className="mr-2 h-4 w-4" />
+                                            {sessionDateFilter?.from ? (
+                                            sessionDateFilter.to ? (
+                                                <>
+                                                {format(sessionDateFilter.from, "LLL dd, y")} -{" "}
+                                                {format(sessionDateFilter.to, "LLL dd, y")}
+                                                </>
+                                            ) : (
+                                                format(sessionDateFilter.from, "LLL dd, y")
+                                            )
+                                            ) : (
+                                            <span>Pick a date</span>
+                                            )}
+                                        </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-0" align="start">
+                                        <Calendar
+                                            initialFocus
+                                            mode="range"
+                                            defaultMonth={sessionDateFilter?.from}
+                                            selected={sessionDateFilter}
+                                            onSelect={setSessionDateFilter}
+                                            numberOfMonths={2}
+                                        />
+                                        <div className="p-2 border-t border-border">
+                                            <Button onClick={() => setSessionDateFilter(undefined)} variant="ghost" size="sm" className="w-full justify-center">Reset</Button>
+                                        </div>
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+                                <Accordion type="multiple" className="w-full">
+                                    <AccordionItem value="classification">
+                                        <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Classification</AccordionTrigger>
+                                        <AccordionContent className="pb-0">
+                                            <div className="space-y-1 px-2 pb-2">
+                                                <Select value={sessionClassificationFilter} onValueChange={setSessionClassificationFilter}>
+                                                    <SelectTrigger><SelectValue/></SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="all">All Statuses</SelectItem>
+                                                        <SelectItem value="classified">Classified</SelectItem>
+                                                        <SelectItem value="unclassified">Unclassified</SelectItem>
+                                                        <SelectItem value="passed">Passed</SelectItem>
+                                                        <SelectItem value="not-passed">Not Passed</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                        </AccordionContent>
+                                    </AccordionItem>
+                                    <AccordionItem value="users">
+                                        <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Users</AccordionTrigger>
+                                        <AccordionContent className="pb-0">
+                                            {uniqueUsers.map(u => (
+                                                <DropdownMenuCheckboxItem key={u.id} checked={sessionUserFilter.includes(u.id)} onSelect={(e) => e.preventDefault()} onClick={() => toggleFilterItem(setSessionUserFilter, u.id)}>{u.username}</DropdownMenuCheckboxItem>
+                                            ))}
+                                        </AccordionContent>
+                                    </AccordionItem>
+                                    <AccordionItem value="vessel-types">
+                                        <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Vessel Types</AccordionTrigger>
+                                        <AccordionContent className="pb-0">
+                                            {uniqueVesselTypes.map(vt => (
+                                                <DropdownMenuCheckboxItem key={vt.id} checked={sessionVesselTypeFilter.includes(vt.id)} onSelect={(e) => e.preventDefault()} onClick={() => toggleFilterItem(setSessionVesselTypeFilter, vt.id)}>{vt.name}</DropdownMenuCheckboxItem>
+                                            ))}
+                                        </AccordionContent>
+                                    </AccordionItem>
+                                    <AccordionItem value="batches">
+                                        <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Batches</AccordionTrigger>
+                                        <AccordionContent className="pb-0">
+                                            {uniqueBatches.map(b => (
+                                                <DropdownMenuCheckboxItem key={b.id} checked={sessionBatchFilter.includes(b.id)} onSelect={(e) => e.preventDefault()} onClick={() => toggleFilterItem(setSessionBatchFilter, b.id)}>{b.name}</DropdownMenuCheckboxItem>
+                                            ))}
+                                        </AccordionContent>
+                                    </AccordionItem>
+                                    <AccordionItem value="test-benches">
+                                        <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Test Benches</AccordionTrigger>
+                                        <AccordionContent className="pb-0">
+                                            {uniqueTestBenches.map(tb => (
+                                                <DropdownMenuCheckboxItem key={tb.id} checked={sessionTestBenchFilter.includes(tb.id)} onSelect={(e) => e.preventDefault()} onClick={() => toggleFilterItem(setSessionTestBenchFilter, tb.id)}>{tb.name}</DropdownMenuCheckboxItem>
+                                            ))}
+                                        </AccordionContent>
+                                    </AccordionItem>
+                                </Accordion>
                             </div>
-
-                            <DropdownMenuSeparator />
-                            <DropdownMenuLabel>Users</DropdownMenuLabel>
-                            {uniqueUsers.map(u => (
-                                <DropdownMenuCheckboxItem key={u.id} checked={sessionUserFilter.includes(u.id)} onSelect={(e) => e.preventDefault()} onClick={() => toggleFilterItem(setSessionUserFilter, u.id)}>{u.username}</DropdownMenuCheckboxItem>
-                            ))}
-                            
-                            <DropdownMenuSeparator />
-                            <DropdownMenuLabel>Vessel Types</DropdownMenuLabel>
-                             {uniqueVesselTypes.map(vt => (
-                                <DropdownMenuCheckboxItem key={vt.id} checked={sessionVesselTypeFilter.includes(vt.id)} onSelect={(e) => e.preventDefault()} onClick={() => toggleFilterItem(setSessionVesselTypeFilter, vt.id)}>{vt.name}</DropdownMenuCheckboxItem>
-                            ))}
-
-                            <DropdownMenuSeparator />
-                            <DropdownMenuLabel>Batches</DropdownMenuLabel>
-                            {uniqueBatches.map(b => (
-                                <DropdownMenuCheckboxItem key={b.id} checked={sessionBatchFilter.includes(b.id)} onSelect={(e) => e.preventDefault()} onClick={() => toggleFilterItem(setSessionBatchFilter, b.id)}>{b.name}</DropdownMenuCheckboxItem>
-                            ))}
-
-                            <DropdownMenuSeparator />
-                            <DropdownMenuLabel>Test Benches</DropdownMenuLabel>
-                            {uniqueTestBenches.map(tb => (
-                                <DropdownMenuCheckboxItem key={tb.id} checked={sessionTestBenchFilter.includes(tb.id)} onSelect={(e) => e.preventDefault()} onClick={() => toggleFilterItem(setSessionTestBenchFilter, tb.id)}>{tb.name}</DropdownMenuCheckboxItem>
-                            ))}
-
-                            <DropdownMenuSeparator />
-                            <DropdownMenuLabel>Classification</DropdownMenuLabel>
-                             <div className="space-y-1 px-2">
-                                <Select value={sessionClassificationFilter} onValueChange={setSessionClassificationFilter}>
-                                    <SelectTrigger><SelectValue/></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Statuses</SelectItem>
-                                        <SelectItem value="classified">Classified</SelectItem>
-                                        <SelectItem value="unclassified">Unclassified</SelectItem>
-                                        <SelectItem value="passed">Passed</SelectItem>
-                                        <SelectItem value="not-passed">Not Passed</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
+                        </ScrollArea>
                     </DropdownMenuContent>
                 </DropdownMenu>
 
