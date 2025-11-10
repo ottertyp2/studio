@@ -1,6 +1,9 @@
 
 'use client';
 import { createContext, useContext, RefObject } from 'react';
+import type { DocumentData } from 'firebase/firestore';
+import type { WithId } from '@/firebase';
+
 
 export type SensorData = {
   timestamp: string;
@@ -49,6 +52,7 @@ export interface TestBenchContextType {
   lockedSequences: ('sequence1' | 'sequence2')[];
   sequenceFailureCount: number;
   movingAverageLength: number | null;
+  runningTestSession: WithId<DocumentData> | null;
 }
 
 export const TestBenchContext = createContext<TestBenchContextType | undefined>(undefined);
@@ -60,5 +64,3 @@ export const useTestBench = () => {
   }
   return context;
 };
-
-    

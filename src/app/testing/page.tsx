@@ -184,13 +184,13 @@ function TestingComponent() {
     totalDowntime,
     sequenceFailureCount,
     movingAverageLength,
+    runningTestSession,
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
   
   const [isNewSessionDialogOpen, setIsNewSessionDialogOpen] = useState(false);
   const [newSessionData, setNewSessionData] = useState({ vesselTypeId: '', batchId: '', serialNumber: '', description: '', sensorConfigurationId: '' });
-  const [runningTestSession, setRunningTestSession] = useState<WithId<TestSession> | null>(null);
   
   const [comparisonSessions, setComparisonSessions] = useState<WithId<TestSession>[]>([]);
   const [comparisonData, setComparisonData] = useState<Record<string, WithId<SensorData>[]>>({});
@@ -271,26 +271,24 @@ function TestingComponent() {
     }
   }, [testBenches, activeTestBench]);
 
-  // Find and subscribe to a running session on load
   useEffect(() => {
-    if (!user || !firestore) return;
-    const q = query(
-      collection(firestore, 'test_sessions'),
-      where('status', '==', 'RUNNING'),
-      limit(1)
-    );
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      if (!querySnapshot.empty) {
-        const runningSessionDoc = querySnapshot.docs[0];
-        const session = { id: runningSessionDoc.id, ...runningSessionDoc.data() } as WithId<TestSession>;
-        setRunningTestSession(session);
-        setComparisonSessions([session]);
-      } else {
-        setRunningTestSession(null);
+    if (runningTestSession) {
+      setComparisonSessions([runningTestSession]);
+    }
+  }, [runningTestSession]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (runningTestSession) {
+        event.preventDefault();
+        event.returnValue = 'A test session is currently running. Are you sure you want to leave? The session will be stopped.';
       }
-    });
-    return () => unsubscribe();
-  }, [firestore, user]);
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [runningTestSession]);
 
   const handleStartSession = async () => {
     if (!user || !activeTestBench || !newSessionData.sensorConfigurationId || !newSessionData.vesselTypeId || !newSessionData.batchId || !database) {
@@ -1410,13 +1408,20 @@ function TestingComponent() {
                             if (!window) return null;
 
                             return (
-                                <ReferenceLine
-                                    key={`ref-line-${session.id}`}
-                                    x={window.start.startTime}
-                                    stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                                    strokeDasharray="3 3"
-                                    label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
-                                />
+                                <React.Fragment key={`ref-lines-${session.id}`}>
+                                  <ReferenceLine
+                                      x={window.start.startTime}
+                                      stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                      strokeDasharray="3 3"
+                                      label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
+                                  />
+                                  <ReferenceLine
+                                      x={window.end.endTime}
+                                      stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                      strokeDasharray="3 3"
+                                      label={{ value: "End", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
+                                  />
+                                </React.Fragment>
                             );
                         })}
                       </LineChart>
@@ -1448,5 +1453,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    

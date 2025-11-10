@@ -33,6 +33,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [movingAverageLength, setMovingAverageLength] = useState<number | null>(null);
   
   const runningTestSessionRef = useRef<WithId<DocumentData> | null>(null);
+  const [runningTestSession, setRunningTestSession] = useState<WithId<DocumentData> | null>(null);
 
   const [lockedValves, setLockedValves] = useState<('VALVE1' | 'VALVE2')[]>([]);
   const [lockedSequences, setLockedSequences] = useState<('sequence1' | 'sequence2')[]>([]);
@@ -88,6 +89,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     if (
       runningTestSessionRef.current &&
       firestore &&
+      data.recording === true &&
       data.sensor != null &&
       data.lastUpdate
     ) {
@@ -126,6 +128,27 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
     return () => clearInterval(interval);
   }, [lastDataPointTimestamp, downtimeStart]);
+
+  useEffect(() => {
+    if (!user || !firestore) return;
+    const q = query(
+      collection(firestore, 'test_sessions'),
+      where('status', '==', 'RUNNING'),
+      limit(1)
+    );
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      if (!querySnapshot.empty) {
+        const runningSessionDoc = querySnapshot.docs[0];
+        const session = { id: runningSessionDoc.id, ...runningSessionDoc.data() } as WithId<DocumentData>;
+        runningTestSessionRef.current = session;
+        setRunningTestSession(session);
+      } else {
+        runningTestSessionRef.current = null;
+        setRunningTestSession(null);
+      }
+    });
+    return () => unsubscribe();
+  }, [firestore, user]);
 
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
@@ -279,6 +302,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     lockedSequences,
     sequenceFailureCount,
     movingAverageLength,
+    runningTestSession,
   };
 
   return (
