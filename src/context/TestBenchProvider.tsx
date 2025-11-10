@@ -5,7 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 import { TestBenchContext, ValveStatus } from './TestBenchContext';
 import { useFirebase, useUser, addDocumentNonBlocking, WithId } from '@/firebase';
 import { ref, onValue, set } from 'firebase/database';
-import { collection, query, where, onSnapshot, limit, DocumentData } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, limit, DocumentData, collectionGroup, getDocs } from 'firebase/firestore';
 
 export type RtdbSensorData = {
   timestamp: string;
@@ -58,6 +58,28 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       setTotalDowntime(JSON.parse(persistedDowntime));
     }
   }, []);
+  
+  useEffect(() => {
+    if (!user || !firestore) return;
+    const q = query(
+      collection(firestore, 'test_sessions'),
+      where('status', '==', 'RUNNING'),
+      limit(1)
+    );
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      if (!querySnapshot.empty) {
+        const runningSessionDoc = querySnapshot.docs[0];
+        const session = { id: runningSessionDoc.id, ...runningSessionDoc.data() } as WithId<DocumentData>;
+        runningTestSessionRef.current = session;
+        setRunningTestSession(session);
+      } else {
+        runningTestSessionRef.current = null;
+        setRunningTestSession(null);
+      }
+    });
+    return () => unsubscribe();
+  }, [firestore, user]);
+
 
   const handleNewDataPoint = useCallback((data: any) => {
     if (data === null || data === undefined) return;
@@ -128,27 +150,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
     return () => clearInterval(interval);
   }, [lastDataPointTimestamp, downtimeStart]);
-
-  useEffect(() => {
-    if (!user || !firestore) return;
-    const q = query(
-      collection(firestore, 'test_sessions'),
-      where('status', '==', 'RUNNING'),
-      limit(1)
-    );
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      if (!querySnapshot.empty) {
-        const runningSessionDoc = querySnapshot.docs[0];
-        const session = { id: runningSessionDoc.id, ...runningSessionDoc.data() } as WithId<DocumentData>;
-        runningTestSessionRef.current = session;
-        setRunningTestSession(session);
-      } else {
-        runningTestSessionRef.current = null;
-        setRunningTestSession(null);
-      }
-    });
-    return () => unsubscribe();
-  }, [firestore, user]);
 
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
@@ -311,3 +312,5 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
+
+    
