@@ -738,7 +738,7 @@ export default function AdminPage() {
       }
 
       const errorPercentage = (errorCount / sensorData.length) * 100;
-      const classification = errorPercentage > 10 ? 'LEAK' : 'DIFFUSION';
+      const classification = errorPercentage > 5 ? 'LEAK' : 'DIFFUSION';
 
       handleSetSessionClassification(session.id, classification);
       toast({ title: 'Classification Complete & Updated', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'} (${errorPercentage.toFixed(1)}% of points were outside guidelines).` });
@@ -2830,5 +2830,6 @@ const renderAIModelManagement = () => (
   );
 }
 
+    
     
     
