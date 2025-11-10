@@ -78,7 +78,7 @@ import { Textarea } from '@/components/ui/textarea';
 import GuidelineCurveEditor from '@/components/admin/GuidelineCurveEditor';
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
-import { convertRawValue, toBase64 } from '@/lib/utils';
+import { convertRawValue, findMeasurementStart, toBase64 } from '@/lib/utils';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { addDays, format } from 'date-fns';
@@ -94,6 +94,7 @@ import {
   Legend,
   ResponsiveContainer,
   ReferenceArea,
+  ReferenceLine,
 } from 'recharts';
 import Papa from 'papaparse';
 import * as tf from '@tensorflow/tfjs';
@@ -657,14 +658,14 @@ export default function AdminPage() {
     if (!firestore) return;
     const sessionRef = doc(firestore, 'test_sessions', sessionId);
     const updateData: { classification: 'LEAK' | 'DIFFUSION' | null } = { classification };
+    
+    // Explicitly handle setting to null if that's intended
     if (classification === null) {
-      (updateData as any).classification = null;
+      (updateData as any).classification = null; // This might be required depending on your Firestore rules or data model.
     }
-    updateDoc(sessionRef)
-      .then(() => {
-        // No toast here, handled by caller
-      })
-      .catch(e => toast({ variant: 'destructive', title: 'Update Failed', description: e.message }));
+  
+    updateDocumentNonBlocking(sessionRef, updateData);
+    // Removed toast from here to prevent double-toast
   };
 
   const handleClassifyByGuideline = async (session: TestSession) => {
@@ -1262,7 +1263,6 @@ export default function AdminPage() {
 
         const tableBody = await Promise.all(relevantSessions.map(async session => {
             const batchName = batches?.find(b => b.id === session.batchId)?.name;
-            const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
             const classificationText = getClassificationText(session.classification);
             const statusStyle = {
                 text: classificationText,
@@ -1280,13 +1280,21 @@ export default function AdminPage() {
 
             const data = allSensorData[session.id] || [];
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+
+            const { startIndex } = findMeasurementStart(data, config);
+            const realData = data.slice(startIndex);
+            
+            const sessionStartTime = realData.length > 0 ? new Date(realData[0].timestamp).getTime() : new Date(session.startTime).getTime();
+            const sessionEndTime = session.endTime ? new Date(session.endTime).getTime() : (realData.length > 0 ? new Date(realData[realData.length - 1].timestamp).getTime() : sessionStartTime);
+            const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
+
             const decimalPlaces = config?.decimalPlaces || 2;
             let startValue = 'N/A', endValue = 'N/A', avgValue = 'N/A';
-            if (data.length > 0) {
-                startValue = convertRawValue(data[0].value, config || null).toFixed(decimalPlaces);
-                endValue = convertRawValue(data[data.length - 1].value, config || null).toFixed(decimalPlaces);
-                const sum = data.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
-                avgValue = (sum / data.length).toFixed(decimalPlaces);
+            if (realData.length > 0) {
+                startValue = convertRawValue(realData[0].value, config || null).toFixed(decimalPlaces);
+                endValue = convertRawValue(realData[realData.length - 1].value, config || null).toFixed(decimalPlaces);
+                const sum = realData.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
+                avgValue = (sum / realData.length).toFixed(decimalPlaces);
             }
 
             return [
@@ -1325,7 +1333,7 @@ export default function AdminPage() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['*', '*', 'auto', '*', '*', '*', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [
                               {text: 'Batch', style: 'tableHeader'}, 
@@ -1815,7 +1823,7 @@ export default function AdminPage() {
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="decimalPlacesInput">Decimal Places</Label>
-                                <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces || 0} onChange={(e) => handleConfigChange('decimalPlaces', parseInt(e.target.value))} />
+                                <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces ?? ''} onChange={(e) => handleConfigChange('decimalPlaces', e.target.value)} />
                             </div>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1864,7 +1872,7 @@ export default function AdminPage() {
                         { tempSensorConfig.mode === 'VOLTAGE' &&
                             <div className="space-y-2">
                                 <Label htmlFor="decimalPlacesInput">Decimal Places</Label>
-                                <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces || 0} onChange={(e) => handleConfigChange('decimalPlaces', parseInt(e.target.value))} />
+                                <Input id="decimalPlacesInput" type="number" min="0" max="10" value={tempSensorConfig.decimalPlaces ?? ''} onChange={(e) => handleConfigChange('decimalPlaces', e.target.value)} />
                             </div>
                         }
                     </div>
@@ -2807,5 +2815,3 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
-
-    

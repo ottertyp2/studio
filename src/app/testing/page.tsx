@@ -47,6 +47,7 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  ReferenceLine,
 } from 'recharts';
 import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle, Square, GaugeCircle, SlidersHorizontal } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -56,7 +57,7 @@ import { useTestBench } from '@/context/TestBenchContext';
 import { collection, query, where, onSnapshot, doc, getDocs, orderBy, limit, getDoc, writeBatch } from 'firebase/firestore';
 import { ref, get } from 'firebase/database';
 import { formatDistanceToNow } from 'date-fns';
-import { convertRawValue, toBase64 } from '@/lib/utils';
+import { convertRawValue, findMeasurementStart, toBase64, AnalysisResult } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -217,6 +218,18 @@ function TestingComponent() {
   const [isAnalyzingCrash, setIsAnalyzingCrash] = useState(false);
 
   const [displaySensorConfigId, setDisplaySensorConfigId] = useState<string | null>(null);
+
+  const measurementStartLines = useMemo<Record<string, AnalysisResult>>(() => {
+    const results: Record<string, AnalysisResult> = {};
+    comparisonSessions.forEach(session => {
+        const data = comparisonData[session.id];
+        if (data && data.length > 0) {
+            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+            results[session.id] = findMeasurementStart(data, config);
+        }
+    });
+    return results;
+}, [comparisonSessions, comparisonData, sensorConfigs]);
 
 
   // Data fetching hooks
@@ -655,19 +668,22 @@ function TestingComponent() {
                 const config = sensorConfigs?.find(c => c.id === sessionToReport.sensorConfigurationId);
                 const batch = batches?.find(b => b.id === sessionToReport.batchId);
                 const data = allSensorDataForReport[sessionToReport.id] || [];
+
+                const { startIndex } = findMeasurementStart(data, config);
+                const realData = data.slice(startIndex);
                 
-                const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : new Date(sessionToReport.startTime).getTime();
-                const sessionEndTime = sessionToReport.endTime ? new Date(sessionToReport.endTime).getTime() : (data.length > 0 ? new Date(data[data.length-1].timestamp).getTime() : sessionStartTime);
+                const sessionStartTime = realData.length > 0 ? new Date(realData[0].timestamp).getTime() : new Date(sessionToReport.startTime).getTime();
+                const sessionEndTime = sessionToReport.endTime ? new Date(sessionToReport.endTime).getTime() : (realData.length > 0 ? new Date(realData[realData.length-1].timestamp).getTime() : sessionStartTime);
                 const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
                 
                 const decimalPlaces = config?.decimalPlaces || 2;
                 let startValue = 'N/A', endValue = 'N/A', avgValue = 'N/A';
 
-                if (data.length > 0) {
-                    startValue = convertRawValue(data[0].value, config || null).toFixed(decimalPlaces);
-                    endValue = convertRawValue(data[data.length - 1].value, config || null).toFixed(decimalPlaces);
-                    const sum = data.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
-                    avgValue = (sum / data.length).toFixed(decimalPlaces);
+                if (realData.length > 0) {
+                    startValue = convertRawValue(realData[0].value, config || null).toFixed(decimalPlaces);
+                    endValue = convertRawValue(realData[realData.length - 1].value, config || null).toFixed(decimalPlaces);
+                    const sum = realData.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
+                    avgValue = (sum / realData.length).toFixed(decimalPlaces);
                 }
 
                 const classificationText = getClassificationText(sessionToReport.classification);
@@ -728,16 +744,22 @@ function TestingComponent() {
                         color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
                     };
                     
-                    const duration = session.endTime ? ((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 1000).toFixed(1) : 'N/A';
                     const data = allSensorDataForReport[session.id] || [];
                     const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+                    const { startIndex } = findMeasurementStart(data, config);
+                    const realData = data.slice(startIndex);
+
+                    const sessionStartTime = realData.length > 0 ? new Date(realData[0].timestamp).getTime() : new Date(session.startTime).getTime();
+                    const sessionEndTime = session.endTime ? new Date(session.endTime).getTime() : (realData.length > 0 ? new Date(realData[realData.length-1].timestamp).getTime() : sessionStartTime);
+                    const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
+                    
                     const decimalPlaces = config?.decimalPlaces || 2;
                     let startValue = 'N/A', endValue = 'N/A', avgValue = 'N/A';
-                    if (data.length > 0) {
-                        startValue = convertRawValue(data[0].value, config || null).toFixed(decimalPlaces);
-                        endValue = convertRawValue(data[data.length - 1].value, config || null).toFixed(decimalPlaces);
-                        const sum = data.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
-                        avgValue = (sum / data.length).toFixed(decimalPlaces);
+                    if (realData.length > 0) {
+                        startValue = convertRawValue(realData[0].value, config || null).toFixed(decimalPlaces);
+                        endValue = convertRawValue(realData[realData.length - 1].value, config || null).toFixed(decimalPlaces);
+                        const sum = realData.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
+                        avgValue = (sum / realData.length).toFixed(decimalPlaces);
                     }
 
                     return [
@@ -759,7 +781,7 @@ function TestingComponent() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['*', 'auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Avg Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
                             ...tableBody
@@ -1360,6 +1382,18 @@ function TestingComponent() {
                             connectNulls={false}
                            />
                         ))}
+                        {comparisonSessions.map((session, index) => {
+                            const analysis = measurementStartLines[session.id];
+                            if (!analysis || analysis.startTime <= 0) return null;
+                            return (
+                                <ReferenceLine
+                                    key={`ref-${session.id}`}
+                                    x={analysis.startTime}
+                                    stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                    strokeDasharray="3 3"
+                                />
+                            );
+                        })}
                       </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -1389,5 +1423,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    

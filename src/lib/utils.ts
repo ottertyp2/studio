@@ -16,6 +16,11 @@ type SensorConfig = {
     customUnitMax: number;
 };
 
+export type AnalysisResult = {
+    startIndex: number;
+    startTime: number;
+};
+
 export function convertRawValue(rawValue: number, sensorConfig: SensorConfig | null): number {
     if (!sensorConfig) return rawValue;
 
@@ -84,4 +89,41 @@ export const toBase64 = (url: string): Promise<string> => {
         reject(error);
       });
   });
+};
+
+export const findMeasurementStart = (data: { value: number; timestamp: string }[], config: SensorConfig | null | undefined): AnalysisResult => {
+    if (data.length < 5) {
+        return { startIndex: 0, startTime: 0 };
+    }
+
+    const convertedValues = data.map(d => convertRawValue(d.value, config || null));
+
+    let maxDerivative = 0;
+    let spikeIndex = 0;
+
+    // Calculate derivative
+    for (let i = 1; i < convertedValues.length; i++) {
+        const derivative = convertedValues[i] - convertedValues[i-1];
+        if (derivative > maxDerivative) {
+            maxDerivative = derivative;
+            spikeIndex = i;
+        }
+    }
+    
+    // Find the actual start index by adding the 5s buffer
+    const spikeTime = new Date(data[spikeIndex].timestamp).getTime();
+    const startTimeWithBuffer = spikeTime + 5000;
+
+    let finalStartIndex = data.findIndex(d => new Date(d.timestamp).getTime() >= startTimeWithBuffer);
+    
+    // If no point is found 5s after the spike (e.g., end of session), use the spike index
+    if (finalStartIndex === -1) {
+        finalStartIndex = spikeIndex;
+    }
+
+    const sessionStartTime = new Date(data[0].timestamp).getTime();
+    const finalStartTime = (new Date(data[finalStartIndex].timestamp).getTime() - sessionStartTime) / 1000;
+
+
+    return { startIndex: finalStartIndex, startTime: finalStartTime };
 };
