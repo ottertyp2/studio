@@ -61,48 +61,24 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  useEffect(() => {
-    if (startTime) {
-        if (!isConnected && downtimeStart === null) {
-            setDowntimeStart(Date.now());
-        } else if (isConnected && downtimeStart !== null) {
-            const downDuration = Date.now() - downtimeStart;
-            setTotalDowntime(prev => {
-                const newTotal = prev + downDuration;
-                localStorage.setItem('totalDowntime', JSON.stringify(newTotal));
-                return newTotal;
-            });
-            setDowntimeStart(null);
-        }
-    }
-  }, [isConnected, downtimeStart, startTime]);
-  
-
-  useEffect(() => {
-    if (!firestore || !user) return;
-    const q = query(
-      collection(firestore, 'test_sessions'),
-      where('status', '==', 'RUNNING'),
-      limit(1)
-    );
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      if (!querySnapshot.empty) {
-        const runningSessionDoc = querySnapshot.docs[0];
-        runningTestSessionRef.current = { id: runningSessionDoc.id, ...runningSessionDoc.data() };
-      } else {
-        runningTestSessionRef.current = null;
-      }
-    });
-    return () => unsubscribe();
-  }, [firestore, user]);
-
-
   const handleNewDataPoint = useCallback((data: any) => {
     if (data === null || data === undefined) return;
+    
     const lastUpdateTimestamp = data.lastUpdate ? new Date(data.lastUpdate).getTime() : null;
     
     if (!lastUpdateTimestamp) {
         return;
+    }
+    
+    // If we were disconnected, now we are connected. Calculate downtime.
+    if (!isConnected && downtimeStart !== null) {
+      const downDuration = Date.now() - downtimeStart;
+      setTotalDowntime(prev => {
+          const newTotal = prev + downDuration;
+          localStorage.setItem('totalDowntime', JSON.stringify(newTotal));
+          return newTotal;
+      });
+      setDowntimeStart(null);
     }
     
     setIsConnected(true);
@@ -137,7 +113,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       };
       addDocumentNonBlocking(sessionDataRef, dataToSave);
     }
-  }, [firestore]);
+  }, [firestore, isConnected, downtimeStart]);
 
   // Watchdog timer for connection
   useEffect(() => {
@@ -145,7 +121,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         clearTimeout(connectionTimeoutRef.current);
     }
     connectionTimeoutRef.current = setTimeout(() => {
-        setIsConnected(false);
+        if (isConnected) {
+            setIsConnected(false);
+            if (downtimeStart === null) {
+                setDowntimeStart(Date.now());
+            }
+        }
     }, 3000); // 3-second timeout
 
     return () => {
@@ -153,7 +134,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             clearTimeout(connectionTimeoutRef.current);
         }
     };
-  }, [lastDataPointTimestamp]);
+  }, [lastDataPointTimestamp, isConnected, downtimeStart]);
 
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
