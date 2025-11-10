@@ -62,7 +62,9 @@ import {
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
-DropdownMenuPortal
+  DropdownMenuPortal,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -275,10 +277,10 @@ export default function AdminPage() {
 
   const [sessionSearchTerm, setSessionSearchTerm] = useState('');
   const [sessionSortOrder, setSessionSortOrder] = useState('startTime-desc');
-  const [sessionUserFilter, setSessionUserFilter] = useState('all');
-  const [sessionVesselTypeFilter, setSessionVesselTypeFilter] = useState('all');
-  const [sessionBatchFilter, setSessionBatchFilter] = useState('all');
-  const [sessionTestBenchFilter, setSessionTestBenchFilter] = useState('all');
+  const [sessionUserFilter, setSessionUserFilter] = useState<string[]>([]);
+  const [sessionVesselTypeFilter, setSessionVesselTypeFilter] = useState<string[]>([]);
+  const [sessionBatchFilter, setSessionBatchFilter] = useState<string[]>([]);
+  const [sessionTestBenchFilter, setSessionTestBenchFilter] = useState<string[]>([]);
   const [sessionClassificationFilter, setSessionClassificationFilter] = useState('all');
   const [sessionDateFilter, setSessionDateFilter] = useState<DateRange | undefined>(undefined);
 
@@ -856,20 +858,20 @@ export default function AdminPage() {
     
         let filtered = testSessions;
 
-        if (sessionUserFilter !== 'all') {
-            filtered = filtered.filter(session => session.userId === sessionUserFilter);
+        if (sessionUserFilter.length > 0) {
+            filtered = filtered.filter(session => sessionUserFilter.includes(session.userId));
         }
         
-        if (sessionVesselTypeFilter !== 'all') {
-            filtered = filtered.filter(session => session.vesselTypeId === sessionVesselTypeFilter);
+        if (sessionVesselTypeFilter.length > 0) {
+            filtered = filtered.filter(session => sessionVesselTypeFilter.includes(session.vesselTypeId));
         }
 
-        if (sessionBatchFilter !== 'all') {
-            filtered = filtered.filter(session => session.batchId === sessionBatchFilter);
+        if (sessionBatchFilter.length > 0) {
+            filtered = filtered.filter(session => sessionBatchFilter.includes(session.batchId));
         }
         
-        if (sessionTestBenchFilter !== 'all') {
-            filtered = filtered.filter(session => session.testBenchId === sessionTestBenchFilter);
+        if (sessionTestBenchFilter.length > 0) {
+            filtered = filtered.filter(session => sessionTestBenchFilter.includes(session.testBenchId));
         }
 
         if (sessionClassificationFilter !== 'all') {
@@ -939,10 +941,10 @@ export default function AdminPage() {
   }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, sessionDateFilter, testBenches, batches]);
 
   const isFilterActive = useMemo(() => {
-    return sessionUserFilter !== 'all' || 
-           sessionVesselTypeFilter !== 'all' || 
-           sessionBatchFilter !== 'all' ||
-           sessionTestBenchFilter !== 'all' || 
+    return sessionUserFilter.length > 0 || 
+           sessionVesselTypeFilter.length > 0 || 
+           sessionBatchFilter.length > 0 ||
+           sessionTestBenchFilter.length > 0 || 
            sessionClassificationFilter !== 'all' ||
            !!sessionDateFilter ||
            sessionSearchTerm !== '';
@@ -950,10 +952,10 @@ export default function AdminPage() {
 
   const handleResetFilters = () => {
     setSessionSearchTerm('');
-    setSessionUserFilter('all');
-    setSessionVesselTypeFilter('all');
-    setSessionBatchFilter('all');
-    setSessionTestBenchFilter('all');
+    setSessionUserFilter([]);
+    setSessionVesselTypeFilter([]);
+    setSessionBatchFilter([]);
+    setSessionTestBenchFilter([]);
     setSessionClassificationFilter('all');
     setSessionDateFilter(undefined);
   };
@@ -1891,8 +1893,18 @@ export default function AdminPage() {
   }
 
   const renderTestSessionManager = () => {
-    const uniqueVesselTypeIds = [...new Set(testSessions?.map(s => s.vesselTypeId) || [])];
-    const uniqueBatchIds = [...new Set(testSessions?.map(s => s.batchId) || [])];
+    const uniqueUsers = [...new Map(users?.map(item => [item.id, item])).values()];
+    const uniqueVesselTypes = [...new Map(vesselTypes?.map(item => [item.id, item])).values()];
+    const uniqueBatches = [...new Map(batches?.map(item => [item.id, item])).values()];
+    const uniqueTestBenches = [...new Map(testBenches?.map(item => [item.id, item])).values()];
+    
+    const toggleFilterItem = (setter: React.Dispatch<React.SetStateAction<string[]>>, id: string) => {
+        setter(current => 
+            current.includes(id) 
+                ? current.filter(i => i !== id) 
+                : [...current, id]
+        );
+    };
 
     return (
       <Card className="lg:col-span-2 animate-in">
@@ -1951,7 +1963,7 @@ export default function AdminPage() {
                             Filters
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-[250px]">
+                    <DropdownMenuContent align="end" className="w-[300px]">
                         <div className="p-2 space-y-2">
                              <div className="space-y-1">
                                 <Label>Date Range</Label>
@@ -1992,48 +2004,34 @@ export default function AdminPage() {
                                     </PopoverContent>
                                 </Popover>
                             </div>
-                            <div className="space-y-1">
-                                <Label>User</Label>
-                                <Select value={sessionUserFilter} onValueChange={setSessionUserFilter}>
-                                    <SelectTrigger><SelectValue/></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Users</SelectItem>
-                                        {users?.map(u => <SelectItem key={u.id} value={u.id}>{u.username}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-1">
-                                <Label>Vessel Type</Label>
-                                <Select value={sessionVesselTypeFilter} onValueChange={setSessionVesselTypeFilter}>
-                                    <SelectTrigger><SelectValue/></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Vessel Types</SelectItem>
-                                        {uniqueVesselTypeIds.map(id => <SelectItem key={id} value={id}>{vesselTypes?.find(vt => vt.id === id)?.name || id}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-1">
-                                <Label>Batch</Label>
-                                <Select value={sessionBatchFilter} onValueChange={setSessionBatchFilter}>
-                                    <SelectTrigger><SelectValue/></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Batches</SelectItem>
-                                        {uniqueBatchIds.map(id => <SelectItem key={id} value={id}>{batches?.find(b => b.id === id)?.name || id}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                             <div className="space-y-1">
-                                <Label>Test Bench</Label>
-                                <Select value={sessionTestBenchFilter} onValueChange={setSessionTestBenchFilter}>
-                                    <SelectTrigger><SelectValue/></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Benches</SelectItem>
-                                        {testBenches?.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                             <div className="space-y-1">
-                                <Label>Classification</Label>
+
+                            <DropdownMenuSeparator />
+                            <DropdownMenuLabel>Users</DropdownMenuLabel>
+                            {uniqueUsers.map(u => (
+                                <DropdownMenuCheckboxItem key={u.id} checked={sessionUserFilter.includes(u.id)} onSelect={(e) => e.preventDefault()} onClick={() => toggleFilterItem(setSessionUserFilter, u.id)}>{u.username}</DropdownMenuCheckboxItem>
+                            ))}
+                            
+                            <DropdownMenuSeparator />
+                            <DropdownMenuLabel>Vessel Types</DropdownMenuLabel>
+                             {uniqueVesselTypes.map(vt => (
+                                <DropdownMenuCheckboxItem key={vt.id} checked={sessionVesselTypeFilter.includes(vt.id)} onSelect={(e) => e.preventDefault()} onClick={() => toggleFilterItem(setSessionVesselTypeFilter, vt.id)}>{vt.name}</DropdownMenuCheckboxItem>
+                            ))}
+
+                            <DropdownMenuSeparator />
+                            <DropdownMenuLabel>Batches</DropdownMenuLabel>
+                            {uniqueBatches.map(b => (
+                                <DropdownMenuCheckboxItem key={b.id} checked={sessionBatchFilter.includes(b.id)} onSelect={(e) => e.preventDefault()} onClick={() => toggleFilterItem(setSessionBatchFilter, b.id)}>{b.name}</DropdownMenuCheckboxItem>
+                            ))}
+
+                            <DropdownMenuSeparator />
+                            <DropdownMenuLabel>Test Benches</DropdownMenuLabel>
+                            {uniqueTestBenches.map(tb => (
+                                <DropdownMenuCheckboxItem key={tb.id} checked={sessionTestBenchFilter.includes(tb.id)} onSelect={(e) => e.preventDefault()} onClick={() => toggleFilterItem(setSessionTestBenchFilter, tb.id)}>{tb.name}</DropdownMenuCheckboxItem>
+                            ))}
+
+                            <DropdownMenuSeparator />
+                            <DropdownMenuLabel>Classification</DropdownMenuLabel>
+                             <div className="space-y-1 px-2">
                                 <Select value={sessionClassificationFilter} onValueChange={setSessionClassificationFilter}>
                                     <SelectTrigger><SelectValue/></SelectTrigger>
                                     <SelectContent>
@@ -2815,3 +2813,5 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
+
+    
