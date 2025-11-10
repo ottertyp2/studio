@@ -40,9 +40,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   const [startTime, setStartTime] = useState<number | null>(null);
   const [totalDowntime, setTotalDowntime] = useState(0); // in milliseconds
-  const [currentDowntime, setCurrentDowntime] = useState(0); // in milliseconds
+  const [downtimeStart, setDowntimeStart] = useState<number | null>(null);
 
-  const downtimeIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
 
   useEffect(() => {
@@ -59,24 +59,23 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     if (persistedDowntime) {
       setTotalDowntime(JSON.parse(persistedDowntime));
     }
-
-    if (downtimeIntervalRef.current) clearInterval(downtimeIntervalRef.current);
-    downtimeIntervalRef.current = setInterval(() => {
-        if (!isConnected) {
-            setCurrentDowntime(prev => prev + 1000);
-        }
-    }, 1000);
-
-    return () => {
-        if (downtimeIntervalRef.current) clearInterval(downtimeIntervalRef.current);
-    };
-  }, [isConnected]);
+  }, []);
 
   useEffect(() => {
     if (startTime) {
-      localStorage.setItem('totalDowntime', JSON.stringify(totalDowntime + currentDowntime));
+        if (!isConnected && downtimeStart === null) {
+            setDowntimeStart(Date.now());
+        } else if (isConnected && downtimeStart !== null) {
+            const downDuration = Date.now() - downtimeStart;
+            setTotalDowntime(prev => {
+                const newTotal = prev + downDuration;
+                localStorage.setItem('totalDowntime', JSON.stringify(newTotal));
+                return newTotal;
+            });
+            setDowntimeStart(null);
+        }
     }
-  }, [totalDowntime, currentDowntime, startTime]);
+  }, [isConnected, downtimeStart, startTime]);
   
 
   useEffect(() => {
@@ -100,19 +99,15 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   const handleNewDataPoint = useCallback((data: any) => {
     if (data === null || data === undefined) return;
-
     const lastUpdateTimestamp = data.lastUpdate ? new Date(data.lastUpdate).getTime() : null;
     
     if (!lastUpdateTimestamp) {
         return;
     }
     
-    if (!isConnected) {
-        setTotalDowntime(prev => prev + currentDowntime);
-        setCurrentDowntime(0);
-    }
-    
+    setIsConnected(true);
     setLastDataPointTimestamp(lastUpdateTimestamp);
+    
     setCurrentValue(data.sensor ?? null);
     setIsRecording(data.recording === true);
     setDisconnectCount(data.disconnectCount || 0);
@@ -142,7 +137,24 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       };
       addDocumentNonBlocking(sessionDataRef, dataToSave);
     }
-  }, [firestore, isConnected, currentDowntime]);
+  }, [firestore]);
+
+  // Watchdog timer for connection
+  useEffect(() => {
+    if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+    }
+    connectionTimeoutRef.current = setTimeout(() => {
+        setIsConnected(false);
+    }, 3000); // 3-second timeout
+
+    return () => {
+        if (connectionTimeoutRef.current) {
+            clearTimeout(connectionTimeoutRef.current);
+        }
+    };
+  }, [lastDataPointTimestamp]);
+
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!database) {
@@ -230,18 +242,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribe();
   }, [database, handleNewDataPoint]);
 
-  // Periodic check for connection status
-  useEffect(() => {
-    const connectionCheckInterval = setInterval(() => {
-      if (lastDataPointTimestamp && (Date.now() - lastDataPointTimestamp > 3000)) {
-        setIsConnected(false);
-      } else if (lastDataPointTimestamp) {
-        setIsConnected(true);
-      }
-    }, 1000);
-
-    return () => clearInterval(connectionCheckInterval);
-  }, [lastDataPointTimestamp]);
 
   // Listener for /data/commands to get valve and sequence status
   useEffect(() => {
@@ -279,6 +279,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribe();
   }, [database]);
 
+  const currentTotalDowntime = totalDowntime + (downtimeStart ? Date.now() - downtimeStart : 0);
 
   const value = {
     isConnected,
@@ -298,7 +299,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     pendingValves: [],
     lockedValves,
     startTime,
-    totalDowntime: totalDowntime + currentDowntime,
+    totalDowntime: currentTotalDowntime,
     downtimeSinceRef: null,
     sequence1Running,
     sequence2Running,
