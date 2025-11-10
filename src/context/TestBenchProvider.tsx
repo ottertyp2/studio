@@ -42,9 +42,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [totalDowntime, setTotalDowntime] = useState(0); // in milliseconds
   const [downtimeStart, setDowntimeStart] = useState<number | null>(null);
 
-  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-
   useEffect(() => {
     const persistedStartTime = localStorage.getItem('startTime');
     if (persistedStartTime) {
@@ -70,17 +67,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         return;
     }
     
-    if (!isConnected && downtimeStart !== null) {
-      const downDuration = Date.now() - downtimeStart;
-      setTotalDowntime(prev => {
-          const newTotal = prev + downDuration;
-          localStorage.setItem('totalDowntime', JSON.stringify(newTotal));
-          return newTotal;
-      });
-      setDowntimeStart(null);
-    }
-    
-    setIsConnected(true);
     setLastDataPointTimestamp(lastUpdateTimestamp);
     
     setCurrentValue(data.sensor ?? null);
@@ -112,29 +98,34 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       };
       addDocumentNonBlocking(sessionDataRef, dataToSave);
     }
-  }, [firestore, isConnected, downtimeStart]);
-
+  }, [firestore]);
+  
   useEffect(() => {
-    if (connectionTimeoutRef.current) {
-      clearTimeout(connectionTimeoutRef.current);
-    }
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const isOnline = lastDataPointTimestamp !== null && (now - lastDataPointTimestamp) < 3000;
 
-    connectionTimeoutRef.current = setTimeout(() => {
-      // If this timeout runs, it means no new data has arrived in 3 seconds.
-      if (isConnected) {
-        setIsConnected(false);
+      setIsConnected(isOnline);
+
+      if (isOnline) {
+        if (downtimeStart !== null) {
+          const downDuration = now - downtimeStart;
+          setTotalDowntime(prev => {
+              const newTotal = prev + downDuration;
+              localStorage.setItem('totalDowntime', JSON.stringify(newTotal));
+              return newTotal;
+          });
+          setDowntimeStart(null);
+        }
+      } else {
         if (downtimeStart === null) {
-            setDowntimeStart(Date.now());
+          setDowntimeStart(now);
         }
       }
-    }, 3000);
+    }, 1000); // Check every second
 
-    return () => {
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-      }
-    };
-  }, [lastDataPointTimestamp, isConnected, downtimeStart]);
+    return () => clearInterval(interval);
+  }, [lastDataPointTimestamp, downtimeStart]);
 
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
