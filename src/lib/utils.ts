@@ -19,6 +19,8 @@ type SensorConfig = {
 export type AnalysisResult = {
     startIndex: number;
     startTime: number;
+    endIndex: number;
+    endTime: number;
 };
 
 export function convertRawValue(rawValue: number, sensorConfig: SensorConfig | null): number {
@@ -91,7 +93,7 @@ export const toBase64 = (url: string): Promise<string> => {
   });
 };
 
-export const findMeasurementStart = (data: { value: number; timestamp: string }[], config: SensorConfig | null | undefined): AnalysisResult => {
+export const findMeasurementStart = (data: { value: number; timestamp: string }[], config: SensorConfig | null | undefined): { startIndex: number; startTime: number } => {
     if (data.length < 5) {
         return { startIndex: 0, startTime: 0 };
     }
@@ -126,4 +128,48 @@ export const findMeasurementStart = (data: { value: number; timestamp: string }[
 
 
     return { startIndex: finalStartIndex, startTime: finalStartTime };
+};
+
+
+export const findMeasurementEnd = (data: { value: number; timestamp: string }[], startIndex: number, config: SensorConfig | null | undefined): { endIndex: number, endTime: number } => {
+    if (startIndex >= data.length - 1) {
+        return { endIndex: data.length - 1, endTime: (new Date(data[data.length-1].timestamp).getTime() - new Date(data[0].timestamp).getTime())/1000 };
+    }
+
+    const analysisData = data.slice(startIndex);
+    const convertedValues = analysisData.map(d => convertRawValue(d.value, config || null));
+
+    let minDerivative = 0;
+    let dropIndex = -1;
+
+    for (let i = 1; i < convertedValues.length; i++) {
+        const derivative = convertedValues[i] - convertedValues[i-1];
+        if (derivative < minDerivative) {
+            minDerivative = derivative;
+            dropIndex = i;
+        }
+    }
+    
+    // Threshold to ensure the drop is significant
+    if (dropIndex !== -1 && minDerivative < -50) { // -50 is an arbitrary threshold for a significant drop
+        const dropTime = new Date(analysisData[dropIndex].timestamp).getTime();
+        const endTimeWithBuffer = dropTime - 3000;
+        
+        let finalEndIndexInSlice = analysisData.findIndex(d => new Date(d.timestamp).getTime() >= endTimeWithBuffer);
+        
+        if (finalEndIndexInSlice === -1) { // If buffer goes before start
+            finalEndIndexInSlice = dropIndex;
+        }
+
+        const finalEndIndex = startIndex + finalEndIndexInSlice;
+        const sessionStartTime = new Date(data[0].timestamp).getTime();
+        const finalEndTime = (new Date(data[finalEndIndex].timestamp).getTime() - sessionStartTime) / 1000;
+        return { endIndex: finalEndIndex, endTime: finalEndTime };
+    }
+
+    // If no significant drop is found, return the end of the data
+    const lastIndex = data.length - 1;
+    const sessionStartTime = new Date(data[0].timestamp).getTime();
+    const finalEndTime = (new Date(data[lastIndex].timestamp).getTime() - sessionStartTime) / 1000;
+    return { endIndex: lastIndex, endTime: finalEndTime };
 };

@@ -80,7 +80,7 @@ import { Textarea } from '@/components/ui/textarea';
 import GuidelineCurveEditor from '@/components/admin/GuidelineCurveEditor';
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
-import { convertRawValue, findMeasurementStart, toBase64 } from '@/lib/utils';
+import { convertRawValue, findMeasurementStart, findMeasurementEnd, toBase64 } from '@/lib/utils';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { addDays, format } from 'date-fns';
@@ -698,7 +698,16 @@ export default function AdminPage() {
         return;
       }
       
-      const sessionStartTime = new Date(sensorData[0].timestamp).getTime();
+      const { startIndex } = findMeasurementStart(sensorData, config);
+      const { endIndex } = findMeasurementEnd(sensorData, startIndex, config);
+      const analysisData = sensorData.slice(startIndex, endIndex + 1);
+
+      if (analysisData.length === 0) {
+        toast({ variant: 'warning', title: 'No Usable Data', description: 'No data available within the detected measurement window.' });
+        return;
+      }
+      
+      const sessionStartTime = new Date(analysisData[0].timestamp).getTime();
       
       const interpolateBezierCurve = (curve: { x: number, y: number }[], x: number) => {
           if (!curve || curve.length !== 4) return undefined;
@@ -723,7 +732,7 @@ export default function AdminPage() {
       };
 
       let errorCount = 0;
-      for (const dataPoint of sensorData) {
+      for (const dataPoint of analysisData) {
         const timeElapsed = (new Date(dataPoint.timestamp).getTime() - sessionStartTime) / 1000;
         const convertedValue = convertRawValue(dataPoint.value, config);
 
@@ -737,7 +746,7 @@ export default function AdminPage() {
         }
       }
 
-      const errorPercentage = (errorCount / sensorData.length) * 100;
+      const errorPercentage = (errorCount / analysisData.length) * 100;
       const classification = errorPercentage > 5 ? 'LEAK' : 'DIFFUSION';
 
       handleSetSessionClassification(session.id, classification);
@@ -1283,10 +1292,11 @@ export default function AdminPage() {
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
 
             const { startIndex } = findMeasurementStart(data, config);
-            const realData = data.slice(startIndex);
+            const { endIndex } = findMeasurementEnd(data, startIndex, config);
+            const realData = data.slice(startIndex, endIndex + 1);
             
             const sessionStartTime = realData.length > 0 ? new Date(realData[0].timestamp).getTime() : new Date(session.startTime).getTime();
-            const sessionEndTime = session.endTime ? new Date(session.endTime).getTime() : (realData.length > 0 ? new Date(realData[realData.length - 1].timestamp).getTime() : sessionStartTime);
+            const sessionEndTime = realData.length > 0 ? new Date(realData[realData.length - 1].timestamp).getTime() : new Date(session.endTime || session.startTime).getTime();
             const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
 
             const decimalPlaces = config?.decimalPlaces || 2;
@@ -1297,6 +1307,8 @@ export default function AdminPage() {
                 const sum = realData.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
                 avgValue = (sum / realData.length).toFixed(decimalPlaces);
             }
+            
+            const unit = config?.unit || '';
 
             return [
                 batchName ?? 'N/A',
@@ -1306,9 +1318,9 @@ export default function AdminPage() {
                 session.username || 'N/A',
                 new Date(session.startTime).toLocaleString(),
                 duration,
-                startValue,
-                endValue,
-                avgValue,
+                `${startValue} ${unit}`,
+                `${endValue} ${unit}`,
+                `${avgValue} ${unit}`,
                 statusStyle
             ];
         }));
@@ -1337,7 +1349,7 @@ export default function AdminPage() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['*', '*', 'auto', '*', '*', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', '*', '*', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [
                               {text: 'Batch', style: 'tableHeader'}, 
@@ -1347,9 +1359,9 @@ export default function AdminPage() {
                               {text: 'User', style: 'tableHeader'}, 
                               {text: 'Start Time', style: 'tableHeader'}, 
                               {text: 'Duration (s)', style: 'tableHeader'}, 
-                              {text: `Start (${unit})`, style: 'tableHeader'},
-                              {text: `End (${unit})`, style: 'tableHeader'},
-                              {text: `Avg. (${unit})`, style: 'tableHeader'},
+                              {text: `Start`, style: 'tableHeader'},
+                              {text: `End`, style: 'tableHeader'},
+                              {text: `Avg.`, style: 'tableHeader'},
                               {text: 'Status', style: 'tableHeader'}
                             ],
                             ...tableBody
@@ -2829,7 +2841,3 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
-
-    
-    
-    

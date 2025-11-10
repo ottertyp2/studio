@@ -57,7 +57,7 @@ import { useTestBench } from '@/context/TestBenchContext';
 import { collection, query, where, onSnapshot, doc, getDocs, orderBy, limit, getDoc, writeBatch } from 'firebase/firestore';
 import { ref, get } from 'firebase/database';
 import { formatDistanceToNow } from 'date-fns';
-import { convertRawValue, findMeasurementStart, toBase64, AnalysisResult } from '@/lib/utils';
+import { convertRawValue, findMeasurementStart, findMeasurementEnd, toBase64, AnalysisResult } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -232,13 +232,15 @@ function TestingComponent() {
   const batchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'batches') : null, [firestore]);
   const { data: batches } = useCollection<Batch>(batchesCollectionRef);
 
-  const measurementStartLines = useMemo<Record<string, AnalysisResult>>(() => {
-    const results: Record<string, AnalysisResult> = {};
+  const measurementWindows = useMemo(() => {
+    const results: Record<string, { start: { startIndex: number; startTime: number; }; end: { endIndex: number; endTime: number; }; }> = {};
     comparisonSessions.forEach(session => {
         const data = comparisonData[session.id];
         if (data && data.length > 0) {
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-            results[session.id] = findMeasurementStart(data, config);
+            const start = findMeasurementStart(data, config);
+            const end = findMeasurementEnd(data, start.startIndex, config);
+            results[session.id] = { start, end };
         }
     });
     return results;
@@ -674,10 +676,11 @@ function TestingComponent() {
                 const data = allSensorDataForReport[sessionToReport.id] || [];
 
                 const { startIndex } = findMeasurementStart(data, config);
-                const realData = data.slice(startIndex);
+                const { endIndex } = findMeasurementEnd(data, startIndex, config);
+                const realData = data.slice(startIndex, endIndex + 1);
                 
                 const sessionStartTime = realData.length > 0 ? new Date(realData[0].timestamp).getTime() : new Date(sessionToReport.startTime).getTime();
-                const sessionEndTime = sessionToReport.endTime ? new Date(sessionToReport.endTime).getTime() : (realData.length > 0 ? new Date(realData[realData.length-1].timestamp).getTime() : sessionStartTime);
+                const sessionEndTime = realData.length > 0 ? new Date(realData[realData.length - 1].timestamp).getTime() : new Date(sessionToReport.endTime || sessionToReport.startTime).getTime();
                 const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
                 
                 const decimalPlaces = config?.decimalPlaces || 2;
@@ -705,7 +708,7 @@ function TestingComponent() {
                     passResult = `Passed on try #${passAttemptIndex + 1}`;
                 }
 
-                const unit = config?.unit || 'Value';
+                const unit = config?.unit || '';
 
                 docDefinition.content.push({ text: 'Session Summary', style: 'subheader', margin: [0, 10, 0, 5] });
                 docDefinition.content.push({
@@ -753,10 +756,12 @@ function TestingComponent() {
                     const data = allSensorDataForReport[session.id] || [];
                     const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
                     const { startIndex } = findMeasurementStart(data, config);
-                    const realData = data.slice(startIndex);
+                    const { endIndex } = findMeasurementEnd(data, startIndex, config);
+                    const realData = data.slice(startIndex, endIndex + 1);
 
                     const sessionStartTime = realData.length > 0 ? new Date(realData[0].timestamp).getTime() : new Date(session.startTime).getTime();
-                    const sessionEndTime = session.endTime ? new Date(session.endTime).getTime() : (realData.length > 0 ? new Date(realData[realData.length-1].timestamp).getTime() : sessionStartTime);
+                    const sessionEndTime = realData.length > 0 ? new Date(realData[realData.length-1].timestamp).getTime() : new Date(session.endTime || session.startTime).getTime();
+
                     const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
                     
                     const decimalPlaces = config?.decimalPlaces || 2;
@@ -767,6 +772,7 @@ function TestingComponent() {
                         const sum = realData.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
                         avgValue = (sum / realData.length).toFixed(decimalPlaces);
                     }
+                    const unit = config?.unit || '';
 
                     return [
                         session.serialNumber || 'N/A',
@@ -775,15 +781,14 @@ function TestingComponent() {
                         session.username,
                         new Date(session.startTime).toLocaleString(),
                         duration,
-                        startValue,
-                        endValue,
-                        avgValue,
+                        `${startValue} ${unit}`,
+                        `${endValue} ${unit}`,
+                        `${avgValue} ${unit}`,
                         statusStyle
                     ];
                 });
 
                 const firstSessionConfig = sensorConfigs?.find(c => c.id === sessionsForBatchReport[0].sensorConfigurationId);
-                const unit = firstSessionConfig?.unit || 'Value';
 
                 docDefinition.content.push({ text: `Batch: ${batchToReport.name} - Summary`, style: 'subheader', margin: [0, 10, 0, 5] });
                 docDefinition.content.push({
@@ -792,7 +797,7 @@ function TestingComponent() {
                         headerRows: 1,
                         widths: ['*', 'auto', 'auto', '*', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
-                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: `Start (${unit})`, style: 'tableHeader'}, {text: `End (${unit})`, style: 'tableHeader'}, {text: `Avg. (${unit})`, style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: `Start`, style: 'tableHeader'}, {text: `End`, style: 'tableHeader'}, {text: `Avg.`, style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
                             ...tableBody
                         ]
                     },
@@ -1392,15 +1397,21 @@ function TestingComponent() {
                            />
                         ))}
                         {comparisonSessions.map((session, index) => {
-                            const analysis = measurementStartLines[session.id];
-                            if (!analysis || analysis.startTime <= 0) return null;
+                            const window = measurementWindows[session.id];
+                            if (!window) return null;
                             return (
-                                <ReferenceLine
-                                    key={`ref-${session.id}`}
-                                    x={analysis.startTime}
-                                    stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                                    strokeDasharray="3 3"
-                                />
+                                <React.Fragment key={`ref-lines-${session.id}`}>
+                                    <ReferenceLine
+                                        x={window.start.startTime}
+                                        stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                        strokeDasharray="3 3"
+                                    />
+                                    <ReferenceLine
+                                        x={window.end.endTime}
+                                        stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                        strokeDasharray="3 3"
+                                    />
+                                </React.Fragment>
                             );
                         })}
                       </LineChart>
@@ -1432,7 +1443,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
-
-    
