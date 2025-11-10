@@ -1313,6 +1313,9 @@ export default function AdminPage() {
             ];
         }));
 
+        const firstSessionConfig = sensorConfigs?.find(c => c.id === relevantSessions[0].sensorConfigurationId);
+        const unit = firstSessionConfig?.unit || 'Value';
+
         const docDefinition: any = {
             content: [
                 {
@@ -1344,9 +1347,9 @@ export default function AdminPage() {
                               {text: 'User', style: 'tableHeader'}, 
                               {text: 'Start Time', style: 'tableHeader'}, 
                               {text: 'Duration (s)', style: 'tableHeader'}, 
-                              {text: 'Start Value', style: 'tableHeader'},
-                              {text: 'End Value', style: 'tableHeader'},
-                              {text: 'Avg Value', style: 'tableHeader'},
+                              {text: `Start (${unit})`, style: 'tableHeader'},
+                              {text: `End (${unit})`, style: 'tableHeader'},
+                              {text: `Avg. (${unit})`, style: 'tableHeader'},
                               {text: 'Status', style: 'tableHeader'}
                             ],
                             ...tableBody
@@ -1356,9 +1359,9 @@ export default function AdminPage() {
                 }
             ],
             styles: {
-                header: { fontSize: 18, bold: true, margin: [0, 0, 0, 5] },
-                subheader: { fontSize: 14, bold: true, margin: [0, 5, 0, 2] },
-                body: { fontSize: 10 },
+                header: { fontSize: 16, bold: true, margin: [0, 0, 0, 5] },
+                subheader: { fontSize: 12, bold: true, margin: [0, 5, 0, 2] },
+                body: { fontSize: 9 },
                 tableExample: { margin: [0, 2, 0, 8], fontSize: 8 },
                 tableHeader: { bold: true, fontSize: 9, color: 'black' }
             }
@@ -2289,7 +2292,7 @@ export default function AdminPage() {
                                                 <TableCell className="text-right">
                                                     <AlertDialog>
                                                         <AlertDialogTrigger asChild>
-                                                            <Button variant="ghost" size="sm" disabled={u.id === user?.uid} className="text-destructive">Delete Profile</Button>
+                                                            <Button variant="ghost" size="sm" disabled={u.id === user?.uid} className="text-destructive hover:bg-destructive/10 hover:text-destructive">Delete Profile</Button>
                                                         </AlertDialogTrigger>
                                                         <AlertDialogContent>
                                                             <AlertDialogHeader>
@@ -2827,4 +2830,5 @@ const renderAIModelManagement = () => (
   );
 }
 
+    
     

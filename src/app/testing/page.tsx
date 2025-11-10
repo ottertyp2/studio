@@ -701,14 +701,16 @@ function TestingComponent() {
                     passResult = `Passed on try #${passAttemptIndex + 1}`;
                 }
 
+                const unit = config?.unit || 'Value';
+
                 docDefinition.content.push({ text: 'Session Summary', style: 'subheader', margin: [0, 10, 0, 5] });
                 docDefinition.content.push({
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', '*', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
-                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Avg Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: `Start (${unit})`, style: 'tableHeader'}, {text: `End (${unit})`, style: 'tableHeader'}, {text: `Avg. (${unit})`, style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
                             [{ text: batch?.name || 'N/A'}, { text: sessionToReport.serialNumber || 'N/A' }, `${attemptNumber} of ${totalAttempts}`, passResult, {text: sessionToReport.username}, {text: new Date(sessionToReport.startTime).toLocaleString()}, duration, startValue, endValue, avgValue, statusStyle]
                         ]
                     },
@@ -776,14 +778,17 @@ function TestingComponent() {
                     ];
                 });
 
+                const firstSessionConfig = sensorConfigs?.find(c => c.id === sessionsForBatchReport[0].sensorConfigurationId);
+                const unit = firstSessionConfig?.unit || 'Value';
+
                 docDefinition.content.push({ text: `Batch: ${batchToReport.name} - Summary`, style: 'subheader', margin: [0, 10, 0, 5] });
                 docDefinition.content.push({
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['*', 'auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['*', 'auto', 'auto', '*', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
-                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: 'Start Value', style: 'tableHeader'}, {text: 'End Value', style: 'tableHeader'}, {text: 'Avg Value', style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: `Start (${unit})`, style: 'tableHeader'}, {text: `End (${unit})`, style: 'tableHeader'}, {text: `Avg. (${unit})`, style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
                             ...tableBody
                         ]
                     },
@@ -1423,3 +1428,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
