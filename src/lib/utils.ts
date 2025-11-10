@@ -94,16 +94,14 @@ export const toBase64 = (url: string): Promise<string> => {
 };
 
 export const findMeasurementStart = (data: { value: number; timestamp: string }[], config: SensorConfig | null | undefined): { startIndex: number; startTime: number } => {
-    if (data.length < 5) {
+    if (!data || data.length < 5) {
         return { startIndex: 0, startTime: 0 };
     }
 
     const convertedValues = data.map(d => convertRawValue(d.value, config || null));
-
     let maxDerivative = 0;
     let spikeIndex = 0;
 
-    // Calculate derivative
     for (let i = 1; i < convertedValues.length; i++) {
         const derivative = convertedValues[i] - convertedValues[i-1];
         if (derivative > maxDerivative) {
@@ -112,20 +110,17 @@ export const findMeasurementStart = (data: { value: number; timestamp: string }[
         }
     }
     
-    // Find the actual start index by adding the 5s buffer
     const spikeTime = new Date(data[spikeIndex].timestamp).getTime();
     const startTimeWithBuffer = spikeTime + 5000;
 
     let finalStartIndex = data.findIndex(d => new Date(d.timestamp).getTime() >= startTimeWithBuffer);
     
-    // If no point is found 5s after the spike (e.g., end of session), use the spike index
     if (finalStartIndex === -1) {
         finalStartIndex = spikeIndex;
     }
 
     const sessionStartTime = new Date(data[0].timestamp).getTime();
     const finalStartTime = (new Date(data[finalStartIndex].timestamp).getTime() - sessionStartTime) / 1000;
-
 
     return { startIndex: finalStartIndex, startTime: finalStartTime };
 };
@@ -140,6 +135,12 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
     }
 
     const analysisData = data.slice(startIndex);
+    if(analysisData.length === 0) {
+        const sessionStartTime = new Date(data[0].timestamp).getTime();
+        const finalEndTime = (new Date(data[data.length-1].timestamp).getTime() - sessionStartTime) / 1000;
+        return { endIndex: data.length - 1, endTime: finalEndTime };
+    }
+
     const convertedValues = analysisData.map(d => convertRawValue(d.value, config || null));
 
     let minDerivative = 0;
@@ -155,7 +156,6 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
     
     const sessionStartTime = new Date(data[0].timestamp).getTime();
 
-    // Threshold to ensure the drop is significant, e.g., -50 units/sec. Adjust as needed.
     if (dropIndex !== -1 && minDerivative < -50) { 
         const dropTime = new Date(analysisData[dropIndex].timestamp).getTime();
         const endTimeWithBuffer = dropTime - 3000;
@@ -163,7 +163,7 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
         let finalEndIndexInSlice = analysisData.findIndex(d => new Date(d.timestamp).getTime() >= endTimeWithBuffer);
         
         if (finalEndIndexInSlice === -1 || finalEndIndexInSlice > dropIndex) {
-            finalEndIndexInSlice = dropIndex;
+            finalEndIndexInSlice = dropIndex > 0 ? dropIndex -1 : 0;
         }
 
         const finalEndIndex = startIndex + finalEndIndexInSlice;
@@ -171,7 +171,6 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
         return { endIndex: finalEndIndex, endTime: finalEndTime };
     }
 
-    // If no significant drop is found, return the end of the data
     const lastIndex = data.length - 1;
     const finalEndTime = (new Date(data[lastIndex].timestamp).getTime() - sessionStartTime) / 1000;
     return { endIndex: lastIndex, endTime: finalEndTime };

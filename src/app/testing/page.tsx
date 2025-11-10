@@ -789,6 +789,7 @@ function TestingComponent() {
                 });
 
                 const firstSessionConfig = sensorConfigs?.find(c => c.id === sessionsForBatchReport[0].sensorConfigurationId);
+                const unit = firstSessionConfig?.unit || '';
 
                 docDefinition.content.push({ text: `Batch: ${batchToReport.name} - Summary`, style: 'subheader', margin: [0, 10, 0, 5] });
                 docDefinition.content.push({
@@ -797,7 +798,7 @@ function TestingComponent() {
                         headerRows: 1,
                         widths: ['*', 'auto', 'auto', '*', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
-                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: `Start`, style: 'tableHeader'}, {text: `End`, style: 'tableHeader'}, {text: `Avg.`, style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
+                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: `Start (${unit})`, style: 'tableHeader'}, {text: `End (${unit})`, style: 'tableHeader'}, {text: `Avg. (${unit})`, style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
                             ...tableBody
                         ]
                     },
@@ -1398,16 +1399,21 @@ function TestingComponent() {
                         ))}
                         {comparisonSessions.map((session, index) => {
                             const window = measurementWindows[session.id];
-                            if (!window) return null;
+                            if (!window || !comparisonData[session.id] || comparisonData[session.id].length === 0) return null;
+                            
+                            const sessionStartTime = new Date(comparisonData[session.id][0].timestamp).getTime();
+                            const lineStartTime = (new Date(comparisonData[session.id][window.start.startIndex].timestamp).getTime() - sessionStartTime) / 1000;
+                            const lineEndTime = (new Date(comparisonData[session.id][window.end.endIndex].timestamp).getTime() - sessionStartTime) / 1000;
+
                             return (
                                 <React.Fragment key={`ref-lines-${session.id}`}>
                                     <ReferenceLine
-                                        x={window.start.startTime}
+                                        x={lineStartTime}
                                         stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                         strokeDasharray="3 3"
                                     />
                                     <ReferenceLine
-                                        x={window.end.endTime}
+                                        x={lineEndTime}
                                         stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                         strokeDasharray="3 3"
                                     />
