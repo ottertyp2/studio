@@ -443,100 +443,101 @@ function TestingComponent() {
   const chartData = useMemo((): ChartDataPoint[] => {
     if (comparisonSessions.length === 0) return [];
   
-    const allPoints: ChartDataPoint[] = [];
-    const timeMap: { [time: number]: ChartDataPoint } = {};
-  
-    // Correct Bézier curve interpolation function
-    const interpolateBezierCurve = (curve: {x: number, y: number}[], x: number) => {
-      if (!curve || curve.length !== 4) return undefined;
-      const [p0, p1, p2, p3] = curve;
-  
-      // Normalize x to t (0 to 1) based on the curve's x-range
-      const totalXRange = p3.x - p0.x;
-      if (totalXRange <= 0) return p0.y; // Avoid division by zero
-  
-      const t = (x - p0.x) / totalXRange;
-      if (t < 0) return p0.y;
-      if (t > 1) return p3.y;
-      
-      const u = 1 - t;
-      const tt = t * t;
-      const uu = u * u;
-      const uuu = uu * u;
-      const ttt = tt * t;
-  
-      // Bézier formula for Y value
-      const y = uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
-  
-      return y;
-    };
-  
+    // 1. Create a master timeline
+    const allTimestamps = new Set<number>();
     comparisonSessions.forEach(session => {
-      const sessionData = comparisonData[session.id] || [];
-      if (sessionData.length === 0) return;
-  
-      const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-      const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-      const startTime = new Date(sessionData[0].timestamp).getTime();
-  
-      sessionData.forEach(d => {
-        const time = (new Date(d.timestamp).getTime() - startTime) / 1000;
-        const value = convertRawValue(d.value, config || null);
+        const sessionData = comparisonData[session.id] || [];
+        sessionData.forEach(d => allTimestamps.add(new Date(d.timestamp).getTime()));
+    });
+    
+    if (allTimestamps.size === 0) return [];
+
+    const sortedTimestamps = Array.from(allTimestamps).sort((a, b) => a - b);
+    const overallStartTime = sortedTimestamps[0];
+
+    // 2. Build the synchronized chart data
+    const synchronizedData = sortedTimestamps.map(timestamp => {
+      const time = (timestamp - overallStartTime) / 1000;
+      const dataPoint: ChartDataPoint = { name: time };
+
+      // Assume guidelines are based on the first session for now
+      // This could be improved if sessions have different vessel types
+      const firstSession = comparisonSessions[0];
+      const vesselType = vesselTypes?.find(vt => vt.id === firstSession.vesselTypeId);
+
+      const interpolateBezierCurve = (curve: {x: number, y: number}[], x: number) => {
+        if (!curve || curve.length !== 4) return undefined;
+        const [p0, p1, p2, p3] = curve;
+        const totalXRange = p3.x - p0.x;
+        if (totalXRange <= 0) return p0.y;
+        const t = (x - p0.x) / totalXRange;
+        if (t < 0) return p0.y;
+        if (t > 1) return p3.y;
+        const u = 1 - t;
+        const tt = t * t;
+        const uu = u * u;
+        const uuu = uu * u;
+        const ttt = tt * t;
+        return uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+      };
+
+      dataPoint.minGuideline = vesselType ? interpolateBezierCurve(vesselType.minCurve, time) : undefined;
+      dataPoint.maxGuideline = vesselType ? interpolateBezierCurve(vesselType.maxCurve, time) : undefined;
+
+      comparisonSessions.forEach(session => {
+        const sessionData = comparisonData[session.id] || [];
+        const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
         
-        if (!timeMap[time]) {
-          timeMap[time] = { name: time };
-        }
+        // Find the exact data point for this timestamp
+        const dataForTime = sessionData.find(d => new Date(d.timestamp).getTime() === timestamp);
         
-        const point = timeMap[time];
-  
-        const minGuideline = vesselType ? interpolateBezierCurve(vesselType.minCurve, time) : undefined;
-        const maxGuideline = vesselType ? interpolateBezierCurve(vesselType.maxCurve, time) : undefined;
-        
-        point.minGuideline = minGuideline;
-        point.maxGuideline = maxGuideline;
-  
-        const isFailed = (minGuideline !== undefined && value < minGuideline) || (maxGuideline !== undefined && value > maxGuideline);
-  
-        point[session.id] = value;
-        if (isFailed) {
-            point[`${session.id}-failed`] = 1; // Use 1 to indicate failure, not the value itself
+        if (dataForTime) {
+            const value = convertRawValue(dataForTime.value, config || null);
+            dataPoint[session.id] = value;
+
+            const isFailed = (dataPoint.minGuideline !== undefined && value < dataPoint.minGuideline) || 
+                             (dataPoint.maxGuideline !== undefined && value > dataPoint.maxGuideline);
+            dataPoint[`${session.id}-failed`] = isFailed ? 1 : 0;
         } else {
-            point[`${session.id}-failed`] = 0;
+            dataPoint[session.id] = null; // Important for synchronization
+            dataPoint[`${session.id}-failed`] = 0;
         }
       });
+      return dataPoint;
     });
-  
-    return Object.values(timeMap).sort((a, b) => a.name - b.name);
+
+    return synchronizedData;
   }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
-  const sessionFailedIntervals = useMemo(() => {
-    if (!chartData || chartData.length === 0) return {};
-  
+ const sessionFailedIntervals = useMemo(() => {
     const intervalsBySession: Record<string, { x1: number, x2: number }[]> = {};
-  
+
     comparisonSessions.forEach(session => {
-      const intervals: { x1: number, x2: number }[] = [];
-      let inFailedInterval = false;
-      let intervalStart = 0;
-  
-      for (let i = 0; i < chartData.length; i++) {
-        const point = chartData[i];
-        const isFailed = point[`${session.id}-failed`] === 1;
-  
-        if (isFailed && !inFailedInterval) {
-          inFailedInterval = true;
-          intervalStart = point.name;
-        } else if (!isFailed && inFailedInterval) {
-          inFailedInterval = false;
-          intervals.push({ x1: intervalStart, x2: chartData[i - 1].name });
+        const intervals: { x1: number, x2: number }[] = [];
+        let inFailedInterval = false;
+        let intervalStart: number | null = null;
+
+        for (let i = 0; i < chartData.length; i++) {
+            const point = chartData[i];
+            const isFailed = point[`${session.id}-failed`] === 1;
+
+            if (isFailed && !inFailedInterval) {
+                inFailedInterval = true;
+                intervalStart = point.name;
+            } else if (!isFailed && inFailedInterval && intervalStart !== null) {
+                inFailedInterval = false;
+                // End the interval at the last failed point's timestamp
+                intervals.push({ x1: intervalStart, x2: chartData[i - 1].name });
+                intervalStart = null;
+            }
         }
-      }
-  
-      if (inFailedInterval) {
-        intervals.push({ x1: intervalStart, x2: chartData[chartData.length - 1].name });
-      }
-      
-      intervalsBySession[session.id] = intervals;
+
+        // If the session ends while still in a failed state
+        if (inFailedInterval && intervalStart !== null) {
+            intervals.push({ x1: intervalStart, x2: chartData[chartData.length - 1].name });
+        }
+        
+        intervalsBySession[session.id] = intervals;
     });
   
     return intervalsBySession;
@@ -1423,18 +1424,18 @@ function TestingComponent() {
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         
                         {comparisonSessions.map((session, index) => {
-                          const intervals = sessionFailedIntervals[session.id] || [];
-                          return intervals.map((interval, i) => (
-                            <ReferenceArea
-                              key={`${session.id}-failed-interval-${i}`}
-                              x1={interval.x1}
-                              x2={interval.x2}
-                              fill={CHART_COLORS[index % CHART_COLORS.length]}
-                              fillOpacity={0.2}
-                              stroke="none"
-                              ifOverflow="visible"
-                            />
-                          ));
+                            const intervals = sessionFailedIntervals[session.id] || [];
+                            return intervals.map((interval, i) => (
+                                <ReferenceArea
+                                key={`${session.id}-failed-interval-${i}`}
+                                x1={interval.x1}
+                                x2={interval.x2}
+                                stroke="none"
+                                fill={CHART_COLORS[index % CHART_COLORS.length]}
+                                fillOpacity={0.2}
+                                ifOverflow="visible"
+                                />
+                            ));
                         })}
 
                         {comparisonSessions.map((session, index) => (
@@ -1492,3 +1493,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
