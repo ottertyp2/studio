@@ -106,6 +106,14 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   const handleNewDataPoint = useCallback((data: any) => {
     if (data === null || data === undefined) return;
+
+    console.log("[TEST] handleNewDataPoint:", {
+      recording: data.recording,
+      sensor: data.sensor,
+      lastUpdate: data.lastUpdate,
+      sessionRef: runningTestSessionRef.current,
+      firestore: !!firestore
+    });
     
     const lastUpdateTimestamp = data.lastUpdate ? new Date(data.lastUpdate).getTime() : null;
     
@@ -132,21 +140,26 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
 
     if (runningTestSessionRef.current && firestore && data.recording === true && data.sensor != null && data.lastUpdate) {
+        console.log("[TEST] SAVING TO FIRESTORE", {
+          sessionId: runningTestSessionRef.current.id,
+          sensor: data.sensor,
+          lastUpdate: data.lastUpdate
+        });
         const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
         const dataToSave = {
             value: data.sensor,
             timestamp: new Date(data.lastUpdate).toISOString(),
         };
-
-        console.log("Attempting to write to Firestore:", {
-            sessionId: runningTestSessionRef.current.id,
-            value: dataToSave.value,
-            timestamp: dataToSave.timestamp,
+        addDocumentNonBlocking(sessionDataRef, dataToSave)
+          .catch(e => console.error("[ERROR] Firestore write failed", e));
+    } else if (data.recording === true) {
+        console.warn("[SKIP WRITE] Conditions not met for saving to Firestore.", {
+            hasSession: !!runningTestSessionRef.current,
+            hasFirestore: !!firestore,
+            isRecording: data.recording === true,
+            hasSensor: data.sensor != null,
+            hasLastUpdate: !!data.lastUpdate
         });
-
-        addDocumentNonBlocking(sessionDataRef, dataToSave);
-    } else if (data.recording === true && !runningTestSessionRef.current) {
-        console.warn('[TestBenchProvider] Data recording is ON, but no runningTestSessionRef is set. Data is NOT being saved to Firestore.');
     }
   }, [firestore]);
   
