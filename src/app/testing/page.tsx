@@ -74,7 +74,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import type { DateRange } from 'react-day-picker';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 
@@ -690,7 +690,13 @@ function TestingComponent() {
         }
         
         try {
-            if (reportType === 'custom') {
+             if (reportType === 'single' && selectedReportSessionId) {
+                const session = sessionHistory.find(s => s.id === selectedReportSessionId);
+                if (!session) throw new Error('Selected session not found.');
+                sessionsToReport = [session];
+                reportTitle = `Vessel Pressure Test Report: ${session.vesselTypeName} - ${session.serialNumber}`;
+                reportFilename = `report-${session.vesselTypeName}-${session.serialNumber}`;
+            } else if (reportType === 'custom') {
                 sessionsToReport = [...comparisonSessions];
                 if (sessionsToReport.length === 0) throw new Error('No sessions selected for custom report.');
                 reportTitle = `Custom Multi-Vessel Pressure Test Report`;
@@ -722,10 +728,27 @@ function TestingComponent() {
                 backgroundColor: '#ffffff'
             });
 
+            const sessionsByReactor: Record<string, TestSession[]> = {};
+            sessionsToReport.forEach(session => {
+                const key = session.serialNumber || 'N/A';
+                if (!sessionsByReactor[key]) sessionsByReactor[key] = [];
+                sessionsByReactor[key].push(session);
+            });
+            Object.values(sessionsByReactor).forEach(sessions => sessions.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
+
             const tableBody = sessionsToReport.map(session => {
                 const batchName = batches?.find(b => b.id === session.batchId)?.name || 'N/A';
                 const classificationText = getClassificationText(session.classification);
                 const statusStyle = { text: classificationText, color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black') };
+
+                const reactorSessions = sessionsByReactor[session.serialNumber || 'N/A'] || [];
+                const attemptNumber = reactorSessions.findIndex(s => s.id === session.id) + 1;
+                const totalAttempts = reactorSessions.length;
+                const passAttemptIndex = reactorSessions.findIndex(s => s.classification === 'DIFFUSION');
+                let passResult = 'Not passed';
+                if (passAttemptIndex !== -1) {
+                    passResult = `Passed on try #${passAttemptIndex + 1}`;
+                }
 
                 const data = allSensorDataForReport[session.id] || [];
                 const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
@@ -752,6 +775,8 @@ function TestingComponent() {
                 return [
                     batchName,
                     session.serialNumber || 'N/A',
+                    `${attemptNumber} of ${totalAttempts}`,
+                    passResult,
                     session.username,
                     new Date(session.startTime).toLocaleString(),
                     duration,
@@ -784,11 +809,13 @@ function TestingComponent() {
                         style: 'tableExample',
                         table: {
                             headerRows: 1,
-                            widths: ['auto', '*', '*', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                            widths: ['auto', 'auto', 'auto', '*', '*', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
                             body: [
                                 [
                                     {text: 'Batch', style: 'tableHeader'},
                                     {text: 'Serial Number', style: 'tableHeader'},
+                                    {text: 'Attempt', style: 'tableHeader'},
+                                    {text: 'Pass Result', style: 'tableHeader'},
                                     {text: 'User', style: 'tableHeader'},
                                     {text: 'Start Time', style: 'tableHeader'},
                                     {text: 'Duration (s)', style: 'tableHeader'},
@@ -807,7 +834,7 @@ function TestingComponent() {
                     header: { fontSize: 16, bold: true, color: '#1E40AF' },
                     subheader: { fontSize: 12, bold: true },
                     body: { fontSize: 9 },
-                    tableExample: { fontSize: 8 },
+                    tableExample: { margin: [0, 5, 0, 15], fontSize: 8 },
                     tableHeader: { bold: true, fontSize: 9, color: 'black' },
                 },
                 defaultStyle: { font: 'Roboto' }
@@ -826,6 +853,8 @@ function TestingComponent() {
             }
             setIsHistoryPanelOpen(false);
             setReportType(null);
+            setSelectedReportSessionId(null);
+            setSelectedReportBatchId(null);
         }
   };
 
@@ -1332,49 +1361,53 @@ function TestingComponent() {
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" className="w-[300px]">
                                                     <ScrollArea className="h-[400px]">
-                                                        <div className="p-2 space-y-2">
-                                                            <div className="space-y-1">
-                                                                <Label>Date Range</Label>
-                                                                <Popover>
-                                                                    <PopoverTrigger asChild>
-                                                                    <Button id="date" variant={"outline"} className="w-full justify-start text-left font-normal">
-                                                                        <CalendarIcon className="mr-2 h-4 w-4" />
-                                                                        {sessionDateFilter?.from ? (sessionDateFilter.to ? (<>{format(sessionDateFilter.from, "LLL dd, y")} - {format(sessionDateFilter.to, "LLL dd, y")}</>) : (format(sessionDateFilter.from, "LLL dd, y"))) : (<span>Pick a date</span>)}
-                                                                    </Button>
-                                                                    </PopoverTrigger>
-                                                                    <PopoverContent className="w-auto p-0" align="start">
-                                                                    <Calendar initialFocus mode="range" defaultMonth={sessionDateFilter?.from} selected={sessionDateFilter} onSelect={setSessionDateFilter} numberOfMonths={2} />
-                                                                    <div className="p-2 border-t border-border"><Button onClick={() => setSessionDateFilter(undefined)} variant="ghost" size="sm" className="w-full justify-center">Reset</Button></div>
-                                                                    </PopoverContent>
-                                                                </Popover>
-                                                            </div>
-                                                            <Accordion type="multiple" className="w-full">
-                                                                <AccordionItem value="classification">
-                                                                    <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Classification</AccordionTrigger>
-                                                                    <AccordionContent className="pb-0"><div className="space-y-1 px-2 pb-2"><Select value={sessionClassificationFilter} onValueChange={setSessionClassificationFilter}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All</SelectItem><SelectItem value="passed">Passed</SelectItem><SelectItem value="not-passed">Not Passed</SelectItem><SelectItem value="unclassifiable">Unclassifiable</SelectItem><SelectItem value="unclassified">Unclassified</SelectItem></SelectContent></Select></div></AccordionContent>
-                                                                </AccordionItem>
-                                                                <AccordionItem value="users">
-                                                                    <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Users</AccordionTrigger>
-                                                                    <AccordionContent className="pb-0">{[...new Map(users?.map(item => [item.id, item])).values()].map(u => (<DropdownMenuCheckboxItem key={u.id} checked={sessionUserFilter.includes(u.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionUserFilter(c => c.includes(u.id) ? c.filter(i => i !== u.id) : [...c, u.id])}>{u.username}</DropdownMenuCheckboxItem>))}</AccordionContent>
-                                                                </AccordionItem>
-                                                                <AccordionItem value="vessel-types">
-                                                                    <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Vessel Types</AccordionTrigger>
-                                                                    <AccordionContent className="pb-0">{[...new Map(vesselTypes?.map(item => [item.id, item])).values()].map(vt => (<DropdownMenuCheckboxItem key={vt.id} checked={sessionVesselTypeFilter.includes(vt.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionVesselTypeFilter(c => c.includes(vt.id) ? c.filter(i => i !== vt.id) : [...c, vt.id])}>{vt.name}</DropdownMenuCheckboxItem>))}</AccordionContent>
-                                                                </AccordionItem>
-                                                                <AccordionItem value="batches">
-                                                                    <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Batches</AccordionTrigger>
-                                                                    <AccordionContent className="pb-0">{[...new Map(batches?.map(item => [item.id, item])).values()].map(b => (<DropdownMenuCheckboxItem key={b.id} checked={sessionBatchFilter.includes(b.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionBatchFilter(c => c.includes(b.id) ? c.filter(i => i !== b.id) : [...c, b.id])}>{b.name}</DropdownMenuCheckboxItem>))}</AccordionContent>
-                                                                </AccordionItem>
-                                                                <AccordionItem value="test-benches">
-                                                                    <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Test Benches</AccordionTrigger>
-                                                                    <AccordionContent className="pb-0">{[...new Map(testBenches?.map(item => [item.id, item])).values()].map(tb => (<DropdownMenuCheckboxItem key={tb.id} checked={sessionTestBenchFilter.includes(tb.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionTestBenchFilter(c => c.includes(tb.id) ? c.filter(i => i !== tb.id) : [...c, tb.id])}>{tb.name}</DropdownMenuCheckboxItem>))}</AccordionContent>
-                                                                </AccordionItem>
-                                                            </Accordion>
+                                                        <div className="p-2">
+                                                          <Accordion type="multiple" className="w-full">
+                                                              <AccordionItem value="date-range">
+                                                                <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Date Range</AccordionTrigger>
+                                                                <AccordionContent className="pb-0">
+                                                                    <div className="space-y-1 p-2">
+                                                                        <Popover>
+                                                                            <PopoverTrigger asChild>
+                                                                            <Button id="date" variant={"outline"} className="w-full justify-start text-left font-normal">
+                                                                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                                                                {sessionDateFilter?.from ? (sessionDateFilter.to ? (<>{format(sessionDateFilter.from, "LLL dd, y")} - {format(sessionDateFilter.to, "LLL dd, y")}</>) : (format(sessionDateFilter.from, "LLL dd, y"))) : (<span>Pick a date</span>)}
+                                                                            </Button>
+                                                                            </PopoverTrigger>
+                                                                            <PopoverContent className="w-auto p-0" align="start">
+                                                                            <Calendar initialFocus mode="range" defaultMonth={sessionDateFilter?.from} selected={sessionDateFilter} onSelect={setSessionDateFilter} numberOfMonths={2} />
+                                                                            <div className="p-2 border-t border-border"><Button onClick={() => setSessionDateFilter(undefined)} variant="ghost" size="sm" className="w-full justify-center">Reset</Button></div>
+                                                                            </PopoverContent>
+                                                                        </Popover>
+                                                                    </div>
+                                                                </AccordionContent>
+                                                              </AccordionItem>
+                                                              <AccordionItem value="classification">
+                                                                  <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Classification</AccordionTrigger>
+                                                                  <AccordionContent className="pb-0"><div className="space-y-1 px-2 pb-2"><Select value={sessionClassificationFilter} onValueChange={setSessionClassificationFilter}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All</SelectItem><SelectItem value="passed">Passed</SelectItem><SelectItem value="not-passed">Not Passed</SelectItem><SelectItem value="unclassifiable">Unclassifiable</SelectItem><SelectItem value="unclassified">Unclassified</SelectItem></SelectContent></Select></div></AccordionContent>
+                                                              </AccordionItem>
+                                                              <AccordionItem value="users">
+                                                                  <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Users</AccordionTrigger>
+                                                                  <AccordionContent className="pb-0">{[...new Map(users?.map(item => [item.id, item])).values()].map(u => (<DropdownMenuCheckboxItem key={u.id} checked={sessionUserFilter.includes(u.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionUserFilter(c => c.includes(u.id) ? c.filter(i => i !== u.id) : [...c, u.id])}>{u.username}</DropdownMenuCheckboxItem>))}</AccordionContent>
+                                                              </AccordionItem>
+                                                              <AccordionItem value="vessel-types">
+                                                                  <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Vessel Types</AccordionTrigger>
+                                                                  <AccordionContent className="pb-0">{[...new Map(vesselTypes?.map(item => [item.id, item])).values()].map(vt => (<DropdownMenuCheckboxItem key={vt.id} checked={sessionVesselTypeFilter.includes(vt.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionVesselTypeFilter(c => c.includes(vt.id) ? c.filter(i => i !== vt.id) : [...c, vt.id])}>{vt.name}</DropdownMenuCheckboxItem>))}</AccordionContent>
+                                                              </AccordionItem>
+                                                              <AccordionItem value="batches">
+                                                                  <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Batches</AccordionTrigger>
+                                                                  <AccordionContent className="pb-0">{[...new Map(batches?.map(item => [item.id, item])).values()].map(b => (<DropdownMenuCheckboxItem key={b.id} checked={sessionBatchFilter.includes(b.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionBatchFilter(c => c.includes(b.id) ? c.filter(i => i !== b.id) : [...c, b.id])}>{b.name}</DropdownMenuCheckboxItem>))}</AccordionContent>
+                                                              </AccordionItem>
+                                                              <AccordionItem value="test-benches" className="border-b-0">
+                                                                  <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Test Benches</AccordionTrigger>
+                                                                  <AccordionContent className="pb-0">{[...new Map(testBenches?.map(item => [item.id, item])).values()].map(tb => (<DropdownMenuCheckboxItem key={tb.id} checked={sessionTestBenchFilter.includes(tb.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionTestBenchFilter(c => c.includes(tb.id) ? c.filter(i => i !== tb.id) : [...c, tb.id])}>{tb.name}</DropdownMenuCheckboxItem>))}</AccordionContent>
+                                                              </AccordionItem>
+                                                          </Accordion>
                                                         </div>
                                                     </ScrollArea>
+                                                     {isFilterActive && <div className="p-2 border-t"><Button onClick={handleResetFilters} variant="ghost" size="sm" className="w-full"><RotateCcw className="mr-2 h-4 w-4" />Reset Filters</Button></div>}
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
-                                            {isFilterActive && <Button onClick={handleResetFilters} variant="ghost" size="sm"><RotateCcw className="mr-2 h-4 w-4" />Reset</Button>}
                                         </div>
                                     </div>
                                     {/* Session List */}
@@ -1382,7 +1415,7 @@ function TestingComponent() {
                                         {isHistoryLoading ? <p>Loading...</p> :
                                         <div className="space-y-2">
                                             {filteredHistory.map(session => (
-                                                <div key={session.id} className={`flex items-center gap-4 p-2 rounded-md transition-colors ${comparisonSessions.some(s => s.id === session.id) ? 'bg-muted' : 'hover:bg-muted/50'}`}>
+                                                <div key={session.id} className={`flex items-center gap-4 p-2 rounded-md transition-colors`}>
                                                     <Checkbox
                                                         id={`select-${session.id}`}
                                                         checked={comparisonSessions.some(s => s.id === session.id)}
@@ -1392,6 +1425,24 @@ function TestingComponent() {
                                                         <p className="font-semibold">{session.vesselTypeName} - {session.serialNumber || 'N/A'}</p>
                                                         <p className="text-xs text-muted-foreground">{new Date(session.startTime).toLocaleString()} by {session.username}</p>
                                                     </Label>
+                                                     <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button variant="ghost" size="sm">Actions</Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent>
+                                                            <DropdownMenuItem onSelect={() => {setSelectedReportSessionId(session.id); setReportType('single'); generateReport();}}>
+                                                                <FileText className="mr-2 h-4 w-4"/> Generate Report
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuSeparator/>
+                                                            <DropdownMenuItem onSelect={() => handleToggleComparison(session)}>
+                                                                {comparisonSessions.some(s => s.id === session.id) ? 'Remove from Comparison' : 'Add to Comparison'}
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem onSelect={() => handleDeleteSession(session.id)}>
+                                                                <Trash2 className="mr-2 h-4 w-4 text-destructive"/>
+                                                                <span className="text-destructive">Delete Session</span>
+                                                            </DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
                                                 </div>
                                             ))}
                                         </div>
@@ -1572,12 +1623,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-
-
-    
-
-
-
-
-    
