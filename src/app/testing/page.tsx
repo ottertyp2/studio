@@ -1,5 +1,4 @@
 
-
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -74,7 +73,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import type { DateRange } from 'react-day-picker';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuPortal } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuPortal, DropdownMenuSubContent } from '@/components/ui/dropdown-menu';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 
@@ -746,7 +745,7 @@ function TestingComponent() {
             const classificationText = getClassificationText(session.classification);
             const statusStyle = { text: classificationText, color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black') };
 
-            const reactorSessions = sessionsByReactor[session.serialNumber || 'N/A']?.filter(s => s.classification !== 'UNCLASSIFIABLE') || [];
+            const reactorSessions = (sessionsByReactor[session.serialNumber || 'N/A'] || []).filter(s => s.classification !== 'UNCLASSIFIABLE');
             const attemptNumber = (sessionsByReactor[session.serialNumber || 'N/A'] || []).findIndex(s => s.id === session.id) + 1;
             const totalAttempts = (sessionsByReactor[session.serialNumber || 'N/A'] || []).length;
             
@@ -1639,5 +1638,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
