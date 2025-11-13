@@ -174,6 +174,7 @@ function TestingComponent() {
 
   const { 
     isConnected,
+    isRecording,
     currentValue,
     lastDataPointTimestamp,
     disconnectCount,
