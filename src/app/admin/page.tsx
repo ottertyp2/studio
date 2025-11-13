@@ -2200,7 +2200,7 @@ export default function AdminPage() {
                                           <DropdownMenuItem onClick={() => setClassificationSession(session)}>
                                               <BrainCircuit className="mr-2 h-4 w-4" />
                                               <span>With AI</span>
-                                          DropdownMenuItem>
+                                          </DropdownMenuItem>
                                         </DropdownMenuSubContent>
                                       </DropdownMenuPortal>
                                     </DropdownMenuSub>
@@ -2256,7 +2256,7 @@ export default function AdminPage() {
         </CardContent>
       </Card>
     );
-  }
+  };
 
   const renderUserManagement = () => {
     return (
@@ -2867,11 +2867,3 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
-
-    
-
-    
-
-    
-
-    
