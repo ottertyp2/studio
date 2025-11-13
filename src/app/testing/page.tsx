@@ -75,7 +75,7 @@ import { Calendar } from '@/components/ui/calendar';
 import type { DateRange } from 'react-day-picker';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem } from '@/components/ui/dropdown-menu';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 
 if (pdfFonts.pdfMake) {
@@ -1319,7 +1319,7 @@ function TestingComponent() {
                                         <div className="flex flex-wrap gap-2">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="outline"><ListTree /></Button>
+                                                    <Button variant="outline"><ListTree className="mr-2 h-4 w-4" />Sort by</Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end">
                                                     <DropdownMenuItem onSelect={() => setSessionSortOrder('startTime-desc')}>Newest</DropdownMenuItem>
@@ -1328,7 +1328,7 @@ function TestingComponent() {
                                             </DropdownMenu>
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant={isFilterActive ? "default" : "outline"}><Filter /></Button>
+                                                    <Button variant={isFilterActive ? "default" : "outline"}><Filter className="mr-2 h-4 w-4" />Filters</Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" className="w-[300px]">
                                                     <ScrollArea className="h-[400px]">
@@ -1348,7 +1348,7 @@ function TestingComponent() {
                                                                     </PopoverContent>
                                                                 </Popover>
                                                             </div>
-                                                            <Accordion type="multiple" className="w-full" defaultValue={['classification', 'users', 'vessel-types', 'batches', 'test-benches']}>
+                                                            <Accordion type="multiple" className="w-full">
                                                                 <AccordionItem value="classification">
                                                                     <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Classification</AccordionTrigger>
                                                                     <AccordionContent className="pb-0"><div className="space-y-1 px-2 pb-2"><Select value={sessionClassificationFilter} onValueChange={setSessionClassificationFilter}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All</SelectItem><SelectItem value="passed">Passed</SelectItem><SelectItem value="not-passed">Not Passed</SelectItem><SelectItem value="unclassifiable">Unclassifiable</SelectItem><SelectItem value="unclassified">Unclassified</SelectItem></SelectContent></Select></div></AccordionContent>
@@ -1374,7 +1374,7 @@ function TestingComponent() {
                                                     </ScrollArea>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
-                                            {isFilterActive && <Button onClick={handleResetFilters} variant="ghost" size="icon"><RotateCcw /></Button>}
+                                            {isFilterActive && <Button onClick={handleResetFilters} variant="ghost" size="sm"><RotateCcw className="mr-2 h-4 w-4" />Reset</Button>}
                                         </div>
                                     </div>
                                     {/* Session List */}
