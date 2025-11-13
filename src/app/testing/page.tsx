@@ -509,7 +509,7 @@ function TestingComponent() {
     return Object.values(timeMap).sort((a, b) => a.name - b.name);
   }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
-    const failedIntervals = useMemo(() => {
+  const failedIntervals = useMemo(() => {
     if (!chartData || chartData.length === 0) return [];
 
     const intervals: { x1: number, x2: number }[] = [];
@@ -527,7 +527,8 @@ function TestingComponent() {
         } else if (!isAnyFailed && inFailedInterval) {
             // End of the current failed interval
             inFailedInterval = false;
-            intervals.push({ x1: intervalStart, x2: point.name });
+            // End the area at the previous data point's timestamp
+            intervals.push({ x1: intervalStart, x2: chartData[i - 1].name });
         }
     }
 
