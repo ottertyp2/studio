@@ -443,73 +443,70 @@ function TestingComponent() {
   const chartData = useMemo((): ChartDataPoint[] => {
     if (comparisonSessions.length === 0) return [];
   
-    // 1. Create a master timeline
-    const allTimestamps = new Set<number>();
+    // 1. Get start time for each session to calculate relative time
+    const sessionStartTimes: Record<string, number> = {};
     comparisonSessions.forEach(session => {
-        const sessionData = comparisonData[session.id] || [];
-        sessionData.forEach(d => allTimestamps.add(new Date(d.timestamp).getTime()));
+      const sessionData = comparisonData[session.id] || [];
+      if (sessionData.length > 0) {
+        sessionStartTimes[session.id] = new Date(sessionData[0].timestamp).getTime();
+      }
     });
-    
-    if (allTimestamps.size === 0) return [];
-
-    const sortedTimestamps = Array.from(allTimestamps).sort((a, b) => a - b);
-    const overallStartTime = sortedTimestamps[0];
-
-    // 2. Build the synchronized chart data
-    const synchronizedData = sortedTimestamps.map(timestamp => {
-      const time = (timestamp - overallStartTime) / 1000;
-      const dataPoint: ChartDataPoint = { name: time };
-
-      // Assume guidelines are based on the first session for now
-      // This could be improved if sessions have different vessel types
-      const firstSession = comparisonSessions[0];
-      const vesselType = vesselTypes?.find(vt => vt.id === firstSession.vesselTypeId);
-
-      const interpolateBezierCurve = (curve: {x: number, y: number}[], x: number) => {
-        if (!curve || curve.length !== 4) return undefined;
-        const [p0, p1, p2, p3] = curve;
-        const totalXRange = p3.x - p0.x;
-        if (totalXRange <= 0) return p0.y;
-        const t = (x - p0.x) / totalXRange;
-        if (t < 0) return p0.y;
-        if (t > 1) return p3.y;
-        const u = 1 - t;
-        const tt = t * t;
-        const uu = u * u;
-        const uuu = uu * u;
-        const ttt = tt * t;
-        return uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
-      };
-
-      dataPoint.minGuideline = vesselType ? interpolateBezierCurve(vesselType.minCurve, time) : undefined;
-      dataPoint.maxGuideline = vesselType ? interpolateBezierCurve(vesselType.maxCurve, time) : undefined;
-
-      comparisonSessions.forEach(session => {
-        const sessionData = comparisonData[session.id] || [];
-        const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-        
-        // Find the exact data point for this timestamp
-        const dataForTime = sessionData.find(d => new Date(d.timestamp).getTime() === timestamp);
-        
-        if (dataForTime) {
-            const value = convertRawValue(dataForTime.value, config || null);
-            dataPoint[session.id] = value;
-
-            const isFailed = (dataPoint.minGuideline !== undefined && value < dataPoint.minGuideline) || 
-                             (dataPoint.maxGuideline !== undefined && value > dataPoint.maxGuideline);
-            dataPoint[`${session.id}-failed`] = isFailed ? 1 : 0;
-        } else {
-            dataPoint[session.id] = null; // Important for synchronization
-            dataPoint[`${session.id}-failed`] = 0;
+  
+    // 2. Normalize and merge data
+    const mergedData: Record<number, ChartDataPoint> = {};
+  
+    comparisonSessions.forEach(session => {
+      const sessionData = comparisonData[session.id] || [];
+      const startTime = sessionStartTimes[session.id];
+      if (!startTime) return;
+  
+      const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+      const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+  
+      sessionData.forEach(d => {
+        const time = Math.round((new Date(d.timestamp).getTime() - startTime) / 1000); // Relative time in seconds
+  
+        if (!mergedData[time]) {
+          mergedData[time] = { name: time };
         }
-      });
-      return dataPoint;
-    });
+  
+        const value = convertRawValue(d.value, config || null);
+        mergedData[time][session.id] = value;
+        
+        const interpolateBezierCurve = (curve: {x: number, y: number}[], x: number) => {
+            if (!curve || curve.length !== 4) return undefined;
+            const [p0, p1, p2, p3] = curve;
+            const totalXRange = p3.x - p0.x;
+            if (totalXRange <= 0) return p0.y;
+            const t = (x - p0.x) / totalXRange;
+            if (t < 0) return p0.y;
+            if (t > 1) return p3.y;
+            const u = 1 - t;
+            const tt = t * t;
+            const uu = u * u;
+            const uuu = uu * u;
+            const ttt = tt * t;
+            return uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+        };
 
-    return synchronizedData;
+        const minGuideline = vesselType ? interpolateBezierCurve(vesselType.minCurve, time) : undefined;
+        const maxGuideline = vesselType ? interpolateBezierCurve(vesselType.maxCurve, time) : undefined;
+  
+        if (minGuideline !== undefined) mergedData[time].minGuideline = minGuideline;
+        if (maxGuideline !== undefined) mergedData[time].maxGuideline = maxGuideline;
+  
+        const isFailed = (minGuideline !== undefined && value < minGuideline) || 
+                         (maxGuideline !== undefined && value > maxGuideline);
+        
+        mergedData[time][`${session.id}-failed`] = isFailed ? 1 : 0;
+      });
+    });
+  
+    // 3. Convert merged data to sorted array
+    return Object.values(mergedData).sort((a, b) => a.name - b.name);
   }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
- const sessionFailedIntervals = useMemo(() => {
+  const sessionFailedIntervals = useMemo(() => {
     const intervalsBySession: Record<string, { x1: number, x2: number }[]> = {};
 
     comparisonSessions.forEach(session => {
@@ -526,13 +523,11 @@ function TestingComponent() {
                 intervalStart = point.name;
             } else if (!isFailed && inFailedInterval && intervalStart !== null) {
                 inFailedInterval = false;
-                // End the interval at the last failed point's timestamp
                 intervals.push({ x1: intervalStart, x2: chartData[i - 1].name });
                 intervalStart = null;
             }
         }
-
-        // If the session ends while still in a failed state
+        
         if (inFailedInterval && intervalStart !== null) {
             intervals.push({ x1: intervalStart, x2: chartData[chartData.length - 1].name });
         }
@@ -1493,5 +1488,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
