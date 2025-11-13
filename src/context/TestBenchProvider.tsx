@@ -103,12 +103,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [firestore, user, startSession, stopSession]);
 
-
   const handleNewDataPoint = useCallback((data: any) => {
     if (data === null || data === undefined) return;
 
     console.log("[TEST] handleNewDataPoint:", {
-      recording: data.recording,
+      recording: isRecording, // Using the state variable now
       sensor: data.sensor,
       lastUpdate: data.lastUpdate,
       sessionRef: runningTestSessionRef.current,
@@ -124,7 +123,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setLastDataPointTimestamp(lastUpdateTimestamp);
     
     setCurrentValue(data.sensor ?? null);
-    setIsRecording(data.recording === true);
     setDisconnectCount(data.disconnectCount || 0);
     setLatency(data.latency !== undefined ? data.latency : null);
     setSequenceFailureCount(data.sequenceFailureCount || 0);
@@ -139,7 +137,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         });
     }
 
-    if (runningTestSessionRef.current && firestore && data.recording === true && data.sensor != null && data.lastUpdate) {
+    if (runningTestSessionRef.current && firestore && isRecording && data.sensor != null && data.lastUpdate) {
         console.log("[TEST] SAVING TO FIRESTORE", {
           sessionId: runningTestSessionRef.current.id,
           sensor: data.sensor,
@@ -152,16 +150,16 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         };
         addDocumentNonBlocking(sessionDataRef, dataToSave)
           .catch(e => console.error("[ERROR] Firestore write failed", e));
-    } else if (data.recording === true) {
+    } else {
         console.warn("[SKIP WRITE] Conditions not met for saving to Firestore.", {
             hasSession: !!runningTestSessionRef.current,
             hasFirestore: !!firestore,
-            isRecording: data.recording === true,
+            isRecording: isRecording,
             hasSensor: data.sensor != null,
             hasLastUpdate: !!data.lastUpdate
         });
     }
-  }, [firestore]);
+  }, [firestore, isRecording]);
   
   useEffect(() => {
     const interval = setInterval(() => {
@@ -276,6 +274,17 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   
     return () => unsubscribe();
   }, [database, handleNewDataPoint]);
+
+  // Separate listener for recording status from /data/commands
+  useEffect(() => {
+    if (!database) return;
+    const recordingRef = ref(database, 'data/commands/recording');
+    const unsubscribe = onValue(recordingRef, (snap) => {
+      const isRec = snap.val();
+      setIsRecording(isRec === true);
+    });
+    return () => unsubscribe();
+  }, [database]);
 
 
   // Listener for /data/commands to get valve and sequence status
