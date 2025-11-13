@@ -44,13 +44,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [downtimeStart, setDowntimeStart] = useState<number | null>(null);
 
   const startSession = useCallback((session: WithId<DocumentData>) => {
-    console.log('[TestBenchProvider] Context received startSession command for session:', session);
     runningTestSessionRef.current = session;
     setRunningTestSession(session);
   }, []);
 
   const stopSession = useCallback(() => {
-    console.log('[TestBenchProvider] Context received stopSession command.');
     runningTestSessionRef.current = null;
     setRunningTestSession(null);
   }, []);
@@ -74,7 +72,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   
   useEffect(() => {
     if (!user || !firestore) return;
-    console.log('[TestBenchProvider] Setting up Firestore listener for RUNNING sessions.');
     const q = query(
       collection(firestore, 'test_sessions'),
       where('status', '==', 'RUNNING'),
@@ -85,12 +82,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         const runningSessionDoc = querySnapshot.docs[0];
         const session = { id: runningSessionDoc.id, ...runningSessionDoc.data() } as WithId<DocumentData>;
         if (runningTestSessionRef.current?.id !== session.id) {
-          console.log(`[TestBenchProvider] Detected running session from Firestore: ${session.id}`);
           startSession(session);
         }
       } else {
         if (runningTestSessionRef.current) {
-          console.log('[TestBenchProvider] No running sessions detected in Firestore. Clearing active session.');
           stopSession();
         }
       }
@@ -98,7 +93,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         console.error('[TestBenchProvider] Error in running session listener:', error);
     });
     return () => {
-        console.log('[TestBenchProvider] Tearing down Firestore listener for RUNNING sessions.');
         unsubscribe();
     }
   }, [firestore, user, startSession, stopSession]);
@@ -106,14 +100,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const handleNewDataPoint = useCallback((data: any) => {
     if (data === null || data === undefined) return;
 
-    console.log("[TEST] handleNewDataPoint:", {
-      recording: isRecording, // Using the state variable now
-      sensor: data.sensor,
-      lastUpdate: data.lastUpdate,
-      sessionRef: runningTestSessionRef.current,
-      firestore: !!firestore
-    });
-    
     const lastUpdateTimestamp = data.lastUpdate ? new Date(data.lastUpdate).getTime() : null;
     
     if (!lastUpdateTimestamp) {
@@ -138,26 +124,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
 
     if (runningTestSessionRef.current && firestore && isRecording && data.sensor != null && data.lastUpdate) {
-        console.log("[TEST] SAVING TO FIRESTORE", {
-          sessionId: runningTestSessionRef.current.id,
-          sensor: data.sensor,
-          lastUpdate: data.lastUpdate
-        });
         const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
         const dataToSave = {
             value: data.sensor,
             timestamp: new Date(data.lastUpdate).toISOString(),
         };
-        addDocumentNonBlocking(sessionDataRef, dataToSave)
-          .catch(e => console.error("[ERROR] Firestore write failed", e));
-    } else {
-        console.warn("[SKIP WRITE] Conditions not met for saving to Firestore.", {
-            hasSession: !!runningTestSessionRef.current,
-            hasFirestore: !!firestore,
-            isRecording: isRecording,
-            hasSensor: data.sensor != null,
-            hasLastUpdate: !!data.lastUpdate
-        });
+        addDocumentNonBlocking(sessionDataRef, dataToSave);
     }
   }, [firestore, isRecording]);
   
