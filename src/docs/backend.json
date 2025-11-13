@@ -127,6 +127,10 @@
         "testBenchId": {
             "type": "string",
             "description": "Reference to the TestBench this configuration belongs to."
+        },
+        "movingAverageLength": {
+            "type": "number",
+            "description": "The number of samples to use in the moving average calculation on the Arduino."
         }
       },
       "required": [
@@ -201,7 +205,7 @@
             "classification": { "type": "string", "enum": ["LEAK", "DIFFUSION"], "description": "The classification of the test result (e.g. Leak, Diffusion)." },
             "batchId": { "type": "string", "description": "The batch this test belongs to." }
         },
-        "required": ["id", "vesselTypeId", "vesselTypeName", "startTime", "status", "testBenchId", "sensorConfigurationId", "measurementType", "userId", "username", "batchId"]
+        "required": ["id", "vesselTypeId", "vesselTypeName", "startTime", "status", "testBenchId", "sensorConfigurationId", "measurementType", "userId", "username"]
     },
     "VesselType": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -489,7 +493,8 @@
               "valve2": { "type": "boolean" },
               "recording": { "type": "boolean" },
               "sequence1": { "type": "boolean" },
-              "sequence2": { "type": "boolean" }
+              "sequence2": { "type": "boolean" },
+              "movingAverageLength": { "type": "number" }
             }
         },
         {
@@ -503,3 +508,5 @@
     ]
   }
 }
+
+    

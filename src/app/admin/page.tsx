@@ -204,7 +204,7 @@ type TestSession = {
     userId: string;
     username: string;
     demoOwnerInstanceId?: string;
-    batchId: string;
+    batchId?: string;
 };
 
 type VesselType = {
@@ -395,7 +395,6 @@ export default function AdminPage() {
                 [session.id]: snapshot.size,
             }));
         }, (error) => {
-            console.error(`Error fetching data count for session ${session.id}:`, error);
             setSessionDataCounts(prevCounts => ({
                 ...prevCounts,
                 [session.id]: prevCounts[session.id] || 0,
@@ -635,7 +634,6 @@ export default function AdminPage() {
         });
         dataDeletedCount = querySnapshot.size;
     } catch (e) {
-        console.error("Error querying/deleting sensor data:", e);
     }
 
     const sessionRef = doc(firestore, `test_sessions`, session.id);
@@ -673,8 +671,14 @@ export default function AdminPage() {
     if (!firestore) return;
     const batchName = batches?.find(b => b.id === newBatchId)?.name || 'Unknown';
     const sessionRef = doc(firestore, 'test_sessions', sessionId);
-    updateDocumentNonBlocking(sessionRef, { batchId: newBatchId });
-    toast({ title: 'Session Reassigned', description: `Session has been moved to batch "${batchName}".` });
+    
+    if (newBatchId === '') {
+       updateDocumentNonBlocking(sessionRef, { batchId: '' });
+       toast({ title: 'Session Unassigned', description: `Session has been removed from its batch.` });
+    } else {
+       updateDocumentNonBlocking(sessionRef, { batchId: newBatchId });
+       toast({ title: 'Session Reassigned', description: `Session has been moved to batch "${batchName}".` });
+    }
   };
 
 
@@ -785,7 +789,6 @@ export default function AdminPage() {
         await new Promise(resolve => setTimeout(resolve, 200)); // Avoid overwhelming the UI
         successCount++;
       } catch (error) {
-        console.error(`Failed to classify session ${session.id}:`, error);
         failCount++;
       }
     }
@@ -883,7 +886,7 @@ export default function AdminPage() {
         }
 
         if (sessionBatchFilter.length > 0) {
-            filtered = filtered.filter(session => sessionBatchFilter.includes(session.batchId));
+            filtered = filtered.filter(session => session.batchId && sessionBatchFilter.includes(session.batchId));
         }
         
         if (sessionTestBenchFilter.length > 0) {
@@ -1177,7 +1180,6 @@ export default function AdminPage() {
     try {
         logoBase64 = await toBase64('/images/logo.png');
     } catch (error) {
-        console.error("PDF Logo Generation Error:", error);
         toast({
             variant: "destructive",
             title: "Could Not Load Logo",
@@ -1263,7 +1265,6 @@ export default function AdminPage() {
             try {
                 chartImage = await htmlToImage.toPng(pdfChartRef.current, { quality: 0.95, backgroundColor: '#ffffff' });
             } catch (e) {
-                console.error("Chart to image conversion failed", e);
                 toast({variant: 'destructive', title: 'Chart Image Failed', description: 'Could not generate chart image for PDF.'});
             }
         }
@@ -1390,7 +1391,6 @@ export default function AdminPage() {
         toast({ title: 'Vessel Type Report Generated', description: 'The batch report PDF is downloading.' });
 
     } catch (e: any) {
-        console.error("Report Generation Error:", e);
         toast({ variant: 'destructive', title: 'Report Failed', description: `An unexpected error occurred. ${e.message}` });
     } finally {
         setGeneratingVesselTypeReport(null);
@@ -1701,7 +1701,6 @@ export default function AdminPage() {
         setAutomatedTrainingStatus({ step: 'Completed', progress: 100, details: `Model "${newModelName}" saved successfully.` });
 
     } catch (e: any) {
-        console.error(e);
         setAutomatedTrainingStatus({ step: 'Error', progress: 100, details: e.message });
     } finally {
         setIsTraining(false);
@@ -1789,7 +1788,6 @@ export default function AdminPage() {
         await new Promise(resolve => setTimeout(resolve, 500)); 
         successCount++;
       } catch (error) {
-        console.error(`Failed to AI-classify session ${session.id}:`, error);
         failCount++;
       }
     }
@@ -2175,8 +2173,12 @@ export default function AdminPage() {
                                       <DropdownMenuPortal>
                                         <DropdownMenuSubContent>
                                             <ScrollArea className="h-[200px]">
+                                            <DropdownMenuItem onSelect={() => handleAssignSessionToBatch(session.id, '')}>
+                                                <span className="italic text-muted-foreground">Remove from Batch</span>
+                                            </DropdownMenuItem>
+                                            <DropdownMenuSeparator/>
                                             {batches?.filter(b => b.vesselTypeId === session.vesselTypeId).map(batch => (
-                                                <DropdownMenuItem key={batch.id} onClick={() => handleAssignSessionToBatch(session.id, batch.id)}>
+                                                <DropdownMenuItem key={batch.id} onSelect={() => handleAssignSessionToBatch(session.id, batch.id)}>
                                                     <span>{batch.name}</span>
                                                 </DropdownMenuItem>
                                             ))}
@@ -2198,7 +2200,7 @@ export default function AdminPage() {
                                           <DropdownMenuItem onClick={() => setClassificationSession(session)}>
                                               <BrainCircuit className="mr-2 h-4 w-4" />
                                               <span>With AI</span>
-                                          </DropdownMenuItem>
+                                          DropdownMenuItem>
                                         </DropdownMenuSubContent>
                                       </DropdownMenuPortal>
                                     </DropdownMenuSub>
@@ -2865,6 +2867,10 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
+
+    
+
+    
 
     
 
