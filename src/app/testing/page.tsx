@@ -818,12 +818,12 @@ function TestingComponent() {
                         body: [
                             [
                                 {text: 'Batch', style: 'tableHeader'},
-                                {text: 'Serial Number', style: 'tableHeader'},
+                                {text: 'S/N', style: 'tableHeader'},
                                 {text: 'Attempt', style: 'tableHeader'},
                                 {text: 'Pass Result', style: 'tableHeader'},
                                 {text: 'User', style: 'tableHeader'},
                                 {text: 'Start Time', style: 'tableHeader'},
-                                {text: 'Duration (s)', style: 'tableHeader'},
+                                {text: `Dur. (s)`, style: 'tableHeader'},
                                 {text: `Start (${unit})`, style: 'tableHeader'},
                                 {text: `End (${unit})`, style: 'tableHeader'},
                                 {text: `Avg. (${unit})`, style: 'tableHeader'},
@@ -839,8 +839,8 @@ function TestingComponent() {
                 header: { fontSize: 16, bold: true, color: '#1E40AF' },
                 subheader: { fontSize: 12, bold: true },
                 body: { fontSize: 9 },
-                tableExample: { margin: [0, 5, 0, 15], fontSize: 8 },
-                tableHeader: { bold: true, fontSize: 9, color: 'black' },
+                tableExample: { margin: [0, 5, 0, 15], fontSize: 7 },
+                tableHeader: { bold: true, fontSize: 8, color: 'black' },
             },
             defaultStyle: { font: 'Roboto' }
         };
