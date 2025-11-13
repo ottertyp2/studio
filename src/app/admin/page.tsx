@@ -714,7 +714,7 @@ export default function AdminPage() {
         }
 
         const { startIndex } = findMeasurementStart(sensorData, config);
-        const { endIndex, isComplete } = findMeasurementEnd(data, startIndex, config, vesselType.durationSeconds);
+        const { endIndex, isComplete } = findMeasurementEnd(sensorData, startIndex, config, vesselType.durationSeconds);
         
         if (!isComplete) {
             handleSetSessionClassification(session.id, 'UNCLASSIFIABLE');
@@ -756,36 +756,24 @@ export default function AdminPage() {
             return y;
         };
 
-        let isFailed = false;
-        for (const dataPoint of analysisData) {
+        const isFailed = analysisData.some(dataPoint => {
             const timeElapsed = (new Date(dataPoint.timestamp).getTime() - sessionStartTime) / 1000;
             const convertedValue = convertRawValue(dataPoint.value, config);
 
             const minGuideline = interpolateBezierCurve(vesselType.minCurve, timeElapsed);
             const maxGuideline = interpolateBezierCurve(vesselType.maxCurve, timeElapsed);
 
-            if (minGuideline === undefined || maxGuideline === undefined) continue;
+            if (minGuideline === undefined || maxGuideline === undefined) return false; // Don't fail if guidelines are missing for a point
 
-            if (convertedValue < minGuideline || convertedValue > maxGuideline) {
-                isFailed = true;
-                break; // Exit early as soon as one point is outside
-            }
-        }
+            return convertedValue < minGuideline || convertedValue > maxGuideline;
+        });
 
         const classification = isFailed ? 'LEAK' : 'DIFFUSION';
-        const failCount = analysisData.filter(dp => {
-            const timeElapsed = (new Date(dp.timestamp).getTime() - sessionStartTime) / 1000;
-            const convertedValue = convertRawValue(dp.value, config);
-            const minGuideline = interpolateBezierCurve(vesselType.minCurve, timeElapsed);
-            const maxGuideline = interpolateBezierCurve(vesselType.maxCurve, timeElapsed);
-            if (minGuideline === undefined || maxGuideline === undefined) return false;
-            return convertedValue < minGuideline || convertedValue > maxGuideline;
-        }).length;
-
+        
         handleSetSessionClassification(session.id, classification);
         toast({ 
             title: 'Classification Complete & Updated', 
-            description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'}. ${failCount} of ${analysisData.length} points were outside guidelines.` 
+            description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'}.` 
         });
 
     } catch (e: any) {

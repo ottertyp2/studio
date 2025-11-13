@@ -51,26 +51,31 @@ import {
   ReferenceLine,
   ReferenceArea,
 } from 'recharts';
-import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle, Square, GaugeCircle, SlidersHorizontal } from 'lucide-react';
+import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle, Square, GaugeCircle, SlidersHorizontal, Filter, ListTree, Calendar as CalendarIcon, RotateCcw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, WithId, addDocument } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
 import { useTestBench } from '@/context/TestBenchContext';
 import { collection, query, where, onSnapshot, doc, getDocs, orderBy, limit, getDoc, writeBatch } from 'firebase/firestore';
 import { ref, get } from 'firebase/database';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, format, addDays } from 'date-fns';
 import { convertRawValue, findMeasurementStart, findMeasurementEnd, toBase64 } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import ValveControl from '@/components/dashboard/ValveControl';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
 import * as htmlToImage from 'html-to-image';
 import { analyzeArduinoCrashes, AnalyzeArduinoCrashesOutput } from '@/ai/flows/analyze-arduino-crashes';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import type { DateRange } from 'react-day-picker';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem, Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/dropdown-menu';
+
 
 if (pdfFonts.pdfMake) {
     pdfMake.vfs = pdfFonts.pdfMake.vfs;
@@ -105,7 +110,7 @@ type TestSession = {
     testBenchId: string;
     sensorConfigurationId: string;
     measurementType: 'DEMO' | 'ARDUINO';
-    classification?: 'LEAK' | 'DIFFUSION';
+    classification?: 'LEAK' | 'DIFFUSION' | 'UNCLASSIFIABLE';
     userId: string;
     username: string;
     demoOwnerInstanceId?: string;
@@ -143,6 +148,14 @@ type TestBench = {
     id: string;
     name: string;
 }
+
+type AppUser = {
+    id: string;
+    username: string;
+    email: string;
+    role: 'user' | 'superadmin';
+};
+
 
 type CrashReport = {
     reason: string;
@@ -214,20 +227,32 @@ function TestingComponent() {
 
   const [now, setNow] = useState(Date.now());
   
-  const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
-  const [reportType, setReportType] = useState<'single' | 'batch' | null>(null);
+  const [reportType, setReportType] = useState<'single' | 'batch' | 'custom' | null>(null);
   const [selectedReportSessionId, setSelectedReportSessionId] = useState<string | null>(null);
   const [selectedReportBatchId, setSelectedReportBatchId] = useState<string | null>(null);
   const [isCrashPanelOpen, setIsCrashPanelOpen] = useState(false);
   const [crashReport, setCrashReport] = useState<CrashReport | null>(null);
   const [crashAnalysis, setCrashAnalysis] = useState<AnalyzeArduinoCrashesOutput | null>(null);
   const [isAnalyzingCrash, setIsAnalyzingCrash] = useState(false);
+  
+  // States for advanced session filtering
+  const [sessionSearchTerm, setSessionSearchTerm] = useState('');
+  const [sessionSortOrder, setSessionSortOrder] = useState('startTime-desc');
+  const [sessionUserFilter, setSessionUserFilter] = useState<string[]>([]);
+  const [sessionVesselTypeFilter, setSessionVesselTypeFilter] = useState<string[]>([]);
+  const [sessionBatchFilter, setSessionBatchFilter] = useState<string[]>([]);
+  const [sessionTestBenchFilter, setSessionTestBenchFilter] = useState<string[]>([]);
+  const [sessionClassificationFilter, setSessionClassificationFilter] = useState('all');
+  const [sessionDateFilter, setSessionDateFilter] = useState<DateRange | undefined>(undefined);
 
   const [displaySensorConfigId, setDisplaySensorConfigId] = useState<string | null>(null);
 
   // Data fetching hooks
   const testBenchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'testbenches') : null, [firestore]);
   const { data: testBenches } = useCollection<TestBench>(testBenchesCollectionRef);
+
+  const usersCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'users') : null, [firestore]);
+  const { data: users } = useCollection<AppUser>(usersCollectionRef);
 
   const sensorConfigsCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'sensor_configurations') : null, [firestore]);
   const { data: sensorConfigs } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
@@ -446,68 +471,65 @@ function TestingComponent() {
   const chartData = useMemo((): ChartDataPoint[] => {
     if (comparisonSessions.length === 0) return [];
   
-    // 1. Get start time for each session to calculate relative time
     const sessionStartTimes: Record<string, number> = {};
     comparisonSessions.forEach(session => {
-      const sessionData = comparisonData[session.id] || [];
-      if (sessionData.length > 0) {
-        sessionStartTimes[session.id] = new Date(sessionData[0].timestamp).getTime();
-      }
-    });
-  
-    // 2. Normalize and merge data
-    const mergedData: Record<number, ChartDataPoint> = {};
-  
-    comparisonSessions.forEach(session => {
-      const sessionData = comparisonData[session.id] || [];
-      const startTime = sessionStartTimes[session.id];
-      if (!startTime) return;
-  
-      const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-      const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-  
-      sessionData.forEach(d => {
-        const time = Math.round((new Date(d.timestamp).getTime() - startTime) / 1000); // Relative time in seconds
-  
-        if (!mergedData[time]) {
-          mergedData[time] = { name: time };
+        const sessionData = comparisonData[session.id] || [];
+        if (sessionData.length > 0) {
+            sessionStartTimes[session.id] = new Date(sessionData[0].timestamp).getTime();
         }
-  
-        const value = convertRawValue(d.value, config || null);
-        mergedData[time][session.id] = value;
-        
-        const interpolateBezierCurve = (curve: {x: number, y: number}[], x: number) => {
-            if (!curve || curve.length !== 4) return undefined;
-            const [p0, p1, p2, p3] = curve;
-            const totalXRange = p3.x - p0.x;
-            if (totalXRange <= 0) return p0.y;
-            const t = (x - p0.x) / totalXRange;
-            if (t < 0) return p0.y;
-            if (t > 1) return p3.y;
-            const u = 1 - t;
-            const tt = t * t;
-            const uu = u * u;
-            const uuu = uu * u;
-            const ttt = tt * t;
-            return uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
-        };
-
-        const minGuideline = vesselType ? interpolateBezierCurve(vesselType.minCurve, time) : undefined;
-        const maxGuideline = vesselType ? interpolateBezierCurve(vesselType.maxCurve, time) : undefined;
-  
-        if (minGuideline !== undefined) mergedData[time].minGuideline = minGuideline;
-        if (maxGuideline !== undefined) mergedData[time].maxGuideline = maxGuideline;
-  
-        const isFailed = (minGuideline !== undefined && value < minGuideline) || 
-                         (maxGuideline !== undefined && value > maxGuideline);
-        
-        mergedData[time][`${session.id}-failed`] = isFailed ? 1 : 0;
-      });
     });
-  
-    // 3. Convert merged data to sorted array
+
+    const mergedData: Record<number, ChartDataPoint> = {};
+
+    comparisonSessions.forEach(session => {
+        const sessionData = comparisonData[session.id] || [];
+        const startTime = sessionStartTimes[session.id];
+        if (!startTime) return;
+
+        const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+        const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+
+        sessionData.forEach(d => {
+            const time = Math.round((new Date(d.timestamp).getTime() - startTime) / 1000);
+
+            if (!mergedData[time]) {
+                mergedData[time] = { name: time };
+            }
+
+            const value = convertRawValue(d.value, config || null);
+            mergedData[time][session.id] = value;
+
+            const interpolateBezierCurve = (curve: {x: number, y: number}[], x: number) => {
+                if (!curve || curve.length !== 4) return undefined;
+                const [p0, p1, p2, p3] = curve;
+                const totalXRange = p3.x - p0.x;
+                if (totalXRange <= 0) return p0.y;
+                const t = (x - p0.x) / totalXRange;
+                if (t < 0) return p0.y;
+                if (t > 1) return p3.y;
+                const u = 1 - t;
+                const tt = t * t;
+                const uu = u * u;
+                const uuu = uu * u;
+                const ttt = tt * t;
+                return uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+            };
+
+            const minGuideline = vesselType ? interpolateBezierCurve(vesselType.minCurve, time) : undefined;
+            const maxGuideline = vesselType ? interpolateBezierCurve(vesselType.maxCurve, time) : undefined;
+      
+            if (minGuideline !== undefined) mergedData[time].minGuideline = minGuideline;
+            if (maxGuideline !== undefined) mergedData[time].maxGuideline = maxGuideline;
+      
+            const isFailed = (minGuideline !== undefined && value < minGuideline) || 
+                             (maxGuideline !== undefined && value > maxGuideline);
+            
+            mergedData[time][`${session.id}-failed`] = isFailed ? 1 : 0;
+        });
+    });
+
     return Object.values(mergedData).sort((a, b) => a.name - b.name);
-  }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
+}, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
   const sessionFailedIntervals = useMemo(() => {
     const intervalsBySession: Record<string, { x1: number, x2: number }[]> = {};
@@ -526,13 +548,11 @@ function TestingComponent() {
                 intervalStart = point.name;
             } else if (!isFailed && inFailedInterval && intervalStart !== null) {
                 inFailedInterval = false;
-                // End the interval at the last failed point's time
                 sessionIntervals.push({ x1: intervalStart, x2: chartData[i - 1].name });
                 intervalStart = null;
             }
         }
   
-        // If the session ends while still in a failed state
         if (inFailedInterval && intervalStart !== null && chartData.length > 0) {
             sessionIntervals.push({ x1: intervalStart, x2: chartData[chartData.length - 1].name });
         }
@@ -541,7 +561,7 @@ function TestingComponent() {
     });
   
     return intervalsBySession;
-  }, [chartData, comparisonSessions]);
+}, [chartData, comparisonSessions]);
 
   const setTimeframe = (frame: '1m' | '5m' | 'all') => {
       setActiveTimeframe(frame);
@@ -610,15 +630,13 @@ function TestingComponent() {
 
         setIsGeneratingReport(true);
         toast({ title: 'Generating Report...', description: 'Please wait, this can take a moment.' });
-
-        const originalComparisonSessions = [...comparisonSessions];
-        let sessionToReport: WithId<TestSession> | undefined;
-        let batchToReport: WithId<Batch> | undefined;
-        let sessionsForBatchReport: WithId<TestSession>[] = [];
+        
+        let sessionsToReport: WithId<TestSession>[] = [];
         let reportTitle = '';
         let reportFilename = 'report';
+        let originalComparisonSessions: WithId<TestSession>[] | null = null;
+        
         const allSensorDataForReport: Record<string, SensorData[]> = {};
-
 
         let logoBase64: string | null = null;
         try {
@@ -636,50 +654,30 @@ function TestingComponent() {
         }
         
         try {
-            if (reportType === 'single' && selectedReportSessionId) {
-                sessionToReport = sessionHistory.find(s => s.id === selectedReportSessionId);
-                if (!sessionToReport) throw new Error('Selected session not found.');
-                
-                const sessionDocRef = doc(firestore, `test_sessions/${sessionToReport.id}`);
-                const dataSnapshot = await getDocs(query(collection(sessionDocRef, 'sensor_data'), orderBy('timestamp')));
-
-                const sessionData = dataSnapshot.docs.map(d => ({id: d.id, ...d.data()} as SensorData));
-                if (sessionData.length === 0) throw new Error('No data found for the selected session.');
-
-                allSensorDataForReport[sessionToReport.id] = sessionData;
-                setComparisonData(prev => ({...prev, [sessionToReport!.id]: sessionData}));
-                setComparisonSessions([sessionToReport]);
-                reportTitle = `Single Vessel Pressure Test Report`;
-                reportFilename = `report-session-${sessionToReport.serialNumber || sessionToReport.id}`;
-
+            if (reportType === 'custom') {
+                sessionsToReport = [...comparisonSessions];
+                if (sessionsToReport.length === 0) throw new Error('No sessions selected for custom report.');
+                reportTitle = `Custom Multi-Vessel Pressure Test Report`;
+                reportFilename = `report-custom-${new Date().toISOString().split('T')[0]}`;
             } else if (reportType === 'batch' && selectedReportBatchId) {
-                 batchToReport = batches?.find(b => b.id === selectedReportBatchId);
-                 if (!batchToReport) throw new Error('Selected batch not found.');
-                 sessionsForBatchReport = sessionHistory.filter(s => s.batchId === selectedReportBatchId && s.status === 'COMPLETED');
-                 
-                 if (sessionsForBatchReport.length === 0) {
-                     throw new Error('No completed sessions found for this batch.');
-                 }
-                 if (sessionsForBatchReport.length === 1) {
-                    toast({
-                        variant: 'default',
-                        title: 'Batch Report Notice',
-                        description: 'Batch reports are for comparing multiple sessions. A single session report might be more useful.'
-                    });
-                 }
-                 
-                 for (const session of sessionsForBatchReport) {
-                    const dataSnapshot = await getDocs(query(collection(firestore, `test_sessions/${session.id}/sensor_data`), orderBy('timestamp')));
-                    allSensorDataForReport[session.id] = dataSnapshot.docs.map(d => d.data() as SensorData);
-                 }
-
-                 setComparisonData(allSensorDataForReport);
-                 setComparisonSessions(sessionsForBatchReport);
-                 reportTitle = `Batch Pressure Test Report`;
-                 reportFilename = `report-batch-${batchToReport.name.replace(/\s+/g, '_')}`;
+                 const batch = batches?.find(b => b.id === selectedReportBatchId);
+                 if (!batch) throw new Error('Selected batch not found.');
+                 sessionsToReport = sessionHistory.filter(s => s.batchId === selectedReportBatchId && s.status === 'COMPLETED');
+                 if (sessionsToReport.length === 0) throw new Error('No completed sessions found for this batch.');
+                 reportTitle = `Batch Pressure Test Report: ${batch.name}`;
+                 reportFilename = `report-batch-${batch.name.replace(/\s+/g, '_')}`;
             } else {
                 throw new Error('Invalid report selection.');
             }
+
+            originalComparisonSessions = [...comparisonSessions];
+            setComparisonSessions(sessionsToReport);
+            
+            for (const session of sessionsToReport) {
+                const dataSnapshot = await getDocs(query(collection(firestore, `test_sessions/${session.id}/sensor_data`), orderBy('timestamp')));
+                allSensorDataForReport[session.id] = dataSnapshot.docs.map(d => d.data() as SensorData);
+            }
+            setComparisonData(allSensorDataForReport);
             
             await new Promise(resolve => setTimeout(resolve, 1500));
 
@@ -688,10 +686,87 @@ function TestingComponent() {
                 backgroundColor: '#ffffff'
             });
 
+            const tableBody = sessionsToReport.map(session => {
+                const batchName = batches?.find(b => b.id === session.batchId)?.name || 'N/A';
+                const classificationText = getClassificationText(session.classification);
+                const statusStyle = { text: classificationText, color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black') };
+
+                const data = allSensorDataForReport[session.id] || [];
+                const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+                const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+                
+                const { startIndex } = findMeasurementStart(data, config);
+                const { endIndex } = findMeasurementEnd(data, startIndex, config, vesselType?.durationSeconds);
+                const analysisData = data.slice(startIndex, endIndex + 1);
+
+                const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(session.startTime).getTime();
+                const sessionEndTime = analysisData.length > 0 ? new Date(analysisData[analysisData.length - 1].timestamp).getTime() : (session.endTime ? new Date(session.endTime).getTime() : sessionStartTime);
+                const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
+                
+                const decimalPlaces = config?.decimalPlaces || 2;
+                let startValue = 'N/A', endValue = 'N/A', avgValue = 'N/A';
+                if (analysisData.length > 0) {
+                    startValue = convertRawValue(analysisData[0].value, config || null).toFixed(decimalPlaces);
+                    endValue = convertRawValue(analysisData[analysisData.length - 1].value, config || null).toFixed(decimalPlaces);
+                    const sum = analysisData.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
+                    avgValue = (sum / analysisData.length).toFixed(decimalPlaces);
+                }
+                const unit = config?.unit || '';
+
+                return [
+                    batchName,
+                    session.serialNumber || 'N/A',
+                    session.username,
+                    new Date(session.startTime).toLocaleString(),
+                    duration,
+                    startValue,
+                    endValue,
+                    avgValue,
+                    statusStyle
+                ];
+            });
+
+            const firstSessionConfig = sensorConfigs?.find(c => c.id === sessionsToReport[0]?.sensorConfigurationId);
+            const unit = firstSessionConfig?.unit || 'Value';
+
             const docDefinition: any = {
                 pageSize: 'A4',
                 pageMargins: [40, 40, 40, 40],
-                content: [],
+                content: [
+                    {
+                        columns: [
+                           logoBase64 ? { image: logoBase64, width: 70 } : { text: '' },
+                            {
+                                stack: [ { text: reportTitle, style: 'header', alignment: 'right' } ],
+                            },
+                        ],
+                        columnGap: 10,
+                    },
+                    { text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body', margin: [0, 10, 0, 10] },
+                    { image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] },
+                    {
+                        style: 'tableExample',
+                        table: {
+                            headerRows: 1,
+                            widths: ['auto', '*', '*', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                            body: [
+                                [
+                                    {text: 'Batch', style: 'tableHeader'},
+                                    {text: 'Serial Number', style: 'tableHeader'},
+                                    {text: 'User', style: 'tableHeader'},
+                                    {text: 'Start Time', style: 'tableHeader'},
+                                    {text: 'Duration (s)', style: 'tableHeader'},
+                                    {text: `Start (${unit})`, style: 'tableHeader'},
+                                    {text: `End (${unit})`, style: 'tableHeader'},
+                                    {text: `Avg. (${unit})`, style: 'tableHeader'},
+                                    {text: 'Status', style: 'tableHeader'}
+                                ],
+                                ...tableBody
+                            ]
+                        },
+                        layout: 'lightHorizontalLines'
+                    }
+                ],
                 styles: {
                     header: { fontSize: 16, bold: true, color: '#1E40AF' },
                     subheader: { fontSize: 12, bold: true },
@@ -702,165 +777,6 @@ function TestingComponent() {
                 defaultStyle: { font: 'Roboto' }
             };
 
-            // Common Header
-            docDefinition.content.push({
-                columns: [
-                   logoBase64 ? { image: logoBase64, width: 70 } : { text: '' },
-                    {
-                        stack: [
-                        { text: reportTitle, style: 'header', alignment: 'right' },
-                        { text: (sessionToReport?.vesselTypeName || vesselTypes?.find(vt => vt.id === batchToReport?.vesselTypeId)?.name) || '', style: 'subheader', alignment: 'right', margin: [0, 0, 0, 10] },
-                        ],
-                    },
-                ],
-                columnGap: 10,
-            });
-            docDefinition.content.push({ text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body' });
-            
-            docDefinition.content.push({ image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] });
-            
-            const allSessionsForBatch = reportType === 'batch' && batchToReport ? sessionHistory.filter(s => s.batchId === batchToReport!.id) : [];
-
-            // Table Content
-            if (reportType === 'single' && sessionToReport) {
-                const config = sensorConfigs?.find(c => c.id === sessionToReport.sensorConfigurationId);
-                const batch = batches?.find(b => b.id === sessionToReport.batchId);
-                const data = allSensorDataForReport[sessionToReport.id] || [];
-                const vesselType = vesselTypes?.find(vt => vt.id === sessionToReport.vesselTypeId);
-                
-                const { startIndex } = findMeasurementStart(data, config);
-                const { endIndex } = findMeasurementEnd(data, startIndex, config, vesselType?.durationSeconds);
-                const analysisData = data.slice(startIndex, endIndex + 1);
-
-                const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(sessionToReport.startTime).getTime();
-                const sessionEndTime = analysisData.length > 0 ? new Date(analysisData[analysisData.length - 1].timestamp).getTime() : (sessionToReport.endTime ? new Date(sessionToReport.endTime).getTime() : sessionStartTime);
-                const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
-                
-                const decimalPlaces = config?.decimalPlaces || 2;
-                let startValue = 'N/A', endValue = 'N/A', avgValue = 'N/A';
-
-                if (analysisData.length > 0) {
-                    startValue = convertRawValue(analysisData[0].value, config || null).toFixed(decimalPlaces);
-                    endValue = convertRawValue(analysisData[analysisData.length - 1].value, config || null).toFixed(decimalPlaces);
-                    const sum = analysisData.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
-                    avgValue = (sum / analysisData.length).toFixed(decimalPlaces);
-                }
-
-                const classificationText = getClassificationText(sessionToReport.classification);
-                const statusStyle = {
-                    text: classificationText,
-                    color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
-                };
-                
-                const reactorSessions = (batch ? sessionHistory.filter(s => s.batchId === batch.id && s.serialNumber === sessionToReport!.serialNumber) : [sessionToReport]).sort((a,b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-                const attemptNumber = reactorSessions.findIndex(s => s.id === sessionToReport!.id) + 1;
-                const totalAttempts = reactorSessions.length;
-                const passAttemptIndex = reactorSessions.findIndex(s => s.classification === 'DIFFUSION');
-                let passResult = 'Not passed';
-                if (passAttemptIndex !== -1) {
-                    passResult = `Passed on try #${passAttemptIndex + 1}`;
-                }
-
-                const unit = config?.unit || '';
-
-                docDefinition.content.push({ text: 'Session Summary', style: 'subheader', margin: [0, 10, 0, 5] });
-                docDefinition.content.push({
-                    style: 'tableExample',
-                    table: {
-                        headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', '*', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
-                        body: [
-                            [{text: 'Batch', style: 'tableHeader'}, {text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: `Start (${unit})`, style: 'tableHeader'}, {text: `End (${unit})`, style: 'tableHeader'}, {text: `Avg. (${unit})`, style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
-                            [{ text: batch?.name || 'N/A'}, { text: sessionToReport.serialNumber || 'N/A' }, `${attemptNumber} of ${totalAttempts}`, passResult, {text: sessionToReport.username}, {text: new Date(sessionToReport.startTime).toLocaleString()}, duration, startValue, endValue, avgValue, statusStyle]
-                        ]
-                    },
-                    layout: 'lightHorizontalLines'
-                });
-
-            } else if (reportType === 'batch' && batchToReport) {
-
-                const sessionsByReactor: Record<string, TestSession[]> = {};
-                allSessionsForBatch.forEach(session => {
-                    const key = session.serialNumber || session.id;
-                    if (!sessionsByReactor[key]) {
-                        sessionsByReactor[key] = [];
-                    }
-                    sessionsByReactor[key].push(session);
-                });
-
-                Object.values(sessionsByReactor).forEach(sessions => sessions.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
-
-                const tableBody = sessionsForBatchReport.map(session => {
-                    const reactorSessions = sessionsByReactor[session.serialNumber || session.id] || [];
-                    const attemptNumber = reactorSessions.findIndex(s => s.id === session.id) + 1;
-                    const totalAttempts = reactorSessions.length;
-                    const passAttemptIndex = reactorSessions.findIndex(s => s.classification === 'DIFFUSION');
-                    let passResult = 'Not passed';
-                    if (passAttemptIndex !== -1) {
-                        passResult = `Passed on try #${passAttemptIndex + 1}`;
-                    }
-
-                    const classificationText = getClassificationText(session.classification);
-                    const statusStyle = {
-                        text: classificationText,
-                        color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
-                    };
-                    
-                    const data = allSensorDataForReport[session.id] || [];
-                    const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-                    const sessionVesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-            
-                    const { startIndex } = findMeasurementStart(data, config);
-                    const { endIndex } = findMeasurementEnd(data, startIndex, config, sessionVesselType?.durationSeconds);
-                    const analysisData = data.slice(startIndex, endIndex + 1);
-
-                    const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(session.startTime).getTime();
-                    const sessionEndTime = analysisData.length > 0 ? new Date(analysisData[analysisData.length-1].timestamp).getTime() : (session.endTime ? new Date(session.endTime).getTime() : sessionStartTime);
-
-                    const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
-                    
-                    const decimalPlaces = config?.decimalPlaces || 2;
-                    let startValue = 'N/A', endValue = 'N/A', avgValue = 'N/A';
-                    if (analysisData.length > 0) {
-                        startValue = convertRawValue(analysisData[0].value, config || null).toFixed(decimalPlaces);
-                        endValue = convertRawValue(analysisData[analysisData.length - 1].value, config || null).toFixed(decimalPlaces);
-                        const sum = analysisData.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
-                        avgValue = (sum / analysisData.length).toFixed(decimalPlaces);
-                    }
-                    const unit = config?.unit || '';
-
-                    return [
-                        session.serialNumber || 'N/A',
-                        `${attemptNumber} of ${totalAttempts}`,
-                        passResult,
-                        session.username,
-                        new Date(session.startTime).toLocaleString(),
-                        duration,
-                        `${startValue}`,
-                        `${endValue}`,
-                        `${avgValue}`,
-                        statusStyle
-                    ];
-                });
-
-                const firstSessionConfig = sensorConfigs?.find(c => c.id === sessionsForBatchReport[0].sensorConfigurationId);
-                const unit = firstSessionConfig?.unit || '';
-
-                docDefinition.content.push({ text: `Batch: ${batchToReport.name} - Summary`, style: 'subheader', margin: [0, 10, 0, 5] });
-                docDefinition.content.push({
-                    style: 'tableExample',
-                    table: {
-                        headerRows: 1,
-                        widths: ['*', 'auto', 'auto', '*', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
-                        body: [
-                            [{text: 'Serial Number', style: 'tableHeader'}, {text: 'Attempt', style: 'tableHeader'}, {text: 'Pass Result', style: 'tableHeader'}, {text: 'User', style: 'tableHeader'}, {text: 'Start Time', style: 'tableHeader'}, {text: 'Duration (s)', style: 'tableHeader'}, {text: `Start (${unit})`, style: 'tableHeader'}, {text: `End (${unit})`, style: 'tableHeader'}, {text: `Avg. (${unit})`, style: 'tableHeader'}, {text: 'Status', style: 'tableHeader'}],
-                            ...tableBody
-                        ]
-                    },
-                    layout: 'lightHorizontalLines'
-                });
-            }
-
             pdfMake.createPdf(docDefinition).download(`${reportFilename}.pdf`);
             toast({ title: 'Report Generated', description: 'Your PDF report is downloading.' });
 
@@ -869,11 +785,11 @@ function TestingComponent() {
             toast({ variant: 'destructive', title: 'Report Failed', description: `Could not generate the PDF. ${e.message}` });
         } finally {
             setIsGeneratingReport(false);
-            setComparisonSessions(originalComparisonSessions);
-            setIsReportDialogOpen(false);
+            if (originalComparisonSessions) {
+                setComparisonSessions(originalComparisonSessions);
+            }
+            setIsHistoryPanelOpen(false);
             setReportType(null);
-            setSelectedReportSessionId(null);
-            setSelectedReportBatchId(null);
         }
   };
 
@@ -997,12 +913,86 @@ function TestingComponent() {
 
   }, [comparisonSessions, sensorConfigs]);
 
-    const getClassificationText = (classification?: 'LEAK' | 'DIFFUSION') => {
+    const getClassificationText = (classification?: 'LEAK' | 'DIFFUSION' | 'UNCLASSIFIABLE') => {
       switch(classification) {
           case 'LEAK': return 'Not Passed';
           case 'DIFFUSION': return 'Passed';
+          case 'UNCLASSIFIABLE': return 'Unclassifiable';
           default: return 'Unclassified';
       }
+  };
+
+  const filteredHistory = useMemo(() => {
+    if (!sessionHistory) return [];
+
+    let filtered = sessionHistory;
+
+    if (sessionUserFilter.length > 0) {
+        filtered = filtered.filter(session => sessionUserFilter.includes(session.userId));
+    }
+    if (sessionVesselTypeFilter.length > 0) {
+        filtered = filtered.filter(session => sessionVesselTypeFilter.includes(session.vesselTypeId));
+    }
+    if (sessionBatchFilter.length > 0) {
+        filtered = filtered.filter(session => session.batchId && sessionBatchFilter.includes(session.batchId));
+    }
+    if (sessionTestBenchFilter.length > 0) {
+        filtered = filtered.filter(session => sessionTestBenchFilter.includes(session.testBenchId));
+    }
+    if (sessionClassificationFilter !== 'all') {
+        if (sessionClassificationFilter === 'classified') filtered = filtered.filter(session => !!session.classification);
+        else if (sessionClassificationFilter === 'unclassified') filtered = filtered.filter(session => !session.classification);
+        else if (sessionClassificationFilter === 'passed') filtered = filtered.filter(session => session.classification === 'DIFFUSION');
+        else if (sessionClassificationFilter === 'not-passed') filtered = filtered.filter(session => session.classification === 'LEAK');
+        else if (sessionClassificationFilter === 'unclassifiable') filtered = filtered.filter(session => session.classification === 'UNCLASSIFIABLE');
+    }
+    if (sessionDateFilter?.from) {
+        const fromDate = sessionDateFilter.from;
+        fromDate.setHours(0, 0, 0, 0);
+        filtered = filtered.filter(session => new Date(session.startTime) >= fromDate);
+    }
+    if (sessionDateFilter?.to) {
+        const toDate = sessionDateFilter.to;
+        toDate.setHours(23, 59, 59, 999);
+        filtered = filtered.filter(session => new Date(session.startTime) <= toDate);
+    }
+    filtered = filtered.filter(session => {
+        const term = sessionSearchTerm.toLowerCase();
+        if (!term) return true;
+        const batchName = batches?.find(b => b.id === session.batchId)?.name.toLowerCase() || '';
+        return session.vesselTypeName.toLowerCase().includes(term) ||
+               batchName.includes(term) ||
+               session.serialNumber.toLowerCase().includes(term) ||
+               session.description.toLowerCase().includes(term) ||
+               session.username.toLowerCase().includes(term);
+    });
+
+    return filtered.sort((a, b) => {
+        switch (sessionSortOrder) {
+            case 'startTime-asc': return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+            default: return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
+        }
+    });
+  }, [sessionHistory, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, sessionDateFilter, batches]);
+
+  const isFilterActive = useMemo(() => {
+    return sessionUserFilter.length > 0 || 
+           sessionVesselTypeFilter.length > 0 || 
+           sessionBatchFilter.length > 0 ||
+           sessionTestBenchFilter.length > 0 || 
+           sessionClassificationFilter !== 'all' ||
+           !!sessionDateFilter ||
+           sessionSearchTerm !== '';
+  }, [sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, sessionDateFilter, sessionSearchTerm]);
+
+  const handleResetFilters = () => {
+    setSessionSearchTerm('');
+    setSessionUserFilter([]);
+    setSessionVesselTypeFilter([]);
+    setSessionBatchFilter([]);
+    setSessionTestBenchFilter([]);
+    setSessionClassificationFilter('all');
+    setSessionDateFilter(undefined);
   };
 
 
@@ -1267,116 +1257,136 @@ function TestingComponent() {
                             </div>
                         ) : (
                             <CardDescription>
-                                Select a session to view its data.
+                                Select sessions to view and compare.
                             </CardDescription>
                         )}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                         <Dialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
+                         <Dialog open={isHistoryPanelOpen} onOpenChange={setIsHistoryPanelOpen}>
                             <DialogTrigger asChild>
-                                <Button variant="outline" size="sm"><FileText className="mr-2 h-4 w-4" />Create PDF Report</Button>
+                                <Button variant="outline" size="sm"><Search className="mr-2 h-4 w-4" />Compare Sessions</Button>
                             </DialogTrigger>
-                            <DialogContent>
+                             <DialogContent className="max-w-4xl h-[80vh]">
                                 <DialogHeader>
-                                    <DialogTitle>Create PDF Report</DialogTitle>
-                                    <DialogDescription>Select the type of report you want to generate.</DialogDescription>
+                                    <DialogTitle>Select Sessions for Comparison or Report</DialogTitle>
+                                    <DialogDescription>Use the filters to find sessions. Selected sessions will appear on the chart.</DialogDescription>
                                 </DialogHeader>
-                                <div className="py-4 space-y-4">
-                                    <div className="flex items-center space-x-2">
-                                        <input type="radio" id="report-single" name="report-type" value="single" onChange={() => setReportType('single')} />
-                                        <Label htmlFor="report-single">Single Session Report</Label>
+                                <div className="flex flex-col gap-4 h-full">
+                                    {/* Filter and Sort Controls */}
+                                    <div className="flex flex-col sm:flex-row gap-2">
+                                        <Input
+                                            placeholder="Search sessions..."
+                                            value={sessionSearchTerm}
+                                            onChange={(e) => setSessionSearchTerm(e.target.value)}
+                                            className="flex-grow"
+                                        />
+                                        <div className="flex flex-wrap gap-2">
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button variant="outline"><ListTree /></Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end">
+                                                    <DropdownMenuItem onSelect={() => setSessionSortOrder('startTime-desc')}>Newest</DropdownMenuItem>
+                                                    <DropdownMenuItem onSelect={() => setSessionSortOrder('startTime-asc')}>Oldest</DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button variant={isFilterActive ? "default" : "outline"}><Filter /></Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end" className="w-[300px]">
+                                                    <ScrollArea className="h-[400px]">
+                                                        <div className="p-2 space-y-2">
+                                                        {/* Filter controls copied from admin page */}
+                                                            <div className="space-y-1">
+                                                                <Label>Date Range</Label>
+                                                                <Popover>
+                                                                    <PopoverTrigger asChild>
+                                                                    <Button id="date" variant={"outline"} className="w-full justify-start text-left font-normal">
+                                                                        <CalendarIcon className="mr-2 h-4 w-4" />
+                                                                        {sessionDateFilter?.from ? (sessionDateFilter.to ? (<>{format(sessionDateFilter.from, "LLL dd, y")} - {format(sessionDateFilter.to, "LLL dd, y")}</>) : (format(sessionDateFilter.from, "LLL dd, y"))) : (<span>Pick a date</span>)}
+                                                                    </Button>
+                                                                    </PopoverTrigger>
+                                                                    <PopoverContent className="w-auto p-0" align="start">
+                                                                    <Calendar initialFocus mode="range" defaultMonth={sessionDateFilter?.from} selected={sessionDateFilter} onSelect={setSessionDateFilter} numberOfMonths={2} />
+                                                                    <div className="p-2 border-t border-border"><Button onClick={() => setSessionDateFilter(undefined)} variant="ghost" size="sm" className="w-full justify-center">Reset</Button></div>
+                                                                    </PopoverContent>
+                                                                </Popover>
+                                                            </div>
+                                                            <Accordion type="multiple" className="w-full">
+                                                                {/* Accordion items for filters */}
+                                                                <AccordionItem value="classification"><AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Classification</AccordionTrigger><AccordionContent className="pb-0"><div className="space-y-1 px-2 pb-2"><Select value={sessionClassificationFilter} onValueChange={setSessionClassificationFilter}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All</SelectItem><SelectItem value="passed">Passed</SelectItem><SelectItem value="not-passed">Not Passed</SelectItem><SelectItem value="unclassifiable">Unclassifiable</SelectItem><SelectItem value="unclassified">Unclassified</SelectItem></SelectContent></Select></div></AccordionContent></AccordionItem>
+                                                                <AccordionItem value="users"><AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Users</AccordionTrigger><AccordionContent className="pb-0">{[...new Map(users?.map(item => [item.id, item])).values()].map(u => (<DropdownMenuCheckboxItem key={u.id} checked={sessionUserFilter.includes(u.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionUserFilter(c => c.includes(u.id) ? c.filter(i => i !== u.id) : [...c, u.id])}>{u.username}</DropdownMenuCheckboxItem>))}</AccordionContent></AccordionItem>
+                                                                <AccordionItem value="vessel-types"><AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Vessel Types</AccordionTrigger><AccordionContent className="pb-0">{[...new Map(vesselTypes?.map(item => [item.id, item])).values()].map(vt => (<DropdownMenuCheckboxItem key={vt.id} checked={sessionVesselTypeFilter.includes(vt.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionVesselTypeFilter(c => c.includes(vt.id) ? c.filter(i => i !== vt.id) : [...c, vt.id])}>{vt.name}</DropdownMenuCheckboxItem>))}</AccordionContent></AccordionItem>
+                                                                <AccordionItem value="batches"><AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Batches</AccordionTrigger><AccordionContent className="pb-0">{[...new Map(batches?.map(item => [item.id, item])).values()].map(b => (<DropdownMenuCheckboxItem key={b.id} checked={sessionBatchFilter.includes(b.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionBatchFilter(c => c.includes(b.id) ? c.filter(i => i !== b.id) : [...c, b.id])}>{b.name}</DropdownMenuCheckboxItem>))}</AccordionContent></AccordionItem>
+                                                            </Accordion>
+                                                        </div>
+                                                    </ScrollArea>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+
+                                            {isFilterActive && <Button onClick={handleResetFilters} variant="ghost" size="icon"><RotateCcw /></Button>}
+                                        </div>
                                     </div>
-                                    {reportType === 'single' && (
-                                        <Select onValueChange={setSelectedReportSessionId}>
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Select a completed session..." />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {sessionHistory.filter(s => s.status === 'COMPLETED').map(s => (
-                                                    <SelectItem key={s.id} value={s.id}>{s.vesselTypeName} - S/N: {s.serialNumber || 'N/A'} ({new Date(s.startTime).toLocaleDateString()})</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    )}
-                                     <div className="flex items-center space-x-2">
-                                        <input type="radio" id="report-batch" name="report-type" value="batch" onChange={() => setReportType('batch')} />
-                                        <Label htmlFor="report-batch">Batch Report</Label>
-                                    </div>
-                                     {reportType === 'batch' && (
-                                        <Select onValueChange={setSelectedReportBatchId}>
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Select a batch..." />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {batches?.map(b => (
-                                                    <SelectItem key={b.id} value={b.id}>{b.name} ({vesselTypes?.find(vt => vt.id === b.vesselTypeId)?.name})</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    )}
+                                    {/* Session List */}
+                                    <ScrollArea className="flex-grow">
+                                        {isHistoryLoading ? <p>Loading...</p> :
+                                        <div className="space-y-2">
+                                            {filteredHistory.map(session => (
+                                                <div key={session.id} className={`flex items-center gap-4 p-2 rounded-md transition-colors ${comparisonSessions.some(s => s.id === session.id) ? 'bg-muted' : 'hover:bg-muted/50'}`}>
+                                                    <Checkbox
+                                                        id={`select-${session.id}`}
+                                                        checked={comparisonSessions.some(s => s.id === session.id)}
+                                                        onCheckedChange={() => handleToggleComparison(session)}
+                                                    />
+                                                    <Label htmlFor={`select-${session.id}`} className="flex-grow cursor-pointer">
+                                                        <p className="font-semibold">{session.vesselTypeName} - {session.serialNumber || 'N/A'}</p>
+                                                        <p className="text-xs text-muted-foreground">{new Date(session.startTime).toLocaleString()} by {session.username}</p>
+                                                    </Label>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        }
+                                    </ScrollArea>
                                 </div>
                                 <DialogFooter>
-                                    <Button onClick={generateReport} disabled={isGeneratingReport || !reportType || (reportType === 'single' && !selectedReportSessionId) || (reportType === 'batch' && !selectedReportBatchId) }>
-                                        {isGeneratingReport ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating...</> : "Generate Report"}
+                                    <Button variant="outline" onClick={() => setIsHistoryPanelOpen(false)}>Close</Button>
+                                    <Button onClick={() => { setReportType('custom'); generateReport(); }} disabled={isGeneratingReport || comparisonSessions.length === 0}>
+                                        {isGeneratingReport ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <FileText className="mr-2 h-4 w-4"/>}
+                                        Create Custom Report
                                     </Button>
                                 </DialogFooter>
                             </DialogContent>
                         </Dialog>
-                        <Sheet open={isHistoryPanelOpen} onOpenChange={setIsHistoryPanelOpen}>
-                            <SheetTrigger asChild>
-                                <Button variant="outline" size="sm">
-                                  <Search className="mr-2 h-4 w-4" />
-                                  View & Compare Sessions
-                                </Button>
-                            </SheetTrigger>
-                            <SheetContent className="w-[400px] sm:w-[540px]">
-                                <SheetHeader>
-                                <SheetTitle>Test Session History</SheetTitle>
-                                <SheetDescription>Select sessions to view and compare on the chart.</SheetDescription>
-                                </SheetHeader>
-                                <div className="h-[calc(100%-4rem)] overflow-y-auto pt-4">
-                                {isHistoryLoading ? <p className="text-center text-muted-foreground">Loading history...</p> : sessionHistory.length > 0 ? (
-                                <div className="space-y-2">
-                                    {sessionHistory.map(session => (
-                                        <Card key={session.id} className={`p-3 transition-colors hover:bg-muted/50 hover:scale-[1.02] hover:shadow-lg ${comparisonSessions.some(s => s.id === session.id) ? 'border-primary' : ''}`}>
-                                            <div className="flex justify-between items-center gap-2">
-                                                <div className="flex items-center gap-4 flex-grow">
-                                                    <Checkbox
-                                                        checked={comparisonSessions.some(s => s.id === session.id)}
-                                                        onCheckedChange={() => handleToggleComparison(session)}
-                                                        aria-label={`Select session ${session.serialNumber}`}
-                                                    />
-                                                    <div className="flex-grow">
-                                                        <p className="font-semibold">{session.vesselTypeName} - {session.serialNumber || 'N/A'}</p>
-                                                        <p className="text-xs text-muted-foreground">{new Date(session.startTime).toLocaleString()} by {session.username}</p>
-                                                    </div>
-                                                </div>
-                                                 <div className="flex items-center gap-2">
-                                                    
-                                                    <AlertDialog>
-                                                        <AlertDialogTrigger asChild>
-                                                            <Button size="sm" variant="destructive"><Trash2 className="h-4 w-4"/></Button>
-                                                        </AlertDialogTrigger>
-                                                        <AlertDialogContent>
-                                                            <AlertDialogHeader>
-                                                                <AlertDialogTitle>Delete Session?</AlertDialogTitle>
-                                                                <AlertDialogDescription>This will permanently delete the session for "{session.vesselTypeName} - {session.serialNumber}" and all its data. This cannot be undone.</AlertDialogDescription>
-                                                            </AlertDialogHeader>
-                                                            <AlertDialogFooter>
-                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                <AlertDialogAction variant="destructive" onClick={() => handleDeleteSession(session.id)}>Confirm Delete</AlertDialogAction>
-                                                            </AlertDialogFooter>
-                                                        </AlertDialogContent>
-                                                    </AlertDialog>
-                                                 </div>
-                                            </div>
-                                        </Card>
-                                    ))}
-                                </div>  
-                                ) : <p className="text-center text-muted-foreground">No sessions recorded yet.</p>}
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                               <Button variant="outline" size="sm"><FileText className="mr-2 h-4 w-4" />Create Report</Button>
+                            </DropdownMenuTrigger>
+                             <DropdownMenuContent>
+                                <DropdownMenuItem onSelect={() => setIsHistoryPanelOpen(true)}>
+                                   <Search className="mr-2 h-4 w-4" />
+                                   Custom Report...
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => { setReportType('batch'); }}>
+                                   <FileText className="mr-2 h-4 w-4" />
+                                   Batch Report...
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                        {reportType === 'batch' && (
+                             <div className="flex gap-2 items-center">
+                                <Select onValueChange={setSelectedReportBatchId}>
+                                    <SelectTrigger className="w-[200px]">
+                                        <SelectValue placeholder="Select a batch..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {batches?.map(b => ( <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem> ))}
+                                    </SelectContent>
+                                </Select>
+                                <Button onClick={() => generateReport()} size="sm" disabled={isGeneratingReport || !selectedReportBatchId}>Generate</Button>
+                                <Button onClick={() => setReportType(null)} size="sm" variant="ghost"><XIcon/></Button>
                             </div>
-                            </SheetContent>
-                        </Sheet>
+                        )}
                         <Button variant={activeTimeframe === '1m' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('1m')}>1m</Button>
                         <Button variant={activeTimeframe === '5m' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('5m')}>5m</Button>
                         <Button variant={activeTimeframe === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setTimeframe('all')}>All</Button>
