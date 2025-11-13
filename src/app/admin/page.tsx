@@ -1199,6 +1199,7 @@ export default function AdminPage() {
         for (const session of relevantSessions) {
             const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
             const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
+            const snapshot = await getDocs(q);
             allSensorData[session.id] = snapshot.docs.map(doc => doc.data() as SensorData);
         }
         
@@ -2468,46 +2469,50 @@ export default function AdminPage() {
                                                                 Click twice to set start/end points. Drag points to adjust the curve. You can also edit the values directly below.
                                                             </DialogDescription>
                                                         </DialogHeader>
-                                                        <div className="grid grid-cols-2 gap-4">
-                                                            <div className="space-y-2">
-                                                                <Label>Maximum Time (s)</Label>
-                                                                <Input type="number" value={guidelineEditorMaxX} onChange={e => setGuidelineEditorMaxX(e.target.value === '' ? '' : Number(e.target.value))} />
-                                                            </div>
-                                                             <div className="space-y-2">
-                                                                <Label>Maximum Pressure</Label>
-                                                                <Input type="number" value={guidelineEditorMaxY} onChange={e => setGuidelineEditorMaxY(e.target.value === '' ? '' : Number(e.target.value))} />
-                                                            </div>
-                                                        </div>
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
-                                                            <div>
-                                                                <h3 className="font-semibold text-center mb-2">Minimum Curve (Green)</h3>
-                                                                <GuidelineCurveEditor
-                                                                    points={minCurvePoints}
-                                                                    setPoints={setMinCurvePoints}
-                                                                    className="h-64"
-                                                                    lineColor="hsl(var(--chart-2))"
-                                                                    maxX={Number(guidelineEditorMaxX)}
-                                                                    maxY={Number(guidelineEditorMaxY)}
-                                                                />
-                                                                <div className="mt-4">
-                                                                  {renderGuidelineInputs('min')}
+                                                        <ScrollArea className="max-h-[70vh]">
+                                                            <div className="p-1">
+                                                                <div className="grid grid-cols-2 gap-4">
+                                                                    <div className="space-y-2">
+                                                                        <Label>Maximum Time (s)</Label>
+                                                                        <Input type="number" value={guidelineEditorMaxX} onChange={e => setGuidelineEditorMaxX(e.target.value === '' ? '' : Number(e.target.value))} />
+                                                                    </div>
+                                                                    <div className="space-y-2">
+                                                                        <Label>Maximum Pressure</Label>
+                                                                        <Input type="number" value={guidelineEditorMaxY} onChange={e => setGuidelineEditorMaxY(e.target.value === '' ? '' : Number(e.target.value))} />
+                                                                    </div>
+                                                                </div>
+                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+                                                                    <div>
+                                                                        <h3 className="font-semibold text-center mb-2">Minimum Curve (Green)</h3>
+                                                                        <GuidelineCurveEditor
+                                                                            points={minCurvePoints}
+                                                                            setPoints={setMinCurvePoints}
+                                                                            className="h-64"
+                                                                            lineColor="hsl(var(--chart-2))"
+                                                                            maxX={Number(guidelineEditorMaxX)}
+                                                                            maxY={Number(guidelineEditorMaxY)}
+                                                                        />
+                                                                        <div className="mt-4">
+                                                                        {renderGuidelineInputs('min')}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div>
+                                                                        <h3 className="font-semibold text-center mb-2">Maximum Curve (Red)</h3>
+                                                                        <GuidelineCurveEditor
+                                                                            points={maxCurvePoints}
+                                                                            setPoints={setMaxCurvePoints}
+                                                                            className="h-64"
+                                                                            lineColor="hsl(var(--destructive))"
+                                                                            maxX={Number(guidelineEditorMaxX)}
+                                                                            maxY={Number(guidelineEditorMaxY)}
+                                                                        />
+                                                                        <div className="mt-4">
+                                                                        {renderGuidelineInputs('max')}
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
                                                             </div>
-                                                            <div>
-                                                                <h3 className="font-semibold text-center mb-2">Maximum Curve (Red)</h3>
-                                                                <GuidelineCurveEditor
-                                                                    points={maxCurvePoints}
-                                                                    setPoints={setMaxCurvePoints}
-                                                                    className="h-64"
-                                                                    lineColor="hsl(var(--destructive))"
-                                                                    maxX={Number(guidelineEditorMaxX)}
-                                                                    maxY={Number(guidelineEditorMaxY)}
-                                                                />
-                                                                <div className="mt-4">
-                                                                  {renderGuidelineInputs('max')}
-                                                                </div>
-                                                            </div>
-                                                        </div>
+                                                        </ScrollArea>
                                                         <DialogFooter>
                                                             <DialogClose asChild>
                                                                 <Button variant="ghost" onClick={() => setEditingVesselType(null)}>Cancel</Button>
