@@ -1211,11 +1211,22 @@ export default function AdminPage() {
         }
 
         const allSensorData: Record<string, SensorData[]> = {};
+        const measurementWindows: Record<string, { start: { startIndex: number; startTime: number }; end: { endIndex: number; endTime: number }; }> = {};
+
         for (const session of relevantSessions) {
             const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
             const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
             const snapshot = await getDocs(q);
-            allSensorData[session.id] = snapshot.docs.map(doc => doc.data() as SensorData);
+            const data = snapshot.docs.map(doc => doc.data() as SensorData);
+            allSensorData[session.id] = data;
+
+            if (data.length > 0) {
+                const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+                const vt = vesselTypes?.find(v => v.id === session.vesselTypeId);
+                const start = findMeasurementStart(data, config);
+                const end = findMeasurementEnd(data, start.startIndex, config, vt?.durationSeconds);
+                measurementWindows[session.id] = { start, end };
+            }
         }
         
         const vt = vesselTypes?.find(vt => vt.id === vesselType.id);
@@ -1234,13 +1245,14 @@ export default function AdminPage() {
         
         const chartDataForPdf = relevantSessions.flatMap(session => {
             const data = allSensorData[session.id];
-            if (!data || data.length === 0) return [];
+            const window = measurementWindows[session.id];
+            if (!data || data.length === 0 || !window) return [];
             
-            const sessionStartTime = new Date(data[0].timestamp).getTime();
+            const measurementStartTime = new Date(data[window.start.startIndex].timestamp).getTime();
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
 
             return data.map(d => {
-                const time = (new Date(d.timestamp).getTime() - sessionStartTime) / 1000;
+                const time = (new Date(d.timestamp).getTime() - measurementStartTime) / 1000;
                 const value = convertRawValue(d.value, config || null);
 
                 const minGuideline = vt?.minCurve ? interpolate(vt.minCurve, time) : undefined;

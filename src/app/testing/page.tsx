@@ -74,7 +74,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import type { DateRange } from 'react-day-picker';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem, Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem } from '@/components/ui/dropdown-menu';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
 
 if (pdfFonts.pdfMake) {
@@ -471,11 +472,15 @@ function TestingComponent() {
   const chartData = useMemo((): ChartDataPoint[] => {
     if (comparisonSessions.length === 0) return [];
   
-    const sessionStartTimes: Record<string, number> = {};
+    const measurementStartTimestamps: Record<string, number> = {};
     comparisonSessions.forEach(session => {
-        const sessionData = comparisonData[session.id] || [];
-        if (sessionData.length > 0) {
-            sessionStartTimes[session.id] = new Date(sessionData[0].timestamp).getTime();
+        const window = measurementWindows[session.id];
+        const data = comparisonData[session.id] || [];
+        if (window && data.length > window.start.startIndex) {
+            measurementStartTimestamps[session.id] = new Date(data[window.start.startIndex].timestamp).getTime();
+        } else if (data.length > 0) {
+            // Fallback to session start if measurement start can't be determined
+            measurementStartTimestamps[session.id] = new Date(data[0].timestamp).getTime();
         }
     });
 
@@ -483,7 +488,7 @@ function TestingComponent() {
 
     comparisonSessions.forEach(session => {
         const sessionData = comparisonData[session.id] || [];
-        const startTime = sessionStartTimes[session.id];
+        const startTime = measurementStartTimestamps[session.id];
         if (!startTime) return;
 
         const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
@@ -529,7 +534,7 @@ function TestingComponent() {
     });
 
     return Object.values(mergedData).sort((a, b) => a.name - b.name);
-}, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
+}, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes, measurementWindows]);
 
   const sessionFailedIntervals = useMemo(() => {
     const intervalsBySession: Record<string, { x1: number, x2: number }[]> = {};
@@ -1457,12 +1462,15 @@ function TestingComponent() {
                             const window = measurementWindows[session.id];
                             if (!window || !window.start) return null;
                             const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-                            const expectedEndTime = vesselType?.durationSeconds ? window.start.startTime + vesselType.durationSeconds : undefined;
+                            
+                            // Align relative to the calculated start time for this session
+                            const relativeStartTime = 0;
+                            const expectedEndTime = vesselType?.durationSeconds ? relativeStartTime + vesselType.durationSeconds : undefined;
 
                             return (
                                 <React.Fragment key={`ref-lines-${session.id}`}>
                                     <ReferenceLine
-                                        x={window.start.startTime}
+                                        x={relativeStartTime}
                                         stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                         strokeDasharray="3 3"
                                         label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
@@ -1524,3 +1532,5 @@ export default function TestingPage() {
 
 
     
+
+
