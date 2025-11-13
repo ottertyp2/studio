@@ -669,6 +669,15 @@ export default function AdminPage() {
     updateDocumentNonBlocking(sessionRef, updateData);
   };
 
+  const handleAssignSessionToBatch = (sessionId: string, newBatchId: string) => {
+    if (!firestore) return;
+    const batchName = batches?.find(b => b.id === newBatchId)?.name || 'Unknown';
+    const sessionRef = doc(firestore, 'test_sessions', sessionId);
+    updateDocumentNonBlocking(sessionRef, { batchId: newBatchId });
+    toast({ title: 'Session Reassigned', description: `Session has been moved to batch "${batchName}".` });
+  };
+
+
   const handleClassifyByGuideline = async (session: TestSession) => {
     if (!firestore || !vesselTypes || !sensorConfigs) {
       toast({ variant: 'destructive', title: 'Prerequisites Missing', description: 'Vessel types or sensor configurations not loaded.' });
@@ -2158,6 +2167,23 @@ export default function AdminPage() {
                                         <span>Export as CSV</span>
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
+                                    <DropdownMenuSub>
+                                      <DropdownMenuSubTrigger>
+                                        <Layers className="mr-2 h-4 w-4" />
+                                        <span>Assign to Batch</span>
+                                      </DropdownMenuSubTrigger>
+                                      <DropdownMenuPortal>
+                                        <DropdownMenuSubContent>
+                                            <ScrollArea className="h-[200px]">
+                                            {batches?.filter(b => b.vesselTypeId === session.vesselTypeId).map(batch => (
+                                                <DropdownMenuItem key={batch.id} onClick={() => handleAssignSessionToBatch(session.id, batch.id)}>
+                                                    <span>{batch.name}</span>
+                                                </DropdownMenuItem>
+                                            ))}
+                                            </ScrollArea>
+                                        </DropdownMenuSubContent>
+                                      </DropdownMenuPortal>
+                                    </DropdownMenuSub>
                                      <DropdownMenuSub>
                                       <DropdownMenuSubTrigger>
                                         <Sparkles className="mr-2 h-4 w-4" />
@@ -2839,5 +2865,7 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
+
+    
 
     
