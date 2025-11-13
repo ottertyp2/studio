@@ -323,6 +323,7 @@ export default function AdminPage() {
   const [classificationSession, setClassificationSession] = useState<TestSession | null>(null);
   const [activeModel, setActiveModel] = useState<MLModel | null>(null);
   const [isClassifying, setIsClassifying] = useState(false);
+  const [isSignupConfirmOpen, setIsSignupConfirmOpen] = useState(false);
 
   const modelsCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'mlModels') : null, [firestore]);
   const { data: mlModels } = useCollection<MLModel>(modelsCollectionRef);
@@ -1850,16 +1851,25 @@ export default function AdminPage() {
     }
   };
 
-  const handleSignupSwitch = async (allowSignups: boolean) => {
-    if (!appSettingsDocRef) {
-        toast({ variant: 'destructive', title: 'Error', description: 'App settings reference not available.' });
-        return;
+  const handleSignupSwitchChange = (allowSignups: boolean) => {
+    if (allowSignups) {
+        // If user is trying to enable signups, open the confirmation dialog
+        setIsSignupConfirmOpen(true);
+    } else {
+        // If user is disabling, do it directly
+        confirmSignupSwitch(false);
     }
-    // Optimistically update the UI, but the source of truth is the `appSettings` from `useDoc`
+  };
+
+  const confirmSignupSwitch = async (allowSignups: boolean) => {
+    if (!appSettingsDocRef) {
+      toast({ variant: 'destructive', title: 'Error', description: 'App settings reference not available.' });
+      return;
+    }
     await setDocumentNonBlocking(appSettingsDocRef, { allowSignups }, { merge: true });
     toast({
-        title: 'Settings Updated',
-        description: `New user sign-ups have been ${allowSignups ? 'enabled' : 'disabled'}.`
+      title: 'Settings Updated',
+      description: `New user sign-ups have been ${allowSignups ? 'enabled' : 'disabled'}.`
     });
   };
 
@@ -2402,19 +2412,35 @@ export default function AdminPage() {
                         </div>
                         <div className="p-4 border rounded-lg bg-background/50">
                             <h3 className="text-lg font-semibold mb-2">System Settings</h3>
-                             <div className="flex items-center justify-between">
-                                <Label htmlFor="signup-switch" className="flex flex-col space-y-1">
-                                    <span>Allow New User Sign-ups</span>
-                                    <span className="font-normal leading-snug text-muted-foreground text-xs">
-                                        Enable or disable the public user registration page.
-                                    </span>
-                                </Label>
-                                <Switch
-                                    id="signup-switch"
-                                    checked={appSettings?.allowSignups ?? false}
-                                    onCheckedChange={handleSignupSwitch}
-                                />
-                            </div>
+                            <AlertDialog open={isSignupConfirmOpen} onOpenChange={setIsSignupConfirmOpen}>
+                                <div className="flex items-center justify-between">
+                                    <Label htmlFor="signup-switch" className="flex flex-col space-y-1">
+                                        <span>Allow New User Sign-ups</span>
+                                        <span className="font-normal leading-snug text-muted-foreground text-xs">
+                                            Enable or disable the public user registration page.
+                                        </span>
+                                    </Label>
+                                    <Switch
+                                        id="signup-switch"
+                                        checked={appSettings?.allowSignups ?? false}
+                                        onCheckedChange={handleSignupSwitchChange}
+                                    />
+                                </div>
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>Enable Public Sign-ups?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            Enabling this will allow anyone on the internet to create an account. By default, new users have limited permissions, but can still view test data. Are you sure you want to proceed?
+                                        </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => confirmSignupSwitch(true)}>
+                                            Yes, Enable Sign-ups
+                                        </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
                         </div>
                         <h3 className="text-lg font-semibold my-4">Existing Users</h3>
                         <ScrollArea className="h-64">
