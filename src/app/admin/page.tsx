@@ -686,90 +686,102 @@ export default function AdminPage() {
 
   const handleClassifyByGuideline = async (session: TestSession) => {
     if (!firestore || !vesselTypes || !sensorConfigs) {
-      toast({ variant: 'destructive', title: 'Prerequisites Missing', description: 'Vessel types or sensor configurations not loaded.' });
-      return;
+        toast({ variant: 'destructive', title: 'Prerequisites Missing', description: 'Vessel types or sensor configurations not loaded.' });
+        return;
     }
 
     const vesselType = vesselTypes.find(vt => vt.id === session.vesselTypeId);
     if (!vesselType || !vesselType.minCurve || !vesselType.maxCurve || vesselType.minCurve.length < 4 || vesselType.maxCurve.length < 4) {
-      toast({ variant: 'destructive', title: 'Guideline Missing', description: `Incomplete guidelines (must be a 4-point Bézier curve) for vessel type "${session.vesselTypeName}".` });
-      return;
+        toast({ variant: 'destructive', title: 'Guideline Missing', description: `Incomplete guidelines (must be a 4-point Bézier curve) for vessel type "${session.vesselTypeName}".` });
+        return;
     }
 
     const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
     if (!config) {
-      toast({ variant: 'destructive', title: 'Configuration Missing', description: 'Sensor configuration for this session not found.' });
-      return;
+        toast({ variant: 'destructive', title: 'Configuration Missing', description: 'Sensor configuration for this session not found.' });
+        return;
     }
 
     try {
-      const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
-      const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
-      const snapshot = await getDocs(q);
-      const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
+        const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+        const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
+        const snapshot = await getDocs(q);
+        const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
 
-      if (sensorData.length === 0) {
-        toast({ variant: 'warning', title: 'No Data', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" has no data to classify.` });
-        return;
-      }
-      
-      const { startIndex } = findMeasurementStart(sensorData, config);
-      const analysisData = sensorData.slice(startIndex);
-
-      if (analysisData.length === 0) {
-        toast({ variant: 'warning', title: 'No Usable Data', description: 'No data available within the detected measurement window.' });
-        return;
-      }
-      
-      const sessionStartTime = new Date(analysisData[0].timestamp).getTime();
-      
-      const interpolateBezierCurve = (curve: { x: number, y: number }[], x: number) => {
-          if (!curve || curve.length !== 4) return undefined;
-          const [p0, p1, p2, p3] = curve;
-
-          const totalXRange = p3.x - p0.x;
-          if (totalXRange <= 0) return p0.y; 
-
-          const t = (x - p0.x) / totalXRange;
-          if (t < 0) return p0.y;
-          if (t > 1) return p3.y;
-          
-          const u = 1 - t;
-          const tt = t * t;
-          const uu = u * u;
-          const uuu = uu * u;
-          const ttt = tt * t;
-
-          const y = uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
-
-          return y;
-      };
-
-      let errorCount = 0;
-      for (const dataPoint of analysisData) {
-        const timeElapsed = (new Date(dataPoint.timestamp).getTime() - sessionStartTime) / 1000;
-        const convertedValue = convertRawValue(dataPoint.value, config);
-
-        const minGuideline = interpolateBezierCurve(vesselType.minCurve, timeElapsed);
-        const maxGuideline = interpolateBezierCurve(vesselType.maxCurve, timeElapsed);
-
-        if (minGuideline === undefined || maxGuideline === undefined) continue;
-
-        if (convertedValue < minGuideline || convertedValue > maxGuideline) {
-          errorCount++;
+        if (sensorData.length === 0) {
+            toast({ variant: 'warning', title: 'No Data', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" has no data to classify.` });
+            return;
         }
-      }
 
-      const errorPercentage = (errorCount / analysisData.length) * 100;
-      const classification = errorPercentage > 5 ? 'LEAK' : 'DIFFUSION';
+        const { startIndex } = findMeasurementStart(sensorData, config);
+        const { endIndex } = findMeasurementEnd(sensorData, startIndex, config, vesselType.durationSeconds);
+        const analysisData = sensorData.slice(startIndex, endIndex + 1);
 
-      handleSetSessionClassification(session.id, classification);
-      toast({ title: 'Classification Complete & Updated', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'} (${errorPercentage.toFixed(1)}% of points were outside guidelines).` });
+        if (analysisData.length === 0) {
+            toast({ variant: 'warning', title: 'No Usable Data', description: 'No data available within the detected measurement window.' });
+            return;
+        }
+
+        const sessionStartTime = new Date(analysisData[0].timestamp).getTime();
+
+        const interpolateBezierCurve = (curve: { x: number, y: number }[], x: number) => {
+            if (!curve || curve.length !== 4) return undefined;
+            const [p0, p1, p2, p3] = curve;
+
+            const totalXRange = p3.x - p0.x;
+            if (totalXRange <= 0) return p0.y;
+
+            const t = (x - p0.x) / totalXRange;
+            if (t < 0) return p0.y;
+            if (t > 1) return p3.y;
+            
+            const u = 1 - t;
+            const tt = t * t;
+            const uu = u * u;
+            const uuu = uu * u;
+            const ttt = tt * t;
+
+            const y = uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+
+            return y;
+        };
+
+        let isFailed = false;
+        for (const dataPoint of analysisData) {
+            const timeElapsed = (new Date(dataPoint.timestamp).getTime() - sessionStartTime) / 1000;
+            const convertedValue = convertRawValue(dataPoint.value, config);
+
+            const minGuideline = interpolateBezierCurve(vesselType.minCurve, timeElapsed);
+            const maxGuideline = interpolateBezierCurve(vesselType.maxCurve, timeElapsed);
+
+            if (minGuideline === undefined || maxGuideline === undefined) continue;
+
+            if (convertedValue < minGuideline || convertedValue > maxGuideline) {
+                isFailed = true;
+                break; // Exit early as soon as one point is outside
+            }
+        }
+
+        const classification = isFailed ? 'LEAK' : 'DIFFUSION';
+        const failCount = analysisData.filter(dp => {
+            const timeElapsed = (new Date(dp.timestamp).getTime() - sessionStartTime) / 1000;
+            const convertedValue = convertRawValue(dp.value, config);
+            const minGuideline = interpolateBezierCurve(vesselType.minCurve, timeElapsed);
+            const maxGuideline = interpolateBezierCurve(vesselType.maxCurve, timeElapsed);
+            if (minGuideline === undefined || maxGuideline === undefined) return false;
+            return convertedValue < minGuideline || convertedValue > maxGuideline;
+        }).length;
+
+        handleSetSessionClassification(session.id, classification);
+        toast({ 
+            title: 'Classification Complete & Updated', 
+            description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'}. ${failCount} of ${analysisData.length} points were outside guidelines.` 
+        });
 
     } catch (e: any) {
-      toast({ variant: 'destructive', title: `Guideline Classification Failed`, description: e.message });
+        toast({ variant: 'destructive', title: `Guideline Classification Failed`, description: e.message });
     }
-  };
+};
 
   const handleBulkClassifyByGuideline = async () => {
     if (!testSessions) return;
@@ -958,7 +970,6 @@ export default function AdminPage() {
                     return 0;
             }
         });
-
     }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, sessionDateFilter, testBenches, batches]);
 
   const isFilterActive = useMemo(() => {
@@ -1303,21 +1314,23 @@ export default function AdminPage() {
 
             const data = allSensorData[session.id] || [];
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-
-            const { startIndex } = findMeasurementStart(data, config);
-            const realData = data.slice(startIndex);
+            const sessionVesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
             
-            const sessionStartTime = realData.length > 0 ? new Date(realData[0].timestamp).getTime() : new Date(session.startTime).getTime();
-            const sessionEndTime = realData.length > 0 ? new Date(realData[realData.length - 1].timestamp).getTime() : new Date(session.endTime || session.startTime).getTime();
+            const { startIndex } = findMeasurementStart(data, config);
+            const { endIndex } = findMeasurementEnd(data, startIndex, config, sessionVesselType?.durationSeconds);
+            const analysisData = data.slice(startIndex, endIndex + 1);
+
+            const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(session.startTime).getTime();
+            const sessionEndTime = analysisData.length > 0 ? new Date(analysisData[analysisData.length - 1].timestamp).getTime() : (session.endTime ? new Date(session.endTime).getTime() : sessionStartTime);
             const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
 
             const decimalPlaces = config?.decimalPlaces || 2;
             let startValue = 'N/A', endValue = 'N/A', avgValue = 'N/A';
-            if (realData.length > 0) {
-                startValue = convertRawValue(realData[0].value, config || null).toFixed(decimalPlaces);
-                endValue = convertRawValue(realData[realData.length - 1].value, config || null).toFixed(decimalPlaces);
-                const sum = realData.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
-                avgValue = (sum / realData.length).toFixed(decimalPlaces);
+            if (analysisData.length > 0) {
+                startValue = convertRawValue(analysisData[0].value, config || null).toFixed(decimalPlaces);
+                endValue = convertRawValue(analysisData[analysisData.length - 1].value, config || null).toFixed(decimalPlaces);
+                const sum = analysisData.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
+                avgValue = (sum / analysisData.length).toFixed(decimalPlaces);
             }
             
             const unit = config?.unit || '';
@@ -2941,5 +2954,7 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
+
+    
 
     

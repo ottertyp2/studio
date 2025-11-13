@@ -244,13 +244,14 @@ function TestingComponent() {
         const data = comparisonData[session.id];
         if (data && data.length > 0) {
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+            const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
             const start = findMeasurementStart(data, config);
-            const end = findMeasurementEnd(data, start.startIndex, config);
+            const end = findMeasurementEnd(data, start.startIndex, config, vesselType?.durationSeconds);
             results[session.id] = { start, end };
         }
     });
     return results;
-  }, [comparisonSessions, comparisonData, sensorConfigs]);
+  }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
 
   const availableSensorsForBench = useMemo(() => {
@@ -510,31 +511,33 @@ function TestingComponent() {
 
   const sessionFailedIntervals = useMemo(() => {
     const intervalsBySession: Record<string, { x1: number, x2: number }[]> = {};
-
+  
     comparisonSessions.forEach(session => {
-        const intervals: { x1: number, x2: number }[] = [];
+        const sessionIntervals: { x1: number, x2: number }[] = [];
         let inFailedInterval = false;
         let intervalStart: number | null = null;
-
+  
         for (let i = 0; i < chartData.length; i++) {
             const point = chartData[i];
             const isFailed = point[`${session.id}-failed`] === 1;
-
+  
             if (isFailed && !inFailedInterval) {
                 inFailedInterval = true;
                 intervalStart = point.name;
             } else if (!isFailed && inFailedInterval && intervalStart !== null) {
                 inFailedInterval = false;
-                intervals.push({ x1: intervalStart, x2: chartData[i - 1].name });
+                // End the interval at the last failed point's time
+                sessionIntervals.push({ x1: intervalStart, x2: chartData[i - 1].name });
                 intervalStart = null;
             }
         }
-        
+  
+        // If the session ends while still in a failed state
         if (inFailedInterval && intervalStart !== null && chartData.length > 0) {
-            intervals.push({ x1: intervalStart, x2: chartData[chartData.length - 1].name });
+            sessionIntervals.push({ x1: intervalStart, x2: chartData[chartData.length - 1].name });
         }
-        
-        intervalsBySession[session.id] = intervals;
+  
+        intervalsBySession[session.id] = sessionIntervals;
     });
   
     return intervalsBySession;
@@ -723,22 +726,24 @@ function TestingComponent() {
                 const config = sensorConfigs?.find(c => c.id === sessionToReport.sensorConfigurationId);
                 const batch = batches?.find(b => b.id === sessionToReport.batchId);
                 const data = allSensorDataForReport[sessionToReport.id] || [];
-
-                const { startIndex } = findMeasurementStart(data, config);
-                const realData = data.slice(startIndex);
+                const vesselType = vesselTypes?.find(vt => vt.id === sessionToReport.vesselTypeId);
                 
-                const sessionStartTime = realData.length > 0 ? new Date(realData[0].timestamp).getTime() : new Date(sessionToReport.startTime).getTime();
-                const sessionEndTime = realData.length > 0 ? new Date(realData[realData.length - 1].timestamp).getTime() : new Date(sessionToReport.endTime || sessionToReport.startTime).getTime();
+                const { startIndex } = findMeasurementStart(data, config);
+                const { endIndex } = findMeasurementEnd(data, startIndex, config, vesselType?.durationSeconds);
+                const analysisData = data.slice(startIndex, endIndex + 1);
+
+                const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(sessionToReport.startTime).getTime();
+                const sessionEndTime = analysisData.length > 0 ? new Date(analysisData[analysisData.length - 1].timestamp).getTime() : (sessionToReport.endTime ? new Date(sessionToReport.endTime).getTime() : sessionStartTime);
                 const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
                 
                 const decimalPlaces = config?.decimalPlaces || 2;
                 let startValue = 'N/A', endValue = 'N/A', avgValue = 'N/A';
 
-                if (realData.length > 0) {
-                    startValue = convertRawValue(realData[0].value, config || null).toFixed(decimalPlaces);
-                    endValue = convertRawValue(realData[realData.length - 1].value, config || null).toFixed(decimalPlaces);
-                    const sum = realData.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
-                    avgValue = (sum / realData.length).toFixed(decimalPlaces);
+                if (analysisData.length > 0) {
+                    startValue = convertRawValue(analysisData[0].value, config || null).toFixed(decimalPlaces);
+                    endValue = convertRawValue(analysisData[analysisData.length - 1].value, config || null).toFixed(decimalPlaces);
+                    const sum = analysisData.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
+                    avgValue = (sum / analysisData.length).toFixed(decimalPlaces);
                 }
 
                 const classificationText = getClassificationText(sessionToReport.classification);
@@ -803,21 +808,24 @@ function TestingComponent() {
                     
                     const data = allSensorDataForReport[session.id] || [];
                     const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+                    const sessionVesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+            
                     const { startIndex } = findMeasurementStart(data, config);
-                    const realData = data.slice(startIndex);
+                    const { endIndex } = findMeasurementEnd(data, startIndex, config, sessionVesselType?.durationSeconds);
+                    const analysisData = data.slice(startIndex, endIndex + 1);
 
-                    const sessionStartTime = realData.length > 0 ? new Date(realData[0].timestamp).getTime() : new Date(session.startTime).getTime();
-                    const sessionEndTime = realData.length > 0 ? new Date(realData[realData.length-1].timestamp).getTime() : new Date(session.endTime || session.startTime).getTime();
+                    const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(session.startTime).getTime();
+                    const sessionEndTime = analysisData.length > 0 ? new Date(analysisData[analysisData.length-1].timestamp).getTime() : (session.endTime ? new Date(session.endTime).getTime() : sessionStartTime);
 
                     const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
                     
                     const decimalPlaces = config?.decimalPlaces || 2;
                     let startValue = 'N/A', endValue = 'N/A', avgValue = 'N/A';
-                    if (realData.length > 0) {
-                        startValue = convertRawValue(realData[0].value, config || null).toFixed(decimalPlaces);
-                        endValue = convertRawValue(realData[realData.length - 1].value, config || null).toFixed(decimalPlaces);
-                        const sum = realData.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
-                        avgValue = (sum / realData.length).toFixed(decimalPlaces);
+                    if (analysisData.length > 0) {
+                        startValue = convertRawValue(analysisData[0].value, config || null).toFixed(decimalPlaces);
+                        endValue = convertRawValue(analysisData[analysisData.length - 1].value, config || null).toFixed(decimalPlaces);
+                        const sum = analysisData.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
+                        avgValue = (sum / analysisData.length).toFixed(decimalPlaces);
                     }
                     const unit = config?.unit || '';
 
@@ -1424,13 +1432,13 @@ function TestingComponent() {
                             const intervals = sessionFailedIntervals[session.id] || [];
                             return intervals.map((interval, i) => (
                                 <ReferenceArea
-                                key={`${session.id}-failed-interval-${i}`}
-                                x1={interval.x1}
-                                x2={interval.x2}
-                                stroke="none"
-                                fill={CHART_COLORS[index % CHART_COLORS.length]}
-                                fillOpacity={0.2}
-                                ifOverflow="visible"
+                                    key={`${session.id}-failed-interval-${i}`}
+                                    x1={interval.x1}
+                                    x2={interval.x2}
+                                    stroke="none"
+                                    fill={CHART_COLORS[index % CHART_COLORS.length]}
+                                    fillOpacity={0.2}
+                                    ifOverflow="visible"
                                 />
                             ));
                         })}
@@ -1503,3 +1511,6 @@ export default function TestingPage() {
     )
 }
 
+
+
+    

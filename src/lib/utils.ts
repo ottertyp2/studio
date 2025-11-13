@@ -126,29 +126,45 @@ export const findMeasurementStart = (data: { value: number; timestamp: string }[
 };
 
 
-export const findMeasurementEnd = (data: { value: number; timestamp: string }[], startIndex: number, config: SensorConfig | null | undefined): { endIndex: number; endTime: number } => {
-    if (!data || data.length === 0 || startIndex >= data.length - 1) {
+export const findMeasurementEnd = (data: { value: number; timestamp: string }[], startIndex: number, config: SensorConfig | null | undefined, durationSeconds?: number): { endIndex: number; endTime: number } => {
+    const defaultEnd = () => {
         const lastIndex = data.length > 0 ? data.length - 1 : 0;
         const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : 0;
         const endTimeInSeconds = data.length > 0 ? (new Date(data[lastIndex].timestamp).getTime() - sessionStartTime) / 1000 : 0;
         return { endIndex: lastIndex, endTime: endTimeInSeconds };
+    };
+
+    if (!data || data.length === 0 || startIndex >= data.length) {
+        return defaultEnd();
+    }
+    
+    const sessionStartTime = new Date(data[0].timestamp).getTime();
+    const measurementStartTime = new Date(data[startIndex].timestamp).getTime();
+
+    // If a specific duration is provided, use it to calculate the end time.
+    if (durationSeconds && durationSeconds > 0) {
+        const expectedEndTime = measurementStartTime + (durationSeconds * 1000);
+        let finalEndIndex = data.findIndex(d => new Date(d.timestamp).getTime() >= expectedEndTime);
+
+        // If no data point is found at or after the expected end time, use the last available data point.
+        if (finalEndIndex === -1) {
+            finalEndIndex = data.length - 1;
+        }
+        
+        const endTimeInSeconds = (new Date(data[finalEndIndex].timestamp).getTime() - sessionStartTime) / 1000;
+        return { endIndex: finalEndIndex, endTime: endTimeInSeconds };
     }
 
-    const sessionStartTime = new Date(data[0].timestamp).getTime();
+    // Fallback to old logic if no duration is provided
     const analysisData = data.slice(startIndex);
     if(analysisData.length === 0) {
-        const endTimeInSeconds = (new Date(data[data.length-1].timestamp).getTime() - sessionStartTime) / 1000;
-        return { endIndex: data.length - 1, endTime: endTimeInSeconds };
+        return defaultEnd();
     }
-
     const convertedValues = analysisData.map(d => convertRawValue(d.value, config || null));
-
     let minDerivative = 0;
     let dropIndex = -1;
-
     const avgPressure = convertedValues.reduce((sum, val) => sum + val, 0) / convertedValues.length;
     const significantDropThreshold = Math.min(-50, -0.1 * avgPressure);
-
 
     for (let i = 1; i < convertedValues.length; i++) {
         const derivative = convertedValues[i] - convertedValues[i-1];
@@ -173,9 +189,7 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
         return { endIndex: finalEndIndex, endTime: endTimeInSeconds };
     }
 
-    const lastIndex = data.length - 1;
-    const endTimeInSeconds = (new Date(data[lastIndex].timestamp).getTime() - sessionStartTime) / 1000;
-    return { endIndex: lastIndex, endTime: endTimeInSeconds };
+    return defaultEnd();
 };
 
     
