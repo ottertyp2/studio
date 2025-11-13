@@ -333,11 +333,9 @@ function TestingComponent() {
     };
 
     try {
-      console.log('Attempting to start a new session with data:', newSessionDocData);
       const docRef = await addDocument(collection(firestore, 'test_sessions'), newSessionDocData);
       const newSessionWithId: WithId<TestSession> = { id: docRef.id, ...newSessionDocData };
 
-      console.log(`Session document created with ID: ${docRef.id}. Informing context.`);
       startSessionInContext(newSessionWithId);
       
       await sendRecordingCommand(true);
@@ -1417,23 +1415,16 @@ function TestingComponent() {
                         ))}
                         {comparisonSessions.map((session, index) => {
                             const window = measurementWindows[session.id];
-                            if (!window) return null;
+                            if (!window || !window.start) return null;
 
                             return (
-                                <React.Fragment key={`ref-lines-${session.id}`}>
-                                  <ReferenceLine
-                                      x={window.start.startTime}
-                                      stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                                      strokeDasharray="3 3"
-                                      label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
-                                  />
-                                  <ReferenceLine
-                                      x={window.end.endTime}
-                                      stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                                      strokeDasharray="3 3"
-                                      label={{ value: "End", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
-                                  />
-                                </React.Fragment>
+                                <ReferenceLine
+                                    key={`ref-line-start-${session.id}`}
+                                    x={window.start.startTime}
+                                    stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                    strokeDasharray="3 3"
+                                    label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
+                                />
                             );
                         })}
                       </LineChart>
@@ -1465,5 +1456,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
