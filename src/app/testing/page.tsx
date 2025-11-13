@@ -690,8 +690,9 @@ function TestingComponent() {
     
     try {
         if (reportConfig.type === 'single' && reportConfig.sessionId) {
-            const session = sessionHistory.find(s => s.id === reportConfig.sessionId);
-            if (!session) throw new Error('Selected session not found.');
+            const sessionDoc = await getDoc(doc(firestore, 'test_sessions', reportConfig.sessionId));
+            if (!sessionDoc.exists()) throw new Error('Selected session not found.');
+            const session = { id: sessionDoc.id, ...sessionDoc.data() } as WithId<TestSession>;
             sessionsToReport = [session];
             reportTitle = `Vessel Pressure Test Report: ${session.vesselTypeName} - ${session.serialNumber}`;
             reportFilename = `report-${session.vesselTypeName}-${session.serialNumber}`;
@@ -703,7 +704,9 @@ function TestingComponent() {
         } else if (reportConfig.type === 'batch' && reportConfig.batchId) {
             const batch = batches?.find(b => b.id === reportConfig.batchId);
             if (!batch) throw new Error('Selected batch not found.');
-            sessionsToReport = sessionHistory.filter(s => s.batchId === reportConfig.batchId && s.status === 'COMPLETED');
+            const q = query(collection(firestore, 'test_sessions'), where('batchId', '==', reportConfig.batchId), where('status', '==', 'COMPLETED'));
+            const snapshot = await getDocs(q);
+            sessionsToReport = snapshot.docs.map(d => ({id: d.id, ...d.data()}) as WithId<TestSession>);
             if (sessionsToReport.length === 0) throw new Error('No completed sessions found for this batch.');
             reportTitle = `Batch Pressure Test Report: ${batch.name}`;
             reportFilename = `report-batch-${batch.name.replace(/\s+/g, '_')}`;
@@ -728,7 +731,10 @@ function TestingComponent() {
         });
 
         const sessionsByReactor: Record<string, TestSession[]> = {};
-        sessionHistory.forEach(session => { // Use full history to find all attempts
+        const allTestSessionsSnapshot = await getDocs(collection(firestore, 'test_sessions'));
+        const allTestSessions = allTestSessionsSnapshot.docs.map(d => d.data() as TestSession);
+
+        allTestSessions.forEach(session => {
             const key = session.serialNumber || 'N/A';
             if (!sessionsByReactor[key]) sessionsByReactor[key] = [];
             sessionsByReactor[key].push(session);
@@ -740,9 +746,9 @@ function TestingComponent() {
             const classificationText = getClassificationText(session.classification);
             const statusStyle = { text: classificationText, color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black') };
 
-            const reactorSessions = sessionsByReactor[session.serialNumber || 'N/A'] || [];
-            const attemptNumber = reactorSessions.findIndex(s => s.id === session.id) + 1;
-            const totalAttempts = reactorSessions.length;
+            const reactorSessions = sessionsByReactor[session.serialNumber || 'N/A']?.filter(s => s.classification !== 'UNCLASSIFIABLE') || [];
+            const attemptNumber = (sessionsByReactor[session.serialNumber || 'N/A'] || []).findIndex(s => s.id === session.id) + 1;
+            const totalAttempts = (sessionsByReactor[session.serialNumber || 'N/A'] || []).length;
             
             const passAttemptIndex = reactorSessions.findIndex(s => s.classification === 'DIFFUSION');
             let passResult = 'Not passed';
@@ -1462,9 +1468,20 @@ function TestingComponent() {
                                <Button variant="outline" size="sm"><FileText className="mr-2 h-4 w-4" />Create Report</Button>
                             </DropdownMenuTrigger>
                              <DropdownMenuContent>
-                                <DropdownMenuItem onSelect={() => setIsHistoryPanelOpen(true)}>
-                                   <Search className="mr-2 h-4 w-4" />
-                                   Single or Custom Report...
+                                <DropdownMenuItem onSelect={() => {
+                                    if (comparisonSessions.length === 1) {
+                                        generateReport({ type: 'single', sessionId: comparisonSessions[0].id });
+                                    } else {
+                                        toast({title: "Select a Single Session", description: "Please select one session to generate a single report, or choose another report type."});
+                                        setIsHistoryPanelOpen(true);
+                                    }
+                                }}>
+                                   <FileText className="mr-2 h-4 w-4" />
+                                   Single Session Report
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => { generateReport({ type: 'custom' }) }} disabled={comparisonSessions.length === 0}>
+                                   <Layers className="mr-2 h-4 w-4" />
+                                   Custom Report from Selection
                                 </DropdownMenuItem>
                                 <DropdownMenuSub>
                                     <DropdownMenuSubTrigger>
@@ -1622,3 +1639,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
