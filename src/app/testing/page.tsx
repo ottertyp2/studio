@@ -509,35 +509,37 @@ function TestingComponent() {
     return Object.values(timeMap).sort((a, b) => a.name - b.name);
   }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
-  const failedIntervals = useMemo(() => {
-    if (!chartData || chartData.length === 0) return [];
-
-    const intervals: { x1: number, x2: number }[] = [];
-    let inFailedInterval = false;
-    let intervalStart = 0;
-
-    for (let i = 0; i < chartData.length; i++) {
+  const sessionFailedIntervals = useMemo(() => {
+    if (!chartData || chartData.length === 0) return {};
+  
+    const intervalsBySession: Record<string, { x1: number, x2: number }[]> = {};
+  
+    comparisonSessions.forEach(session => {
+      const intervals: { x1: number, x2: number }[] = [];
+      let inFailedInterval = false;
+      let intervalStart = 0;
+  
+      for (let i = 0; i < chartData.length; i++) {
         const point = chartData[i];
-        const isAnyFailed = comparisonSessions.some(session => point[`${session.id}-failed`] === 1);
-
-        if (isAnyFailed && !inFailedInterval) {
-            // Start of a new failed interval
-            inFailedInterval = true;
-            intervalStart = point.name;
-        } else if (!isAnyFailed && inFailedInterval) {
-            // End of the current failed interval
-            inFailedInterval = false;
-            // End the area at the previous data point's timestamp
-            intervals.push({ x1: intervalStart, x2: chartData[i - 1].name });
+        const isFailed = point[`${session.id}-failed`] === 1;
+  
+        if (isFailed && !inFailedInterval) {
+          inFailedInterval = true;
+          intervalStart = point.name;
+        } else if (!isFailed && inFailedInterval) {
+          inFailedInterval = false;
+          intervals.push({ x1: intervalStart, x2: chartData[i - 1].name });
         }
-    }
-
-    // If the chart ends while in a failed state, close the interval
-    if (inFailedInterval) {
+      }
+  
+      if (inFailedInterval) {
         intervals.push({ x1: intervalStart, x2: chartData[chartData.length - 1].name });
-    }
-
-    return intervals;
+      }
+      
+      intervalsBySession[session.id] = intervals;
+    });
+  
+    return intervalsBySession;
   }, [chartData, comparisonSessions]);
 
   const setTimeframe = (frame: '1m' | '5m' | 'all') => {
@@ -1420,18 +1422,20 @@ function TestingComponent() {
                         <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         
-                        {failedIntervals.map((interval, index) => (
-                          <ReferenceArea
-                            key={`failed-interval-${index}`}
-                            x1={interval.x1}
-                            x2={interval.x2}
-                            fill="hsl(var(--destructive))"
-                            fillOpacity={0.2}
-                            stroke="hsl(var(--destructive))"
-                            strokeOpacity={0.5}
-                            ifOverflow="visible"
-                          />
-                        ))}
+                        {comparisonSessions.map((session, index) => {
+                          const intervals = sessionFailedIntervals[session.id] || [];
+                          return intervals.map((interval, i) => (
+                            <ReferenceArea
+                              key={`${session.id}-failed-interval-${i}`}
+                              x1={interval.x1}
+                              x2={interval.x2}
+                              fill={CHART_COLORS[index % CHART_COLORS.length]}
+                              fillOpacity={0.2}
+                              stroke="none"
+                              ifOverflow="visible"
+                            />
+                          ));
+                        })}
 
                         {comparisonSessions.map((session, index) => (
                            <Line 
