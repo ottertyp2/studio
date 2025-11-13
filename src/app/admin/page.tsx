@@ -1199,7 +1199,6 @@ export default function AdminPage() {
         for (const session of relevantSessions) {
             const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
             const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
-            const snapshot = await getDocs(q);
             allSensorData[session.id] = snapshot.docs.map(doc => doc.data() as SensorData);
         }
         
@@ -1794,6 +1793,58 @@ export default function AdminPage() {
     
     setClassificationSession(null); // Clear after finishing
     toast({ title: 'Bulk AI Classification Finished', description: `${successCount} sessions classified. ${failCount} failed.` });
+  };
+
+  const handleGuidelinePointChange = (curve: 'min' | 'max', index: number, axis: 'x' | 'y', value: string) => {
+    const setPoints = curve === 'min' ? setMinCurvePoints : setMaxCurvePoints;
+    const numValue = parseFloat(value);
+    
+    if (value === '' || !isNaN(numValue)) {
+      setPoints(currentPoints => {
+        const newPoints = [...currentPoints];
+        if (newPoints[index]) {
+          newPoints[index] = { ...newPoints[index], [axis]: value === '' ? '' : numValue };
+        }
+        return newPoints;
+      });
+    }
+  };
+
+  const renderGuidelineInputs = (curve: 'min' | 'max') => {
+    const points = curve === 'min' ? minCurvePoints : maxCurvePoints;
+    const pointLabels = ['Start Point', 'Control Point 1', 'Control Point 2', 'End Point'];
+
+    return (
+      <div className="space-y-3">
+        {points.map((point, index) => (
+          <div key={index} className="space-y-2 p-2 border rounded-md">
+            <p className="text-sm font-medium text-muted-foreground">{pointLabels[index]}</p>
+            <div className="flex gap-2">
+              <div className="flex-1 space-y-1">
+                <Label htmlFor={`${curve}-x-${index}`} className="text-xs">Time (s)</Label>
+                <Input
+                  id={`${curve}-x-${index}`}
+                  type="number"
+                  value={point.x}
+                  onChange={(e) => handleGuidelinePointChange(curve, index, 'x', e.target.value)}
+                  className="h-8"
+                />
+              </div>
+              <div className="flex-1 space-y-1">
+                <Label htmlFor={`${curve}-y-${index}`} className="text-xs">Pressure</Label>
+                <Input
+                  id={`${curve}-y-${index}`}
+                  type="number"
+                  value={point.y}
+                  onChange={(e) => handleGuidelinePointChange(curve, index, 'y', e.target.value)}
+                  className="h-8"
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
   };
 
 
@@ -2414,7 +2465,7 @@ export default function AdminPage() {
                                                         <DialogHeader>
                                                             <DialogTitle>Edit Guidelines for {editingVesselType?.name}</DialogTitle>
                                                             <DialogDescription>
-                                                                Click twice to set start/end points. Drag points to adjust the curve. Double-click a point to delete it.
+                                                                Click twice to set start/end points. Drag points to adjust the curve. You can also edit the values directly below.
                                                             </DialogDescription>
                                                         </DialogHeader>
                                                         <div className="grid grid-cols-2 gap-4">
@@ -2438,6 +2489,9 @@ export default function AdminPage() {
                                                                     maxX={Number(guidelineEditorMaxX)}
                                                                     maxY={Number(guidelineEditorMaxY)}
                                                                 />
+                                                                <div className="mt-4">
+                                                                  {renderGuidelineInputs('min')}
+                                                                </div>
                                                             </div>
                                                             <div>
                                                                 <h3 className="font-semibold text-center mb-2">Maximum Curve (Red)</h3>
@@ -2449,6 +2503,9 @@ export default function AdminPage() {
                                                                     maxX={Number(guidelineEditorMaxX)}
                                                                     maxY={Number(guidelineEditorMaxY)}
                                                                 />
+                                                                <div className="mt-4">
+                                                                  {renderGuidelineInputs('max')}
+                                                                </div>
                                                             </div>
                                                         </div>
                                                         <DialogFooter>
@@ -2867,3 +2924,5 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
+
+    
