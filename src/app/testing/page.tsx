@@ -472,68 +472,100 @@ function TestingComponent() {
   const chartData = useMemo((): ChartDataPoint[] => {
     if (comparisonSessions.length === 0) return [];
   
-    const measurementStartTimestamps: Record<string, number> = {};
+    // 1. Get all unique timestamps from all sessions, aligned to the measurement start
+    const allRelativeTimes = new Set<number>();
+    
     comparisonSessions.forEach(session => {
+        const sessionData = comparisonData[session.id] || [];
         const window = measurementWindows[session.id];
-        const data = comparisonData[session.id] || [];
-        if (window && data.length > window.start.startIndex) {
-            measurementStartTimestamps[session.id] = new Date(data[window.start.startIndex].timestamp).getTime();
-        } else if (data.length > 0) {
-            // Fallback to session start if measurement start can't be determined
-            measurementStartTimestamps[session.id] = new Date(data[0].timestamp).getTime();
+        if (!window || !sessionData.length) return;
+
+        const measurementStartTime = new Date(sessionData[window.start.startIndex].timestamp).getTime();
+
+        for (let i = window.start.startIndex; i <= window.end.endIndex; i++) {
+            if (sessionData[i]) {
+                const time = Math.round((new Date(sessionData[i].timestamp).getTime() - measurementStartTime) / 1000);
+                allRelativeTimes.add(time);
+            }
         }
     });
 
-    const mergedData: Record<number, ChartDataPoint> = {};
+    const sortedTimes = Array.from(allRelativeTimes).sort((a, b) => a - b);
 
-    comparisonSessions.forEach(session => {
-        const sessionData = comparisonData[session.id] || [];
-        const startTime = measurementStartTimestamps[session.id];
-        if (!startTime) return;
+    // 2. Build the synchronized chart data
+    const synchronizedData = sortedTimes.map(time => {
+        const dataPoint: ChartDataPoint = { name: time };
 
-        const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-        const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-
-        sessionData.forEach(d => {
-            const time = Math.round((new Date(d.timestamp).getTime() - startTime) / 1000);
-
-            if (!mergedData[time]) {
-                mergedData[time] = { name: time };
-            }
-
-            const value = convertRawValue(d.value, config || null);
-            mergedData[time][session.id] = value;
-
-            const interpolateBezierCurve = (curve: {x: number, y: number}[], x: number) => {
-                if (!curve || curve.length !== 4) return undefined;
-                const [p0, p1, p2, p3] = curve;
-                const totalXRange = p3.x - p0.x;
-                if (totalXRange <= 0) return p0.y;
-                const t = (x - p0.x) / totalXRange;
-                if (t < 0) return p0.y;
-                if (t > 1) return p3.y;
-                const u = 1 - t;
-                const tt = t * t;
-                const uu = u * u;
-                const uuu = uu * u;
-                const ttt = tt * t;
-                return uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+        comparisonSessions.forEach(session => {
+            const sessionData = comparisonData[session.id] || [];
+            const window = measurementWindows[session.id];
+            if (!window || !sessionData.length) {
+                dataPoint[session.id] = null;
+                dataPoint[`${session.id}-failed`] = 0;
+                return;
             };
 
-            const minGuideline = vesselType ? interpolateBezierCurve(vesselType.minCurve, time) : undefined;
-            const maxGuideline = vesselType ? interpolateBezierCurve(vesselType.maxCurve, time) : undefined;
-      
-            if (minGuideline !== undefined) mergedData[time].minGuideline = minGuideline;
-            if (maxGuideline !== undefined) mergedData[time].maxGuideline = maxGuideline;
-      
-            const isFailed = (minGuideline !== undefined && value < minGuideline) || 
-                             (maxGuideline !== undefined && value > maxGuideline);
+            const measurementStartTime = new Date(sessionData[window.start.startIndex].timestamp).getTime();
             
-            mergedData[time][`${session.id}-failed`] = isFailed ? 1 : 0;
+            // Find the closest data point in the original data for this time
+            let closestPoint: SensorData | null = null;
+            let minDiff = Infinity;
+
+            for (let i = window.start.startIndex; i <= window.end.endIndex; i++) {
+                 if (sessionData[i]) {
+                    const pointTime = (new Date(sessionData[i].timestamp).getTime() - measurementStartTime) / 1000;
+                    const diff = Math.abs(pointTime - time);
+                    if (diff < minDiff && diff < 1.5) { // Only consider points within 1.5s
+                        minDiff = diff;
+                        closestPoint = sessionData[i];
+                    }
+                 }
+            }
+            
+            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+            const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+            
+            if (closestPoint) {
+                const value = convertRawValue(closestPoint.value, config || null);
+                dataPoint[session.id] = value;
+
+                // Calculate guidelines and failure status based on this synchronized time
+                const interpolateBezierCurve = (curve: {x: number, y: number}[], x: number) => {
+                    if (!curve || curve.length !== 4) return undefined;
+                    const [p0, p1, p2, p3] = curve;
+                    const totalXRange = p3.x - p0.x;
+                    if (totalXRange <= 0) return p0.y;
+                    const t = (x - p0.x) / totalXRange;
+                    if (t < 0) return p0.y;
+                    if (t > 1) return p3.y;
+                    const u = 1 - t;
+                    const tt = t * t;
+                    const uu = u * u;
+                    const uuu = uu * u;
+                    const ttt = tt * t;
+                    return uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+                };
+
+                const minGuideline = vesselType ? interpolateBezierCurve(vesselType.minCurve, time) : undefined;
+                const maxGuideline = vesselType ? interpolateBezierCurve(vesselType.maxCurve, time) : undefined;
+                
+                if (dataPoint.minGuideline === undefined && minGuideline !== undefined) dataPoint.minGuideline = minGuideline;
+                if (dataPoint.maxGuideline === undefined && maxGuideline !== undefined) dataPoint.maxGuideline = maxGuideline;
+        
+                const isFailed = (minGuideline !== undefined && value < minGuideline) || 
+                                 (maxGuideline !== undefined && value > maxGuideline);
+                dataPoint[`${session.id}-failed`] = isFailed ? 1 : 0;
+
+            } else {
+                dataPoint[session.id] = null; // No data for this session at this exact time
+                dataPoint[`${session.id}-failed`] = 0;
+            }
         });
+
+        return dataPoint;
     });
 
-    return Object.values(mergedData).sort((a, b) => a.name - b.name);
+    return synchronizedData;
 }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes, measurementWindows]);
 
   const sessionFailedIntervals = useMemo(() => {
@@ -546,20 +578,19 @@ function TestingComponent() {
   
         for (let i = 0; i < chartData.length; i++) {
             const point = chartData[i];
+            // Check specifically for this session's failure flag
             const isFailed = point[`${session.id}-failed`] === 1;
   
             if (isFailed && !inFailedInterval) {
                 inFailedInterval = true;
                 intervalStart = point.name;
-            } else if (!isFailed && inFailedInterval && intervalStart !== null) {
+            } else if ((!isFailed || i === chartData.length - 1) && inFailedInterval && intervalStart !== null) {
                 inFailedInterval = false;
-                sessionIntervals.push({ x1: intervalStart, x2: chartData[i - 1].name });
+                // Use the previous point's name as the end of the interval
+                const endName = (i === chartData.length -1 && isFailed) ? point.name : chartData[i - 1].name;
+                sessionIntervals.push({ x1: intervalStart, x2: endName });
                 intervalStart = null;
             }
-        }
-  
-        if (inFailedInterval && intervalStart !== null && chartData.length > 0) {
-            sessionIntervals.push({ x1: intervalStart, x2: chartData[chartData.length - 1].name });
         }
   
         intervalsBySession[session.id] = sessionIntervals;
@@ -1302,7 +1333,6 @@ function TestingComponent() {
                                                 <DropdownMenuContent align="end" className="w-[300px]">
                                                     <ScrollArea className="h-[400px]">
                                                         <div className="p-2 space-y-2">
-                                                        {/* Filter controls copied from admin page */}
                                                             <div className="space-y-1">
                                                                 <Label>Date Range</Label>
                                                                 <Popover>
@@ -1318,18 +1348,32 @@ function TestingComponent() {
                                                                     </PopoverContent>
                                                                 </Popover>
                                                             </div>
-                                                            <Accordion type="multiple" className="w-full">
-                                                                {/* Accordion items for filters */}
-                                                                <AccordionItem value="classification"><AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Classification</AccordionTrigger><AccordionContent className="pb-0"><div className="space-y-1 px-2 pb-2"><Select value={sessionClassificationFilter} onValueChange={setSessionClassificationFilter}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All</SelectItem><SelectItem value="passed">Passed</SelectItem><SelectItem value="not-passed">Not Passed</SelectItem><SelectItem value="unclassifiable">Unclassifiable</SelectItem><SelectItem value="unclassified">Unclassified</SelectItem></SelectContent></Select></div></AccordionContent></AccordionItem>
-                                                                <AccordionItem value="users"><AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Users</AccordionTrigger><AccordionContent className="pb-0">{[...new Map(users?.map(item => [item.id, item])).values()].map(u => (<DropdownMenuCheckboxItem key={u.id} checked={sessionUserFilter.includes(u.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionUserFilter(c => c.includes(u.id) ? c.filter(i => i !== u.id) : [...c, u.id])}>{u.username}</DropdownMenuCheckboxItem>))}</AccordionContent></AccordionItem>
-                                                                <AccordionItem value="vessel-types"><AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Vessel Types</AccordionTrigger><AccordionContent className="pb-0">{[...new Map(vesselTypes?.map(item => [item.id, item])).values()].map(vt => (<DropdownMenuCheckboxItem key={vt.id} checked={sessionVesselTypeFilter.includes(vt.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionVesselTypeFilter(c => c.includes(vt.id) ? c.filter(i => i !== vt.id) : [...c, vt.id])}>{vt.name}</DropdownMenuCheckboxItem>))}</AccordionContent></AccordionItem>
-                                                                <AccordionItem value="batches"><AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Batches</AccordionTrigger><AccordionContent className="pb-0">{[...new Map(batches?.map(item => [item.id, item])).values()].map(b => (<DropdownMenuCheckboxItem key={b.id} checked={sessionBatchFilter.includes(b.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionBatchFilter(c => c.includes(b.id) ? c.filter(i => i !== b.id) : [...c, b.id])}>{b.name}</DropdownMenuCheckboxItem>))}</AccordionContent></AccordionItem>
+                                                            <Accordion type="multiple" className="w-full" defaultValue={['classification', 'users', 'vessel-types', 'batches', 'test-benches']}>
+                                                                <AccordionItem value="classification">
+                                                                    <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Classification</AccordionTrigger>
+                                                                    <AccordionContent className="pb-0"><div className="space-y-1 px-2 pb-2"><Select value={sessionClassificationFilter} onValueChange={setSessionClassificationFilter}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All</SelectItem><SelectItem value="passed">Passed</SelectItem><SelectItem value="not-passed">Not Passed</SelectItem><SelectItem value="unclassifiable">Unclassifiable</SelectItem><SelectItem value="unclassified">Unclassified</SelectItem></SelectContent></Select></div></AccordionContent>
+                                                                </AccordionItem>
+                                                                <AccordionItem value="users">
+                                                                    <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Users</AccordionTrigger>
+                                                                    <AccordionContent className="pb-0">{[...new Map(users?.map(item => [item.id, item])).values()].map(u => (<DropdownMenuCheckboxItem key={u.id} checked={sessionUserFilter.includes(u.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionUserFilter(c => c.includes(u.id) ? c.filter(i => i !== u.id) : [...c, u.id])}>{u.username}</DropdownMenuCheckboxItem>))}</AccordionContent>
+                                                                </AccordionItem>
+                                                                <AccordionItem value="vessel-types">
+                                                                    <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Vessel Types</AccordionTrigger>
+                                                                    <AccordionContent className="pb-0">{[...new Map(vesselTypes?.map(item => [item.id, item])).values()].map(vt => (<DropdownMenuCheckboxItem key={vt.id} checked={sessionVesselTypeFilter.includes(vt.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionVesselTypeFilter(c => c.includes(vt.id) ? c.filter(i => i !== vt.id) : [...c, vt.id])}>{vt.name}</DropdownMenuCheckboxItem>))}</AccordionContent>
+                                                                </AccordionItem>
+                                                                <AccordionItem value="batches">
+                                                                    <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Batches</AccordionTrigger>
+                                                                    <AccordionContent className="pb-0">{[...new Map(batches?.map(item => [item.id, item])).values()].map(b => (<DropdownMenuCheckboxItem key={b.id} checked={sessionBatchFilter.includes(b.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionBatchFilter(c => c.includes(b.id) ? c.filter(i => i !== b.id) : [...c, b.id])}>{b.name}</DropdownMenuCheckboxItem>))}</AccordionContent>
+                                                                </AccordionItem>
+                                                                <AccordionItem value="test-benches">
+                                                                    <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Test Benches</AccordionTrigger>
+                                                                    <AccordionContent className="pb-0">{[...new Map(testBenches?.map(item => [item.id, item])).values()].map(tb => (<DropdownMenuCheckboxItem key={tb.id} checked={sessionTestBenchFilter.includes(tb.id)} onSelect={(e) => e.preventDefault()} onClick={() => setSessionTestBenchFilter(c => c.includes(tb.id) ? c.filter(i => i !== tb.id) : [...c, tb.id])}>{tb.name}</DropdownMenuCheckboxItem>))}</AccordionContent>
+                                                                </AccordionItem>
                                                             </Accordion>
                                                         </div>
                                                     </ScrollArea>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
-
                                             {isFilterActive && <Button onClick={handleResetFilters} variant="ghost" size="icon"><RotateCcw /></Button>}
                                         </div>
                                     </div>
@@ -1534,3 +1578,6 @@ export default function TestingPage() {
     
 
 
+
+
+    
