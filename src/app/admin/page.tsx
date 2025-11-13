@@ -1,4 +1,5 @@
 
+
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -210,6 +211,7 @@ type TestSession = {
 type VesselType = {
     id: string;
     name: string;
+    durationSeconds?: number;
     minCurve: {x: number, y: number}[];
     maxCurve: {x: number, y: number}[];
     guidelineEditorMaxX?: number;
@@ -287,7 +289,7 @@ export default function AdminPage() {
   const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
   
   // VesselType State
-  const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '' });
+  const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '', durationSeconds: 60 });
   const [editingVesselType, setEditingVesselType] = useState<VesselType | null>(null);
   const [minCurvePoints, setMinCurvePoints] = useState<{x: number, y: number}[]>([]);
   const [maxCurvePoints, setMaxCurvePoints] = useState<{x: number, y: number}[]>([]);
@@ -957,7 +959,7 @@ export default function AdminPage() {
             }
         });
 
-  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, sessionDateFilter, testBenches, batches]);
+    }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, sessionDateFilter, testBenches, batches]);
 
   const isFilterActive = useMemo(() => {
     return sessionUserFilter.length > 0 || 
@@ -988,12 +990,13 @@ export default function AdminPage() {
     const docToSave: VesselType = {
       id: newId,
       name: newVesselType.name,
+      durationSeconds: Number(newVesselType.durationSeconds) || 60,
       minCurve: [],
       maxCurve: []
     };
     addDocumentNonBlocking(vesselTypesCollectionRef, docToSave);
     toast({ title: 'Vessel Type Added', description: `Added "${docToSave.name}" to the catalog.` });
-    setNewVesselType({ name: '' });
+    setNewVesselType({ name: '', durationSeconds: 60 });
   };
 
   const handleDeleteVesselType = (vesselTypeId: string) => {
@@ -1037,6 +1040,7 @@ export default function AdminPage() {
     updateDocumentNonBlocking(profileRef, {
         minCurve: minCurvePoints,
         maxCurve: maxCurvePoints,
+        durationSeconds: Number(editingVesselType.durationSeconds) || 60,
         guidelineEditorMaxX: Number(guidelineEditorMaxX),
         guidelineEditorMaxY: Number(guidelineEditorMaxY),
     });
@@ -2426,7 +2430,11 @@ export default function AdminPage() {
                         <h3 className="font-semibold text-center">New Vessel Type</h3>
                         <div className="space-y-2">
                             <Label htmlFor="new-vessel-type-name">Name</Label>
-                            <Input id="new-vessel-type-name" placeholder="e.g., A-Series V1" value={newVesselType.name || ''} onChange={(e) => setNewVesselType({ name: e.target.value })} />
+                            <Input id="new-vessel-type-name" placeholder="e.g., A-Series V1" value={newVesselType.name || ''} onChange={(e) => setNewVesselType(p => ({...p, name: e.target.value}))} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="new-vessel-type-duration">Default Duration (seconds)</Label>
+                            <Input id="new-vessel-type-duration" type="number" placeholder="e.g., 60" value={newVesselType.durationSeconds || ''} onChange={(e) => setNewVesselType(p => ({ ...p, durationSeconds: Number(e.target.value) }))} />
                         </div>
                         <Button onClick={handleAddVesselType} size="sm" className="w-full mt-2">Add Vessel Type</Button>
                     </div>
@@ -2470,8 +2478,8 @@ export default function AdminPage() {
                                                             </DialogDescription>
                                                         </DialogHeader>
                                                         <ScrollArea className="max-h-[70vh]">
-                                                            <div className="p-1">
-                                                                <div className="grid grid-cols-2 gap-4">
+                                                            <div className="p-1 space-y-4">
+                                                                <div className="grid grid-cols-3 gap-4">
                                                                     <div className="space-y-2">
                                                                         <Label>Maximum Time (s)</Label>
                                                                         <Input type="number" value={guidelineEditorMaxX} onChange={e => setGuidelineEditorMaxX(e.target.value === '' ? '' : Number(e.target.value))} />
@@ -2479,6 +2487,10 @@ export default function AdminPage() {
                                                                     <div className="space-y-2">
                                                                         <Label>Maximum Pressure</Label>
                                                                         <Input type="number" value={guidelineEditorMaxY} onChange={e => setGuidelineEditorMaxY(e.target.value === '' ? '' : Number(e.target.value))} />
+                                                                    </div>
+                                                                    <div className="space-y-2">
+                                                                        <Label>Default Duration (s)</Label>
+                                                                        <Input type="number" value={editingVesselType?.durationSeconds || ''} onChange={(e) => setEditingVesselType(p => p ? {...p, durationSeconds: Number(e.target.value)} : null)} />
                                                                     </div>
                                                                 </div>
                                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">

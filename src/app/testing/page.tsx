@@ -1,4 +1,5 @@
 
+
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -127,6 +128,7 @@ type ChartDataPoint = {
 type VesselType = {
     id: string;
     name: string;
+    durationSeconds?: number;
     minCurve: {x: number, y: number}[];
     maxCurve: {x: number, y: number}[];
 }
@@ -528,7 +530,7 @@ function TestingComponent() {
             }
         }
         
-        if (inFailedInterval && intervalStart !== null) {
+        if (inFailedInterval && intervalStart !== null && chartData.length > 0) {
             intervals.push({ x1: intervalStart, x2: chartData[chartData.length - 1].name });
         }
         
@@ -1433,6 +1435,32 @@ function TestingComponent() {
                             ));
                         })}
 
+                        {comparisonSessions.map((session, index) => {
+                            const window = measurementWindows[session.id];
+                            if (!window || !window.start) return null;
+                            const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+                            const expectedEndTime = vesselType?.durationSeconds ? window.start.startTime + vesselType.durationSeconds : undefined;
+
+                            return (
+                                <React.Fragment key={`ref-lines-${session.id}`}>
+                                    <ReferenceLine
+                                        x={window.start.startTime}
+                                        stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                        strokeDasharray="3 3"
+                                        label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
+                                    />
+                                    {expectedEndTime !== undefined && (
+                                        <ReferenceLine
+                                            x={expectedEndTime}
+                                            stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                            strokeDasharray="3 3"
+                                            label={{ value: "Expected End", position: "insideTopRight", fill: "hsl(var(--muted-foreground))" }}
+                                        />
+                                    )}
+                                </React.Fragment>
+                            );
+                        })}
+
                         {comparisonSessions.map((session, index) => (
                            <Line 
                             key={session.id}
@@ -1445,20 +1473,6 @@ function TestingComponent() {
                             connectNulls
                            />
                         ))}
-                        {comparisonSessions.map((session, index) => {
-                            const window = measurementWindows[session.id];
-                            if (!window || !window.start) return null;
-
-                            return (
-                                <ReferenceLine
-                                    key={`ref-line-start-${session.id}`}
-                                    x={window.start.startTime}
-                                    stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                                    strokeDasharray="3 3"
-                                    label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
-                                />
-                            );
-                        })}
                       </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -1488,3 +1502,4 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
