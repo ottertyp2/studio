@@ -51,7 +51,7 @@ import {
 } from 'recharts';
 import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle, Square, GaugeCircle, SlidersHorizontal } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, WithId } from '@/firebase';
+import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, WithId, addDocument } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
 import { useTestBench } from '@/context/TestBenchContext';
 import { collection, query, where, onSnapshot, doc, getDocs, orderBy, limit, getDoc, writeBatch } from 'firebase/firestore';
@@ -185,6 +185,8 @@ function TestingComponent() {
     sequenceFailureCount,
     movingAverageLength,
     runningTestSession,
+    startSession: startSessionInContext,
+    stopSession: stopSessionInContext,
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
@@ -314,7 +316,7 @@ function TestingComponent() {
     setComparisonData({});
     setComparisonSessions([]);
 
-    const newSessionDoc: Omit<TestSession, 'id'> = {
+    const newSessionDocData: Omit<TestSession, 'id'> = {
       vesselTypeId: newSessionData.vesselTypeId,
       vesselTypeName: vesselType.name,
       batchId: newSessionData.batchId,
@@ -330,7 +332,13 @@ function TestingComponent() {
     };
 
     try {
-      await addDocumentNonBlocking(collection(firestore, 'test_sessions'), newSessionDoc);
+      console.log('Attempting to start a new session with data:', newSessionDocData);
+      const docRef = await addDocument(collection(firestore, 'test_sessions'), newSessionDocData);
+      const newSessionWithId: WithId<TestSession> = { id: docRef.id, ...newSessionDocData };
+
+      console.log(`Session document created with ID: ${docRef.id}. Informing context.`);
+      startSessionInContext(newSessionWithId);
+      
       await sendRecordingCommand(true);
       toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
       setIsNewSessionDialogOpen(false);
@@ -341,6 +349,7 @@ function TestingComponent() {
       }));
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Failed to Start Session', description: error.message });
+      console.error('Failed to create session document:', error);
     }
   };
   
@@ -354,6 +363,8 @@ function TestingComponent() {
       status: 'COMPLETED',
       endTime: new Date().toISOString(),
     });
+    
+    stopSessionInContext();
 
     toast({ title: 'Session Stopped', description: 'Data recording has ended.' });
   };

@@ -53,6 +53,8 @@ export interface TestBenchContextType {
   sequenceFailureCount: number;
   movingAverageLength: number | null;
   runningTestSession: WithId<DocumentData> | null;
+  startSession: (session: WithId<DocumentData>) => void;
+  stopSession: () => void;
 }
 
 export const TestBenchContext = createContext<TestBenchContextType | undefined>(undefined);
