@@ -333,9 +333,11 @@ function TestingComponent() {
     };
 
     try {
+      console.log('Attempting to start a new session with data:', newSessionDocData);
       const docRef = await addDocument(collection(firestore, 'test_sessions'), newSessionDocData);
       const newSessionWithId: WithId<TestSession> = { id: docRef.id, ...newSessionDocData };
 
+      console.log(`Session document created with ID: ${docRef.id}. Informing context.`);
       startSessionInContext(newSessionWithId);
       
       await sendRecordingCommand(true);
@@ -1463,3 +1465,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
