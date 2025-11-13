@@ -201,7 +201,7 @@ type TestSession = {
     testBenchId: string;
     sensorConfigurationId: string;
     measurementType: 'DEMO' | 'ARDUINO';
-    classification?: 'LEAK' | 'DIFFUSION';
+    classification?: 'LEAK' | 'DIFFUSION' | 'UNCLASSIFIABLE';
     userId: string;
     username: string;
     demoOwnerInstanceId?: string;
@@ -656,10 +656,10 @@ export default function AdminPage() {
     }
   };
 
-  const handleSetSessionClassification = (sessionId: string, classification: 'LEAK' | 'DIFFUSION' | null) => {
+  const handleSetSessionClassification = (sessionId: string, classification: 'LEAK' | 'DIFFUSION' | 'UNCLASSIFIABLE' | null) => {
     if (!firestore) return;
     const sessionRef = doc(firestore, 'test_sessions', sessionId);
-    const updateData: { classification: 'LEAK' | 'DIFFUSION' | null } = { classification };
+    const updateData: { classification: 'LEAK' | 'DIFFUSION' | 'UNCLASSIFIABLE' | null } = { classification };
     
     // Explicitly handle setting to null if that's intended
     if (classification === null) {
@@ -714,7 +714,17 @@ export default function AdminPage() {
         }
 
         const { startIndex } = findMeasurementStart(sensorData, config);
-        const { endIndex } = findMeasurementEnd(sensorData, startIndex, config, vesselType.durationSeconds);
+        const { endIndex, isComplete } = findMeasurementEnd(data, startIndex, config, vesselType.durationSeconds);
+        
+        if (!isComplete) {
+            handleSetSessionClassification(session.id, 'UNCLASSIFIABLE');
+            toast({ 
+                title: 'Classification: Unclassifiable', 
+                description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" did not run for the required duration of ${vesselType.durationSeconds}s.` 
+            });
+            return;
+        }
+
         const analysisData = sensorData.slice(startIndex, endIndex + 1);
 
         if (analysisData.length === 0) {
@@ -781,7 +791,7 @@ export default function AdminPage() {
     } catch (e: any) {
         toast({ variant: 'destructive', title: `Guideline Classification Failed`, description: e.message });
     }
-};
+  };
 
   const handleBulkClassifyByGuideline = async () => {
     if (!testSessions) return;
@@ -916,6 +926,8 @@ export default function AdminPage() {
                 filtered = filtered.filter(session => session.classification === 'DIFFUSION');
             } else if (sessionClassificationFilter === 'not-passed') {
                 filtered = filtered.filter(session => session.classification === 'LEAK');
+            } else if (sessionClassificationFilter === 'unclassifiable') {
+                filtered = filtered.filter(session => session.classification === 'UNCLASSIFIABLE');
             }
         }
 
@@ -1300,7 +1312,7 @@ export default function AdminPage() {
             const classificationText = getClassificationText(session.classification);
             const statusStyle = {
                 text: classificationText,
-                color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black'),
+                color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : (classificationText === 'Unclassifiable' ? 'orange' : 'black')),
             };
 
             const reactorSessions = sessionsByReactor[session.serialNumber || session.id] || [];
@@ -1560,7 +1572,7 @@ export default function AdminPage() {
 
                     const sessionRef = doc(firestore, 'test_sessions', firstRow.id);
 
-                    const sessionDoc: Omit<TestSession, 'classification'> & { classification?: 'LEAK' | 'DIFFUSION' | undefined } = {
+                    const sessionDoc: Omit<TestSession, 'classification'> & { classification?: 'LEAK' | 'DIFFUSION' | 'UNCLASSIFIABLE' | undefined } = {
                         id: firstRow.id,
                         vesselTypeId: firstRow.vesselTypeId,
                         vesselTypeName: firstRow.vesselTypeName,
@@ -1577,7 +1589,7 @@ export default function AdminPage() {
                         batchId: firstRow.batchId,
                     };
 
-                    if (firstRow.classification === 'LEAK' || firstRow.classification === 'DIFFUSION') {
+                    if (firstRow.classification === 'LEAK' || firstRow.classification === 'DIFFUSION' || firstRow.classification === 'UNCLASSIFIABLE') {
                         sessionDoc.classification = firstRow.classification;
                     }
                     
@@ -1609,10 +1621,11 @@ export default function AdminPage() {
     Array.from(files).forEach(processFile);
   };
 
-  const getClassificationText = (classification?: 'LEAK' | 'DIFFUSION') => {
+  const getClassificationText = (classification?: 'LEAK' | 'DIFFUSION' | 'UNCLASSIFIABLE') => {
       switch(classification) {
           case 'LEAK': return 'Not Passed';
           case 'DIFFUSION': return 'Passed';
+          case 'UNCLASSIFIABLE': return 'Unclassifiable';
           default: return 'Unclassified';
       }
   };
@@ -2106,6 +2119,7 @@ export default function AdminPage() {
                                                         <SelectItem value="unclassified">Unclassified</SelectItem>
                                                         <SelectItem value="passed">Passed</SelectItem>
                                                         <SelectItem value="not-passed">Not Passed</SelectItem>
+                                                        <SelectItem value="unclassifiable">Unclassifiable</SelectItem>
                                                     </SelectContent>
                                                 </Select>
                                             </div>
@@ -2282,6 +2296,7 @@ export default function AdminPage() {
                                           <DropdownMenuSubContent>
                                             <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'LEAK')}>Not Passed</DropdownMenuItem>
                                             <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'DIFFUSION')}>Passed</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'UNCLASSIFIABLE')}>Unclassifiable</DropdownMenuItem>
                                             <DropdownMenuSeparator />
                                             <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, null)}>Clear Classification</DropdownMenuItem>
                                           </DropdownMenuSubContent>
@@ -2954,7 +2969,3 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
-
-    
-
-    

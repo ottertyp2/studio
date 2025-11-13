@@ -203,10 +203,10 @@
             "userId": { "type": "string", "description": "The ID of the user who started the session." },
             "username": { "type": "string", "description": "The username of the user who started the session." },
             "demoOwnerInstanceId": { "type": "string", "description": "A unique ID for the client instance that started a demo session." },
-            "classification": { "type": "string", "enum": ["LEAK", "DIFFUSION"], "description": "The classification of the test result (e.g. Leak, Diffusion)." },
+            "classification": { "type": "string", "enum": ["LEAK", "DIFFUSION", "UNCLASSIFIABLE"], "description": "The classification of the test result (e.g. Leak, Diffusion)." },
             "batchId": { "type": "string", "description": "The batch this test belongs to." }
         },
-        "required": ["id", "vesselTypeId", "vesselTypeName", "startTime", "status", "testBenchId", "sensorConfigurationId", "measurementType", "userId", "username", "batchId"]
+        "required": ["id", "vesselTypeId", "vesselTypeName", "startTime", "status", "testBenchId", "sensorConfigurationId", "measurementType", "userId", "username"]
     },
     "VesselType": {
         "$schema": "http://json-schema.org/draft-07/schema#",

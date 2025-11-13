@@ -1,4 +1,5 @@
 
+
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -126,12 +127,12 @@ export const findMeasurementStart = (data: { value: number; timestamp: string }[
 };
 
 
-export const findMeasurementEnd = (data: { value: number; timestamp: string }[], startIndex: number, config: SensorConfig | null | undefined, durationSeconds?: number): { endIndex: number; endTime: number } => {
-    const defaultEnd = () => {
+export const findMeasurementEnd = (data: { value: number; timestamp: string }[], startIndex: number, config: SensorConfig | null | undefined, durationSeconds?: number): { endIndex: number; endTime: number, isComplete: boolean } => {
+    const defaultEnd = (isComplete = false) => {
         const lastIndex = data.length > 0 ? data.length - 1 : 0;
         const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : 0;
         const endTimeInSeconds = data.length > 0 ? (new Date(data[lastIndex].timestamp).getTime() - sessionStartTime) / 1000 : 0;
-        return { endIndex: lastIndex, endTime: endTimeInSeconds };
+        return { endIndex: lastIndex, endTime: endTimeInSeconds, isComplete };
     };
 
     if (!data || data.length === 0 || startIndex >= data.length) {
@@ -144,15 +145,25 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
     // If a specific duration is provided, use it to calculate the end time.
     if (durationSeconds && durationSeconds > 0) {
         const expectedEndTime = measurementStartTime + (durationSeconds * 1000);
-        let finalEndIndex = data.findIndex(d => new Date(d.timestamp).getTime() >= expectedEndTime);
-
-        // If no data point is found at or after the expected end time, use the last available data point.
-        if (finalEndIndex === -1) {
-            finalEndIndex = data.length - 1;
+        let finalEndIndex = -1;
+        
+        // Find the last data point before or exactly at the expected end time
+        for(let i = data.length - 1; i >= startIndex; i--) {
+            if (new Date(data[i].timestamp).getTime() <= expectedEndTime) {
+                finalEndIndex = i;
+                break;
+            }
         }
         
-        const endTimeInSeconds = (new Date(data[finalEndIndex].timestamp).getTime() - sessionStartTime) / 1000;
-        return { endIndex: finalEndIndex, endTime: endTimeInSeconds };
+        if (finalEndIndex === -1) { // This case should be rare
+             return { endIndex: startIndex, endTime: (measurementStartTime - sessionStartTime) / 1000, isComplete: false };
+        }
+        
+        const actualEndTime = new Date(data[finalEndIndex].timestamp).getTime();
+        const isComplete = actualEndTime >= expectedEndTime;
+
+        const endTimeInSeconds = (actualEndTime - sessionStartTime) / 1000;
+        return { endIndex: finalEndIndex, endTime: endTimeInSeconds, isComplete };
     }
 
     // Fallback to old logic if no duration is provided
@@ -186,10 +197,8 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
 
         const finalEndIndex = startIndex + finalEndIndexInSlice;
         const endTimeInSeconds = (new Date(data[finalEndIndex].timestamp).getTime() - sessionStartTime) / 1000;
-        return { endIndex: finalEndIndex, endTime: endTimeInSeconds };
+        return { endIndex: finalEndIndex, endTime: endTimeInSeconds, isComplete: true }; // Assume complete for old logic
     }
 
-    return defaultEnd();
+    return defaultEnd(true); // Assume complete for old logic
 };
-
-    
