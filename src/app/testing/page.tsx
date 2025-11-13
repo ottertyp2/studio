@@ -48,6 +48,7 @@ import {
   Legend,
   ResponsiveContainer,
   ReferenceLine,
+  ReferenceArea,
 } from 'recharts';
 import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle, Square, GaugeCircle, SlidersHorizontal } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -333,11 +334,9 @@ function TestingComponent() {
     };
 
     try {
-      console.log('Attempting to start a new session with data:', newSessionDocData);
       const docRef = await addDocument(collection(firestore, 'test_sessions'), newSessionDocData);
       const newSessionWithId: WithId<TestSession> = { id: docRef.id, ...newSessionDocData };
       
-      console.log(`Session document created with ID: ${docRef.id}. Informing context.`);
       startSessionInContext(newSessionWithId);
       
       await sendRecordingCommand(true);
@@ -350,7 +349,6 @@ function TestingComponent() {
       }));
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Failed to Start Session', description: error.message });
-      console.error('Failed to create session document:', error);
     }
   };
   
@@ -501,15 +499,45 @@ function TestingComponent() {
   
         point[session.id] = value;
         if (isFailed) {
-            point[`${session.id}-failed`] = value;
+            point[`${session.id}-failed`] = 1; // Use 1 to indicate failure, not the value itself
         } else {
-            point[`${session.id}-failed`] = null;
+            point[`${session.id}-failed`] = 0;
         }
       });
     });
   
     return Object.values(timeMap).sort((a, b) => a.name - b.name);
   }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
+
+    const failedIntervals = useMemo(() => {
+    if (!chartData || chartData.length === 0) return [];
+
+    const intervals: { x1: number, x2: number }[] = [];
+    let inFailedInterval = false;
+    let intervalStart = 0;
+
+    for (let i = 0; i < chartData.length; i++) {
+        const point = chartData[i];
+        const isAnyFailed = comparisonSessions.some(session => point[`${session.id}-failed`] === 1);
+
+        if (isAnyFailed && !inFailedInterval) {
+            // Start of a new failed interval
+            inFailedInterval = true;
+            intervalStart = point.name;
+        } else if (!isAnyFailed && inFailedInterval) {
+            // End of the current failed interval
+            inFailedInterval = false;
+            intervals.push({ x1: intervalStart, x2: point.name });
+        }
+    }
+
+    // If the chart ends while in a failed state, close the interval
+    if (inFailedInterval) {
+        intervals.push({ x1: intervalStart, x2: chartData[chartData.length - 1].name });
+    }
+
+    return intervals;
+  }, [chartData, comparisonSessions]);
 
   const setTimeframe = (frame: '1m' | '5m' | 'all') => {
       setActiveTimeframe(frame);
@@ -1390,6 +1418,19 @@ function TestingComponent() {
                         
                         <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
+                        
+                        {failedIntervals.map((interval, index) => (
+                          <ReferenceArea
+                            key={`failed-interval-${index}`}
+                            x1={interval.x1}
+                            x2={interval.x2}
+                            fill="hsl(var(--destructive))"
+                            fillOpacity={0.2}
+                            stroke="hsl(var(--destructive))"
+                            strokeOpacity={0.5}
+                            ifOverflow="visible"
+                          />
+                        ))}
 
                         {comparisonSessions.map((session, index) => (
                            <Line 
@@ -1401,18 +1442,6 @@ function TestingComponent() {
                             dot={false} 
                             strokeWidth={2} 
                             connectNulls
-                           />
-                        ))}
-                         {comparisonSessions.map((session, index) => (
-                           <Line 
-                            key={`${session.id}-failed`}
-                            type="monotone" 
-                            dataKey={`${session.id}-failed`} 
-                            stroke="hsl(var(--destructive))"
-                            name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'} (Failed)`}
-                            dot={false} 
-                            strokeWidth={2} 
-                            connectNulls={false}
                            />
                         ))}
                         {comparisonSessions.map((session, index) => {
