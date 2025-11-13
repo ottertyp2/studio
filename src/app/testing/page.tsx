@@ -814,7 +814,7 @@ function TestingComponent() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', '*', '*', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', '*', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [
                                 {text: 'Batch', style: 'tableHeader'},
@@ -1471,7 +1471,7 @@ function TestingComponent() {
                                     if (comparisonSessions.length === 1) {
                                         generateReport({ type: 'single', sessionId: comparisonSessions[0].id });
                                     } else {
-                                        toast({title: "Select a Single Session", description: "Please select one session to generate a single report, or choose another report type."});
+                                        toast({title: "Select a Single Session", description: "Please select one session to generate a single report, or use the history panel."});
                                         setIsHistoryPanelOpen(true);
                                     }
                                 }}>

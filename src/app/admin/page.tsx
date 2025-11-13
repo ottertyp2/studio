@@ -1325,14 +1325,16 @@ export default function AdminPage() {
                 color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : (classificationText === 'Unclassifiable' ? 'orange' : 'black')),
             };
 
-            const reactorSessions = sessionsByReactor[session.serialNumber || session.id] || [];
-            const attemptNumber = reactorSessions.findIndex(s => s.id === session.id) + 1;
-            const totalAttempts = reactorSessions.length;
+            const reactorSessions = (sessionsByReactor[session.serialNumber || session.id] || []).filter(s => s.classification !== 'UNCLASSIFIABLE');
+            const attemptNumber = (sessionsByReactor[session.serialNumber || session.id] || []).findIndex(s => s.id === session.id) + 1;
+            const totalAttempts = (sessionsByReactor[session.serialNumber || session.id] || []).length;
+            
             const passAttemptIndex = reactorSessions.findIndex(s => s.classification === 'DIFFUSION');
             let passResult = 'Not passed';
             if (passAttemptIndex !== -1) {
                 passResult = `Passed on try #${passAttemptIndex + 1}`;
             }
+
 
             const data = allSensorData[session.id] || [];
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
@@ -1396,7 +1398,7 @@ export default function AdminPage() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', '*', '*', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', '*', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [
                               {text: 'Batch', style: 'tableHeader'}, 
