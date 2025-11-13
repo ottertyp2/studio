@@ -16,6 +16,13 @@ service cloud.firestore {
       return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
     }
 
+    match /app_settings/{settingsId} {
+      // Allow anyone to read the application settings (e.g., for the signup page to check if signups are enabled).
+      allow get: if true;
+      // Only superadmins can create or change the settings.
+      allow write: if isSuperAdmin();
+    }
+
     match /users/{userId} {
       // Publicly readable for username lookups and filtering.
       allow get, list: if true;

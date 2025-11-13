@@ -11,21 +11,30 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { useFirebase } from '@/firebase';
+import { useFirebase, useDoc, useMemoFirebase } from '@/firebase';
 import { initiateEmailSignUp } from '@/firebase/non-blocking-login';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
+import { doc } from 'firebase/firestore';
 
 const formSchema = z.object({
   emailOrUsername: z.string().min(3, { message: 'Must be at least 3 characters.' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
 });
 
+type AppSettings = {
+    id: 'config';
+    allowSignups: boolean;
+};
+
 export default function SignupPage() {
   const router = useRouter();
   const { auth, firestore } = useFirebase();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+
+  const appSettingsDocRef = useMemoFirebase(() => firestore ? doc(firestore, 'app_settings', 'config') : null, [firestore]);
+  const { data: appSettings, isLoading: isLoadingSettings } = useDoc<AppSettings>(appSettingsDocRef);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -42,6 +51,16 @@ export default function SignupPage() {
         variant: 'destructive',
         title: 'Configuration Error',
         description: 'Firebase is not initialized correctly.',
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    if (!appSettings?.allowSignups) {
+      toast({
+        variant: 'destructive',
+        title: 'Sign Up Disabled',
+        description: 'New account registrations are not currently allowed.',
       });
       setIsLoading(false);
       return;
@@ -66,6 +85,8 @@ export default function SignupPage() {
     }
   };
 
+  const signupsAllowed = appSettings?.allowSignups ?? false;
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 p-4">
       <Card className="w-full max-w-md shadow-lg">
@@ -74,39 +95,47 @@ export default function SignupPage() {
           <CardDescription>Join to start analyzing your data</CardDescription>
         </CardHeader>
         <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <FormField
-                control={form.control}
-                name="emailOrUsername"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email or Username</FormLabel>
-                    <FormControl>
-                      <Input placeholder="your_username or name@example.com" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <Input type="password" placeholder="••••••••" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <Button type="submit" className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={isLoading}>
-                {isLoading ? 'Creating Account...' : 'Sign Up'}
-              </Button>
-            </form>
-          </Form>
+            {isLoadingSettings ? (
+                 <div className="text-center text-muted-foreground">Loading settings...</div>
+            ) : signupsAllowed ? (
+                <Form {...form}>
+                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                    <FormField
+                        control={form.control}
+                        name="emailOrUsername"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Email or Username</FormLabel>
+                            <FormControl>
+                            <Input placeholder="your_username or name@example.com" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                    <FormField
+                        control={form.control}
+                        name="password"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Password</FormLabel>
+                            <FormControl>
+                            <Input type="password" placeholder="••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                    <Button type="submit" className="w-full btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1" disabled={isLoading}>
+                        {isLoading ? 'Creating Account...' : 'Sign Up'}
+                    </Button>
+                    </form>
+                </Form>
+            ) : (
+                <div className="text-center text-muted-foreground p-4 border-dashed border-2 rounded-md">
+                    <p>New user registration is currently disabled by the administrator.</p>
+                </div>
+            )}
            <div className="mt-6 text-center text-sm">
             Already have an account?{' '}
             <Link href="/login" className="underline text-primary">

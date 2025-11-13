@@ -73,7 +73,7 @@ import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Upload, FileSignature, Layers, Calendar as CalendarIcon, RotateCcw, ShieldCheck, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser, addDocument } from '@/firebase';
+import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser, addDocument, useDoc } from '@/firebase';
 import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
 import { signOut, adminCreateUser } from '@/firebase/non-blocking-login';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -103,6 +103,7 @@ import Papa from 'papaparse';
 import * as tf from '@tensorflow/tfjs';
 import { set } from 'firebase/database';
 import { ref as rtdbRef } from 'firebase/database';
+import { Switch } from '@/components/ui/switch';
 
 
 if (pdfFonts.pdfMake) {
@@ -142,6 +143,11 @@ type AppUser = {
     username: string;
     email: string;
     role: 'user' | 'superadmin';
+};
+
+type AppSettings = {
+    id: 'config';
+    allowSignups: boolean;
 };
 
 type TestBench = {
@@ -320,6 +326,9 @@ export default function AdminPage() {
 
   const modelsCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'mlModels') : null, [firestore]);
   const { data: mlModels } = useCollection<MLModel>(modelsCollectionRef);
+
+  const appSettingsDocRef = useMemoFirebase(() => firestore ? doc(firestore, 'app_settings', 'config') : null, [firestore]);
+  const { data: appSettings } = useDoc<AppSettings>(appSettingsDocRef);
 
   useEffect(() => {
       if (mlModels && !activeModel) {
@@ -884,93 +893,93 @@ export default function AdminPage() {
     router.push('/login');
   };
   
-    const filteredAndSortedSessions = useMemo(() => {
-        if (!testSessions) return [];
-    
-        let filtered = testSessions;
+  const filteredAndSortedSessions = useMemo(() => {
+      if (!testSessions) return [];
+  
+      let filtered = testSessions;
 
-        if (sessionUserFilter.length > 0) {
-            filtered = filtered.filter(session => sessionUserFilter.includes(session.userId));
-        }
-        
-        if (sessionVesselTypeFilter.length > 0) {
-            filtered = filtered.filter(session => sessionVesselTypeFilter.includes(session.vesselTypeId));
-        }
+      if (sessionUserFilter.length > 0) {
+          filtered = filtered.filter(session => sessionUserFilter.includes(session.userId));
+      }
+      
+      if (sessionVesselTypeFilter.length > 0) {
+          filtered = filtered.filter(session => sessionVesselTypeFilter.includes(session.vesselTypeId));
+      }
 
-        if (sessionBatchFilter.length > 0) {
-            filtered = filtered.filter(session => session.batchId && sessionBatchFilter.includes(session.batchId));
-        }
-        
-        if (sessionTestBenchFilter.length > 0) {
-            filtered = filtered.filter(session => sessionTestBenchFilter.includes(session.testBenchId));
-        }
+      if (sessionBatchFilter.length > 0) {
+          filtered = filtered.filter(session => session.batchId && sessionBatchFilter.includes(session.batchId));
+      }
+      
+      if (sessionTestBenchFilter.length > 0) {
+          filtered = filtered.filter(session => sessionTestBenchFilter.includes(session.testBenchId));
+      }
 
-        if (sessionClassificationFilter !== 'all') {
-            if (sessionClassificationFilter === 'classified') {
-                filtered = filtered.filter(session => !!session.classification);
-            } else if (sessionClassificationFilter === 'unclassified') {
-                filtered = filtered.filter(session => !session.classification);
-            } else if (sessionClassificationFilter === 'passed') {
-                filtered = filtered.filter(session => session.classification === 'DIFFUSION');
-            } else if (sessionClassificationFilter === 'not-passed') {
-                filtered = filtered.filter(session => session.classification === 'LEAK');
-            } else if (sessionClassificationFilter === 'unclassifiable') {
-                filtered = filtered.filter(session => session.classification === 'UNCLASSIFIABLE');
-            }
-        }
+      if (sessionClassificationFilter !== 'all') {
+          if (sessionClassificationFilter === 'classified') {
+              filtered = filtered.filter(session => !!session.classification);
+          } else if (sessionClassificationFilter === 'unclassified') {
+              filtered = filtered.filter(session => !session.classification);
+          } else if (sessionClassificationFilter === 'passed') {
+              filtered = filtered.filter(session => session.classification === 'DIFFUSION');
+          } else if (sessionClassificationFilter === 'not-passed') {
+              filtered = filtered.filter(session => session.classification === 'LEAK');
+          } else if (sessionClassificationFilter === 'unclassifiable') {
+              filtered = filtered.filter(session => session.classification === 'UNCLASSIFIABLE');
+          }
+      }
 
-        if (sessionDateFilter?.from) {
-          const fromDate = sessionDateFilter.from;
-          fromDate.setHours(0, 0, 0, 0);
-          filtered = filtered.filter(session => new Date(session.startTime) >= fromDate);
-        }
-        if (sessionDateFilter?.to) {
-            const toDate = sessionDateFilter.to;
-            toDate.setHours(23, 59, 59, 999);
-            filtered = filtered.filter(session => new Date(session.startTime) <= toDate);
-        }
+      if (sessionDateFilter?.from) {
+        const fromDate = sessionDateFilter.from;
+        fromDate.setHours(0, 0, 0, 0);
+        filtered = filtered.filter(session => new Date(session.startTime) >= fromDate);
+      }
+      if (sessionDateFilter?.to) {
+          const toDate = sessionDateFilter.to;
+          toDate.setHours(23, 59, 59, 999);
+          filtered = filtered.filter(session => new Date(session.startTime) <= toDate);
+      }
 
-        filtered = filtered.filter(session => {
-            const searchTerm = sessionSearchTerm.toLowerCase();
-            if (!searchTerm) return true;
-            const batchName = batches?.find(b => b.id === session.batchId)?.name.toLowerCase() || '';
-            return (
-                session.vesselTypeName.toLowerCase().includes(searchTerm) ||
-                batchName.includes(searchTerm) ||
-                session.serialNumber.toLowerCase().includes(searchTerm) ||
-                session.description.toLowerCase().includes(searchTerm) ||
-                session.username.toLowerCase().includes(searchTerm)
-            );
-        });
+      filtered = filtered.filter(session => {
+          const searchTerm = sessionSearchTerm.toLowerCase();
+          if (!searchTerm) return true;
+          const batchName = batches?.find(b => b.id === session.batchId)?.name.toLowerCase() || '';
+          return (
+              session.vesselTypeName.toLowerCase().includes(searchTerm) ||
+              batchName.includes(searchTerm) ||
+              session.serialNumber.toLowerCase().includes(searchTerm) ||
+              session.description.toLowerCase().includes(searchTerm) ||
+              session.username.toLowerCase().includes(searchTerm)
+          );
+      });
 
-        const safeBatches = batches || [];
-        const safeTestBenches = testBenches || [];
+      const safeBatches = batches || [];
+      const safeTestBenches = testBenches || [];
 
-        return filtered.sort((a, b) => {
-            const batchAName = safeBatches.find(bt => bt.id === a.batchId)?.name || '';
-            const batchBName = safeBatches.find(bt => bt.id === b.batchId)?.name || '';
-            
-            switch (sessionSortOrder) {
-                case 'startTime-desc':
-                    return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
-                case 'startTime-asc':
-                    return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
-                case 'vesselTypeName-asc':
-                    return a.vesselTypeName.localeCompare(b.vesselTypeName);
-                case 'batchName-asc':
-                    return batchAName.localeCompare(batchBName);
-                 case 'username-asc':
-                    return a.username.localeCompare(b.username);
-                case 'testBenchName-asc': {
-                  const benchAName = safeTestBenches.find(tb => tb.id === a.testBenchId)?.name || '';
-                  const benchBName = safeTestBenches.find(tb => tb.id === b.testBenchId)?.name || '';
-                  return benchAName.localeCompare(benchBName);
-                }
-                default:
-                    return 0;
-            }
-        });
-    }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, sessionDateFilter, testBenches, batches]);
+      return filtered.sort((a, b) => {
+          const batchAName = safeBatches.find(bt => bt.id === a.batchId)?.name || '';
+          const batchBName = safeBatches.find(bt => bt.id === b.batchId)?.name || '';
+          
+          switch (sessionSortOrder) {
+              case 'startTime-desc':
+                  return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
+              case 'startTime-asc':
+                  return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+              case 'vesselTypeName-asc':
+                  return a.vesselTypeName.localeCompare(b.vesselTypeName);
+              case 'batchName-asc':
+                  return batchAName.localeCompare(batchBName);
+               case 'username-asc':
+                  return a.username.localeCompare(b.username);
+              case 'testBenchName-asc': {
+                const benchAName = safeTestBenches.find(tb => tb.id === a.testBenchId)?.name || '';
+                const benchBName = safeTestBenches.find(tb => tb.id === b.testBenchId)?.name || '';
+                return benchAName.localeCompare(benchBName);
+              }
+              default:
+                  return 0;
+          }
+      });
+  }, [testSessions, sessionSearchTerm, sessionSortOrder, sessionUserFilter, sessionVesselTypeFilter, sessionBatchFilter, sessionTestBenchFilter, sessionClassificationFilter, sessionDateFilter, testBenches, batches]);
 
   const isFilterActive = useMemo(() => {
     return sessionUserFilter.length > 0 || 
@@ -1841,6 +1850,19 @@ export default function AdminPage() {
     }
   };
 
+  const handleSignupSwitch = async (allowSignups: boolean) => {
+    if (!appSettingsDocRef) {
+        toast({ variant: 'destructive', title: 'Error', description: 'App settings reference not available.' });
+        return;
+    }
+    // Optimistically update the UI, but the source of truth is the `appSettings` from `useDoc`
+    await setDocumentNonBlocking(appSettingsDocRef, { allowSignups }, { merge: true });
+    toast({
+        title: 'Settings Updated',
+        description: `New user sign-ups have been ${allowSignups ? 'enabled' : 'disabled'}.`
+    });
+  };
+
   const renderGuidelineInputs = (curve: 'min' | 'max') => {
     const points = curve === 'min' ? minCurvePoints : maxCurvePoints;
     const pointLabels = ['Start Point', 'Control Point 1', 'Control Point 2', 'End Point'];
@@ -2378,6 +2400,23 @@ export default function AdminPage() {
                             </div>
                             <Button onClick={handleCreateUser} className="mt-4">Create User Account</Button>
                         </div>
+                        <div className="p-4 border rounded-lg bg-background/50">
+                            <h3 className="text-lg font-semibold mb-2">System Settings</h3>
+                             <div className="flex items-center justify-between">
+                                <Label htmlFor="signup-switch" className="flex flex-col space-y-1">
+                                    <span>Allow New User Sign-ups</span>
+                                    <span className="font-normal leading-snug text-muted-foreground text-xs">
+                                        Enable or disable the public user registration page.
+                                    </span>
+                                </Label>
+                                <Switch
+                                    id="signup-switch"
+                                    checked={appSettings?.allowSignups ?? false}
+                                    onCheckedChange={handleSignupSwitch}
+                                />
+                            </div>
+                        </div>
+                        <h3 className="text-lg font-semibold my-4">Existing Users</h3>
                         <ScrollArea className="h-64">
                             <Table>
                                 <TableHeader>
