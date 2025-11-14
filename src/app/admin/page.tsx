@@ -1397,7 +1397,7 @@ export default function AdminPage() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', '*', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [
                               {text: 'Batch', style: 'tableHeader'}, 
@@ -2824,9 +2824,9 @@ const renderAIModelManagement = () => (
           {pdfChartData.length > 0 && (
               <div className='w-full h-full relative'>
                 <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={pdfChartData}>
+                    <LineChart data={pdfChartData} margin={{ top: 5, right: 30, left: 20, bottom: 20 }}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} />
+                        <XAxis dataKey="name" type="number" domain={['dataMin', 'dataMax']} label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -10 }} />
                         <YAxis domain={['dataMin', 'dataMax + 10']} />
                         <Tooltip />
                         <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
@@ -2858,7 +2858,7 @@ const renderAIModelManagement = () => (
                         ))}
                     </LineChart>
                 </ResponsiveContainer>
-                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex flex-wrap justify-center items-center text-xs">
+                <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex flex-wrap justify-center items-center text-xs">
                     {pdfChartSessions.map((session, index) => (
                         <div key={session.id} className="flex items-center mr-4">
                             <div className="w-3 h-3 mr-1" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}></div>
