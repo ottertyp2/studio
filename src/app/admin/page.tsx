@@ -1,4 +1,5 @@
 
+
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -1305,16 +1306,16 @@ export default function AdminPage() {
             }
         }
         
-        const sessionsByReactor: Record<string, TestSession[]> = {};
+        const sessionsByVessel: Record<string, TestSession[]> = {};
         relevantSessions.forEach(session => {
-            const key = session.serialNumber || session.id;
-            if (!sessionsByReactor[key]) {
-                sessionsByReactor[key] = [];
+            const key = `${session.vesselTypeId}§${session.serialNumber || session.id}`;
+            if (!sessionsByVessel[key]) {
+                sessionsByVessel[key] = [];
             }
-            sessionsByReactor[key].push(session);
+            sessionsByVessel[key].push(session);
         });
 
-        Object.values(sessionsByReactor).forEach(sessions => sessions.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
+        Object.values(sessionsByVessel).forEach(sessions => sessions.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
 
         const tableBody = await Promise.all(relevantSessions.map(async session => {
             const batchName = batches?.find(b => b.id === session.batchId)?.name;
@@ -1323,12 +1324,12 @@ export default function AdminPage() {
                 text: classificationText,
                 color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : (classificationText === 'Unclassifiable' ? 'orange' : 'black')),
             };
-
-            const reactorSessions = (sessionsByReactor[session.serialNumber || session.id] || []).filter(s => s.classification !== 'UNCLASSIFIABLE');
-            const attemptNumber = (sessionsByReactor[session.serialNumber || session.id] || []).findIndex(s => s.id === session.id) + 1;
-            const totalAttempts = (sessionsByReactor[session.serialNumber || session.id] || []).length;
+            const vesselKey = `${session.vesselTypeId}§${session.serialNumber || session.id}`;
+            const vesselSessions = (sessionsByVessel[vesselKey] || []).filter(s => s.classification !== 'UNCLASSIFIABLE');
+            const attemptNumber = (sessionsByVessel[vesselKey] || []).findIndex(s => s.id === session.id) + 1;
+            const totalAttempts = (sessionsByVessel[vesselKey] || []).length;
             
-            const passAttemptIndex = reactorSessions.findIndex(s => s.classification === 'DIFFUSION');
+            const passAttemptIndex = vesselSessions.findIndex(s => s.classification === 'DIFFUSION');
             let passResult = 'Not passed';
             if (passAttemptIndex !== -1) {
                 passResult = `Passed on try #${passAttemptIndex + 1}`;
@@ -1397,7 +1398,7 @@ export default function AdminPage() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', '*', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [
                               {text: 'Batch', style: 'tableHeader'}, 
@@ -2865,7 +2866,7 @@ const renderAIModelManagement = () => (
                     {pdfChartSessions.map((session, index) => (
                         <div key={session.id} className="flex items-center mr-4">
                             <div className="w-3 h-3 mr-1" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}></div>
-                            <span>{session.serialNumber || 'N/A'}</span>
+                            <span className="text-black">{session.serialNumber || 'N/A'}</span>
                         </div>
                     ))}
                 </div>

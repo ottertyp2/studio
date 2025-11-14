@@ -1,4 +1,5 @@
 
+
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -729,30 +730,33 @@ function TestingComponent() {
             backgroundColor: '#ffffff'
         });
 
-        const sessionsByReactor: Record<string, TestSession[]> = {};
+        const sessionsByVessel: Record<string, TestSession[]> = {};
         const allTestSessionsSnapshot = await getDocs(collection(firestore, 'test_sessions'));
-        const allTestSessions = allTestSessionsSnapshot.docs.map(d => d.data() as TestSession);
+        const allTestSessions = allTestSessionsSnapshot.docs.map(d => ({id: d.id, ...d.data()}) as WithId<TestSession>);
 
         allTestSessions.forEach(session => {
-            const key = session.serialNumber || 'N/A';
-            if (!sessionsByReactor[key]) sessionsByReactor[key] = [];
-            sessionsByReactor[key].push(session);
+            const key = `${session.vesselTypeId}§${session.serialNumber || session.id}`;
+            if (!sessionsByVessel[key]) sessionsByVessel[key] = [];
+            sessionsByVessel[key].push(session);
         });
-        Object.values(sessionsByReactor).forEach(sessions => sessions.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
+        Object.values(sessionsByVessel).forEach(sessions => sessions.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
 
         const tableBody = sessionsToReport.map(session => {
             const batchName = batches?.find(b => b.id === session.batchId)?.name || 'N/A';
             const classificationText = getClassificationText(session.classification);
             const statusStyle = { text: classificationText, color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black') };
 
-            const reactorSessions = (sessionsByReactor[session.serialNumber || 'N/A'] || []).filter(s => s.classification !== 'UNCLASSIFIABLE');
-            const attemptNumber = (sessionsByReactor[session.serialNumber || 'N/A'] || []).findIndex(s => s.id === session.id) + 1;
-            const totalAttempts = (sessionsByReactor[session.serialNumber || 'N/A'] || []).length;
+            const vesselKey = `${session.vesselTypeId}§${session.serialNumber || session.id}`;
+            const vesselSessions = (sessionsByVessel[vesselKey] || []).filter(s => s.classification !== 'UNCLASSIFIABLE');
+            const attemptNumber = (sessionsByVessel[vesselKey] || []).findIndex(s => s.id === session.id) + 1;
+            const totalAttempts = (sessionsByVessel[vesselKey] || []).length;
             
-            const passAttemptIndex = reactorSessions.findIndex(s => s.classification === 'DIFFUSION');
+            const passAttemptIndex = vesselSessions.findIndex(s => s.classification === 'DIFFUSION');
             let passResult = 'Not passed';
             if (passAttemptIndex !== -1) {
-                passResult = `Passed on try #${passAttemptIndex + 1}`;
+                const passSession = vesselSessions[passAttemptIndex];
+                const realAttemptNumber = (sessionsByVessel[vesselKey] || []).findIndex(s => s.id === passSession.id) +1;
+                passResult = `Passed on try #${realAttemptNumber}`;
             }
 
             const data = allSensorDataForReport[session.id] || [];
@@ -961,7 +965,7 @@ function TestingComponent() {
             {pdfSessions.map((session, index) => (
               <div key={session.id} className="flex items-center mr-4">
                 <div className="w-3 h-3 mr-1" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}></div>
-                <span>{session.serialNumber || 'N/A'}</span>
+                <span className="text-black">{session.serialNumber || 'N/A'}</span>
               </div>
             ))}
           </div>
