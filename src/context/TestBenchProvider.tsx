@@ -55,6 +55,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
 
   useEffect(() => {
+    // Initialize state from LocalStorage on mount
     const persistedStartTime = localStorage.getItem('startTime');
     if (persistedStartTime) {
       setStartTime(JSON.parse(persistedStartTime));
@@ -64,10 +65,46 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       localStorage.setItem('startTime', JSON.stringify(now));
     }
     
+    let initialTotalDowntime = 0;
     const persistedDowntime = localStorage.getItem('totalDowntime');
     if (persistedDowntime) {
-      setTotalDowntime(JSON.parse(persistedDowntime));
+      initialTotalDowntime = JSON.parse(persistedDowntime);
     }
+
+    // Check if the page was reloaded while offline
+    const persistedDowntimeStart = localStorage.getItem('downtimeStart');
+    if (persistedDowntimeStart) {
+        const start = JSON.parse(persistedDowntimeStart);
+        const elapsedSinceClose = Date.now() - start;
+        initialTotalDowntime += elapsedSinceClose;
+        setDowntimeStart(start); // Keep tracking from the original start
+    }
+    
+    setTotalDowntime(initialTotalDowntime);
+
+    // Finalize downtime calculation on page close
+    const handleBeforeUnload = () => {
+        const currentDowntimeStart = localStorage.getItem('downtimeStart');
+        if (currentDowntimeStart) {
+            const start = JSON.parse(currentDowntimeStart);
+            const elapsed = Date.now() - start;
+            
+            let currentTotal = 0;
+            const currentTotalStr = localStorage.getItem('totalDowntime');
+            if (currentTotalStr) {
+                currentTotal = JSON.parse(currentTotalStr);
+            }
+            
+            localStorage.setItem('totalDowntime', JSON.stringify(currentTotal + elapsed));
+            localStorage.removeItem('downtimeStart');
+        }
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
   }, []);
   
   useEffect(() => {
@@ -149,10 +186,13 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
               return newTotal;
           });
           setDowntimeStart(null);
+          localStorage.removeItem('downtimeStart');
         }
       } else {
         if (downtimeStart === null) {
-          setDowntimeStart(now);
+            const now = Date.now();
+            setDowntimeStart(now);
+            localStorage.setItem('downtimeStart', JSON.stringify(now));
         }
       }
     }, 1000); // Check every second
@@ -334,3 +374,5 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
+
+    
