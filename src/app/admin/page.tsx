@@ -2280,6 +2280,9 @@ export default function AdminPage() {
                                         <Download className="mr-2 h-4 w-4" />
                                         <span>Export as CSV</span>
                                     </DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={() => handleGenerateVesselTypeReport(vesselTypes!.find(vt => vt.id === session.vesselTypeId)!)}>
+                                      <FileText className="mr-2 h-4 w-4"/> Generate Report
+                                    </DropdownMenuItem>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuSub>
                                       <DropdownMenuSubTrigger>
@@ -2858,7 +2861,7 @@ const renderAIModelManagement = () => (
                         ))}
                     </LineChart>
                 </ResponsiveContainer>
-                <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex flex-wrap justify-center items-center text-xs">
+                <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex flex-wrap justify-center items-center text-xs text-black">
                     {pdfChartSessions.map((session, index) => (
                         <div key={session.id} className="flex items-center mr-4">
                             <div className="w-3 h-3 mr-1" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}></div>

@@ -814,7 +814,7 @@ function TestingComponent() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', '*', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [
                                 {text: 'Batch', style: 'tableHeader'},
@@ -957,7 +957,7 @@ function TestingComponent() {
 
       if (isGeneratingReport) {
         return (
-          <div className="flex flex-wrap justify-center items-center text-xs" style={{ position: 'absolute', bottom: '5px', left: '50%', transform: 'translateX(-50%)' }}>
+          <div className="flex flex-wrap justify-center items-center text-xs text-black" style={{ position: 'absolute', bottom: '5px', left: '50%', transform: 'translateX(-50%)' }}>
             {pdfSessions.map((session, index) => (
               <div key={session.id} className="flex items-center mr-4">
                 <div className="w-3 h-3 mr-1" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}></div>
@@ -1366,7 +1366,7 @@ function TestingComponent() {
                                                 <DropdownMenuContent align="end" className="w-[300px]">
                                                     <ScrollArea className="h-[400px]">
                                                         <div className="p-2">
-                                                          <Accordion type="multiple" className="w-full">
+                                                          <Accordion type="single" collapsible className="w-full">
                                                               <AccordionItem value="date-range">
                                                                 <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Date Range</AccordionTrigger>
                                                                 <AccordionContent className="pb-0">
