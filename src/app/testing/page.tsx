@@ -1,4 +1,3 @@
-
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -199,7 +198,7 @@ function TestingComponent() {
     sendRecordingCommand,
     sendMovingAverageCommand,
     latency,
-    startTime,
+    startTime: systemStartTime,
     totalDowntime,
     downtimeStart,
     sequenceFailureCount,
@@ -609,41 +608,44 @@ function TestingComponent() {
   const chartData = useMemo((): ChartDataPoint[] => {
     if (comparisonSessions.length === 0) return [];
   
-    const allRelativeTimes = new Set<number>();
-    
+    const allAbsoluteTimes = new Set<number>();
+    const sessionStartTimes: Record<string, number> = {};
+
     comparisonSessions.forEach(session => {
         const sessionData = comparisonData[session.id] || [];
-        const window = measurementWindows[session.id];
-        if (!window || !sessionData.length) return;
-
-        const measurementStartTime = new Date(sessionData[window.start.startIndex].timestamp).getTime();
+        if (!sessionData.length) return;
+        
+        sessionStartTimes[session.id] = new Date(sessionData[0].timestamp).getTime();
 
         sessionData.forEach(point => {
-             const time = Math.round((new Date(point.timestamp).getTime() - measurementStartTime));
-             allRelativeTimes.add(time);
+             const time = new Date(point.timestamp).getTime();
+             allAbsoluteTimes.add(time);
         });
     });
 
-    const sortedTimes = Array.from(allRelativeTimes).sort((a, b) => a - b);
+    const sortedTimes = Array.from(allAbsoluteTimes).sort((a, b) => a - b);
+
+    if (sortedTimes.length === 0) return [];
+
+    const absoluteSessionStartTime = sortedTimes[0];
 
     const synchronizedData = sortedTimes.map(time => {
-        const dataPoint: ChartDataPoint = { name: time / 1000 }; // convert back to seconds for the chart
+        const dataPoint: ChartDataPoint = { name: (time - absoluteSessionStartTime) / 1000 };
 
         comparisonSessions.forEach(session => {
             const sessionData = comparisonData[session.id] || [];
-            const window = measurementWindows[session.id];
-            if (!window || !sessionData.length) {
+            if (!sessionData.length) {
                 dataPoint[session.id] = null;
                 return;
             };
 
-            const measurementStartTime = new Date(sessionData[window.start.startIndex].timestamp).getTime();
+            const sessionStartTime = sessionStartTimes[session.id];
             
             let closestPoint: SensorData | null = null;
             let minDiff = Infinity;
 
             for (const point of sessionData) {
-                const pointTime = (new Date(point.timestamp).getTime() - measurementStartTime);
+                const pointTime = new Date(point.timestamp).getTime();
                 const diff = Math.abs(pointTime - time);
                 if (diff < minDiff && diff < 1500) { // Only consider points within 1.5s
                     minDiff = diff;
@@ -658,7 +660,8 @@ function TestingComponent() {
                 const value = convertRawValue(closestPoint.value, config || null);
                 dataPoint[session.id] = value;
 
-                // Calculate guidelines and failure status based on this synchronized time
+                const timeSinceMeasurementStart = ((time - sessionStartTime) - (measurementWindows[session.id]?.start.startTime * 1000 || 0)) / 1000;
+                
                 const interpolateBezierCurve = (curve: {x: number, y: number}[], x: number) => {
                     if (!curve || curve.length !== 4) return undefined;
                     const [p0, p1, p2, p3] = curve;
@@ -675,8 +678,8 @@ function TestingComponent() {
                     return uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
                 };
 
-                const minGuideline = vesselType ? interpolateBezierCurve(vesselType.minCurve, dataPoint.name) : undefined;
-                const maxGuideline = vesselType ? interpolateBezierCurve(vesselType.maxCurve, dataPoint.name) : undefined;
+                const minGuideline = vesselType ? interpolateBezierCurve(vesselType.minCurve, timeSinceMeasurementStart) : undefined;
+                const maxGuideline = vesselType ? interpolateBezierCurve(vesselType.maxCurve, timeSinceMeasurementStart) : undefined;
                 
                 if (dataPoint.minGuideline === undefined && minGuideline !== undefined) dataPoint.minGuideline = minGuideline;
                 if (dataPoint.maxGuideline === undefined && maxGuideline !== undefined) dataPoint.maxGuideline = maxGuideline;
@@ -691,6 +694,7 @@ function TestingComponent() {
 
     return synchronizedData;
 }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes, measurementWindows]);
+
 
   const setTimeframe = (frame: '1m' | '5m' | 'all') => {
       setActiveTimeframe(frame);
@@ -728,15 +732,15 @@ function TestingComponent() {
   }, [currentValue, displaySensorConfigId, sensorConfigs]);
   
   const downtimePercentage = useMemo(() => {
-    if (!startTime) return 0;
-    const totalElapsed = Date.now() - startTime;
+    if (!systemStartTime) return 0;
+    const totalElapsed = Date.now() - systemStartTime;
     if (totalElapsed <= 0) return 0;
 
     const liveDowntime = downtimeStart ? Date.now() - downtimeStart : 0;
     const currentTotalDowntime = totalDowntime + liveDowntime;
 
     return Math.min(100, (currentTotalDowntime / totalElapsed) * 100);
-  }, [startTime, totalDowntime, downtimeStart, now]);
+  }, [systemStartTime, totalDowntime, downtimeStart, now]);
 
 
   const isDuringDowntime = useMemo(() => {
@@ -1644,7 +1648,7 @@ function TestingComponent() {
                             type="number"
                             dataKey="name" 
                             stroke="hsl(var(--muted-foreground))"
-                            domain={[0, 'dataMax']}
+                            domain={xAxisDomain}
                             allowDataOverflow
                             label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -10 }}
                             tickFormatter={(value) => Math.round(value)}
@@ -1680,13 +1684,17 @@ function TestingComponent() {
                         
                         {comparisonSessions.map((session, index) => {
                             const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-                            const relativeStartTime = 0; // The start point is now t=0 on the relative axis
-                            const expectedEndTime = vesselType?.durationSeconds ? relativeStartTime + vesselType.durationSeconds : undefined;
+                            const window = measurementWindows[session.id];
+                            
+                            if (!window || !vesselType) return null;
+
+                            const relativeStartTime = window.start.startTime;
+                            const expectedEndTime = relativeStartTime + (vesselType.durationSeconds || 0);
 
                             return (
                                 <React.Fragment key={`ref-lines-${session.id}`}>
                                     <ReferenceLine
-                                        x={0}
+                                        x={relativeStartTime}
                                         stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                         strokeDasharray="3 3"
                                         label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
@@ -1744,3 +1752,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
