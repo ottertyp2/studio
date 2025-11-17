@@ -269,7 +269,7 @@ function TestingComponent() {
   const { data: batches } = useCollection<Batch>(batchesCollectionRef);
 
   const measurementWindows = useMemo(() => {
-    console.log('[DEBUG] Recalculating measurementWindows...');
+    console.log('[DEBUG-RECALC] Recalculating measurementWindows...');
     const results: Record<string, { start: { startIndex: number; startTime: number } | null; end: { endIndex: number; endTime: number; isComplete: boolean } | null; }> = {};
     comparisonSessions.forEach(session => {
         const data = comparisonData[session.id];
@@ -289,7 +289,7 @@ function TestingComponent() {
             }
         }
     });
-    console.log('[DEBUG] Final measurementWindows object:', results);
+    console.log('[DEBUG-RECALC] Final measurementWindows object:', results);
     return results;
   }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
@@ -615,75 +615,91 @@ function TestingComponent() {
   };
 
   const chartData = useMemo((): ChartDataPoint[] => {
-    if (comparisonSessions.length === 0) return [];
-    console.log('[DEBUG] Recalculating chartData...');
+    console.log('[DEBUG-CHART] Recalculating chartData...');
+    if (comparisonSessions.length === 0) {
+      console.log('[DEBUG-CHART] No comparison sessions, returning empty array.');
+      return [];
+    }
 
-    let allPoints: ChartDataPoint[] = [];
+    const allRelativeTimes: Set<number> = new Set();
     const sessionAbsoluteStartTimes: Record<string, number> = {};
-
-    comparisonSessions.forEach(session => {
-        const sessionData = comparisonData[session.id] || [];
-        if (!sessionData.length) return;
-        sessionAbsoluteStartTimes[session.id] = new Date(sessionData[0].timestamp).getTime();
-    });
+    const sessionDataPoints: Record<string, { relativeTime: number; value: number }[]> = {};
 
     comparisonSessions.forEach(session => {
         const sessionData = comparisonData[session.id] || [];
         if (!sessionData.length) return;
 
-        const absoluteStartTime = sessionAbsoluteStartTimes[session.id];
+        const absoluteStartTime = new Date(sessionData[0].timestamp).getTime();
+        sessionAbsoluteStartTimes[session.id] = absoluteStartTime;
+
         const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-        const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-
-        sessionData.forEach(point => {
-            const time = (new Date(point.timestamp).getTime() - absoluteStartTime) / 1000;
-            const value = convertRawValue(point.value, config || null);
-
-            const window = measurementWindows[session.id];
-            let relativeTimeForGuideline: number | undefined = undefined;
-            if (window && window.start) {
-              const measurementStartTime = absoluteStartTime + (window.start.startTime * 1000);
-              relativeTimeForGuideline = (new Date(point.timestamp).getTime() - measurementStartTime) / 1000;
-            }
-
-            const interpolateBezierCurve = (curve: {x: number, y: number}[], x: number) => {
-                if (!curve || curve.length !== 4) return undefined;
-                const [p0, p1, p2, p3] = curve;
-                const totalXRange = p3.x - p0.x;
-                if (totalXRange <= 0) return p0.y;
-                const t = (x - p0.x) / totalXRange;
-                if (t < 0) return p0.y;
-                if (t > 1) return p3.y;
-                const u = 1 - t;
-                const tt = t * t;
-                const uu = u * u;
-                const uuu = uu * u;
-                const ttt = tt * t;
-                return uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+        
+        sessionDataPoints[session.id] = sessionData.map(point => {
+            const relativeTime = (new Date(point.timestamp).getTime() - absoluteStartTime) / 1000;
+            allRelativeTimes.add(relativeTime);
+            return {
+                relativeTime,
+                value: convertRawValue(point.value, config || null)
             };
-            
-            const minGuideline = vesselType && relativeTimeForGuideline !== undefined ? interpolateBezierCurve(vesselType.minCurve, relativeTimeForGuideline) : undefined;
-            const maxGuideline = vesselType && relativeTimeForGuideline !== undefined ? interpolateBezierCurve(vesselType.maxCurve, relativeTimeForGuideline) : undefined;
-
-            let existingPoint = allPoints.find(p => p.name === time);
-            if (existingPoint) {
-                existingPoint[session.id] = value;
-                if (existingPoint.minGuideline === undefined) existingPoint.minGuideline = minGuideline;
-                if (existingPoint.maxGuideline === undefined) existingPoint.maxGuideline = maxGuideline;
-            } else {
-                const newPoint: ChartDataPoint = { name: time, [session.id]: value };
-                if (minGuideline !== undefined) newPoint.minGuideline = minGuideline;
-                if (maxGuideline !== undefined) newPoint.maxGuideline = maxGuideline;
-                allPoints.push(newPoint);
-            }
         });
     });
 
-    const finalChartData = allPoints.sort((a, b) => a.name - b.name);
-    console.log(`[DEBUG] chartData calculated. Total points: ${finalChartData.length}.`);
+    const sortedTimes = Array.from(allRelativeTimes).sort((a, b) => a - b);
+    
+    if (sortedTimes.length === 0) {
+      console.log('[DEBUG-CHART] No data points after processing sessions, returning empty array.');
+      return [];
+    }
+
+    const finalChartData = sortedTimes.map(time => {
+        const dataPoint: ChartDataPoint = { name: time };
+
+        comparisonSessions.forEach(session => {
+            const points = sessionDataPoints[session.id];
+            if (!points) {
+                dataPoint[session.id] = null;
+                return;
+            }
+            
+            // Find the point for this session at this specific time.
+            const point = points.find(p => p.relativeTime === time);
+            dataPoint[session.id] = point ? point.value : null;
+
+            // Calculate guidelines only once per time point, using the first session that has data.
+            if (dataPoint.minGuideline === undefined) {
+                 const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+                 const window = measurementWindows[session.id];
+                 if (vesselType && window && window.start) {
+                     const timeInMeasurement = time - window.start.startTime;
+                     
+                     const interpolateBezierCurve = (curve: {x: number, y: number}[], x: number) => {
+                         if (!curve || curve.length !== 4) return undefined;
+                         const [p0, p1, p2, p3] = curve;
+                         const totalXRange = p3.x - p0.x;
+                         if (totalXRange <= 0) return p0.y;
+                         const t = (x - p0.x) / totalXRange;
+                         if (t < 0) return p0.y;
+                         if (t > 1) return p3.y;
+                         const u = 1 - t;
+                         const tt = t * t;
+                         const uu = u * u;
+                         const uuu = uu * u;
+                         const ttt = tt * t;
+                         return uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+                     };
+
+                     dataPoint.minGuideline = interpolateBezierCurve(vesselType.minCurve, timeInMeasurement);
+                     dataPoint.maxGuideline = interpolateBezierCurve(vesselType.maxCurve, timeInMeasurement);
+                 }
+            }
+        });
+        return dataPoint;
+    });
+    
+    console.log(`[DEBUG-CHART] chartData calculated. Total points: ${finalChartData.length}.`);
     if(finalChartData.length > 0) {
-      console.log('[DEBUG] First 5 chart data points:', finalChartData.slice(0, 5));
-      console.log('[DEBUG] Last 5 chart data points:', finalChartData.slice(-5));
+      console.log('[DEBUG-CHART] First 5 chart data points:', finalChartData.slice(0, 5).map(p => ({name: p.name})));
+      console.log('[DEBUG-CHART] Last 5 chart data points:', finalChartData.slice(-5).map(p => ({name: p.name})));
     }
     return finalChartData;
 }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes, measurementWindows]);
@@ -1675,24 +1691,23 @@ function TestingComponent() {
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         
                         {comparisonSessions.map((session, index) => {
-                            console.log(`[DEBUG] Preparing to render ReferenceLines for session ${session.id}`);
+                            console.log(`[DEBUG-RENDER] Attempting to render lines for session ${session.id}.`);
                             const window = measurementWindows[session.id];
-
+                            console.log(`[DEBUG-RENDER] Window object for session ${session.id}:`, window);
+                        
                             if (!window || !window.start) {
-                                console.log(`[DEBUG] No valid start window for session ${session.id}. Skipping ReferenceLines.`);
+                                console.log(`[DEBUG-RENDER] SKIPPING lines for session ${session.id} because window.start is missing.`);
                                 return null;
                             }
-                            
-                            const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-                            if (!vesselType) return null;
-
+                        
                             const startTimeForRef = window.start.startTime;
                             const endTimeForRef = window.end ? window.end.endTime : null;
-
-                            console.log(`[DEBUG] Session ${session.id} - startTimeForRef: ${startTimeForRef}, endTimeForRef: ${endTimeForRef}, isComplete: ${window.end?.isComplete}`);
-
+                        
+                            console.log(`[DEBUG-RENDER] Values for session ${session.id}: startTimeForRef=${startTimeForRef}, endTimeForRef=${endTimeForRef}, isComplete=${window.end?.isComplete}`);
+                        
                             return (
                                 <React.Fragment key={`ref-lines-${session.id}`}>
+                                    {console.log(`[DEBUG-RENDER] ---> RENDERING START LINE for session ${session.id} at x=${startTimeForRef}`)}
                                     <ReferenceLine
                                         x={startTimeForRef}
                                         stroke={CHART_COLORS[index % CHART_COLORS.length]}
@@ -1700,12 +1715,15 @@ function TestingComponent() {
                                         label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
                                     />
                                     {window.end?.isComplete && endTimeForRef !== null && (
-                                        <ReferenceLine
-                                            x={endTimeForRef}
-                                            stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                                            strokeDasharray="3 3"
-                                            label={{ value: "End", position: "insideTopRight", fill: "hsl(var(--muted-foreground))" }}
-                                        />
+                                        <>
+                                            {console.log(`[DEBUG-RENDER] ---> RENDERING END LINE for session ${session.id} at x=${endTimeForRef}`)}
+                                            <ReferenceLine
+                                                x={endTimeForRef}
+                                                stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                                strokeDasharray="3 3"
+                                                label={{ value: "End", position: "insideTopRight", fill: "hsl(var(--muted-foreground))" }}
+                                            />
+                                        </>
                                     )}
                                 </React.Fragment>
                             );
