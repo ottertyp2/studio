@@ -208,6 +208,7 @@ function TestingComponent() {
     runningTestSession,
     startSession: startSessionInContext,
     stopSession: stopSessionInContext,
+    sendSequenceCommand,
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
@@ -393,7 +394,7 @@ function TestingComponent() {
       return;
     }
     if (newSessionData.batchId === '' && newBatchName.trim() === '') {
-        toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select or create a batch.' });
+        toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select or create a BatchID.' });
         return;
     }
     if (!newSessionData.serialNumber.trim()) {
@@ -501,6 +502,8 @@ function TestingComponent() {
       startSessionInContext(newSessionWithId);
       
       await sendRecordingCommand(true);
+      await sendSequenceCommand('sequence1', true);
+      
       toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
       setIsNewSessionDialogOpen(false);
       setNewSessionData(prev => ({ 
@@ -763,15 +766,15 @@ function TestingComponent() {
   }, [currentValue, displaySensorConfigId, sensorConfigs]);
   
     const downtimePercentage = useMemo(() => {
-      if (!startTime) return 0;
-      const totalElapsed = Date.now() - startTime;
-      if (totalElapsed <= 0) return 0;
+        if (!startTime) return 0;
+        const totalElapsed = now - startTime;
+        if (totalElapsed <= 0) return 0;
 
-      const liveDowntime = downtimeStart ? Date.now() - downtimeStart : 0;
-      const currentTotalDowntime = totalDowntime + liveDowntime;
+        const liveDowntime = downtimeStart ? now - downtimeStart : 0;
+        const currentTotalDowntime = totalDowntime + liveDowntime;
 
-      return Math.min(100, (currentTotalDowntime / totalElapsed) * 100);
-  }, [startTime, totalDowntime, downtimeStart, now]);
+        return Math.min(100, (currentTotalDowntime / totalElapsed) * 100);
+    }, [startTime, totalDowntime, downtimeStart, now]);
 
 
   const isDuringDowntime = useMemo(() => {
@@ -1214,12 +1217,10 @@ function TestingComponent() {
                 BioThrust Live Dashboard
                 </CardTitle>
                  <div className="flex items-center gap-2">
-                    {userRole === 'superadmin' && (
-                        <Button onClick={() => router.push('/admin')} variant="outline">
-                            <Cog className="h-4 w-4 mr-2" />
-                            Manage
-                        </Button>
-                    )}
+                    <Button onClick={() => router.push('/admin')} variant="outline">
+                        <Cog className="h-4 w-4 mr-2" />
+                        Manage
+                    </Button>
                     <Button onClick={handleSignOut} variant="ghost">
                         <LogOut className="h-4 w-4 mr-2" />
                         Logout
@@ -1445,7 +1446,7 @@ function TestingComponent() {
                                         <div className="text-xs text-muted-foreground pt-4 space-y-2 border-t">
                                             <h4 className="font-semibold text-sm text-foreground pt-2">Raw Report Data</h4>
                                             <p><strong>Last Event:</strong> {crashReport?.reason} on {new Date(crashReport?.timestamp || 0).toLocaleString()}</p>
-                                            <p><strong>Errors This Event:</strong> Latency ({crashReport?.errors.latency}), Update ({crashReport?.errors.update}), Stream ({crashReport?.errors.stream})</p>
+                                            <p><strong>Errors This Event:</strong> Latency ({crashReport?.errors.latency}), Update ({crashReport?.errors.update}), Stream ({crashReport?.errors.update})</p>
                                             <p><strong>Historical Totals:</strong> Latency Reconnects ({crashReport?.totals.latency}), Update Reconnects ({crashReport?.totals.update}), Stream Reconnects ({crashReport?.totals.stream})</p>
                                         </div>
                                     </div>
