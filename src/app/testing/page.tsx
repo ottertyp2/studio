@@ -269,7 +269,6 @@ function TestingComponent() {
   const { data: batches } = useCollection<Batch>(batchesCollectionRef);
 
   const measurementWindows = useMemo(() => {
-    console.log('[DEBUG-RECALC] Recalculating measurementWindows...');
     const results: Record<string, { start: { startIndex: number; startTime: number } | null; end: { endIndex: number; endTime: number; isComplete: boolean } | null; }> = {};
     comparisonSessions.forEach(session => {
         const data = comparisonData[session.id];
@@ -278,10 +277,8 @@ function TestingComponent() {
             const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
             if (config && vesselType) {
               const start = findMeasurementStart(data, config, vesselType);
-              console.log(`[DEBUG] findMeasurementStart for session ${session.id}:`, start);
               if(start) {
                   const end = findMeasurementEnd(data, start.startIndex, config, vesselType);
-                  console.log(`[DEBUG] findMeasurementEnd for session ${session.id}:`, end);
                   results[session.id] = { start, end };
               } else {
                   results[session.id] = { start: null, end: null };
@@ -289,7 +286,6 @@ function TestingComponent() {
             }
         }
     });
-    console.log('[DEBUG-RECALC] Final measurementWindows object:', results);
     return results;
   }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
@@ -615,9 +611,7 @@ function TestingComponent() {
   };
 
   const chartData = useMemo((): ChartDataPoint[] => {
-    console.log('[DEBUG-CHART] Recalculating chartData...');
     if (comparisonSessions.length === 0) {
-      console.log('[DEBUG-CHART] No comparison sessions, returning empty array.');
       return [];
     }
 
@@ -647,7 +641,6 @@ function TestingComponent() {
     const sortedTimes = Array.from(allRelativeTimes).sort((a, b) => a - b);
     
     if (sortedTimes.length === 0) {
-      console.log('[DEBUG-CHART] No data points after processing sessions, returning empty array.');
       return [];
     }
 
@@ -696,11 +689,6 @@ function TestingComponent() {
         return dataPoint;
     });
     
-    console.log(`[DEBUG-CHART] chartData calculated. Total points: ${finalChartData.length}.`);
-    if(finalChartData.length > 0) {
-      console.log('[DEBUG-CHART] First 5 chart data points:', finalChartData.slice(0, 5).map(p => ({name: p.name})));
-      console.log('[DEBUG-CHART] Last 5 chart data points:', finalChartData.slice(-5).map(p => ({name: p.name})));
-    }
     return finalChartData;
 }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes, measurementWindows]);
 
@@ -1691,39 +1679,38 @@ function TestingComponent() {
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         
                         {comparisonSessions.map((session, index) => {
-                            console.log(`[DEBUG-RENDER] Attempting to render lines for session ${session.id}.`);
                             const window = measurementWindows[session.id];
-                            console.log(`[DEBUG-RENDER] Window object for session ${session.id}:`, window);
-                        
-                            if (!window || !window.start) {
-                                console.log(`[DEBUG-RENDER] SKIPPING lines for session ${session.id} because window.start is missing.`);
-                                return null;
-                            }
-                        
-                            const startTimeForRef = window.start.startTime;
-                            const endTimeForRef = window.end ? window.end.endTime : null;
-                        
-                            console.log(`[DEBUG-RENDER] Values for session ${session.id}: startTimeForRef=${startTimeForRef}, endTimeForRef=${endTimeForRef}, isComplete=${window.end?.isComplete}`);
+                            if (!window || !window.start) return null;
+
+                            const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+                            if (!vesselType) return null;
+                            
+                            // Find the closest point in chartData to the calculated start time
+                            const startTimeForRef = chartData.reduce((prev, curr) => {
+                                return (Math.abs(curr.name - window.start!.startTime) < Math.abs(prev - window.start!.startTime) ? curr.name : prev);
+                            }, Infinity);
+                            
+                            if (startTimeForRef === Infinity) return null;
+
+                            const endTimeForRef = window.end?.endTime ? chartData.reduce((prev, curr) => {
+                                return (Math.abs(curr.name - window.end!.endTime) < Math.abs(prev - window.end!.endTime) ? curr.name : prev);
+                            }, Infinity) : null;
                         
                             return (
                                 <React.Fragment key={`ref-lines-${session.id}`}>
-                                    {console.log(`[DEBUG-RENDER] ---> RENDERING START LINE for session ${session.id} at x=${startTimeForRef}`)}
                                     <ReferenceLine
                                         x={startTimeForRef}
                                         stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                         strokeDasharray="3 3"
                                         label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
                                     />
-                                    {window.end?.isComplete && endTimeForRef !== null && (
-                                        <>
-                                            {console.log(`[DEBUG-RENDER] ---> RENDERING END LINE for session ${session.id} at x=${endTimeForRef}`)}
-                                            <ReferenceLine
-                                                x={endTimeForRef}
-                                                stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                                                strokeDasharray="3 3"
-                                                label={{ value: "End", position: "insideTopRight", fill: "hsl(var(--muted-foreground))" }}
-                                            />
-                                        </>
+                                    {window.end?.isComplete && endTimeForRef && endTimeForRef !== Infinity &&(
+                                        <ReferenceLine
+                                            x={endTimeForRef}
+                                            stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                                            strokeDasharray="3 3"
+                                            label={{ value: "End", position: "insideTopRight", fill: "hsl(var(--muted-foreground))" }}
+                                        />
                                     )}
                                 </React.Fragment>
                             );
@@ -1770,3 +1757,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
