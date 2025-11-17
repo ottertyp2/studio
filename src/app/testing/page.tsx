@@ -1,5 +1,4 @@
 
-
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -125,7 +124,7 @@ type SensorData = {
 };
 
 type ChartDataPoint = {
-  name: number; // time in seconds
+  name: number; // time in seconds relative to measurement start
   minGuideline?: number;
   maxGuideline?: number;
   [key: string]: number | undefined | null; // SessionID as key for value, allowing null
@@ -604,7 +603,6 @@ function TestingComponent() {
   const chartData = useMemo((): ChartDataPoint[] => {
     if (comparisonSessions.length === 0) return [];
   
-    // 1. Get all unique timestamps from all sessions, aligned to the measurement start
     const allRelativeTimes = new Set<number>();
     
     comparisonSessions.forEach(session => {
@@ -614,17 +612,14 @@ function TestingComponent() {
 
         const measurementStartTime = new Date(sessionData[window.start.startIndex].timestamp).getTime();
 
-        for (let i = window.start.startIndex; i <= window.end.endIndex; i++) {
-            if (sessionData[i]) {
-                const time = Math.round((new Date(sessionData[i].timestamp).getTime() - measurementStartTime) / 1000);
-                allRelativeTimes.add(time);
-            }
-        }
+        sessionData.forEach(point => {
+             const time = Math.round((new Date(point.timestamp).getTime() - measurementStartTime) / 1000);
+             allRelativeTimes.add(time);
+        });
     });
 
     const sortedTimes = Array.from(allRelativeTimes).sort((a, b) => a - b);
 
-    // 2. Build the synchronized chart data
     const synchronizedData = sortedTimes.map(time => {
         const dataPoint: ChartDataPoint = { name: time };
 
@@ -639,19 +634,16 @@ function TestingComponent() {
 
             const measurementStartTime = new Date(sessionData[window.start.startIndex].timestamp).getTime();
             
-            // Find the closest data point in the original data for this time
             let closestPoint: SensorData | null = null;
             let minDiff = Infinity;
 
-            for (let i = window.start.startIndex; i <= window.end.endIndex; i++) {
-                 if (sessionData[i]) {
-                    const pointTime = (new Date(sessionData[i].timestamp).getTime() - measurementStartTime) / 1000;
-                    const diff = Math.abs(pointTime - time);
-                    if (diff < minDiff && diff < 1.5) { // Only consider points within 1.5s
-                        minDiff = diff;
-                        closestPoint = sessionData[i];
-                    }
-                 }
+            for (const point of sessionData) {
+                const pointTime = (new Date(point.timestamp).getTime() - measurementStartTime) / 1000;
+                const diff = Math.abs(pointTime - time);
+                if (diff < minDiff && diff < 1.5) { // Only consider points within 1.5s
+                    minDiff = diff;
+                    closestPoint = point;
+                }
             }
             
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
@@ -771,8 +763,7 @@ function TestingComponent() {
     const totalElapsed = Date.now() - startTime;
     if (totalElapsed <= 0) return 0;
 
-    const liveDowntime = downtimeStart ? Date.now() - downtimeStart : 0;
-    const currentTotalDowntime = totalDowntime + liveDowntime;
+    const currentTotalDowntime = totalDowntime + (downtimeStart ? Date.now() - downtimeStart : 0);
 
     return Math.min(100, (currentTotalDowntime / totalElapsed) * 100);
   }, [startTime, totalDowntime, downtimeStart, now]);
@@ -983,7 +974,7 @@ function TestingComponent() {
                 subheader: { fontSize: 12, bold: true },
                 body: { fontSize: 8 },
                 tableExample: { margin: [0, 5, 0, 15], fontSize: 6 },
-                tableHeader: { bold: true, fontSize: 7, color: 'black' },
+                tableHeader: { bold: true, fontSize: 7, color: 'black' }
             },
             defaultStyle: { font: 'Roboto' }
         };
