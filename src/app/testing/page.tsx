@@ -614,25 +614,62 @@ function TestingComponent() {
     }
 
     const allDataPoints: ChartDataPoint[] = [];
+    const allRelativeTimes = new Set<number>();
 
+    // Pass 1: Collect all unique relative timestamps from all sessions
     comparisonSessions.forEach(session => {
         const sessionData = comparisonData[session.id] || [];
         if (sessionData.length === 0) return;
 
         const absoluteStartTime = new Date(sessionData[0].timestamp).getTime();
-        const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-        const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
         
         sessionData.forEach(point => {
             const relativeTime = (new Date(point.timestamp).getTime() - absoluteStartTime) / 1000;
-            const dataPoint: ChartDataPoint = {
-                name: relativeTime,
-                [session.id]: convertRawValue(point.value, config || null),
-            };
+            allRelativeTimes.add(relativeTime);
+        });
+    });
 
+    const sortedRelativeTimes = Array.from(allRelativeTimes).sort((a, b) => a - b);
+
+    // Pass 2: Build the final chart data array, ensuring each point has a value for every session
+    sortedRelativeTimes.forEach(time => {
+        const dataPoint: ChartDataPoint = { name: time };
+
+        comparisonSessions.forEach(session => {
+            const sessionData = comparisonData[session.id] || [];
+            if (sessionData.length === 0) {
+                dataPoint[session.id] = null;
+                return;
+            }
+
+            const absoluteStartTime = new Date(sessionData[0].timestamp).getTime();
+            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+
+            // Find the closest data point in this session to the current time
+            let closestPoint = sessionData[0];
+            let minDiff = Infinity;
+
+            for (const point of sessionData) {
+                const pointTime = (new Date(point.timestamp).getTime() - absoluteStartTime) / 1000;
+                const diff = Math.abs(pointTime - time);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    closestPoint = point;
+                }
+            }
+            
+            // Only add the value if it's very close to the synchronized time, to avoid weird line artifacts
+            if (minDiff < 1) { // 1 second tolerance
+                dataPoint[session.id] = convertRawValue(closestPoint.value, config || null);
+            } else {
+                dataPoint[session.id] = null; // Use null to create gaps in the line chart
+            }
+
+            // Guideline calculation
+            const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
             const window = measurementWindows[session.id];
             if (vesselType && window?.start) {
-                const timeInMeasurement = relativeTime - window.start.startTime;
+                const timeInMeasurement = time - window.start.startTime;
                 if (timeInMeasurement >= 0) {
                     const interpolateBezierCurve = (curve: {x: number, y: number}[], x: number) => {
                         if (!curve || curve.length !== 4) return undefined;
@@ -653,21 +690,12 @@ function TestingComponent() {
                     dataPoint.maxGuideline = interpolateBezierCurve(vesselType.maxCurve, timeInMeasurement);
                 }
             }
-            allDataPoints.push(dataPoint);
         });
+
+        allDataPoints.push(dataPoint);
     });
 
-    // Merge all data points by time
-    const mergedData: Record<number, ChartDataPoint> = {};
-    allDataPoints.sort((a, b) => a.name - b.name).forEach(dp => {
-        const timeKey = dp.name;
-        if (!mergedData[timeKey]) {
-            mergedData[timeKey] = { name: timeKey };
-        }
-        Object.assign(mergedData[timeKey], dp);
-    });
-
-    return Object.values(mergedData);
+    return allDataPoints;
   }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes, measurementWindows]);
 
 
@@ -1437,7 +1465,7 @@ function TestingComponent() {
                             <DialogTrigger asChild>
                                 <Button variant="outline" size="sm"><Search className="mr-2 h-4 w-4" />Compare Sessions</Button>
                             </DialogTrigger>
-                             <DialogContent className="max-w-4xl h-[90vh] flex flex-col">
+                             <DialogContent className="max-w-4xl">
                                 <DialogHeader>
                                     <DialogTitle>Select Sessions for Comparison or Report</DialogTitle>
                                     <DialogDescription>Use the filters to find sessions. Selected sessions will appear on the chart.</DialogDescription>
@@ -1517,9 +1545,8 @@ function TestingComponent() {
                                         </div>
                                     </div>
                                 </div>
-                                {/* Session List */}
-                                <div className="flex-grow overflow-hidden relative">
-                                  <ScrollArea className="absolute inset-0">
+                                <div className="my-4">
+                                  <ScrollArea className="h-[60vh]">
                                       {isHistoryLoading ? <p>Loading...</p> :
                                       <div className="space-y-2 pr-4">
                                           {filteredHistory.map(session => (
@@ -1627,10 +1654,11 @@ function TestingComponent() {
                             domain={[0, 'dataMax']}
                             tickFormatter={(value) => Math.round(value)}
                             label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -10 }}
+                            allowDataOverflow
                         />
                         <YAxis
                             stroke="hsl(var(--muted-foreground))"
-                            domain={['dataMin - (dataMax - dataMin) * 0.1', 'dataMax + (dataMax - dataMin) * 0.1']}
+                            domain={['dataMin', 'dataMax']}
                             allowDataOverflow
                             label={{ value: yAxisLabel, angle: -90, position: 'insideLeft' }}
                             tickFormatter={(value) => value.toFixed(2)}
@@ -1660,7 +1688,7 @@ function TestingComponent() {
                         {comparisonSessions.map((session) => {
                             const window = measurementWindows[session.id];
                             if (!window || !window.start) return null;
-                            
+
                             const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
                             if (!vesselType) return null;
 
@@ -1671,18 +1699,16 @@ function TestingComponent() {
                                         stroke="hsl(var(--primary))"
                                         strokeDasharray="3 3"
                                         strokeWidth={2}
-                                    >
-                                        <Legend label="Start"/>
-                                    </ReferenceLine>
+                                        label={{ value: 'Start', position: 'insideTopLeft', fill: 'hsl(var(--primary))' }}
+                                    />
                                     {window.end?.isComplete && (
                                         <ReferenceLine
-                                            x={window.start.startTime + (vesselType.durationSeconds || 0)}
+                                            x={window.end.endTime}
                                             stroke="hsl(var(--primary))"
                                             strokeDasharray="3 3"
                                             strokeWidth={2}
-                                        >
-                                           <Legend label="Expected End"/>
-                                        </ReferenceLine>
+                                            label={{ value: 'End', position: 'insideTopRight', fill: 'hsl(var(--primary))' }}
+                                        />
                                     )}
                                 </React.Fragment>
                             );
