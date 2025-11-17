@@ -635,7 +635,6 @@ function TestingComponent() {
             const window = measurementWindows[session.id];
             if (!window || !sessionData.length) {
                 dataPoint[session.id] = null;
-                dataPoint[`${session.id}-failed`] = 0;
                 return;
             };
 
@@ -683,13 +682,8 @@ function TestingComponent() {
                 if (dataPoint.minGuideline === undefined && minGuideline !== undefined) dataPoint.minGuideline = minGuideline;
                 if (dataPoint.maxGuideline === undefined && maxGuideline !== undefined) dataPoint.maxGuideline = maxGuideline;
         
-                const isFailed = (minGuideline !== undefined && value < minGuideline) || 
-                                 (maxGuideline !== undefined && value > maxGuideline);
-                dataPoint[`${session.id}-failed`] = isFailed ? 1 : 0;
-
             } else {
                 dataPoint[session.id] = null; // No data for this exact time
-                dataPoint[`${session.id}-failed`] = 0;
             }
         });
 
@@ -734,14 +728,16 @@ function TestingComponent() {
     };
   }, [currentValue, displaySensorConfigId, sensorConfigs]);
   
-    const downtimePercentage = useMemo(() => {
-        if (!startTime) return 0;
-        const totalElapsed = now - startTime;
-        if (totalElapsed <= 0) return 0;
-        const liveDowntime = downtimeStart ? now - downtimeStart : 0;
-        const currentTotalDowntime = totalDowntime + liveDowntime;
-        return Math.min(100, (currentTotalDowntime / totalElapsed) * 100);
-    }, [startTime, totalDowntime, downtimeStart, now]);
+  const downtimePercentage = useMemo(() => {
+    if (!startTime) return 0;
+    const totalElapsed = Date.now() - startTime;
+    if (totalElapsed <= 0) return 0;
+
+    const liveDowntime = downtimeStart ? Date.now() - downtimeStart : 0;
+    const currentTotalDowntime = totalDowntime + liveDowntime;
+
+    return Math.min(100, (currentTotalDowntime / totalElapsed) * 100);
+  }, [startTime, totalDowntime, downtimeStart, now]);
 
 
   const isDuringDowntime = useMemo(() => {
@@ -1683,23 +1679,23 @@ function TestingComponent() {
                         <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         
-                        {comparisonSessions.map((session) => {
+                        {comparisonSessions.map((session, index) => {
                             const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-                            const relativeStartTime = 0;
+                            const relativeStartTime = 0; // The start point is now t=0 on the relative axis
                             const expectedEndTime = vesselType?.durationSeconds ? relativeStartTime + vesselType.durationSeconds : undefined;
 
                             return (
                                 <React.Fragment key={`ref-lines-${session.id}`}>
                                     <ReferenceLine
                                         x={relativeStartTime}
-                                        stroke={CHART_COLORS[comparisonSessions.findIndex(s => s.id === session.id) % CHART_COLORS.length]}
+                                        stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                         strokeDasharray="3 3"
                                         label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
                                     />
                                     {expectedEndTime !== undefined && (
                                         <ReferenceLine
                                             x={expectedEndTime}
-                                            stroke={CHART_COLORS[comparisonSessions.findIndex(s => s.id === session.id) % CHART_COLORS.length]}
+                                            stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                             strokeDasharray="3 3"
                                             label={{ value: "Expected End", position: "insideTopRight", fill: "hsl(var(--muted-foreground))" }}
                                         />
@@ -1715,7 +1711,7 @@ function TestingComponent() {
                             dataKey={session.id} 
                             stroke={CHART_COLORS[index % CHART_COLORS.length]} 
                             name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`} 
-                            dot={false} S
+                            dot={false}
                             strokeWidth={2} 
                             connectNulls
                            />
