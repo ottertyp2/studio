@@ -269,6 +269,7 @@ function TestingComponent() {
   const { data: batches } = useCollection<Batch>(batchesCollectionRef);
 
   const measurementWindows = useMemo(() => {
+    console.log('[DEBUG] Recalculating measurementWindows...');
     const results: Record<string, { start: { startIndex: number; startTime: number } | null; end: { endIndex: number; endTime: number; isComplete: boolean } | null; }> = {};
     comparisonSessions.forEach(session => {
         const data = comparisonData[session.id];
@@ -277,8 +278,10 @@ function TestingComponent() {
             const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
             if (config && vesselType) {
               const start = findMeasurementStart(data, config, vesselType);
+              console.log(`[DEBUG] findMeasurementStart for session ${session.id}:`, start);
               if(start) {
                   const end = findMeasurementEnd(data, start.startIndex, config, vesselType);
+                  console.log(`[DEBUG] findMeasurementEnd for session ${session.id}:`, end);
                   results[session.id] = { start, end };
               } else {
                   results[session.id] = { start: null, end: null };
@@ -286,6 +289,7 @@ function TestingComponent() {
             }
         }
     });
+    console.log('[DEBUG] Final measurementWindows object:', results);
     return results;
   }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
@@ -612,22 +616,22 @@ function TestingComponent() {
 
   const chartData = useMemo((): ChartDataPoint[] => {
     if (comparisonSessions.length === 0) return [];
+    console.log('[DEBUG] Recalculating chartData...');
 
     let allPoints: ChartDataPoint[] = [];
-    const sessionStartTimes: Record<string, number> = {};
+    const sessionAbsoluteStartTimes: Record<string, number> = {};
 
     comparisonSessions.forEach(session => {
         const sessionData = comparisonData[session.id] || [];
         if (!sessionData.length) return;
-
-        sessionStartTimes[session.id] = new Date(sessionData[0].timestamp).getTime();
+        sessionAbsoluteStartTimes[session.id] = new Date(sessionData[0].timestamp).getTime();
     });
 
     comparisonSessions.forEach(session => {
         const sessionData = comparisonData[session.id] || [];
         if (!sessionData.length) return;
 
-        const absoluteStartTime = sessionStartTimes[session.id];
+        const absoluteStartTime = sessionAbsoluteStartTimes[session.id];
         const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
         const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
 
@@ -675,8 +679,13 @@ function TestingComponent() {
         });
     });
 
-    return allPoints.sort((a, b) => a.name - b.name);
-
+    const finalChartData = allPoints.sort((a, b) => a.name - b.name);
+    console.log(`[DEBUG] chartData calculated. Total points: ${finalChartData.length}.`);
+    if(finalChartData.length > 0) {
+      console.log('[DEBUG] First 5 chart data points:', finalChartData.slice(0, 5));
+      console.log('[DEBUG] Last 5 chart data points:', finalChartData.slice(-5));
+    }
+    return finalChartData;
 }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes, measurementWindows]);
 
 
@@ -1666,25 +1675,33 @@ function TestingComponent() {
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         
                         {comparisonSessions.map((session, index) => {
+                            console.log(`[DEBUG] Preparing to render ReferenceLines for session ${session.id}`);
                             const window = measurementWindows[session.id];
-                            if (!window || !window.start) return null;
 
+                            if (!window || !window.start) {
+                                console.log(`[DEBUG] No valid start window for session ${session.id}. Skipping ReferenceLines.`);
+                                return null;
+                            }
+                            
                             const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
                             if (!vesselType) return null;
-                            
-                            const endTime = window.start.startTime + (vesselType.durationSeconds || 0);
+
+                            const startTimeForRef = window.start.startTime;
+                            const endTimeForRef = window.end ? window.end.endTime : null;
+
+                            console.log(`[DEBUG] Session ${session.id} - startTimeForRef: ${startTimeForRef}, endTimeForRef: ${endTimeForRef}, isComplete: ${window.end?.isComplete}`);
 
                             return (
                                 <React.Fragment key={`ref-lines-${session.id}`}>
                                     <ReferenceLine
-                                        x={window.start.startTime}
+                                        x={startTimeForRef}
                                         stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                         strokeDasharray="3 3"
                                         label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
                                     />
-                                    {window.end?.isComplete && (
+                                    {window.end?.isComplete && endTimeForRef !== null && (
                                         <ReferenceLine
-                                            x={endTime}
+                                            x={endTimeForRef}
                                             stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                             strokeDasharray="3 3"
                                             label={{ value: "End", position: "insideTopRight", fill: "hsl(var(--muted-foreground))" }}
