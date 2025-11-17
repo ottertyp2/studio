@@ -211,6 +211,7 @@ function TestingComponent() {
   
   const [isNewSessionDialogOpen, setIsNewSessionDialogOpen] = useState(false);
   const [newSessionData, setNewSessionData] = useState({ vesselTypeId: '', batchId: '', serialNumber: '', description: '', sensorConfigurationId: '' });
+  const [newBatchName, setNewBatchName] = useState('');
   
   const [comparisonSessions, setComparisonSessions] = useState<WithId<TestSession>[]>([]);
   const [comparisonData, setComparisonData] = useState<Record<string, WithId<SensorData>[]>>({});
@@ -323,9 +324,13 @@ function TestingComponent() {
   }, [runningTestSession]);
 
   const handleStartSession = async () => {
-    if (!user || !activeTestBench || !newSessionData.sensorConfigurationId || !newSessionData.vesselTypeId || !newSessionData.batchId || !database) {
-      toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select a test bench, sensor, vessel type, and batch.' });
+    if (!user || !activeTestBench || !newSessionData.sensorConfigurationId || !newSessionData.vesselTypeId || !database || !firestore) {
+      toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select a test bench, sensor, and vessel type.' });
       return;
+    }
+    if (newSessionData.batchId === '' && newBatchName.trim() === '') {
+        toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select or create a batch.' });
+        return;
     }
     if(runningTestSession) {
       toast({ variant: 'destructive', title: 'Session in Progress', description: 'Another session is already running.' });
@@ -346,10 +351,34 @@ function TestingComponent() {
     setComparisonData({});
     setComparisonSessions([]);
 
+    let finalBatchId = newSessionData.batchId;
+
+    if (newSessionData.batchId === 'CREATE_NEW_BATCH') {
+        if (!newBatchName.trim()) {
+            toast({ variant: 'destructive', title: 'Missing Information', description: 'Please enter a name for the new batch.' });
+            return;
+        }
+        const newBatchId = doc(collection(firestore, '_')).id;
+        const newBatchDoc: Batch = {
+            id: newBatchId,
+            name: newBatchName.trim(),
+            vesselTypeId: newSessionData.vesselTypeId,
+        };
+        try {
+            await addDocument(collection(firestore, 'batches'), newBatchDoc);
+            finalBatchId = newBatchId;
+            toast({ title: 'Batch Created', description: `Batch "${newBatchDoc.name}" was successfully created.` });
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Failed to Create Batch', description: error.message });
+            return;
+        }
+    }
+
+
     const newSessionDocData: Omit<TestSession, 'id'> = {
       vesselTypeId: newSessionData.vesselTypeId,
       vesselTypeName: vesselType.name,
-      batchId: newSessionData.batchId,
+      batchId: finalBatchId,
       serialNumber: newSessionData.serialNumber,
       description: newSessionData.description,
       startTime: new Date().toISOString(),
@@ -371,10 +400,13 @@ function TestingComponent() {
       toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
       setIsNewSessionDialogOpen(false);
       setNewSessionData(prev => ({ 
-        ...prev,
+        vesselTypeId: prev.vesselTypeId, // Keep vessel type for next session
+        batchId: finalBatchId, // Keep new batch for next session
+        sensorConfigurationId: prev.sensorConfigurationId,
         serialNumber: '', 
         description: '' 
       }));
+      setNewBatchName('');
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Failed to Start Session', description: error.message });
     }
@@ -747,15 +779,17 @@ function TestingComponent() {
             const statusStyle = { text: classificationText, color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black') };
 
             const vesselKey = `${session.vesselTypeId}§${session.serialNumber || session.id}`;
-            const vesselSessions = (sessionsByVessel[vesselKey] || []).filter(s => s.classification !== 'UNCLASSIFIABLE');
-            const attemptNumber = (sessionsByVessel[vesselKey] || []).findIndex(s => s.id === session.id) + 1;
-            const totalAttempts = (sessionsByVessel[vesselKey] || []).length;
+            const allVesselAttempts = (sessionsByVessel[vesselKey] || []);
+            const classifiedAttempts = allVesselAttempts.filter(s => s.classification !== 'UNCLASSIFIABLE');
+
+            const attemptNumber = allVesselAttempts.findIndex(s => s.id === session.id) + 1;
+            const totalAttempts = allVesselAttempts.length;
             
-            const passAttemptIndex = vesselSessions.findIndex(s => s.classification === 'DIFFUSION');
+            const passAttemptIndex = classifiedAttempts.findIndex(s => s.classification === 'DIFFUSION');
             let passResult = 'Not passed';
             if (passAttemptIndex !== -1) {
-                const passSession = vesselSessions[passAttemptIndex];
-                const realAttemptNumber = (sessionsByVessel[vesselKey] || []).findIndex(s => s.id === passSession.id) +1;
+                const passSession = classifiedAttempts[passAttemptIndex];
+                const realAttemptNumber = allVesselAttempts.findIndex(s => s.id === passSession.id) + 1;
                 passResult = `Passed on try #${realAttemptNumber}`;
             }
 
@@ -801,7 +835,7 @@ function TestingComponent() {
 
         const docDefinition: any = {
             pageSize: 'A4',
-            pageMargins: [40, 40, 40, 40],
+            pageMargins: [25, 40, 25, 40],
             content: [
                 {
                     columns: [
@@ -813,12 +847,12 @@ function TestingComponent() {
                     columnGap: 10,
                 },
                 { text: `Report Generated: ${new Date().toLocaleString()}`, style: 'body', margin: [0, 10, 0, 10] },
-                { image: chartImage, width: 515, alignment: 'center', margin: [0, 10, 0, 5] },
+                { image: chartImage, width: 545, alignment: 'center', margin: [0, 10, 0, 5] },
                 {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', '*', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [
                                 {text: 'Batch', style: 'tableHeader'},
@@ -842,9 +876,9 @@ function TestingComponent() {
             styles: {
                 header: { fontSize: 16, bold: true, color: '#1E40AF' },
                 subheader: { fontSize: 12, bold: true },
-                body: { fontSize: 9 },
-                tableExample: { margin: [0, 5, 0, 15], fontSize: 7 },
-                tableHeader: { bold: true, fontSize: 8, color: 'black' },
+                body: { fontSize: 8 },
+                tableExample: { margin: [0, 5, 0, 15], fontSize: 6 },
+                tableHeader: { bold: true, fontSize: 7, color: 'black' },
             },
             defaultStyle: { font: 'Roboto' }
         };
@@ -1180,10 +1214,26 @@ function TestingComponent() {
                                             <SelectValue placeholder="Select a batch" />
                                         </SelectTrigger>
                                         <SelectContent>
+                                            <SelectItem value="CREATE_NEW_BATCH">
+                                                <span className="flex items-center gap-2"><PlusCircle className="h-4 w-4" /> Create new batch...</span>
+                                            </SelectItem>
+                                            <DropdownMenuSeparator />
                                             {batches?.filter(b => b.vesselTypeId === newSessionData.vesselTypeId).map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
                                         </SelectContent>
                                     </Select>
                                 </div>
+                                {newSessionData.batchId === 'CREATE_NEW_BATCH' && (
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="new-batch-name" className="text-right">New Batch</Label>
+                                        <Input
+                                            id="new-batch-name"
+                                            value={newBatchName}
+                                            onChange={(e) => setNewBatchName(e.target.value)}
+                                            className="col-span-3"
+                                            placeholder="Enter new batch name..."
+                                        />
+                                    </div>
+                                )}
                                 <div className="grid grid-cols-4 items-center gap-4">
                                     <Label htmlFor="serial-number" className="text-right">Serial Number</Label>
                                     <Input id="serial-number" value={newSessionData.serialNumber} onChange={e => setNewSessionData(p => ({ ...p, serialNumber: e.target.value }))} className="col-span-3" />
@@ -1194,7 +1244,7 @@ function TestingComponent() {
                                 </div>
                             </div>
                             <DialogFooter>
-                                <Button onClick={handleStartSession} disabled={!newSessionData.vesselTypeId || !newSessionData.batchId || !newSessionData.sensorConfigurationId}>Start Session</Button>
+                                <Button onClick={handleStartSession} disabled={!newSessionData.vesselTypeId || !newSessionData.sensorConfigurationId || (newSessionData.batchId === '' && newBatchName.trim() === '')}>Start Session</Button>
                             </DialogFooter>
                         </DialogContent>
                     </Dialog>
@@ -1370,7 +1420,7 @@ function TestingComponent() {
                                                 <DropdownMenuContent align="end" className="w-[300px]">
                                                     <ScrollArea className="h-[400px]">
                                                         <div className="p-2">
-                                                          <Accordion type="single" collapsible className="w-full">
+                                                          <Accordion type="multiple" className="w-full">
                                                               <AccordionItem value="date-range">
                                                                 <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Date Range</AccordionTrigger>
                                                                 <AccordionContent className="pb-0">
