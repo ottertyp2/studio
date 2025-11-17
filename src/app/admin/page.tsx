@@ -1,5 +1,4 @@
 
-
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -325,6 +324,7 @@ export default function AdminPage() {
   const [activeModel, setActiveModel] = useState<MLModel | null>(null);
   const [isClassifying, setIsClassifying] = useState(false);
   const [isSignupConfirmOpen, setIsSignupConfirmOpen] = useState(false);
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
 
   const modelsCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'mlModels') : null, [firestore]);
   const { data: mlModels } = useCollection<MLModel>(modelsCollectionRef);
@@ -451,6 +451,7 @@ export default function AdminPage() {
     if (!firestore) return;
     deleteDocumentNonBlocking(doc(firestore, 'testbenches', benchId));
     toast({ title: 'Test Bench Deleted' });
+    setDeleteConfirmationText('');
   };
 
 
@@ -617,6 +618,7 @@ export default function AdminPage() {
             setActiveSensorConfigId(sensorConfigs?.[0]?.id || null);
         }
         setTempSensorConfig(null);
+        setDeleteConfirmationText('');
     } catch (e) {
         toast({
             variant: 'destructive',
@@ -2444,7 +2446,7 @@ export default function AdminPage() {
                                     <AlertDialogHeader>
                                         <AlertDialogTitle>Enable Public Sign-ups?</AlertDialogTitle>
                                         <AlertDialogDescription>
-                                            Enabling this will allow anyone on the internet to create an account. By default, new users have limited permissions, but can still view test data. Are you sure you want to proceed?
+                                            This is a critical security setting. Enabling this will allow anyone on the internet to create an account and access test data. Are you sure you want to proceed?
                                         </AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
@@ -2570,7 +2572,7 @@ export default function AdminPage() {
                                         <div className='flex justify-between items-center'>
                                             <div>
                                               <p className='font-semibold'>{p.name}</p>
-                                              <p className='text-xs text-muted-foreground'>Max Batch: {p.maxBatchCount ?? 'N/A'}</p>
+                                              <p className='text-xs text-muted-foreground'>Max BatchCount: {p.maxBatchCount ?? 'N/A'}</p>
                                             </div>
                                             <div className="flex flex-wrap gap-2">
                                                 <Button size="sm" variant="outline" onClick={() => handleExportGuidelines(p)}>CSV</Button>
@@ -2960,23 +2962,34 @@ const renderAIModelManagement = () => (
                                                       <p className='font-semibold'>{b.name}</p>
                                                       <p className="text-sm text-muted-foreground">{b.location}</p>
                                                   </div>
-                                                    <AlertDialog>
-                                                      <AlertDialogTrigger asChild>
-                                                          <Button size="sm" variant="destructive">Delete</Button>
-                                                      </AlertDialogTrigger>
-                                                      <AlertDialogContent>
-                                                          <AlertDialogHeader>
-                                                              <AlertDialogTitle className="text-destructive">Delete Test Bench?</AlertDialogTitle>
-                                                              <AlertDialogDescription>
-                                                                  Are you sure you want to delete "{b.name}"? This action cannot be undone.
-                                                              </AlertDialogDescription>
-                                                          </AlertDialogHeader>
-                                                          <AlertDialogFooter>
-                                                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                              <AlertDialogAction variant="destructive" onClick={() => handleDeleteTestBench(b.id)}>Delete</AlertDialogAction>
-                                                          </AlertDialogFooter>
-                                                      </AlertDialogContent>
-                                                  </AlertDialog>
+                                                    {userRole === 'superadmin' && (
+                                                        <AlertDialog>
+                                                            <AlertDialogTrigger asChild>
+                                                                <Button size="sm" variant="destructive" onClick={() => setDeleteConfirmationText('')}>Delete</Button>
+                                                            </AlertDialogTrigger>
+                                                            <AlertDialogContent>
+                                                                <AlertDialogHeader>
+                                                                    <AlertDialogTitle className="text-destructive font-bold text-lg">Permanently Delete Test Bench?</AlertDialogTitle>
+                                                                    <AlertDialogDescription>
+                                                                        This is a critical action. Deleting the test bench "{b.name}" might affect sensor configurations and historical data. This cannot be undone.
+                                                                        <br/><br/>
+                                                                        To confirm, type <strong>delete</strong> below.
+                                                                    </AlertDialogDescription>
+                                                                    <Input 
+                                                                        id="delete-confirm-input"
+                                                                        value={deleteConfirmationText}
+                                                                        onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                                                                        className="mt-4"
+                                                                        placeholder="delete"
+                                                                    />
+                                                                </AlertDialogHeader>
+                                                                <AlertDialogFooter>
+                                                                    <AlertDialogCancel onClick={() => setDeleteConfirmationText('')}>Cancel</AlertDialogCancel>
+                                                                    <AlertDialogAction variant="destructive" disabled={deleteConfirmationText !== 'delete'} onClick={() => handleDeleteTestBench(b.id)}>Delete</AlertDialogAction>
+                                                                </AlertDialogFooter>
+                                                            </AlertDialogContent>
+                                                        </AlertDialog>
+                                                    )}
                                               </div>
                                           </Card>
                                       ))}
@@ -3015,27 +3028,37 @@ const renderAIModelManagement = () => (
                                                       <p className="text-sm text-muted-foreground">{c.mode} ({c.unit})</p>
                                                       <p className="text-xs text-muted-foreground">Bench: {testBenches?.find(b => b.id === c.testBenchId)?.name || 'N/A'}</p>
                                                   </div>
-                                                  <div className='flex gap-2'>
-                                                      <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
-                                                      <AlertDialog>
-                                                          <AlertDialogTrigger asChild>
-                                                          <Button size="sm" variant="destructive">Delete</Button>
-                                                          </AlertDialogTrigger>
-                                                          <AlertDialogContent>
-                                                          <AlertDialogHeader>
-                                                              <AlertDialogTitle className="text-destructive">Permanently Delete Configuration?</AlertDialogTitle>
-                                                              <AlertDialogDescription>
-                                                               Are you sure you want to delete the configuration "{c.name}"? This will also delete all associated sensor data and test sessions. This action cannot be undone.
-                                                              </AlertDialogDescription>
-                                                          </AlertDialogHeader>
-                                                          <AlertDialogFooter>
-                                                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                              <AlertDialogAction variant="destructive" onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
-                                                          </AlertDialogFooter>
-                                                          </AlertDialogContent>
-                                                      </AlertDialog>
-
-                                                  </div>
+                                                  {userRole === 'superadmin' && (
+                                                      <div className='flex gap-2'>
+                                                          <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
+                                                          <AlertDialog>
+                                                              <AlertDialogTrigger asChild>
+                                                                <Button size="sm" variant="destructive" onClick={() => setDeleteConfirmationText('')}>Delete</Button>
+                                                              </AlertDialogTrigger>
+                                                              <AlertDialogContent>
+                                                              <AlertDialogHeader>
+                                                                  <AlertDialogTitle className="text-destructive font-bold text-lg">Permanently Delete Configuration?</AlertDialogTitle>
+                                                                  <AlertDialogDescription>
+                                                                    This will permanently delete the configuration "{c.name}" and all of its associated test sessions and sensor data. This action is irreversible.
+                                                                    <br/><br/>
+                                                                    To confirm, type <strong>delete</strong> below.
+                                                                  </AlertDialogDescription>
+                                                                  <Input 
+                                                                    id="delete-confirm-sensor-input"
+                                                                    value={deleteConfirmationText}
+                                                                    onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                                                                    className="mt-4"
+                                                                    placeholder="delete"
+                                                                  />
+                                                              </AlertDialogHeader>
+                                                              <AlertDialogFooter>
+                                                                  <AlertDialogCancel onClick={() => setDeleteConfirmationText('')}>Cancel</AlertDialogCancel>
+                                                                  <AlertDialogAction variant="destructive" disabled={deleteConfirmationText !== 'delete'} onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
+                                                              </AlertDialogFooter>
+                                                              </AlertDialogContent>
+                                                          </AlertDialog>
+                                                      </div>
+                                                  )}
                                               </div>
                                           </Card>
                                       ))}
