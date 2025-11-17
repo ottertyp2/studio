@@ -17,6 +17,18 @@ type SensorConfig = {
     customUnitMax: number;
 };
 
+export type VesselType = {
+    id: string;
+    name: string;
+    durationSeconds?: number;
+    maxBatchCount?: number;
+    minCurve: {x: number, y: number}[];
+    maxCurve: {x: number, y: number}[];
+    pressureTarget?: number;
+    timeBufferInSeconds?: number;
+}
+
+
 export type AnalysisResult = {
     startIndex: number;
     startTime: number;
@@ -94,40 +106,47 @@ export const toBase64 = (url: string): Promise<string> => {
   });
 };
 
-export const findMeasurementStart = (data: { value: number; timestamp: string }[], config: SensorConfig | null | undefined): { startIndex: number; startTime: number } => {
-    if (!data || data.length < 5) {
+export const findMeasurementStart = (data: { value: number; timestamp: string }[], config: SensorConfig | null | undefined, vesselType: VesselType | null | undefined): { startIndex: number; startTime: number } => {
+    if (!data || data.length < 2 || !config || !vesselType || vesselType.pressureTarget === undefined || vesselType.timeBufferInSeconds === undefined) {
         return { startIndex: 0, startTime: 0 };
     }
 
-    const sessionStartTime = new Date(data[0].timestamp).getTime();
-    const convertedValues = data.map(d => convertRawValue(d.value, config || null));
-    let maxDerivative = 0;
-    let spikeIndex = 0;
+    const pressureTarget = vesselType.pressureTarget;
+    const timeBufferMs = vesselType.timeBufferInSeconds * 1000;
 
-    for (let i = 1; i < convertedValues.length; i++) {
-        const derivative = convertedValues[i] - convertedValues[i-1];
-        if (derivative > maxDerivative) {
-            maxDerivative = derivative;
-            spikeIndex = i;
+    let pressureTargetMetIndex = -1;
+    for (let i = 0; i < data.length; i++) {
+        const convertedValue = convertRawValue(data[i].value, config);
+        if (convertedValue >= pressureTarget) {
+            pressureTargetMetIndex = i;
+            break;
         }
     }
-    
-    const spikeTime = new Date(data[spikeIndex].timestamp).getTime();
-    const startTimeWithBuffer = spikeTime + 5000;
 
-    let finalStartIndex = data.findIndex(d => new Date(d.timestamp).getTime() >= startTimeWithBuffer);
-    
-    if (finalStartIndex === -1) {
-        finalStartIndex = spikeIndex;
+    if (pressureTargetMetIndex === -1) {
+        // Pressure target was never met, return the start of the data
+        return { startIndex: 0, startTime: 0 };
     }
     
+    const pressureTargetMetTime = new Date(data[pressureTargetMetIndex].timestamp).getTime();
+    const measurementStartTime = pressureTargetMetTime + timeBufferMs;
+
+    let finalStartIndex = data.findIndex(d => new Date(d.timestamp).getTime() >= measurementStartTime);
+    
+    if (finalStartIndex === -1) {
+        // If no data point is found after the buffer, it means the session ended before the buffer time was up.
+        // In this case, we'll consider the start to be the last known point.
+        finalStartIndex = data.length - 1;
+    }
+    
+    const sessionStartTime = new Date(data[0].timestamp).getTime();
     const startTimeInSeconds = (new Date(data[finalStartIndex].timestamp).getTime() - sessionStartTime) / 1000;
 
     return { startIndex: finalStartIndex, startTime: startTimeInSeconds };
 };
 
 
-export const findMeasurementEnd = (data: { value: number; timestamp: string }[], startIndex: number, config: SensorConfig | null | undefined, durationSeconds?: number): { endIndex: number; endTime: number, isComplete: boolean } => {
+export const findMeasurementEnd = (data: { value: number; timestamp: string }[], startIndex: number, config: SensorConfig | null | undefined, vesselType: VesselType | null | undefined): { endIndex: number; endTime: number, isComplete: boolean } => {
     const defaultEnd = (isComplete = false) => {
         const lastIndex = data.length > 0 ? data.length - 1 : 0;
         const sessionStartTime = data.length > 0 ? new Date(data[0].timestamp).getTime() : 0;
@@ -135,7 +154,7 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
         return { endIndex: lastIndex, endTime: endTimeInSeconds, isComplete };
     };
 
-    if (!data || data.length === 0 || startIndex >= data.length) {
+    if (!data || data.length === 0 || startIndex >= data.length || !vesselType || vesselType.durationSeconds === undefined) {
         return defaultEnd();
     }
     
@@ -143,8 +162,8 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
     const measurementStartTime = new Date(data[startIndex].timestamp).getTime();
 
     // If a specific duration is provided, use it to calculate the end time.
-    if (durationSeconds && durationSeconds > 0) {
-        const expectedEndTime = measurementStartTime + (durationSeconds * 1000);
+    if (vesselType.durationSeconds && vesselType.durationSeconds > 0) {
+        const expectedEndTime = measurementStartTime + (vesselType.durationSeconds * 1000);
         let finalEndIndex = -1;
         
         // Find the last data point before or exactly at the expected end time
@@ -202,3 +221,5 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
 
     return defaultEnd(true); // Assume complete for old logic
 };
+
+    

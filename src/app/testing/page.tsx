@@ -137,6 +137,8 @@ type VesselType = {
     maxBatchCount?: number;
     minCurve: {x: number, y: number}[];
     maxCurve: {x: number, y: number}[];
+    pressureTarget?: number;
+    timeBufferInSeconds?: number;
 }
 
 type Batch = {
@@ -273,9 +275,11 @@ function TestingComponent() {
         if (data && data.length > 0) {
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
             const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-            const start = findMeasurementStart(data, config);
-            const end = findMeasurementEnd(data, start.startIndex, config, vesselType?.durationSeconds);
-            results[session.id] = { start, end };
+            if (config && vesselType) {
+              const start = findMeasurementStart(data, config, vesselType);
+              const end = findMeasurementEnd(data, start.startIndex, config, vesselType);
+              results[session.id] = { start, end };
+            }
         }
     });
     return results;
@@ -613,7 +617,7 @@ function TestingComponent() {
         const measurementStartTime = new Date(sessionData[window.start.startIndex].timestamp).getTime();
 
         sessionData.forEach(point => {
-             const time = Math.round((new Date(point.timestamp).getTime() - measurementStartTime) / 1000);
+             const time = Math.round((new Date(point.timestamp).getTime() - measurementStartTime));
              allRelativeTimes.add(time);
         });
     });
@@ -621,7 +625,7 @@ function TestingComponent() {
     const sortedTimes = Array.from(allRelativeTimes).sort((a, b) => a - b);
 
     const synchronizedData = sortedTimes.map(time => {
-        const dataPoint: ChartDataPoint = { name: time };
+        const dataPoint: ChartDataPoint = { name: time / 1000 }; // convert back to seconds for the chart
 
         comparisonSessions.forEach(session => {
             const sessionData = comparisonData[session.id] || [];
@@ -638,9 +642,9 @@ function TestingComponent() {
             let minDiff = Infinity;
 
             for (const point of sessionData) {
-                const pointTime = (new Date(point.timestamp).getTime() - measurementStartTime) / 1000;
+                const pointTime = (new Date(point.timestamp).getTime() - measurementStartTime);
                 const diff = Math.abs(pointTime - time);
-                if (diff < minDiff && diff < 1.5) { // Only consider points within 1.5s
+                if (diff < minDiff && diff < 1500) { // Only consider points within 1.5s
                     minDiff = diff;
                     closestPoint = point;
                 }
@@ -670,8 +674,8 @@ function TestingComponent() {
                     return uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
                 };
 
-                const minGuideline = vesselType ? interpolateBezierCurve(vesselType.minCurve, time) : undefined;
-                const maxGuideline = vesselType ? interpolateBezierCurve(vesselType.maxCurve, time) : undefined;
+                const minGuideline = vesselType ? interpolateBezierCurve(vesselType.minCurve, dataPoint.name) : undefined;
+                const maxGuideline = vesselType ? interpolateBezierCurve(vesselType.maxCurve, dataPoint.name) : undefined;
                 
                 if (dataPoint.minGuideline === undefined && minGuideline !== undefined) dataPoint.minGuideline = minGuideline;
                 if (dataPoint.maxGuideline === undefined && maxGuideline !== undefined) dataPoint.maxGuideline = maxGuideline;
@@ -758,12 +762,15 @@ function TestingComponent() {
     };
   }, [currentValue, displaySensorConfigId, sensorConfigs]);
   
-  const downtimePercentage = useMemo(() => {
-    if (!startTime) return 0;
-    const totalElapsed = Date.now() - startTime;
-    if (totalElapsed <= 0) return 0;
-    const currentTotalDowntime = totalDowntime + (downtimeStart ? Date.now() - downtimeStart : 0);
-    return Math.min(100, (currentTotalDowntime / totalElapsed) * 100);
+    const downtimePercentage = useMemo(() => {
+      if (!startTime) return 0;
+      const totalElapsed = Date.now() - startTime;
+      if (totalElapsed <= 0) return 0;
+
+      const liveDowntime = downtimeStart ? Date.now() - downtimeStart : 0;
+      const currentTotalDowntime = totalDowntime + liveDowntime;
+
+      return Math.min(100, (currentTotalDowntime / totalElapsed) * 100);
   }, [startTime, totalDowntime, downtimeStart, now]);
 
 
@@ -891,8 +898,8 @@ function TestingComponent() {
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
             const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
             
-            const { startIndex } = findMeasurementStart(data, config);
-            const { endIndex } = findMeasurementEnd(data, startIndex, config, vesselType?.durationSeconds);
+            const { startIndex } = findMeasurementStart(data, config, vesselType);
+            const { endIndex } = findMeasurementEnd(data, startIndex, config, vesselType);
             const analysisData = data.slice(startIndex, endIndex + 1);
 
             const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(session.startTime).getTime();
@@ -1207,10 +1214,12 @@ function TestingComponent() {
                 BioThrust Live Dashboard
                 </CardTitle>
                  <div className="flex items-center gap-2">
-                    <Button onClick={() => router.push('/admin')} variant="outline">
-                        <Cog className="h-4 w-4 mr-2" />
-                        Manage
-                    </Button>
+                    {userRole === 'superadmin' && (
+                        <Button onClick={() => router.push('/admin')} variant="outline">
+                            <Cog className="h-4 w-4 mr-2" />
+                            Manage
+                        </Button>
+                    )}
                     <Button onClick={handleSignOut} variant="ghost">
                         <LogOut className="h-4 w-4 mr-2" />
                         Logout
@@ -1725,8 +1734,7 @@ function TestingComponent() {
                             if (!window || !window.start) return null;
                             const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
                             
-                            // Align relative to the calculated start time for this session
-                            const relativeStartTime = 0;
+                            const relativeStartTime = 0; // The start point is now t=0
                             const expectedEndTime = vesselType?.durationSeconds ? relativeStartTime + vesselType.durationSeconds : undefined;
 
                             return (
@@ -1790,3 +1798,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    

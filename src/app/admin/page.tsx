@@ -222,6 +222,8 @@ type VesselType = {
     maxCurve: {x: number, y: number}[];
     guidelineEditorMaxX?: number;
     guidelineEditorMaxY?: number;
+    pressureTarget?: number;
+    timeBufferInSeconds?: number;
 }
 
 type Batch = {
@@ -295,7 +297,7 @@ export default function AdminPage() {
   const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
   
   // VesselType State
-  const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '', durationSeconds: 60, maxBatchCount: 10 });
+  const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '', durationSeconds: 60, maxBatchCount: 10, pressureTarget: 0.3, timeBufferInSeconds: 5 });
   const [editingVesselType, setEditingVesselType] = useState<VesselType | null>(null);
   const [minCurvePoints, setMinCurvePoints] = useState<{x: number, y: number}[]>([]);
   const [maxCurvePoints, setMaxCurvePoints] = useState<{x: number, y: number}[]>([]);
@@ -726,8 +728,8 @@ export default function AdminPage() {
             return;
         }
 
-        const { startIndex } = findMeasurementStart(sensorData, config);
-        const { endIndex, isComplete } = findMeasurementEnd(sensorData, startIndex, config, vesselType.durationSeconds);
+        const { startIndex } = findMeasurementStart(sensorData, config, vesselType);
+        const { endIndex, isComplete } = findMeasurementEnd(sensorData, startIndex, config, vesselType);
         
         if (!isComplete) {
             handleSetSessionClassification(session.id, 'UNCLASSIFIABLE');
@@ -1016,12 +1018,14 @@ export default function AdminPage() {
       name: newVesselType.name,
       durationSeconds: Number(newVesselType.durationSeconds) || 60,
       maxBatchCount: Number(newVesselType.maxBatchCount) || 10,
+      pressureTarget: Number(newVesselType.pressureTarget) || 0.3,
+      timeBufferInSeconds: Number(newVesselType.timeBufferInSeconds) || 5,
       minCurve: [],
       maxCurve: []
     };
     addDocumentNonBlocking(vesselTypesCollectionRef, docToSave);
     toast({ title: 'Vessel Type Added', description: `Added "${docToSave.name}" to the catalog.` });
-    setNewVesselType({ name: '', durationSeconds: 60, maxBatchCount: 10 });
+    setNewVesselType({ name: '', durationSeconds: 60, maxBatchCount: 10, pressureTarget: 0.3, timeBufferInSeconds: 5 });
   };
 
   const handleDeleteVesselType = (vesselTypeId: string) => {
@@ -1067,6 +1071,8 @@ export default function AdminPage() {
         maxCurve: maxCurvePoints,
         durationSeconds: Number(editingVesselType.durationSeconds) || 60,
         maxBatchCount: Number(editingVesselType.maxBatchCount) || 10,
+        pressureTarget: Number(editingVesselType.pressureTarget) || 0,
+        timeBufferInSeconds: Number(editingVesselType.timeBufferInSeconds) || 0,
         guidelineEditorMaxX: Number(guidelineEditorMaxX),
         guidelineEditorMaxY: Number(guidelineEditorMaxY),
     });
@@ -1241,9 +1247,11 @@ export default function AdminPage() {
             if (data.length > 0) {
                 const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
                 const vt = vesselTypes?.find(v => v.id === session.vesselTypeId);
-                const start = findMeasurementStart(data, config);
-                const end = findMeasurementEnd(data, start.startIndex, config, vt?.durationSeconds);
-                measurementWindows[session.id] = { start, end };
+                if (config && vt) {
+                    const start = findMeasurementStart(data, config, vt);
+                    const end = findMeasurementEnd(data, start.startIndex, config, vt);
+                    measurementWindows[session.id] = { start, end };
+                }
             }
         }
         
@@ -1351,8 +1359,8 @@ export default function AdminPage() {
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
             const sessionVesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
             
-            const { startIndex } = findMeasurementStart(data, config);
-            const { endIndex } = findMeasurementEnd(data, startIndex, config, sessionVesselType?.durationSeconds);
+            const { startIndex } = findMeasurementStart(data, config, sessionVesselType);
+            const { endIndex } = findMeasurementEnd(data, startIndex, config, sessionVesselType);
             const analysisData = data.slice(startIndex, endIndex + 1);
 
             const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(session.startTime).getTime();
@@ -1925,7 +1933,7 @@ export default function AdminPage() {
 
 
   const renderSensorConfigurator = () => {
-    if (!tempSensorConfig) return null;
+    if (!tempSensorConfig || userRole !== 'superadmin') return null;
     return (
         <Card className="mt-6 animate-in">
             <CardHeader>
@@ -2391,6 +2399,7 @@ export default function AdminPage() {
   };
 
   const renderUserManagement = () => {
+    if (userRole !== 'superadmin') return null;
     return (
         <Card className="animate-in">
              <Accordion type="single" collapsible className="w-full">
@@ -2551,6 +2560,14 @@ export default function AdminPage() {
                                     <Label htmlFor="new-vessel-type-batch-size">Max Batch Size</Label>
                                     <Input id="new-vessel-type-batch-size" type="number" placeholder="10" value={newVesselType.maxBatchCount || ''} onChange={(e) => setNewVesselType(p => ({ ...p, maxBatchCount: Number(e.target.value) }))} />
                                 </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="new-vessel-type-pressure-target">Pressure Target</Label>
+                                    <Input id="new-vessel-type-pressure-target" type="number" placeholder="0.3" value={newVesselType.pressureTarget || ''} onChange={(e) => setNewVesselType(p => ({ ...p, pressureTarget: Number(e.target.value) }))} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="new-vessel-type-time-buffer">Time Buffer (s)</Label>
+                                    <Input id="new-vessel-type-time-buffer" type="number" placeholder="5" value={newVesselType.timeBufferInSeconds || ''} onChange={(e) => setNewVesselType(p => ({ ...p, timeBufferInSeconds: Number(e.target.value) }))} />
+                                </div>
                             </div>
                             <Button onClick={handleAddVesselType} size="sm" className="w-full mt-2">Add Vessel Type</Button>
                         </div>
@@ -2619,6 +2636,14 @@ export default function AdminPage() {
                                                                             <div className="space-y-2">
                                                                                 <Label>Max Batch Size</Label>
                                                                                 <Input type="number" value={editingVesselType?.maxBatchCount || ''} onChange={(e) => setEditingVesselType(p => p ? {...p, maxBatchCount: Number(e.target.value)} : null)} />
+                                                                            </div>
+                                                                            <div className="space-y-2">
+                                                                                <Label>Pressure Target</Label>
+                                                                                <Input type="number" value={editingVesselType?.pressureTarget || ''} onChange={(e) => setEditingVesselType(p => p ? { ...p, pressureTarget: Number(e.target.value) } : null)} />
+                                                                            </div>
+                                                                            <div className="space-y-2">
+                                                                                <Label>Time Buffer (s)</Label>
+                                                                                <Input type="number" value={editingVesselType?.timeBufferInSeconds || ''} onChange={(e) => setEditingVesselType(p => p ? { ...p, timeBufferInSeconds: Number(e.target.value) } : null)} />
                                                                             </div>
                                                                         </div>
                                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
@@ -2780,75 +2805,78 @@ const renderBatchManagement = () => (
     </Card>
 );
 
-const renderAIModelManagement = () => (
-    <Card className="animate-in">
-      <Accordion type="single" collapsible className="w-full">
-        <AccordionItem value="item-1">
-          <AccordionTrigger className="p-6">
-            <div className="text-left">
-              <CardTitle>AI Model Management</CardTitle>
-              <CardDescription>Manage and train leak detection models.</CardDescription>
-            </div>
-          </AccordionTrigger>
-          <AccordionContent className="p-6 pt-0 space-y-4">
-            <div>
-              <h3 className="font-semibold mb-2">Automated Training</h3>
-              <div className="p-4 border rounded-lg bg-background/50 space-y-3">
-                <div className="space-y-1">
-                  <Label htmlFor="model-name">New Model Name</Label>
-                  <Input id="model-name" value={newModelName} onChange={(e) => setNewModelName(e.target.value)} />
+const renderAIModelManagement = () => {
+    if(userRole !== 'superadmin') return null;
+    return (
+        <Card className="animate-in">
+        <Accordion type="single" collapsible className="w-full">
+            <AccordionItem value="item-1">
+            <AccordionTrigger className="p-6">
+                <div className="text-left">
+                <CardTitle>AI Model Management</CardTitle>
+                <CardDescription>Manage and train leak detection models.</CardDescription>
                 </div>
-                <Button onClick={handleAutomatedTraining} disabled={isTraining} className="w-full">
-                  {isTraining ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
-                  {isTraining ? 'Training in Progress...' : 'Start Automated Training'}
-                </Button>
-                {automatedTrainingStatus.step !== 'Idle' && (
-                  <div className="space-y-2 pt-2">
-                    <Progress value={automatedTrainingStatus.progress} />
-                    <p className="text-xs text-muted-foreground">[{automatedTrainingStatus.step}] {automatedTrainingStatus.details}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-             <div>
-                <h3 className="font-semibold mb-2">Model Catalog</h3>
-                <ScrollArea className="h-48">
-                  <div className="space-y-2">
-                    {mlModels?.map(model => (
-                      <Card key={model.id} className={`p-3 cursor-pointer ${activeModel?.id === model.id ? 'border-primary' : ''}`} onClick={() => setActiveModel(model)}>
-                        <p className="font-semibold">{model.name}</p>
-                        <p className="text-xs text-muted-foreground">Version: {new Date(model.version).toLocaleDateString()}</p>
-                        <p className="text-xs text-muted-foreground">{model.description}</p>
-                      </Card>
-                    ))}
-                  </div>
-                </ScrollArea>
-             </div>
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
-        <Dialog open={!!classificationSession} onOpenChange={(isOpen) => !isOpen && setClassificationSession(null)}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>AI Classification</DialogTitle>
-                    <DialogDescription>
-                        Classifying session for "{classificationSession?.vesselTypeName} - {classificationSession?.serialNumber}" using model "{activeModel?.name}".
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="flex justify-center items-center h-24">
-                    {isClassifying ? (
-                        <>
-                         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                         <p className="ml-4">Running analysis...</p>
-                        </>
-                    ) : (
-                         <Button onClick={() => classificationSession && handleClassifyWithAI(classificationSession)}>Start Classification</Button>
+            </AccordionTrigger>
+            <AccordionContent className="p-6 pt-0 space-y-4">
+                <div>
+                <h3 className="font-semibold mb-2">Automated Training</h3>
+                <div className="p-4 border rounded-lg bg-background/50 space-y-3">
+                    <div className="space-y-1">
+                    <Label htmlFor="model-name">New Model Name</Label>
+                    <Input id="model-name" value={newModelName} onChange={(e) => setNewModelName(e.target.value)} />
+                    </div>
+                    <Button onClick={handleAutomatedTraining} disabled={isTraining} className="w-full">
+                    {isTraining ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
+                    {isTraining ? 'Training in Progress...' : 'Start Automated Training'}
+                    </Button>
+                    {automatedTrainingStatus.step !== 'Idle' && (
+                    <div className="space-y-2 pt-2">
+                        <Progress value={automatedTrainingStatus.progress} />
+                        <p className="text-xs text-muted-foreground">[{automatedTrainingStatus.step}] {automatedTrainingStatus.details}</p>
+                    </div>
                     )}
                 </div>
-            </DialogContent>
-        </Dialog>
-    </Card>
-  );
+                </div>
+                <div>
+                    <h3 className="font-semibold mb-2">Model Catalog</h3>
+                    <ScrollArea className="h-48">
+                    <div className="space-y-2">
+                        {mlModels?.map(model => (
+                        <Card key={model.id} className={`p-3 cursor-pointer ${activeModel?.id === model.id ? 'border-primary' : ''}`} onClick={() => setActiveModel(model)}>
+                            <p className="font-semibold">{model.name}</p>
+                            <p className="text-xs text-muted-foreground">Version: {new Date(model.version).toLocaleDateString()}</p>
+                            <p className="text-xs text-muted-foreground">{model.description}</p>
+                        </Card>
+                        ))}
+                    </div>
+                    </ScrollArea>
+                </div>
+            </AccordionContent>
+            </AccordionItem>
+        </Accordion>
+            <Dialog open={!!classificationSession} onOpenChange={(isOpen) => !isOpen && setClassificationSession(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>AI Classification</DialogTitle>
+                        <DialogDescription>
+                            Classifying session for "{classificationSession?.vesselTypeName} - {classificationSession?.serialNumber}" using model "{activeModel?.name}".
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex justify-center items-center h-24">
+                        {isClassifying ? (
+                            <>
+                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                            <p className="ml-4">Running analysis...</p>
+                            </>
+                        ) : (
+                            <Button onClick={() => classificationSession && handleClassifyWithAI(classificationSession)}>Start Classification</Button>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </Card>
+    );
+};
 
   if (isUserLoading || !user) {
     return (
@@ -3085,12 +3113,12 @@ const renderAIModelManagement = () => (
                                   </div>
                               </ScrollArea>
                               }
-                              {userRole === 'superadmin' && renderSensorConfigurator()}
+                              {renderSensorConfigurator()}
                           </AccordionContent>
                       </AccordionItem>
                   </Accordion>
               </Card>
-               {userRole === 'superadmin' && renderAIModelManagement()}
+               {renderAIModelManagement()}
           </div>
           <div className="lg:col-span-2 space-y-6">
               {renderTestSessionManager()}
@@ -3105,3 +3133,4 @@ const renderAIModelManagement = () => (
   );
 }
 
+    

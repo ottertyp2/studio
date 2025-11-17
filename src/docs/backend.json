@@ -217,6 +217,7 @@
             "id": { "type": "string", "description": "Unique identifier for the vessel type." },
             "name": { "type": "string", "description": "The name of the vessel type." },
             "durationSeconds": { "type": "number", "description": "The default duration of a test session for this vessel type in seconds." },
+            "maxBatchCount": { "type": "number", "description": "The maximum number of unique vessels allowed in a single batch of this type." },
             "minCurve": {
                 "type": "array",
                 "description": "An array of points defining the minimum pressure curve guideline.",
@@ -248,6 +249,14 @@
             "guidelineEditorMaxY": {
                 "type": "number",
                 "description": "The last used maximum Y-axis value for the guideline editor."
+            },
+            "pressureTarget": {
+                "type": "number",
+                "description": "The pressure threshold that must be met to begin the measurement window countdown."
+            },
+            "timeBufferInSeconds": {
+                "type": "number",
+                "description": "The delay in seconds after the pressure target is met before the measurement window officially begins."
             }
         },
         "required": ["id", "name"]
@@ -363,6 +372,16 @@
             }
         },
         "required": ["reason", "timestamp", "errors", "totals"]
+    },
+    "AppSettings": {
+      "title": "Application Settings",
+      "type": "object",
+      "description": "Global settings for the application, typically a singleton document.",
+      "properties": {
+        "id": { "type": "string", "description": "The singleton document ID, e.g., 'config'." },
+        "allowSignups": { "type": "boolean", "description": "If true, new users can create accounts via the signup page." }
+      },
+      "required": ["id", "allowSignups"]
     }
   },
   "auth": {
@@ -372,6 +391,14 @@
   },
   "firestore": {
     "structure": [
+      {
+        "path": "/app_settings/{settingsId}",
+        "definition": {
+          "entityName": "AppSettings",
+          "schema": { "$ref": "#/entities/AppSettings" },
+          "description": "Stores global application settings. Should contain a single document, e.g., /app_settings/config."
+        }
+      },
       {
         "path": "/users/{userId}",
         "definition": {
@@ -506,8 +533,20 @@
                 "schema": { "$ref": "#/entities/CrashReport" },
                 "description": "The last crash/reconnect report from the ESP32."
             }
+        },
+        {
+            "path": "/data/system/status",
+            "description": "Centralized status tracking for the system, including downtime.",
+            "properties": {
+                "startTime": { "type": "number", "description": "Timestamp when the system tracking started." },
+                "totalDowntime": { "type": "number", "description": "Total accumulated downtime in milliseconds." },
+                "downtimeStart": { "type": "number", "description": "Timestamp when the current downtime period started. Null if online." }
+            }
         }
     ]
   }
 }
 
+    
+
+    
