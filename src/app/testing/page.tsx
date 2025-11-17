@@ -333,6 +333,10 @@ function TestingComponent() {
         toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select or create a batch.' });
         return;
     }
+    if (!newSessionData.serialNumber.trim()) {
+        toast({ variant: 'destructive', title: 'Missing Information', description: 'Serial Number is required.' });
+        return;
+    }
     if(runningTestSession) {
       toast({ variant: 'destructive', title: 'Session in Progress', description: 'Another session is already running.' });
       return;
@@ -367,24 +371,37 @@ function TestingComponent() {
             return;
         }
     }
+    
+    const serialNumberValue = parseInt(newSessionData.serialNumber.trim(), 10);
+    if (isNaN(serialNumberValue)) {
+        toast({
+            variant: 'destructive',
+            title: 'Invalid Serial Number',
+            description: `Serial Number must be a numeric value.`
+        });
+        return;
+    }
+    if (vesselType.maxBatchCount && (serialNumberValue < 1 || serialNumberValue > vesselType.maxBatchCount)) {
+        toast({
+            variant: 'destructive',
+            title: 'Invalid Serial Number',
+            description: `Serial Number for "${vesselType.name}" must be between 1 and ${vesselType.maxBatchCount}.`
+        });
+        return;
+    }
 
-    // Now check if the batch is full
-    if (finalBatchId && newSessionData.serialNumber.trim() && vesselType.maxBatchCount) {
+    if (finalBatchId) {
         const q = query(
             collection(firestore, 'test_sessions'),
-            where('batchId', '==', finalBatchId)
+            where('batchId', '==', finalBatchId),
+            where('serialNumber', '==', newSessionData.serialNumber.trim())
         );
         const batchSessionsSnapshot = await getDocs(q);
-        const uniqueSerialNumbers = new Set(batchSessionsSnapshot.docs.map(d => d.data().serialNumber));
-        
-        // Add the current serial number only if it's new
-        uniqueSerialNumbers.add(newSessionData.serialNumber.trim());
-
-        if (uniqueSerialNumbers.size > vesselType.maxBatchCount) {
+        if (!batchSessionsSnapshot.empty) {
             toast({
                 variant: 'destructive',
-                title: 'Batch Full',
-                description: `This batch already contains ${uniqueSerialNumbers.size - 1} unique vessels. The maximum for "${vesselType.name}" is ${vesselType.maxBatchCount}.`
+                title: 'Duplicate Serial Number',
+                description: `Serial Number "${newSessionData.serialNumber.trim()}" has already been tested in this batch.`
             });
             return;
         }
@@ -1546,12 +1563,12 @@ function TestingComponent() {
                             </DropdownMenuTrigger>
                              <DropdownMenuContent>
                                 <DropdownMenuItem onSelect={() => {
-                                    if (comparisonSessions.length === 1) {
-                                        generateReport({ type: 'single', sessionId: comparisonSessions[0].id });
-                                    } else {
-                                        toast({title: "Select a Single Session", description: "Open the comparison panel to select one session to generate a single report."});
-                                        setIsHistoryPanelOpen(true);
-                                    }
+                                  if (comparisonSessions.length === 1) {
+                                      generateReport({ type: 'single', sessionId: comparisonSessions[0].id });
+                                  } else {
+                                      toast({title: "Select a Single Session", description: "Open the comparison panel to select one session to generate a single report."});
+                                      setIsHistoryPanelOpen(true);
+                                  }
                                 }}>
                                    <FileText className="mr-2 h-4 w-4" />
                                    Single Session Report
