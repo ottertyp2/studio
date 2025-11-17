@@ -681,7 +681,7 @@ function TestingComponent() {
                 dataPoint[`${session.id}-failed`] = isFailed ? 1 : 0;
 
             } else {
-                dataPoint[session.id] = null; // No data for this session at this exact time
+                dataPoint[session.id] = null; // No data for this exact time
                 dataPoint[`${session.id}-failed`] = 0;
             }
         });
@@ -762,9 +762,7 @@ function TestingComponent() {
     if (!startTime) return 0;
     const totalElapsed = Date.now() - startTime;
     if (totalElapsed <= 0) return 0;
-
     const currentTotalDowntime = totalDowntime + (downtimeStart ? Date.now() - downtimeStart : 0);
-
     return Math.min(100, (currentTotalDowntime / totalElapsed) * 100);
   }, [startTime, totalDowntime, downtimeStart, now]);
 
@@ -1209,12 +1207,10 @@ function TestingComponent() {
                 BioThrust Live Dashboard
                 </CardTitle>
                  <div className="flex items-center gap-2">
-                    {userRole === 'superadmin' && (
-                        <Button onClick={() => router.push('/admin')} variant="outline">
-                            <Cog className="h-4 w-4 mr-2" />
-                            Manage
-                        </Button>
-                    )}
+                    <Button onClick={() => router.push('/admin')} variant="outline">
+                        <Cog className="h-4 w-4 mr-2" />
+                        Manage
+                    </Button>
                     <Button onClick={handleSignOut} variant="ghost">
                         <LogOut className="h-4 w-4 mr-2" />
                         Logout
