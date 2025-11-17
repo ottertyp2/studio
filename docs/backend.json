@@ -524,8 +524,16 @@
                 "schema": { "$ref": "#/entities/CrashReport" },
                 "description": "The last crash/reconnect report from the ESP32."
             }
+        },
+        {
+            "path": "/data/system/status",
+            "description": "Centralized status tracking for the system, including downtime.",
+            "properties": {
+                "startTime": { "type": "number", "description": "Timestamp when the system tracking started." },
+                "totalDowntime": { "type": "number", "description": "Total accumulated downtime in milliseconds." },
+                "downtimeStart": { "type": "number", "description": "Timestamp when the current downtime period started. Null if online." }
+            }
         }
     ]
   }
 }
-

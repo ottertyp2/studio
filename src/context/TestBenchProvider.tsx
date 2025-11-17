@@ -4,7 +4,7 @@ import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { TestBenchContext, ValveStatus } from './TestBenchContext';
 import { useFirebase, useUser, addDocumentNonBlocking, WithId } from '@/firebase';
-import { ref, onValue, set } from 'firebase/database';
+import { ref, onValue, set, get, runTransaction } from 'firebase/database';
 import { collection, query, where, onSnapshot, limit, DocumentData, collectionGroup, getDocs } from 'firebase/firestore';
 
 export type RtdbSensorData = {
@@ -38,10 +38,13 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [lockedValves, setLockedValves] = useState<('VALVE1' | 'VALVE2')[]>([]);
   const [lockedSequences, setLockedSequences] = useState<('sequence1' | 'sequence2')[]>([]);
 
-
+  // States for centralized downtime tracking
   const [startTime, setStartTime] = useState<number | null>(null);
-  const [totalDowntime, setTotalDowntime] = useState(0); // in milliseconds
+  const [totalDowntime, setTotalDowntime] = useState(0);
   const [downtimeStart, setDowntimeStart] = useState<number | null>(null);
+  
+  // Ref to track if this client instance is the one that handled the reconnect.
+  const downtimeProcessedByThisClient = useRef(false);
 
   const startSession = useCallback((session: WithId<DocumentData>) => {
     runningTestSessionRef.current = session;
@@ -55,57 +58,51 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
 
   useEffect(() => {
-    // Initialize state from LocalStorage on mount
-    const persistedStartTime = localStorage.getItem('startTime');
-    if (persistedStartTime) {
-      setStartTime(JSON.parse(persistedStartTime));
-    } else {
-      const now = Date.now();
-      setStartTime(now);
-      localStorage.setItem('startTime', JSON.stringify(now));
-    }
-    
-    let initialTotalDowntime = 0;
-    const persistedDowntime = localStorage.getItem('totalDowntime');
-    if (persistedDowntime) {
-      initialTotalDowntime = JSON.parse(persistedDowntime);
-    }
+    if (!database) return;
 
-    // Check if the page was reloaded while offline
-    const persistedDowntimeStart = localStorage.getItem('downtimeStart');
-    if (persistedDowntimeStart) {
-        const start = JSON.parse(persistedDowntimeStart);
-        const elapsedSinceClose = Date.now() - start;
-        initialTotalDowntime += elapsedSinceClose;
-        setDowntimeStart(start); // Keep tracking from the original start
-    }
-    
-    setTotalDowntime(initialTotalDowntime);
+    const systemStatusRef = ref(database, 'data/system/status');
+
+    // Listener for centralized system status
+    const unsubscribe = onValue(systemStatusRef, (snapshot) => {
+        const status = snapshot.val();
+        if (status) {
+            setStartTime(status.startTime || null);
+            setTotalDowntime(status.totalDowntime || 0);
+            setDowntimeStart(status.downtimeStart || null);
+        } else {
+            // Initialize if it doesn't exist
+            const now = Date.now();
+            set(systemStatusRef, {
+                startTime: now,
+                totalDowntime: 0,
+                downtimeStart: null,
+            });
+            setStartTime(now);
+        }
+    });
 
     // Finalize downtime calculation on page close
-    const handleBeforeUnload = () => {
-        const currentDowntimeStart = localStorage.getItem('downtimeStart');
-        if (currentDowntimeStart) {
-            const start = JSON.parse(currentDowntimeStart);
+    const handleBeforeUnload = async () => {
+        const statusRef = ref(database, 'data/system/status');
+        const currentStatus = await get(statusRef);
+        if (currentStatus.exists() && currentStatus.val().downtimeStart) {
+            const start = currentStatus.val().downtimeStart;
             const elapsed = Date.now() - start;
-            
-            let currentTotal = 0;
-            const currentTotalStr = localStorage.getItem('totalDowntime');
-            if (currentTotalStr) {
-                currentTotal = JSON.parse(currentTotalStr);
-            }
-            
-            localStorage.setItem('totalDowntime', JSON.stringify(currentTotal + elapsed));
-            localStorage.removeItem('downtimeStart');
+            const newTotal = (currentStatus.val().totalDowntime || 0) + elapsed;
+            await set(ref(database, 'data/system/status/totalDowntime'), newTotal);
+            await set(ref(database, 'data/system/status/downtimeStart'), null);
         }
     };
-    
+
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
+        unsubscribe();
         window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, []);
+}, [database]);
+
+
   
   useEffect(() => {
     if (!user || !firestore) return;
@@ -171,34 +168,50 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   }, [firestore, isRecording]);
   
   useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const isOnline = lastDataPointTimestamp !== null && (now - lastDataPointTimestamp) < 3000;
+    if (!database) return;
+    const systemStatusRef = ref(database, 'data/system/status');
 
-      setIsConnected(isOnline);
+    const interval = setInterval(async () => {
+        const now = Date.now();
+        const isOnline = lastDataPointTimestamp !== null && (now - lastDataPointTimestamp) < 3000;
+        setIsConnected(isOnline);
 
-      if (isOnline) {
-        if (downtimeStart !== null) {
-          const downDuration = now - downtimeStart;
-          setTotalDowntime(prev => {
-              const newTotal = prev + downDuration;
-              localStorage.setItem('totalDowntime', JSON.stringify(newTotal));
-              return newTotal;
-          });
-          setDowntimeStart(null);
-          localStorage.removeItem('downtimeStart');
+        if (isOnline) {
+            // Check if there was a downtime period that needs to be closed
+            const currentDowntimeStart = downtimeStart;
+            if (currentDowntimeStart && !downtimeProcessedByThisClient.current) {
+                downtimeProcessedByThisClient.current = true; // Mark that this client is handling it
+
+                const downDuration = now - currentDowntimeStart;
+                
+                await runTransaction(systemStatusRef, (status) => {
+                    if (status && status.downtimeStart) {
+                        status.totalDowntime = (status.totalDowntime || 0) + downDuration;
+                        status.downtimeStart = null;
+                    }
+                    return status;
+                });
+                
+                // Allow this client to process future downtimes
+                setTimeout(() => {
+                  downtimeProcessedByThisClient.current = false;
+                }, 2000); 
+            }
+        } else {
+            // If offline, ensure downtimeStart is set in RTDB
+            if (downtimeStart === null) {
+                await runTransaction(systemStatusRef, (status) => {
+                   if (status && !status.downtimeStart) {
+                       status.downtimeStart = now;
+                   }
+                   return status;
+                });
+            }
         }
-      } else {
-        if (downtimeStart === null) {
-            const now = Date.now();
-            setDowntimeStart(now);
-            localStorage.setItem('downtimeStart', JSON.stringify(now));
-        }
-      }
     }, 1000); // Check every second
 
     return () => clearInterval(interval);
-  }, [lastDataPointTimestamp, downtimeStart]);
+  }, [lastDataPointTimestamp, downtimeStart, database]);
 
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
@@ -374,5 +387,3 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
-
-    
