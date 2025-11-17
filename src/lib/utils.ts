@@ -136,7 +136,7 @@ export const findMeasurementStart = (data: { value: number; timestamp: string }[
     if (finalStartIndex === -1) {
         // If no data point is found after the buffer, it means the session ended before the buffer time was up.
         // In this case, we'll consider the start to be the last known point.
-        finalStartIndex = data.length - 1;
+        finalStartIndex = data.length > 0 ? data.length - 1 : 0;
     }
     
     const sessionStartTime = new Date(data[0].timestamp).getTime();
@@ -158,29 +158,30 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
         return defaultEnd();
     }
     
-    const sessionStartTime = new Date(data[0].timestamp).getTime();
     const measurementStartTime = new Date(data[startIndex].timestamp).getTime();
 
     // If a specific duration is provided, use it to calculate the end time.
     if (vesselType.durationSeconds && vesselType.durationSeconds > 0) {
         const expectedEndTime = measurementStartTime + (vesselType.durationSeconds * 1000);
-        let finalEndIndex = -1;
         
         // Find the last data point before or exactly at the expected end time
+        let finalEndIndex = -1;
         for(let i = data.length - 1; i >= startIndex; i--) {
-            if (new Date(data[i].timestamp).getTime() <= expectedEndTime) {
+            if (new Date(data[i].timestamp).getTime() >= expectedEndTime) {
                 finalEndIndex = i;
                 break;
             }
         }
         
-        if (finalEndIndex === -1) { // This case should be rare
-             return { endIndex: startIndex, endTime: (measurementStartTime - sessionStartTime) / 1000, isComplete: false };
+        const lastDataPointTime = new Date(data[data.length-1].timestamp).getTime();
+        const isComplete = lastDataPointTime >= expectedEndTime;
+
+        if (finalEndIndex === -1) { // This means the session ended before the full duration
+             finalEndIndex = data.length -1;
         }
         
         const actualEndTime = new Date(data[finalEndIndex].timestamp).getTime();
-        const isComplete = actualEndTime >= expectedEndTime;
-
+        const sessionStartTime = new Date(data[0].timestamp).getTime();
         const endTimeInSeconds = (actualEndTime - sessionStartTime) / 1000;
         return { endIndex: finalEndIndex, endTime: endTimeInSeconds, isComplete };
     }
@@ -213,7 +214,7 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
         if (finalEndIndexInSlice === -1 || finalEndIndexInSlice >= dropIndex) {
             finalEndIndexInSlice = dropIndex > 0 ? dropIndex - 1 : 0;
         }
-
+        const sessionStartTime = new Date(data[0].timestamp).getTime();
         const finalEndIndex = startIndex + finalEndIndexInSlice;
         const endTimeInSeconds = (new Date(data[finalEndIndex].timestamp).getTime() - sessionStartTime) / 1000;
         return { endIndex: finalEndIndex, endTime: endTimeInSeconds, isComplete: true }; // Assume complete for old logic

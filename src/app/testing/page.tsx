@@ -1685,6 +1685,7 @@ function TestingComponent() {
                             domain={xAxisDomain}
                             allowDataOverflow
                             label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -10 }}
+                            tickFormatter={(value) => Math.round(value)}
                         />
                         <YAxis
                             stroke="hsl(var(--muted-foreground))"
@@ -1765,7 +1766,7 @@ function TestingComponent() {
                             dataKey={session.id} 
                             stroke={CHART_COLORS[index % CHART_COLORS.length]} 
                             name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`} 
-                            dot={false} 
+                            dot={false} S
                             strokeWidth={2} 
                             connectNulls
                            />
@@ -1799,5 +1800,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
