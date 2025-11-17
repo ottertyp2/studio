@@ -126,8 +126,6 @@ type ChartDataPoint = {
   name: number; // time in seconds relative to measurement start
   minGuideline?: number;
   maxGuideline?: number;
-  start_line?: number;
-  end_line?: number;
   [key: string]: number | undefined | null; // SessionID as key for value, allowing null
 };
 
@@ -616,19 +614,15 @@ function TestingComponent() {
     }
 
     const allDataPoints: ChartDataPoint[] = [];
-    const sessionAbsoluteStartTimes: Record<string, number> = {};
 
     comparisonSessions.forEach(session => {
         const sessionData = comparisonData[session.id] || [];
         if (sessionData.length === 0) return;
 
         const absoluteStartTime = new Date(sessionData[0].timestamp).getTime();
-        sessionAbsoluteStartTimes[session.id] = absoluteStartTime;
-
         const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
         const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-        const window = measurementWindows[session.id];
-
+        
         sessionData.forEach(point => {
             const relativeTime = (new Date(point.timestamp).getTime() - absoluteStartTime) / 1000;
             const dataPoint: ChartDataPoint = {
@@ -636,6 +630,7 @@ function TestingComponent() {
                 [session.id]: convertRawValue(point.value, config || null),
             };
 
+            const window = measurementWindows[session.id];
             if (vesselType && window?.start) {
                 const timeInMeasurement = relativeTime - window.start.startTime;
                 if (timeInMeasurement >= 0) {
@@ -660,14 +655,6 @@ function TestingComponent() {
             }
             allDataPoints.push(dataPoint);
         });
-        
-        // Inject points for start/end lines
-        if (window?.start) {
-            allDataPoints.push({ name: window.start.startTime, start_line: 1e9 });
-        }
-        if (window?.end && window.end.isComplete) {
-            allDataPoints.push({ name: window.end.endTime, end_line: 1e9 });
-        }
     });
 
     // Merge all data points by time
@@ -1637,8 +1624,7 @@ function TestingComponent() {
                             type="number"
                             dataKey="name" 
                             stroke="hsl(var(--muted-foreground))"
-                            domain={xAxisDomain}
-                            allowDataOverflow={true}
+                            domain={[0, 'dataMax']}
                             tickFormatter={(value) => Math.round(value)}
                             label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -10 }}
                         />
@@ -1661,7 +1647,7 @@ function TestingComponent() {
                                 const config = sensorConfigs?.find(c => c.id === session?.sensorConfigurationId);
                                 const unit = config?.unit || '';
                                 const legendName = session ? `${session.vesselTypeName} - ${session.serialNumber}`: name;
-                                if (name.endsWith('-failed') || name === 'start_line' || name === 'end_line') return null;
+                                if (name.endsWith('-failed')) return null;
                                 return [`${value.toFixed(config?.decimalPlaces || 2)} ${unit}`, legendName];
                             }}
                             labelFormatter={(label) => `Time: ${label}s`}
@@ -1671,8 +1657,36 @@ function TestingComponent() {
                         <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
-                        <Line dataKey="start_line" stroke="hsl(var(--primary))" strokeDasharray="3 3" strokeWidth={2} dot={false} name="Start" connectNulls={false} />
-                        <Line dataKey="end_line" stroke="hsl(var(--primary))" strokeDasharray="3 3" strokeWidth={2} dot={false} name="End" connectNulls={false} />
+                        {comparisonSessions.map((session) => {
+                            const window = measurementWindows[session.id];
+                            if (!window || !window.start) return null;
+                            
+                            const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+                            if (!vesselType) return null;
+
+                            return (
+                                <React.Fragment key={session.id}>
+                                    <ReferenceLine
+                                        x={window.start.startTime}
+                                        stroke="hsl(var(--primary))"
+                                        strokeDasharray="3 3"
+                                        strokeWidth={2}
+                                    >
+                                        <Legend label="Start"/>
+                                    </ReferenceLine>
+                                    {window.end?.isComplete && (
+                                        <ReferenceLine
+                                            x={window.start.startTime + (vesselType.durationSeconds || 0)}
+                                            stroke="hsl(var(--primary))"
+                                            strokeDasharray="3 3"
+                                            strokeWidth={2}
+                                        >
+                                           <Legend label="Expected End"/>
+                                        </ReferenceLine>
+                                    )}
+                                </React.Fragment>
+                            );
+                        })}
                         
                         {comparisonSessions.map((session, index) => (
                            <Line 
