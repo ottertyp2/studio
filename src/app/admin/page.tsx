@@ -2292,7 +2292,7 @@ export default function AdminPage() {
                                         <Download className="mr-2 h-4 w-4" />
                                         <span>Export as CSV</span>
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem onSelect={() => generateReport({ type: 'single', sessionId: session.id })}>
+                                    <DropdownMenuItem onSelect={() => handleGenerateVesselTypeReport(vesselTypes?.find(vt => vt.id === session.vesselTypeId) as VesselType)}>
                                       <FileText className="mr-2 h-4 w-4"/> Generate Report
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
@@ -2535,33 +2535,37 @@ export default function AdminPage() {
                     </div>
                 </AccordionTrigger>
                 <AccordionContent className="p-6 pt-0">
-                    <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
-                        <h3 className="font-semibold text-center">New Vessel Type</h3>
-                        <div className="space-y-2">
-                            <Label htmlFor="new-vessel-type-name">Name</Label>
-                            <Input id="new-vessel-type-name" placeholder="e.g., A-Series V1" value={newVesselType.name || ''} onChange={(e) => setNewVesselType(p => ({...p, name: e.target.value}))} />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
+                    {userRole === 'superadmin' && (
+                        <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
+                            <h3 className="font-semibold text-center">New Vessel Type</h3>
                             <div className="space-y-2">
-                                <Label htmlFor="new-vessel-type-duration">Default Duration (s)</Label>
-                                <Input id="new-vessel-type-duration" type="number" placeholder="60" value={newVesselType.durationSeconds || ''} onChange={(e) => setNewVesselType(p => ({ ...p, durationSeconds: Number(e.target.value) }))} />
+                                <Label htmlFor="new-vessel-type-name">Name</Label>
+                                <Input id="new-vessel-type-name" placeholder="e.g., A-Series V1" value={newVesselType.name || ''} onChange={(e) => setNewVesselType(p => ({...p, name: e.target.value}))} />
                             </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="new-vessel-type-batch-size">Max Batch Size</Label>
-                                <Input id="new-vessel-type-batch-size" type="number" placeholder="10" value={newVesselType.maxBatchCount || ''} onChange={(e) => setNewVesselType(p => ({ ...p, maxBatchCount: Number(e.target.value) }))} />
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="new-vessel-type-duration">Default Duration (s)</Label>
+                                    <Input id="new-vessel-type-duration" type="number" placeholder="60" value={newVesselType.durationSeconds || ''} onChange={(e) => setNewVesselType(p => ({ ...p, durationSeconds: Number(e.target.value) }))} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="new-vessel-type-batch-size">Max Batch Size</Label>
+                                    <Input id="new-vessel-type-batch-size" type="number" placeholder="10" value={newVesselType.maxBatchCount || ''} onChange={(e) => setNewVesselType(p => ({ ...p, maxBatchCount: Number(e.target.value) }))} />
+                                </div>
                             </div>
+                            <Button onClick={handleAddVesselType} size="sm" className="w-full mt-2">Add Vessel Type</Button>
                         </div>
-                        <Button onClick={handleAddVesselType} size="sm" className="w-full mt-2">Add Vessel Type</Button>
-                    </div>
+                    )}
                     <div className="flex justify-center gap-2 mb-4">
                         <Button onClick={() => handleExportGuidelines()} variant="outline" size="sm">
                             <Download className="mr-2 h-4 w-4" />
                             Export All Guidelines
                         </Button>
-                        <Button onClick={() => guidelineImportRef.current?.click()} variant="outline" size="sm">
-                            <Upload className="mr-2 h-4 w-4" />
-                            Import Guidelines
-                        </Button>
+                        {userRole === 'superadmin' && (
+                            <Button onClick={() => guidelineImportRef.current?.click()} variant="outline" size="sm">
+                                <Upload className="mr-2 h-4 w-4" />
+                                Import Guidelines
+                            </Button>
+                        )}
                         <input type="file" ref={guidelineImportRef} onChange={handleImportGuidelines} accept=".csv" className="hidden" />
                     </div>
                     {isVesselTypesLoading ? <p className="text-center pt-10">Loading vessel types...</p> : (
@@ -2584,96 +2588,100 @@ export default function AdminPage() {
                                                 >
                                                   {generatingVesselTypeReport === p.id ? <Loader2 className="h-4 w-4 animate-spin"/> : 'Report'}
                                                 </Button>
-                                                <Dialog>
-                                                    <DialogTrigger asChild>
-                                                        <Button size="sm" variant="outline" onClick={() => setEditingVesselType(p)}>Edit</Button>
-                                                    </DialogTrigger>
-                                                    <DialogContent className="max-w-4xl">
-                                                        <DialogHeader>
-                                                            <DialogTitle>Edit Guidelines for {editingVesselType?.name}</DialogTitle>
-                                                            <DialogDescription>
-                                                                Click twice to set start/end points. Drag points to adjust the curve. You can also edit the values directly below.
-                                                            </DialogDescription>
-                                                        </DialogHeader>
-                                                        <ScrollArea className="max-h-[70vh]">
-                                                            <div className="p-1 space-y-4">
-                                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                                                    <div className="space-y-2">
-                                                                        <Label>Max Time (s)</Label>
-                                                                        <Input type="number" value={guidelineEditorMaxX} onChange={e => setGuidelineEditorMaxX(e.target.value === '' ? '' : Number(e.target.value))} />
-                                                                    </div>
-                                                                    <div className="space-y-2">
-                                                                        <Label>Max Pressure</Label>
-                                                                        <Input type="number" value={guidelineEditorMaxY} onChange={e => setGuidelineEditorMaxY(e.target.value === '' ? '' : Number(e.target.value))} />
-                                                                    </div>
-                                                                    <div className="space-y-2">
-                                                                        <Label>Duration (s)</Label>
-                                                                        <Input type="number" value={editingVesselType?.durationSeconds || ''} onChange={(e) => setEditingVesselType(p => p ? {...p, durationSeconds: Number(e.target.value)} : null)} />
-                                                                    </div>
-                                                                    <div className="space-y-2">
-                                                                        <Label>Max Batch Size</Label>
-                                                                        <Input type="number" value={editingVesselType?.maxBatchCount || ''} onChange={(e) => setEditingVesselType(p => p ? {...p, maxBatchCount: Number(e.target.value)} : null)} />
-                                                                    </div>
-                                                                </div>
-                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
-                                                                    <div>
-                                                                        <h3 className="font-semibold text-center mb-2">Minimum Curve (Green)</h3>
-                                                                        <GuidelineCurveEditor
-                                                                            points={minCurvePoints}
-                                                                            setPoints={setMinCurvePoints}
-                                                                            className="h-64"
-                                                                            lineColor="hsl(var(--chart-2))"
-                                                                            maxX={Number(guidelineEditorMaxX)}
-                                                                            maxY={Number(guidelineEditorMaxY)}
-                                                                        />
-                                                                        <div className="mt-4">
-                                                                        {renderGuidelineInputs('min')}
+                                                {userRole === 'superadmin' && (
+                                                    <>
+                                                        <Dialog>
+                                                            <DialogTrigger asChild>
+                                                                <Button size="sm" variant="outline" onClick={() => setEditingVesselType(p)}>Edit</Button>
+                                                            </DialogTrigger>
+                                                            <DialogContent className="max-w-4xl">
+                                                                <DialogHeader>
+                                                                    <DialogTitle>Edit Guidelines for {editingVesselType?.name}</DialogTitle>
+                                                                    <DialogDescription>
+                                                                        Click twice to set start/end points. Drag points to adjust the curve. You can also edit the values directly below.
+                                                                    </DialogDescription>
+                                                                </DialogHeader>
+                                                                <ScrollArea className="max-h-[70vh]">
+                                                                    <div className="p-1 space-y-4">
+                                                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                                                            <div className="space-y-2">
+                                                                                <Label>Max Time (s)</Label>
+                                                                                <Input type="number" value={guidelineEditorMaxX} onChange={e => setGuidelineEditorMaxX(e.target.value === '' ? '' : Number(e.target.value))} />
+                                                                            </div>
+                                                                            <div className="space-y-2">
+                                                                                <Label>Max Pressure</Label>
+                                                                                <Input type="number" value={guidelineEditorMaxY} onChange={e => setGuidelineEditorMaxY(e.target.value === '' ? '' : Number(e.target.value))} />
+                                                                            </div>
+                                                                            <div className="space-y-2">
+                                                                                <Label>Duration (s)</Label>
+                                                                                <Input type="number" value={editingVesselType?.durationSeconds || ''} onChange={(e) => setEditingVesselType(p => p ? {...p, durationSeconds: Number(e.target.value)} : null)} />
+                                                                            </div>
+                                                                            <div className="space-y-2">
+                                                                                <Label>Max Batch Size</Label>
+                                                                                <Input type="number" value={editingVesselType?.maxBatchCount || ''} onChange={(e) => setEditingVesselType(p => p ? {...p, maxBatchCount: Number(e.target.value)} : null)} />
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+                                                                            <div>
+                                                                                <h3 className="font-semibold text-center mb-2">Minimum Curve (Green)</h3>
+                                                                                <GuidelineCurveEditor
+                                                                                    points={minCurvePoints}
+                                                                                    setPoints={setMinCurvePoints}
+                                                                                    className="h-64"
+                                                                                    lineColor="hsl(var(--chart-2))"
+                                                                                    maxX={Number(guidelineEditorMaxX)}
+                                                                                    maxY={Number(guidelineEditorMaxY)}
+                                                                                />
+                                                                                <div className="mt-4">
+                                                                                {renderGuidelineInputs('min')}
+                                                                                </div>
+                                                                            </div>
+                                                                            <div>
+                                                                                <h3 className="font-semibold text-center mb-2">Maximum Curve (Red)</h3>
+                                                                                <GuidelineCurveEditor
+                                                                                    points={maxCurvePoints}
+                                                                                    setPoints={setMaxCurvePoints}
+                                                                                    className="h-64"
+                                                                                    lineColor="hsl(var(--destructive))"
+                                                                                    maxX={Number(guidelineEditorMaxX)}
+                                                                                    maxY={Number(guidelineEditorMaxY)}
+                                                                                />
+                                                                                <div className="mt-4">
+                                                                                {renderGuidelineInputs('max')}
+                                                                                </div>
+                                                                            </div>
                                                                         </div>
                                                                     </div>
-                                                                    <div>
-                                                                        <h3 className="font-semibold text-center mb-2">Maximum Curve (Red)</h3>
-                                                                        <GuidelineCurveEditor
-                                                                            points={maxCurvePoints}
-                                                                            setPoints={setMaxCurvePoints}
-                                                                            className="h-64"
-                                                                            lineColor="hsl(var(--destructive))"
-                                                                            maxX={Number(guidelineEditorMaxX)}
-                                                                            maxY={Number(guidelineEditorMaxY)}
-                                                                        />
-                                                                        <div className="mt-4">
-                                                                        {renderGuidelineInputs('max')}
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </ScrollArea>
-                                                        <DialogFooter>
-                                                            <DialogClose asChild>
-                                                                <Button variant="ghost" onClick={() => setEditingVesselType(null)}>Cancel</Button>
-                                                            </DialogClose>
-                                                            <DialogClose asChild>
-                                                                <Button onClick={handleSaveGuidelines}>Save Guidelines</Button>
-                                                            </DialogClose>
-                                                        </DialogFooter>
-                                                    </DialogContent>
-                                                </Dialog>
-                                                <AlertDialog>
-                                                    <AlertDialogTrigger asChild>
-                                                        <Button size="sm" variant="destructive">Del</Button>
-                                                    </AlertDialogTrigger>
-                                                    <AlertDialogContent>
-                                                        <AlertDialogHeader>
-                                                            <AlertDialogTitle className="text-destructive">Delete Vessel Type?</AlertDialogTitle>
-                                                            <AlertDialogDescription>
-                                                                Are you sure you want to delete "{p.name}"? This action cannot be undone. Associated test sessions will not be deleted.
-                                                            </AlertDialogDescription>
-                                                        </AlertDialogHeader>
-                                                        <AlertDialogFooter>
-                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteVesselType(p.id)}>Delete</AlertDialogAction>
-                                                        </AlertDialogFooter>
-                                                    </AlertDialogContent>
-                                                </AlertDialog>
+                                                                </ScrollArea>
+                                                                <DialogFooter>
+                                                                    <DialogClose asChild>
+                                                                        <Button variant="ghost" onClick={() => setEditingVesselType(null)}>Cancel</Button>
+                                                                    </DialogClose>
+                                                                    <DialogClose asChild>
+                                                                        <Button onClick={handleSaveGuidelines}>Save Guidelines</Button>
+                                                                    </DialogClose>
+                                                                </DialogFooter>
+                                                            </DialogContent>
+                                                        </Dialog>
+                                                        <AlertDialog>
+                                                            <AlertDialogTrigger asChild>
+                                                                <Button size="sm" variant="destructive">Del</Button>
+                                                            </AlertDialogTrigger>
+                                                            <AlertDialogContent>
+                                                                <AlertDialogHeader>
+                                                                    <AlertDialogTitle className="text-destructive">Delete Vessel Type?</AlertDialogTitle>
+                                                                    <AlertDialogDescription>
+                                                                        Are you sure you want to delete "{p.name}"? This action cannot be undone. Associated test sessions will not be deleted.
+                                                                    </AlertDialogDescription>
+                                                                </AlertDialogHeader>
+                                                                <AlertDialogFooter>
+                                                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                    <AlertDialogAction variant="destructive" onClick={() => handleDeleteVesselType(p.id)}>Delete</AlertDialogAction>
+                                                                </AlertDialogFooter>
+                                                            </AlertDialogContent>
+                                                        </AlertDialog>
+                                                    </>
+                                                )}
                                             </div>
                                         </div>
                                     </Card>
@@ -2698,26 +2706,28 @@ const renderBatchManagement = () => (
                     </div>
                 </AccordionTrigger>
                 <AccordionContent className="p-6 pt-0">
-                    <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
-                        <h3 className="font-semibold text-center">New Batch</h3>
-                        <div className="space-y-2">
-                            <Label htmlFor="new-batch-name">BatchID</Label>
-                            <Input id="new-batch-name" placeholder="e.g., 2024-Q3-PROD" value={newBatch.name || ''} onChange={(e) => setNewBatch(p => ({ ...p, name: e.target.value }))} />
+                    {userRole === 'superadmin' && (
+                        <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
+                            <h3 className="font-semibold text-center">New Batch</h3>
+                            <div className="space-y-2">
+                                <Label htmlFor="new-batch-name">BatchID</Label>
+                                <Input id="new-batch-name" placeholder="e.g., 2024-Q3-PROD" value={newBatch.name || ''} onChange={(e) => setNewBatch(p => ({ ...p, name: e.target.value }))} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="new-batch-vessel-type">Vessel Type</Label>
+                                <Select onValueChange={(value) => setNewBatch(p => ({ ...p, vesselTypeId: value }))}>
+                                    <SelectTrigger id="new-batch-vessel-type">
+                                        <SelectValue placeholder="Select a vessel type" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {isVesselTypesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                                        vesselTypes?.map(vt => <SelectItem key={vt.id} value={vt.id}>{vt.name}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <Button onClick={handleAddBatch} size="sm" className="w-full mt-2" disabled={!newBatch.name || !newBatch.vesselTypeId}>Add Batch</Button>
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="new-batch-vessel-type">Vessel Type</Label>
-                            <Select onValueChange={(value) => setNewBatch(p => ({ ...p, vesselTypeId: value }))}>
-                                <SelectTrigger id="new-batch-vessel-type">
-                                    <SelectValue placeholder="Select a vessel type" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {isVesselTypesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                                    vesselTypes?.map(vt => <SelectItem key={vt.id} value={vt.id}>{vt.name}</SelectItem>)}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <Button onClick={handleAddBatch} size="sm" className="w-full mt-2" disabled={!newBatch.name || !newBatch.vesselTypeId}>Add Batch</Button>
-                    </div>
+                    )}
                     {isBatchesLoading ? <p className="text-center pt-10">Loading batches...</p> : (
                         <ScrollArea className="h-56">
                             <div className="space-y-2">
@@ -2726,31 +2736,37 @@ const renderBatchManagement = () => (
                                         <div className='flex justify-between items-center gap-2'>
                                             <p className='font-semibold'>{b.name}</p>
                                             <div className="flex items-center gap-2">
-                                                <Select value={b.vesselTypeId} onValueChange={(newVesselTypeId) => handleUpdateBatchVesselType(b.id, newVesselTypeId)}>
-                                                    <SelectTrigger className="w-[150px] bg-background">
-                                                        <SelectValue placeholder="Assign Vessel Type" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {vesselTypes?.map(vt => <SelectItem key={vt.id} value={vt.id}>{vt.name}</SelectItem>)}
-                                                    </SelectContent>
-                                                </Select>
-                                                <AlertDialog>
-                                                    <AlertDialogTrigger asChild>
-                                                        <Button size="sm" variant="destructive">Delete</Button>
-                                                    </AlertDialogTrigger>
-                                                    <AlertDialogContent>
-                                                        <AlertDialogHeader>
-                                                            <AlertDialogTitle className="text-destructive">Delete Batch?</AlertDialogTitle>
-                                                            <AlertDialogDescription>
-                                                                Are you sure you want to delete batch "{b.name}"? This action cannot be undone. Associated test sessions will not be deleted.
-                                                            </AlertDialogDescription>
-                                                        </AlertDialogHeader>
-                                                        <AlertDialogFooter>
-                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteBatch(b.id)}>Delete</AlertDialogAction>
-                                                        </AlertDialogFooter>
-                                                    </AlertDialogContent>
-                                                </AlertDialog>
+                                                {userRole === 'superadmin' ? (
+                                                    <>
+                                                        <Select value={b.vesselTypeId} onValueChange={(newVesselTypeId) => handleUpdateBatchVesselType(b.id, newVesselTypeId)}>
+                                                            <SelectTrigger className="w-[150px] bg-background">
+                                                                <SelectValue placeholder="Assign Vessel Type" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {vesselTypes?.map(vt => <SelectItem key={vt.id} value={vt.id}>{vt.name}</SelectItem>)}
+                                                            </SelectContent>
+                                                        </Select>
+                                                        <AlertDialog>
+                                                            <AlertDialogTrigger asChild>
+                                                                <Button size="sm" variant="destructive">Delete</Button>
+                                                            </AlertDialogTrigger>
+                                                            <AlertDialogContent>
+                                                                <AlertDialogHeader>
+                                                                    <AlertDialogTitle className="text-destructive">Delete Batch?</AlertDialogTitle>
+                                                                    <AlertDialogDescription>
+                                                                        Are you sure you want to delete batch "{b.name}"? This action cannot be undone. Associated test sessions will not be deleted.
+                                                                    </AlertDialogDescription>
+                                                                </AlertDialogHeader>
+                                                                <AlertDialogFooter>
+                                                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                    <AlertDialogAction variant="destructive" onClick={() => handleDeleteBatch(b.id)}>Delete</AlertDialogAction>
+                                                                </AlertDialogFooter>
+                                                            </AlertDialogContent>
+                                                        </AlertDialog>
+                                                    </>
+                                                ) : (
+                                                    <p className="text-sm text-muted-foreground">{vesselTypes?.find(vt => vt.id === b.vesselTypeId)?.name}</p>
+                                                )}
                                             </div>
                                         </div>
                                     </Card>
@@ -2936,22 +2952,24 @@ const renderAIModelManagement = () => (
                             </div>
                           </AccordionTrigger>
                           <AccordionContent className="p-6 pt-0">
-                              <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
-                                  <h3 className="font-semibold text-center">New Test Bench</h3>
-                                  <div className="space-y-2">
-                                    <Label htmlFor="new-bench-name">Name</Label>
-                                    <Input id="new-bench-name" placeholder="e.g. Bench 01" value={newTestBench.name || ''} onChange={(e) => setNewTestBench(p => ({...p, name: e.target.value}))} />
+                              {userRole === 'superadmin' && (
+                                  <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
+                                      <h3 className="font-semibold text-center">New Test Bench</h3>
+                                      <div className="space-y-2">
+                                        <Label htmlFor="new-bench-name">Name</Label>
+                                        <Input id="new-bench-name" placeholder="e.g. Bench 01" value={newTestBench.name || ''} onChange={(e) => setNewTestBench(p => ({...p, name: e.target.value}))} />
+                                      </div>
+                                      <div className="space-y-2">
+                                        <Label htmlFor="new-bench-location">Location</Label>
+                                        <Input id="new-bench-location" placeholder="e.g. Lab A" value={newTestBench.location || ''} onChange={(e) => setNewTestBench(p => ({...p, location: e.target.value}))} />
+                                      </div>
+                                      <div className="space-y-2">
+                                        <Label htmlFor="new-bench-desc">Description</Label>
+                                        <Input id="new-bench-desc" placeholder="e.g. High-pressure testing" value={newTestBench.description || ''} onChange={(e) => setNewTestBench(p => ({...p, description: e.target.value}))} />
+                                      </div>
+                                      <Button onClick={handleAddTestBench} size="sm" className="w-full mt-2">Add Bench</Button>
                                   </div>
-                                  <div className="space-y-2">
-                                    <Label htmlFor="new-bench-location">Location</Label>
-                                    <Input id="new-bench-location" placeholder="e.g. Lab A" value={newTestBench.location || ''} onChange={(e) => setNewTestBench(p => ({...p, location: e.target.value}))} />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label htmlFor="new-bench-desc">Description</Label>
-                                    <Input id="new-bench-desc" placeholder="e.g. High-pressure testing" value={newTestBench.description || ''} onChange={(e) => setNewTestBench(p => ({...p, description: e.target.value}))} />
-                                  </div>
-                                  <Button onClick={handleAddTestBench} size="sm" className="w-full mt-2">Add Bench</Button>
-                              </div>
+                              )}
                               {isTestBenchesLoading ? <p className="text-center pt-10">Loading test benches...</p> :
                               <ScrollArea className="h-56">
                                   <div className="space-y-2">
@@ -3014,9 +3032,11 @@ const renderAIModelManagement = () => (
                             </div>
                           </AccordionTrigger>
                           <AccordionContent className="p-6 pt-0">
-                              <div className="flex justify-center mb-4">
-                                  <Button onClick={handleNewSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">New Configuration</Button>
-                              </div>
+                              {userRole === 'superadmin' && (
+                                <div className="flex justify-center mb-4">
+                                    <Button onClick={handleNewSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">New Configuration</Button>
+                                </div>
+                              )}
                               {isSensorConfigsLoading ? <p className="text-center pt-10">Loading sensors...</p> :
                               <ScrollArea className="h-72">
                                   <div className="space-y-2">
@@ -3065,7 +3085,7 @@ const renderAIModelManagement = () => (
                                   </div>
                               </ScrollArea>
                               }
-                              {renderSensorConfigurator()}
+                              {userRole === 'superadmin' && renderSensorConfigurator()}
                           </AccordionContent>
                       </AccordionItem>
                   </Accordion>
@@ -3084,3 +3104,4 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
+
