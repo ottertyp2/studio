@@ -1,5 +1,4 @@
 
-
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -106,9 +105,9 @@ export const toBase64 = (url: string): Promise<string> => {
   });
 };
 
-export const findMeasurementStart = (data: { value: number; timestamp: string }[], config: SensorConfig | null | undefined, vesselType: VesselType | null | undefined): { startIndex: number; startTime: number } => {
+export const findMeasurementStart = (data: { value: number; timestamp: string }[], config: SensorConfig | null | undefined, vesselType: VesselType | null | undefined): { startIndex: number; startTime: number } | null => {
     if (!data || data.length < 2 || !config || !vesselType || vesselType.pressureTarget === undefined || vesselType.timeBufferInSeconds === undefined) {
-        return { startIndex: 0, startTime: 0 };
+        return null;
     }
 
     const pressureTarget = vesselType.pressureTarget;
@@ -124,8 +123,8 @@ export const findMeasurementStart = (data: { value: number; timestamp: string }[
     }
 
     if (pressureTargetMetIndex === -1) {
-        // Pressure target was never met, return the start of the data
-        return { startIndex: 0, startTime: 0 };
+        // Pressure target was never met, so no valid start.
+        return null;
     }
     
     const pressureTargetMetTime = new Date(data[pressureTargetMetIndex].timestamp).getTime();
@@ -134,9 +133,8 @@ export const findMeasurementStart = (data: { value: number; timestamp: string }[
     let finalStartIndex = data.findIndex(d => new Date(d.timestamp).getTime() >= measurementStartTime);
     
     if (finalStartIndex === -1) {
-        // If no data point is found after the buffer, it means the session ended before the buffer time was up.
-        // In this case, we'll consider the start to be the last known point.
-        finalStartIndex = data.length > 0 ? data.length - 1 : 0;
+       // Session ended before buffer time was up. No valid measurement window.
+       return null;
     }
     
     const sessionStartTime = new Date(data[0].timestamp).getTime();
@@ -164,7 +162,6 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
     if (vesselType.durationSeconds && vesselType.durationSeconds > 0) {
         const expectedEndTime = measurementStartTime + (vesselType.durationSeconds * 1000);
         
-        // Find the last data point before or exactly at the expected end time
         let finalEndIndex = -1;
         for(let i = data.length - 1; i >= startIndex; i--) {
             if (new Date(data[i].timestamp).getTime() >= expectedEndTime) {
@@ -176,7 +173,7 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
         const lastDataPointTime = new Date(data[data.length-1].timestamp).getTime();
         const isComplete = lastDataPointTime >= expectedEndTime;
 
-        if (finalEndIndex === -1) { // This means the session ended before the full duration
+        if (finalEndIndex === -1) { 
              finalEndIndex = data.length -1;
         }
         
@@ -186,41 +183,5 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
         return { endIndex: finalEndIndex, endTime: endTimeInSeconds, isComplete };
     }
 
-    // Fallback to old logic if no duration is provided
-    const analysisData = data.slice(startIndex);
-    if(analysisData.length === 0) {
-        return defaultEnd();
-    }
-    const convertedValues = analysisData.map(d => convertRawValue(d.value, config || null));
-    let minDerivative = 0;
-    let dropIndex = -1;
-    const avgPressure = convertedValues.reduce((sum, val) => sum + val, 0) / convertedValues.length;
-    const significantDropThreshold = Math.min(-50, -0.1 * avgPressure);
-
-    for (let i = 1; i < convertedValues.length; i++) {
-        const derivative = convertedValues[i] - convertedValues[i-1];
-        if (derivative < minDerivative) {
-            minDerivative = derivative;
-            dropIndex = i;
-        }
-    }
-    
-    if (dropIndex !== -1 && minDerivative < significantDropThreshold) { 
-        const dropTime = new Date(analysisData[dropIndex].timestamp).getTime();
-        const endTimeWithBuffer = dropTime - 3000;
-        
-        let finalEndIndexInSlice = analysisData.findIndex(d => new Date(d.timestamp).getTime() >= endTimeWithBuffer);
-        
-        if (finalEndIndexInSlice === -1 || finalEndIndexInSlice >= dropIndex) {
-            finalEndIndexInSlice = dropIndex > 0 ? dropIndex - 1 : 0;
-        }
-        const sessionStartTime = new Date(data[0].timestamp).getTime();
-        const finalEndIndex = startIndex + finalEndIndexInSlice;
-        const endTimeInSeconds = (new Date(data[finalEndIndex].timestamp).getTime() - sessionStartTime) / 1000;
-        return { endIndex: finalEndIndex, endTime: endTimeInSeconds, isComplete: true }; // Assume complete for old logic
-    }
-
-    return defaultEnd(true); // Assume complete for old logic
+    return defaultEnd(true);
 };
-
-    
