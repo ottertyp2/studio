@@ -638,7 +638,8 @@ function TestingComponent() {
             const window = measurementWindows[session.id];
             let relativeTimeForGuideline: number | undefined = undefined;
             if (window && window.start) {
-              relativeTimeForGuideline = time - window.start.startTime;
+              const measurementStartTime = absoluteStartTime + (window.start.startTime * 1000);
+              relativeTimeForGuideline = (new Date(point.timestamp).getTime() - measurementStartTime) / 1000;
             }
 
             const interpolateBezierCurve = (curve: {x: number, y: number}[], x: number) => {
@@ -1666,32 +1667,26 @@ function TestingComponent() {
                         
                         {comparisonSessions.map((session, index) => {
                             const window = measurementWindows[session.id];
-                            if (!window || !window.start || !window.end) return null;
+                            if (!window || !window.start) return null;
 
                             const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
                             if (!vesselType) return null;
-                            
-                            // Find the closest point in chartData to the calculated start time
-                            const closestStart = chartData.reduce((prev, curr) => {
-                                return (Math.abs(curr.name - window.start!.startTime) < Math.abs(prev.name - window.start!.startTime) ? curr : prev);
-                            }, {name: -Infinity});
-                            
-                            const closestEnd = chartData.reduce((prev, curr) => {
-                                return (Math.abs(curr.name - window.end!.endTime) < Math.abs(prev.name - window.end!.endTime) ? curr : prev);
-                            }, {name: -Infinity});
 
+                            const startTimeForRef = chartData.reduce((prev, curr) => (
+                                Math.abs(curr.name - window.start!.startTime) < Math.abs(prev.name - window.start!.startTime) ? curr : prev
+                            ), { name: -Infinity }).name;
 
                             return (
                                 <React.Fragment key={`ref-lines-${session.id}`}>
                                     <ReferenceLine
-                                        x={closestStart.name}
+                                        x={startTimeForRef}
                                         stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                         strokeDasharray="3 3"
                                         label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
                                     />
-                                    {window.end.isComplete && (
+                                    {window.end?.isComplete && (
                                         <ReferenceLine
-                                            x={closestEnd.name}
+                                            x={startTimeForRef + (vesselType.durationSeconds || 0)}
                                             stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                             strokeDasharray="3 3"
                                             label={{ value: "End", position: "insideTopRight", fill: "hsl(var(--muted-foreground))" }}
