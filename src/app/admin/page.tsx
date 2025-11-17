@@ -218,6 +218,7 @@ type VesselType = {
     id: string;
     name: string;
     durationSeconds?: number;
+    maxBatchCount?: number;
     minCurve: {x: number, y: number}[];
     maxCurve: {x: number, y: number}[];
     guidelineEditorMaxX?: number;
@@ -295,7 +296,7 @@ export default function AdminPage() {
   const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
   
   // VesselType State
-  const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '', durationSeconds: 60 });
+  const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '', durationSeconds: 60, maxBatchCount: 10 });
   const [editingVesselType, setEditingVesselType] = useState<VesselType | null>(null);
   const [minCurvePoints, setMinCurvePoints] = useState<{x: number, y: number}[]>([]);
   const [maxCurvePoints, setMaxCurvePoints] = useState<{x: number, y: number}[]>([]);
@@ -1012,12 +1013,13 @@ export default function AdminPage() {
       id: newId,
       name: newVesselType.name,
       durationSeconds: Number(newVesselType.durationSeconds) || 60,
+      maxBatchCount: Number(newVesselType.maxBatchCount) || 10,
       minCurve: [],
       maxCurve: []
     };
     addDocumentNonBlocking(vesselTypesCollectionRef, docToSave);
     toast({ title: 'Vessel Type Added', description: `Added "${docToSave.name}" to the catalog.` });
-    setNewVesselType({ name: '', durationSeconds: 60 });
+    setNewVesselType({ name: '', durationSeconds: 60, maxBatchCount: 10 });
   };
 
   const handleDeleteVesselType = (vesselTypeId: string) => {
@@ -1062,6 +1064,7 @@ export default function AdminPage() {
         minCurve: minCurvePoints,
         maxCurve: maxCurvePoints,
         durationSeconds: Number(editingVesselType.durationSeconds) || 60,
+        maxBatchCount: Number(editingVesselType.maxBatchCount) || 10,
         guidelineEditorMaxX: Number(guidelineEditorMaxX),
         guidelineEditorMaxY: Number(guidelineEditorMaxY),
     });
@@ -1211,8 +1214,11 @@ export default function AdminPage() {
             description: `The report will be generated without a logo. ${(error as Error).message}`,
         });
     }
-
+    
     try {
+        const allTestSessionsSnapshot = await getDocs(collection(firestore, 'test_sessions'));
+        const allTestSessions = allTestSessionsSnapshot.docs.map(d => ({id: d.id, ...d.data()}) as TestSession);
+        
         const relevantSessions = testSessions.filter(s => s.vesselTypeId === vesselType.id && s.status === 'COMPLETED') as TestSession[];
         if (relevantSessions.length === 0) {
             toast({ title: 'No Data', description: 'No completed test sessions found for this vessel type.' });
@@ -1307,8 +1313,8 @@ export default function AdminPage() {
         }
         
         const sessionsByVessel: Record<string, TestSession[]> = {};
-        relevantSessions.forEach(session => {
-            const key = `${session.vesselTypeId}§${session.serialNumber || session.id}`;
+        allTestSessions.forEach(session => {
+            const key = `${session.vesselTypeId}§${session.serialNumber || 'N/A'}`;
             if (!sessionsByVessel[key]) {
                 sessionsByVessel[key] = [];
             }
@@ -1324,17 +1330,20 @@ export default function AdminPage() {
                 text: classificationText,
                 color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : (classificationText === 'Unclassifiable' ? 'orange' : 'black')),
             };
-            const vesselKey = `${session.vesselTypeId}§${session.serialNumber || session.id}`;
-            const vesselSessions = (sessionsByVessel[vesselKey] || []).filter(s => s.classification !== 'UNCLASSIFIABLE');
-            const attemptNumber = (sessionsByVessel[vesselKey] || []).findIndex(s => s.id === session.id) + 1;
-            const totalAttempts = (sessionsByVessel[vesselKey] || []).length;
+
+            const vesselKey = `${session.vesselTypeId}§${session.serialNumber || 'N/A'}`;
+            const allVesselAttempts = sessionsByVessel[vesselKey] || [];
+            const classifiedAttempts = allVesselAttempts.filter(s => s.classification !== 'UNCLASSIFIABLE');
+            const attemptNumber = allVesselAttempts.findIndex(s => s.id === session.id) + 1;
+            const totalAttempts = allVesselAttempts.length;
             
-            const passAttemptIndex = vesselSessions.findIndex(s => s.classification === 'DIFFUSION');
+            const passAttemptIndex = classifiedAttempts.findIndex(s => s.classification === 'DIFFUSION');
             let passResult = 'Not passed';
             if (passAttemptIndex !== -1) {
-                passResult = `Passed on try #${passAttemptIndex + 1}`;
+                const passSession = classifiedAttempts[passAttemptIndex];
+                const realAttemptNumber = allVesselAttempts.findIndex(s => s.id === passSession.id) + 1;
+                passResult = `Passed on try #${realAttemptNumber}`;
             }
-
 
             const data = allSensorData[session.id] || [];
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
@@ -1357,8 +1366,6 @@ export default function AdminPage() {
                 avgValue = (sum / analysisData.length).toFixed(decimalPlaces);
             }
             
-            const unit = config?.unit || '';
-
             return [
                 batchName ?? 'N/A',
                 session.serialNumber || 'N/A',
@@ -1398,7 +1405,7 @@ export default function AdminPage() {
                     style: 'tableExample',
                     table: {
                         headerRows: 1,
-                        widths: ['auto', 'auto', 'auto', '*', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                        widths: ['auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [
                               {text: 'Batch', style: 'tableHeader'}, 
@@ -1422,9 +1429,9 @@ export default function AdminPage() {
             styles: {
                 header: { fontSize: 16, bold: true, margin: [0, 0, 0, 5] },
                 subheader: { fontSize: 12, bold: true, margin: [0, 5, 0, 2] },
-                body: { fontSize: 9 },
-                tableExample: { margin: [0, 2, 0, 8], fontSize: 7 },
-                tableHeader: { bold: true, fontSize: 8, color: 'black' }
+                body: { fontSize: 8 },
+                tableExample: { margin: [0, 5, 0, 15], fontSize: 6 },
+                tableHeader: { bold: true, fontSize: 7, color: 'black' }
             }
         };
 
@@ -2281,7 +2288,7 @@ export default function AdminPage() {
                                         <Download className="mr-2 h-4 w-4" />
                                         <span>Export as CSV</span>
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem onSelect={() => handleGenerateVesselTypeReport(vesselTypes!.find(vt => vt.id === session.vesselTypeId)!)}>
+                                    <DropdownMenuItem onSelect={() => generateReport({ type: 'single', sessionId: session.id })}>
                                       <FileText className="mr-2 h-4 w-4"/> Generate Report
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
@@ -2530,9 +2537,15 @@ export default function AdminPage() {
                             <Label htmlFor="new-vessel-type-name">Name</Label>
                             <Input id="new-vessel-type-name" placeholder="e.g., A-Series V1" value={newVesselType.name || ''} onChange={(e) => setNewVesselType(p => ({...p, name: e.target.value}))} />
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="new-vessel-type-duration">Default Duration (seconds)</Label>
-                            <Input id="new-vessel-type-duration" type="number" placeholder="e.g., 60" value={newVesselType.durationSeconds || ''} onChange={(e) => setNewVesselType(p => ({ ...p, durationSeconds: Number(e.target.value) }))} />
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="new-vessel-type-duration">Default Duration (s)</Label>
+                                <Input id="new-vessel-type-duration" type="number" placeholder="60" value={newVesselType.durationSeconds || ''} onChange={(e) => setNewVesselType(p => ({ ...p, durationSeconds: Number(e.target.value) }))} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="new-vessel-type-batch-size">Max Batch Size</Label>
+                                <Input id="new-vessel-type-batch-size" type="number" placeholder="10" value={newVesselType.maxBatchCount || ''} onChange={(e) => setNewVesselType(p => ({ ...p, maxBatchCount: Number(e.target.value) }))} />
+                            </div>
                         </div>
                         <Button onClick={handleAddVesselType} size="sm" className="w-full mt-2">Add Vessel Type</Button>
                     </div>
@@ -2553,7 +2566,10 @@ export default function AdminPage() {
                                 {vesselTypes?.map(p => (
                                     <Card key={p.id} className='p-3 hover:bg-muted/50 hover:scale-[1.02] hover:shadow-lg'>
                                         <div className='flex justify-between items-center'>
-                                            <p className='font-semibold'>{p.name}</p>
+                                            <div>
+                                              <p className='font-semibold'>{p.name}</p>
+                                              <p className='text-xs text-muted-foreground'>Max Batch: {p.maxBatchCount ?? 'N/A'}</p>
+                                            </div>
                                             <div className="flex flex-wrap gap-2">
                                                 <Button size="sm" variant="outline" onClick={() => handleExportGuidelines(p)}>CSV</Button>
                                                 <Button 
@@ -2577,18 +2593,22 @@ export default function AdminPage() {
                                                         </DialogHeader>
                                                         <ScrollArea className="max-h-[70vh]">
                                                             <div className="p-1 space-y-4">
-                                                                <div className="grid grid-cols-3 gap-4">
+                                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                                                     <div className="space-y-2">
-                                                                        <Label>Maximum Time (s)</Label>
+                                                                        <Label>Max Time (s)</Label>
                                                                         <Input type="number" value={guidelineEditorMaxX} onChange={e => setGuidelineEditorMaxX(e.target.value === '' ? '' : Number(e.target.value))} />
                                                                     </div>
                                                                     <div className="space-y-2">
-                                                                        <Label>Maximum Pressure</Label>
+                                                                        <Label>Max Pressure</Label>
                                                                         <Input type="number" value={guidelineEditorMaxY} onChange={e => setGuidelineEditorMaxY(e.target.value === '' ? '' : Number(e.target.value))} />
                                                                     </div>
                                                                     <div className="space-y-2">
-                                                                        <Label>Default Duration (s)</Label>
+                                                                        <Label>Duration (s)</Label>
                                                                         <Input type="number" value={editingVesselType?.durationSeconds || ''} onChange={(e) => setEditingVesselType(p => p ? {...p, durationSeconds: Number(e.target.value)} : null)} />
+                                                                    </div>
+                                                                    <div className="space-y-2">
+                                                                        <Label>Max Batch Size</Label>
+                                                                        <Input type="number" value={editingVesselType?.maxBatchCount || ''} onChange={(e) => setEditingVesselType(p => p ? {...p, maxBatchCount: Number(e.target.value)} : null)} />
                                                                     </div>
                                                                 </div>
                                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
@@ -3039,3 +3059,5 @@ const renderAIModelManagement = () => (
     </div>
   );
 }
+
+    

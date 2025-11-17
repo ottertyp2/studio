@@ -217,6 +217,7 @@
             "id": { "type": "string", "description": "Unique identifier for the vessel type." },
             "name": { "type": "string", "description": "The name of the vessel type." },
             "durationSeconds": { "type": "number", "description": "The default duration of a test session for this vessel type in seconds." },
+            "maxBatchCount": { "type": "number", "description": "The maximum number of unique vessels allowed in a single batch of this type." },
             "minCurve": {
                 "type": "array",
                 "description": "An array of points defining the minimum pressure curve guideline.",
@@ -537,3 +538,5 @@
     ]
   }
 }
+
+    

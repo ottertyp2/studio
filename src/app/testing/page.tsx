@@ -135,6 +135,7 @@ type VesselType = {
     id: string;
     name: string;
     durationSeconds?: number;
+    maxBatchCount?: number;
     minCurve: {x: number, y: number}[];
     maxCurve: {x: number, y: number}[];
 }
@@ -324,7 +325,7 @@ function TestingComponent() {
   }, [runningTestSession]);
 
   const handleStartSession = async () => {
-    if (!user || !activeTestBench || !newSessionData.sensorConfigurationId || !newSessionData.vesselTypeId || !database || !firestore) {
+    if (!user || !activeTestBench || !newSessionData.sensorConfigurationId || !newSessionData.vesselTypeId || !database || !firestore || !vesselTypes) {
       toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select a test bench, sensor, and vessel type.' });
       return;
     }
@@ -337,20 +338,13 @@ function TestingComponent() {
       return;
     }
 
-    const vesselType = vesselTypes?.find(vt => vt.id === newSessionData.vesselTypeId);
+    const vesselType = vesselTypes.find(vt => vt.id === newSessionData.vesselTypeId);
     if (!vesselType) {
         toast({ variant: 'destructive', title: 'Error', description: 'Selected vessel type not found.' });
         return;
     }
-
-    const sensorConfig = sensorConfigs?.find(sc => sc.id === newSessionData.sensorConfigurationId);
-    if (sensorConfig) {
-      await sendMovingAverageCommand(sensorConfig.movingAverageLength || 10);
-    }
-
-    setComparisonData({});
-    setComparisonSessions([]);
-
+    
+    // --- Batch Validation Logic ---
     let finalBatchId = newSessionData.batchId;
 
     if (newSessionData.batchId === 'CREATE_NEW_BATCH') {
@@ -374,12 +368,42 @@ function TestingComponent() {
         }
     }
 
+    // Now check if the batch is full
+    if (finalBatchId && newSessionData.serialNumber.trim() && vesselType.maxBatchCount) {
+        const q = query(
+            collection(firestore, 'test_sessions'),
+            where('batchId', '==', finalBatchId)
+        );
+        const batchSessionsSnapshot = await getDocs(q);
+        const uniqueSerialNumbers = new Set(batchSessionsSnapshot.docs.map(d => d.data().serialNumber));
+        
+        // Add the current serial number only if it's new
+        uniqueSerialNumbers.add(newSessionData.serialNumber.trim());
+
+        if (uniqueSerialNumbers.size > vesselType.maxBatchCount) {
+            toast({
+                variant: 'destructive',
+                title: 'Batch Full',
+                description: `This batch already contains ${uniqueSerialNumbers.size - 1} unique vessels. The maximum for "${vesselType.name}" is ${vesselType.maxBatchCount}.`
+            });
+            return;
+        }
+    }
+    // --- End Batch Validation ---
+
+    const sensorConfig = sensorConfigs?.find(sc => sc.id === newSessionData.sensorConfigurationId);
+    if (sensorConfig) {
+      await sendMovingAverageCommand(sensorConfig.movingAverageLength || 10);
+    }
+
+    setComparisonData({});
+    setComparisonSessions([]);
 
     const newSessionDocData: Omit<TestSession, 'id'> = {
       vesselTypeId: newSessionData.vesselTypeId,
       vesselTypeName: vesselType.name,
       batchId: finalBatchId,
-      serialNumber: newSessionData.serialNumber,
+      serialNumber: newSessionData.serialNumber.trim(),
       description: newSessionData.description,
       startTime: new Date().toISOString(),
       status: 'RUNNING',
@@ -400,8 +424,8 @@ function TestingComponent() {
       toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
       setIsNewSessionDialogOpen(false);
       setNewSessionData(prev => ({ 
-        vesselTypeId: prev.vesselTypeId, // Keep vessel type for next session
-        batchId: finalBatchId, // Keep new batch for next session
+        vesselTypeId: prev.vesselTypeId,
+        batchId: finalBatchId,
         sensorConfigurationId: prev.sensorConfigurationId,
         serialNumber: '', 
         description: '' 
@@ -767,7 +791,7 @@ function TestingComponent() {
         const allTestSessions = allTestSessionsSnapshot.docs.map(d => ({id: d.id, ...d.data()}) as WithId<TestSession>);
 
         allTestSessions.forEach(session => {
-            const key = `${session.vesselTypeId}§${session.serialNumber || session.id}`;
+            const key = `${session.vesselTypeId}§${session.serialNumber || 'N/A'}`;
             if (!sessionsByVessel[key]) sessionsByVessel[key] = [];
             sessionsByVessel[key].push(session);
         });
@@ -778,7 +802,7 @@ function TestingComponent() {
             const classificationText = getClassificationText(session.classification);
             const statusStyle = { text: classificationText, color: classificationText === 'Passed' ? 'green' : (classificationText === 'Not Passed' ? 'red' : 'black') };
 
-            const vesselKey = `${session.vesselTypeId}§${session.serialNumber || session.id}`;
+            const vesselKey = `${session.vesselTypeId}§${session.serialNumber || 'N/A'}`;
             const allVesselAttempts = (sessionsByVessel[vesselKey] || []);
             const classifiedAttempts = allVesselAttempts.filter(s => s.classification !== 'UNCLASSIFIABLE');
 
@@ -1420,7 +1444,7 @@ function TestingComponent() {
                                                 <DropdownMenuContent align="end" className="w-[300px]">
                                                     <ScrollArea className="h-[400px]">
                                                         <div className="p-2">
-                                                          <Accordion type="multiple" className="w-full">
+                                                          <Accordion type="multiple" defaultValue={[]} className="w-full">
                                                               <AccordionItem value="date-range">
                                                                 <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Date Range</AccordionTrigger>
                                                                 <AccordionContent className="pb-0">
@@ -1525,7 +1549,7 @@ function TestingComponent() {
                                     if (comparisonSessions.length === 1) {
                                         generateReport({ type: 'single', sessionId: comparisonSessions[0].id });
                                     } else {
-                                        toast({title: "Select a Single Session", description: "Please select one session to generate a single report, or use the history panel."});
+                                        toast({title: "Select a Single Session", description: "Open the comparison panel to select one session to generate a single report."});
                                         setIsHistoryPanelOpen(true);
                                     }
                                 }}>
@@ -1692,3 +1716,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
