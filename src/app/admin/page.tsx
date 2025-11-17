@@ -656,7 +656,7 @@ export default function AdminPage() {
         await batch.commit();
         toast({
             title: 'Session Deleted',
-            description: `Session for "${session.vesselTypeName} / ${batches?.find(b => b.id === session.batchId)?.name} / SN: ${session.serialNumber}" and ${dataDeletedCount} data points deleted.`
+            description: `Session for "${session.vesselTypeName} / ${batches?.find(b => b.id === session.batchId)?.name} / BatchCount: ${session.serialNumber}" and ${dataDeletedCount} data points deleted.`
         });
     } catch (serverError) {
         toast({
@@ -1030,7 +1030,7 @@ export default function AdminPage() {
 
   const handleAddBatch = () => {
     if (!firestore || !newBatch.name?.trim() || !newBatch.vesselTypeId || !batchesCollectionRef) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Batch name and Vessel Type are required.' });
+      toast({ variant: 'destructive', title: 'Error', description: 'BatchID and Vessel Type are required.' });
       return;
     }
     const newId = doc(collection(firestore, '_')).id;
@@ -1385,6 +1385,8 @@ export default function AdminPage() {
         const unit = firstSessionConfig?.unit || 'Value';
 
         const docDefinition: any = {
+            pageSize: 'A4',
+            pageMargins: [25, 40, 25, 40],
             content: [
                 {
                     columns: [
@@ -1408,8 +1410,8 @@ export default function AdminPage() {
                         widths: ['auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [
-                              {text: 'Batch', style: 'tableHeader'}, 
-                              {text: 'S/N', style: 'tableHeader'}, 
+                              {text: 'BatchID', style: 'tableHeader'}, 
+                              {text: 'BatchCount', style: 'tableHeader'}, 
                               {text: 'Attempt', style: 'tableHeader'},
                               {text: 'Pass Result', style: 'tableHeader'},
                               {text: 'User', style: 'tableHeader'}, 
@@ -2092,7 +2094,7 @@ export default function AdminPage() {
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('startTime-desc')}>Newest</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('startTime-asc')}>Oldest</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('vesselTypeName-asc')}>Vessel Type</DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setSessionSortOrder('batchName-asc')}>Batch</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setSessionSortOrder('batchName-asc')}>BatchID</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('username-asc')}>Username</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setSessionSortOrder('testBenchName-asc')}>Test Bench</DropdownMenuItem>
                   </DropdownMenuContent>
@@ -2250,7 +2252,7 @@ export default function AdminPage() {
                     <Card key={session.id} className={`p-4 ${session.status === 'RUNNING' ? 'border-primary' : ''} hover:bg-muted/50 hover:scale-[1.02] hover:shadow-lg`}>
                         <div className="flex justify-between items-start gap-4">
                             <div className='flex-grow space-y-1'>
-                                <p className="font-semibold">{session.vesselTypeName} <span className="text-sm text-muted-foreground">(Batch: {batchName || 'N/A'}, S/N: {session.serialNumber || 'N/A'})</span></p>
+                                <p className="font-semibold">{session.vesselTypeName} <span className="text-sm text-muted-foreground">(BatchID: {batchName || 'N/A'}, BatchCount: {session.serialNumber || 'N/A'})</span></p>
                                 <p className="text-sm text-muted-foreground">
                                     {new Date(session.startTime).toLocaleString()} - {session.status}
                                 </p>
@@ -2358,7 +2360,7 @@ export default function AdminPage() {
                                             <AlertDialogHeader>
                                                 <AlertDialogTitle className="text-destructive">Permanently Delete Session?</AlertDialogTitle>
                                                 <AlertDialogDescription>
-                                                    This will permanently delete the session for "{session.vesselTypeName} - S/N: {session.serialNumber}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
+                                                    This will permanently delete the session for "{session.vesselTypeName} - BatchCount: {session.serialNumber}" and all of its associated sensor data ({sessionDataCounts[session.id] ?? 'N/A'} points). This action cannot be undone.
                                                 </AlertDialogDescription>
                                             </AlertDialogHeader>
                                             <AlertDialogFooter>
@@ -2697,7 +2699,7 @@ const renderBatchManagement = () => (
                     <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
                         <h3 className="font-semibold text-center">New Batch</h3>
                         <div className="space-y-2">
-                            <Label htmlFor="new-batch-name">Batch Name/ID</Label>
+                            <Label htmlFor="new-batch-name">BatchID</Label>
                             <Input id="new-batch-name" placeholder="e.g., 2024-Q3-PROD" value={newBatch.name || ''} onChange={(e) => setNewBatch(p => ({ ...p, name: e.target.value }))} />
                         </div>
                         <div className="space-y-2">

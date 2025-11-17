@@ -248,6 +248,7 @@ function TestingComponent() {
   const [sessionDateFilter, setSessionDateFilter] = useState<DateRange | undefined>(undefined);
 
   const [displaySensorConfigId, setDisplaySensorConfigId] = useState<string | null>(null);
+  const [testedBatchCounts, setTestedBatchCounts] = useState<number[]>([]);
 
   // Data fetching hooks
   const testBenchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'testbenches') : null, [firestore]);
@@ -279,6 +280,64 @@ function TestingComponent() {
     });
     return results;
   }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
+
+  useEffect(() => {
+    if (!newSessionData.batchId || newSessionData.batchId === 'CREATE_NEW_BATCH' || !firestore) {
+      setTestedBatchCounts([]);
+      return;
+    }
+  
+    const q = query(
+      collection(firestore, 'test_sessions'),
+      where('batchId', '==', newSessionData.batchId)
+    );
+  
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const counts = snapshot.docs
+        .map(doc => parseInt(doc.data().serialNumber, 10))
+        .filter(num => !isNaN(num));
+      setTestedBatchCounts(counts);
+    });
+  
+    return () => unsubscribe();
+  }, [newSessionData.batchId, firestore]);
+  
+  const availableBatchCountsText = useMemo(() => {
+    if (!newSessionData.vesselTypeId || !vesselTypes) return '';
+    const vesselType = vesselTypes.find(vt => vt.id === newSessionData.vesselTypeId);
+    if (!vesselType || !vesselType.maxBatchCount) return 'Max batch count not set for this vessel type.';
+  
+    const maxCount = vesselType.maxBatchCount;
+    const allCounts = Array.from({ length: maxCount }, (_, i) => i + 1);
+    const availableCounts = allCounts.filter(count => !testedBatchCounts.includes(count));
+  
+    if (availableCounts.length === 0) {
+      return 'All batch counts for this batch have been tested.';
+    }
+  
+    // Group consecutive numbers
+    const ranges = availableCounts.reduce((acc, curr) => {
+      if (acc.length === 0) {
+        acc.push([curr]);
+      } else {
+        const lastRange = acc[acc.length - 1];
+        const lastNumber = lastRange[lastRange.length - 1];
+        if (curr === lastNumber + 1) {
+          lastRange.push(curr);
+        } else {
+          acc.push([curr]);
+        }
+      }
+      return acc;
+    }, [] as number[][]).map(range => {
+      if (range.length > 2) {
+        return `${range[0]}-${range[range.length - 1]}`;
+      }
+      return range.join(', ');
+    }).join(', ');
+  
+    return `Available: ${ranges}`;
+  }, [newSessionData.vesselTypeId, vesselTypes, testedBatchCounts]);
 
 
   const availableSensorsForBench = useMemo(() => {
@@ -334,7 +393,7 @@ function TestingComponent() {
         return;
     }
     if (!newSessionData.serialNumber.trim()) {
-        toast({ variant: 'destructive', title: 'Missing Information', description: 'Serial Number is required.' });
+        toast({ variant: 'destructive', title: 'Missing Information', description: 'BatchCount is required.' });
         return;
     }
     if(runningTestSession) {
@@ -376,16 +435,16 @@ function TestingComponent() {
     if (isNaN(serialNumberValue)) {
         toast({
             variant: 'destructive',
-            title: 'Invalid Serial Number',
-            description: `Serial Number must be a numeric value.`
+            title: 'Invalid BatchCount',
+            description: `BatchCount must be a numeric value.`
         });
         return;
     }
     if (vesselType.maxBatchCount && (serialNumberValue < 1 || serialNumberValue > vesselType.maxBatchCount)) {
         toast({
             variant: 'destructive',
-            title: 'Invalid Serial Number',
-            description: `Serial Number for "${vesselType.name}" must be between 1 and ${vesselType.maxBatchCount}.`
+            title: 'Invalid BatchCount',
+            description: `BatchCount for "${vesselType.name}" must be between 1 and ${vesselType.maxBatchCount}.`
         });
         return;
     }
@@ -400,8 +459,8 @@ function TestingComponent() {
         if (!batchSessionsSnapshot.empty) {
             toast({
                 variant: 'destructive',
-                title: 'Duplicate Serial Number',
-                description: `Serial Number "${newSessionData.serialNumber.trim()}" has already been tested in this batch.`
+                title: 'Duplicate BatchCount',
+                description: `BatchCount "${newSessionData.serialNumber.trim()}" has already been tested in this batch.`
             });
             return;
         }
@@ -896,8 +955,8 @@ function TestingComponent() {
                         widths: ['auto', 'auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
                         body: [
                             [
-                                {text: 'Batch', style: 'tableHeader'},
-                                {text: 'S/N', style: 'tableHeader'},
+                                {text: 'BatchID', style: 'tableHeader'},
+                                {text: 'BatchCount', style: 'tableHeader'},
                                 {text: 'Attempt', style: 'tableHeader'},
                                 {text: 'Pass Result', style: 'tableHeader'},
                                 {text: 'User', style: 'tableHeader'},
@@ -1203,7 +1262,7 @@ function TestingComponent() {
                         <p className="text-lg font-semibold text-primary animate-pulse">🔴 Recording Session in Progress...</p>
                         <div className="text-center text-sm text-muted-foreground">
                             <p>Vessel: <span className="font-medium text-foreground">{runningTestSession.vesselTypeName}</span></p>
-                            <p>S/N: <span className="font-medium text-foreground">{runningTestSession.serialNumber || 'N/A'}</span></p>
+                            <p>BatchCount: <span className="font-medium text-foreground">{runningTestSession.serialNumber || 'N/A'}</span></p>
                         </div>
                         <Button onClick={handleStopSession} variant="destructive">
                           <Square className="mr-2 h-4 w-4" /> Stop Session
@@ -1249,7 +1308,7 @@ function TestingComponent() {
                                     </Select>
                                 </div>
                                 <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="batch" className="text-right">Batch</Label>
+                                    <Label htmlFor="batch" className="text-right">BatchID</Label>
                                     <Select value={newSessionData.batchId} onValueChange={(value) => setNewSessionData(p => ({...p, batchId: value}))} disabled={!newSessionData.vesselTypeId}>
                                         <SelectTrigger id="batch" className="col-span-3">
                                             <SelectValue placeholder="Select a batch" />
@@ -1265,7 +1324,7 @@ function TestingComponent() {
                                 </div>
                                 {newSessionData.batchId === 'CREATE_NEW_BATCH' && (
                                     <div className="grid grid-cols-4 items-center gap-4">
-                                        <Label htmlFor="new-batch-name" className="text-right">New Batch</Label>
+                                        <Label htmlFor="new-batch-name" className="text-right">New BatchID</Label>
                                         <Input
                                             id="new-batch-name"
                                             value={newBatchName}
@@ -1276,9 +1335,15 @@ function TestingComponent() {
                                     </div>
                                 )}
                                 <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="serial-number" className="text-right">Serial Number</Label>
+                                    <Label htmlFor="serial-number" className="text-right">BatchCount</Label>
                                     <Input id="serial-number" value={newSessionData.serialNumber} onChange={e => setNewSessionData(p => ({ ...p, serialNumber: e.target.value }))} className="col-span-3" />
                                 </div>
+                                {newSessionData.batchId && newSessionData.batchId !== 'CREATE_NEW_BATCH' && (
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <div />
+                                        <p className="col-span-3 text-xs text-muted-foreground">{availableBatchCountsText}</p>
+                                    </div>
+                                )}
                                 <div className="grid grid-cols-4 items-center gap-4">
                                     <Label htmlFor="description" className="text-right">Description</Label>
                                     <Textarea id="description" value={newSessionData.description} onChange={e => setNewSessionData(p => ({ ...p, description: e.target.value }))} className="col-span-3" placeholder="Optional notes for this session..."/>
