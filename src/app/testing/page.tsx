@@ -1736,7 +1736,7 @@ function TestingComponent() {
                             if (!window || !window.start) return null;
                             const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
                             
-                            const relativeStartTime = 0; // The start point is now t=0
+                            const relativeStartTime = 0;
                             const expectedEndTime = vesselType?.durationSeconds ? relativeStartTime + vesselType.durationSeconds : undefined;
 
                             return (
