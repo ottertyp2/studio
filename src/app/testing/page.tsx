@@ -48,7 +48,6 @@ import {
   Legend,
   ResponsiveContainer,
   ReferenceLine,
-  ReferenceArea,
 } from 'recharts';
 import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle, Square, GaugeCircle, SlidersHorizontal, Filter, ListTree, Calendar as CalendarIcon, RotateCcw, Layers } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -270,7 +269,7 @@ function TestingComponent() {
   const { data: batches } = useCollection<Batch>(batchesCollectionRef);
 
   const measurementWindows = useMemo(() => {
-    const results: Record<string, { start: { startIndex: number; startTime: number }; end: { endIndex: number; endTime: number }; }> = {};
+    const results: Record<string, { start: { startIndex: number; startTime: number }; end: { endIndex: number; endTime: number; isComplete: boolean }; }> = {};
     comparisonSessions.forEach(session => {
         const data = comparisonData[session.id];
         if (data && data.length > 0) {
@@ -1645,7 +1644,7 @@ function TestingComponent() {
                             type="number"
                             dataKey="name" 
                             stroke="hsl(var(--muted-foreground))"
-                            domain={xAxisDomain}
+                            domain={[0, 'dataMax']}
                             allowDataOverflow
                             label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -10 }}
                             tickFormatter={(value) => Math.round(value)}
@@ -1687,7 +1686,7 @@ function TestingComponent() {
                             return (
                                 <React.Fragment key={`ref-lines-${session.id}`}>
                                     <ReferenceLine
-                                        x={relativeStartTime}
+                                        x={0}
                                         stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                         strokeDasharray="3 3"
                                         label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
