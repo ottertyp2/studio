@@ -1632,7 +1632,7 @@ function TestingComponent() {
                             dataKey="name" 
                             stroke="hsl(var(--muted-foreground))"
                             domain={xAxisDomain}
-                            allowDataOverflow={true}
+                            allowDataOverflow
                             label={{ value: 'Time (seconds)', position: 'insideBottom', offset: -10 }}
                             tickFormatter={(value) => Math.round(value)}
                         />
@@ -1671,10 +1671,19 @@ function TestingComponent() {
 
                             const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
                             if (!vesselType) return null;
+                            
+                            // Find the closest data point in the chart to the actual start time
+                            const startTimeForRef = chartData.reduce((prev, curr) => {
+                                return Math.abs(curr.name - window.start!.startTime) < Math.abs(prev - window.start!.startTime) ? curr.name : prev;
+                            }, Infinity);
 
-                            const startTimeForRef = chartData.reduce((prev, curr) => (
-                                Math.abs(curr.name - window.start!.startTime) < Math.abs(prev.name - window.start!.startTime) ? curr : prev
-                            ), { name: -Infinity }).name;
+
+                            if (startTimeForRef === Infinity) return null;
+
+                            const endTimeForRef = window.end ? chartData.reduce((prev, curr) => {
+                                return Math.abs(curr.name - window.end!.endTime) < Math.abs(prev - window.end!.endTime) ? curr.name : prev;
+                            }, Infinity) : null;
+
 
                             return (
                                 <React.Fragment key={`ref-lines-${session.id}`}>
@@ -1684,9 +1693,9 @@ function TestingComponent() {
                                         strokeDasharray="3 3"
                                         label={{ value: "Start", position: "insideTopLeft", fill: "hsl(var(--muted-foreground))" }}
                                     />
-                                    {window.end?.isComplete && (
+                                    {window.end?.isComplete && endTimeForRef !== Infinity && (
                                         <ReferenceLine
-                                            x={startTimeForRef + (vesselType.durationSeconds || 0)}
+                                            x={endTimeForRef}
                                             stroke={CHART_COLORS[index % CHART_COLORS.length]}
                                             strokeDasharray="3 3"
                                             label={{ value: "End", position: "insideTopRight", fill: "hsl(var(--muted-foreground))" }}
