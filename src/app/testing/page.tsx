@@ -201,6 +201,7 @@ function TestingComponent() {
     latency,
     startTime,
     totalDowntime,
+    downtimeStart,
     sequenceFailureCount,
     movingAverageLength,
     runningTestSession,
@@ -769,8 +770,12 @@ function TestingComponent() {
     if (!startTime) return 0;
     const totalElapsed = Date.now() - startTime;
     if (totalElapsed <= 0) return 0;
-    return Math.min(100, (totalDowntime / totalElapsed) * 100);
-  }, [startTime, totalDowntime, now]);
+
+    const liveDowntime = downtimeStart ? Date.now() - downtimeStart : 0;
+    const currentTotalDowntime = totalDowntime + liveDowntime;
+
+    return Math.min(100, (currentTotalDowntime / totalElapsed) * 100);
+  }, [startTime, totalDowntime, downtimeStart, now]);
 
 
   const isDuringDowntime = useMemo(() => {
@@ -1798,5 +1803,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    

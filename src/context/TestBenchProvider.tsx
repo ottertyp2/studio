@@ -348,8 +348,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribe();
   }, [database]);
 
-  const currentTotalDowntime = totalDowntime + (downtimeStart ? Date.now() - downtimeStart : 0);
-
   const value = {
     isConnected,
     isRecording,
@@ -368,7 +366,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     pendingValves: [],
     lockedValves,
     startTime,
-    totalDowntime: currentTotalDowntime,
+    totalDowntime,
+    downtimeStart,
     downtimeSinceRef: null,
     sequence1Running,
     sequence2Running,

@@ -45,6 +45,7 @@ export interface TestBenchContextType {
   lockedValves: ('VALVE1' | 'VALVE2')[];
   startTime: number | null;
   totalDowntime: number;
+  downtimeStart: number | null;
   downtimeSinceRef: RefObject<number | null>;
   sequence1Running: boolean;
   sequence2Running: boolean;
