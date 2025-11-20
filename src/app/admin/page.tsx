@@ -1,4 +1,5 @@
 
+
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -2595,7 +2596,7 @@ export default function AdminPage() {
                                               <p className='font-semibold'>{p.name}</p>
                                               <p className='text-xs text-muted-foreground'>Max BatchCount: {p.maxBatchCount ?? 'N/A'}</p>
                                             </div>
-                                            <div className="flex flex-wrap gap-2">
+                                            <div className="flex flex-wrap items-center justify-end gap-2">
                                                 <Button size="sm" variant="outline" onClick={() => handleExportGuidelines(p)}>CSV</Button>
                                                 <Button 
                                                     size="sm" 
@@ -3132,5 +3133,3 @@ const renderAIModelManagement = () => {
     </div>
   );
 }
-
-    
