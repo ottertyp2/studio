@@ -1,3 +1,4 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -115,4 +116,12 @@ body {
   .btn-shine:hover::after {
     @apply left-[150%];
   }
+  .screenshotting .recharts-tooltip-wrapper {
+      display: none !important;
+  }
+  .screenshotting .recharts-active-dot {
+      display: none !important;
+  }
 }
+
+    

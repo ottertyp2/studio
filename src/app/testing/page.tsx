@@ -74,6 +74,7 @@ import type { DateRange } from 'react-day-picker';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuPortal, DropdownMenuSubContent } from '@/components/ui/dropdown-menu';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { cn } from '@/lib/utils';
 
 
 if (pdfFonts.pdfMake) {
@@ -486,11 +487,21 @@ function TestingComponent() {
         startSessionInContext(newSessionWithId);
         
         const sensorConfig = sensorConfigs?.find(sc => sc.id === newSessionData.sensorConfigurationId);
+        
+        // Asynchronously send commands but don't wait for them
+        const commands: Promise<void>[] = [];
         if (sensorConfig) {
-            await sendMovingAverageCommand(sensorConfig.movingAverageLength || 10);
+            commands.push(sendMovingAverageCommand(sensorConfig.movingAverageLength || 10));
         }
-        await sendRecordingCommand(true);
-        await sendSequenceCommand('sequence1', true);
+        commands.push(sendRecordingCommand(true));
+        commands.push(sendSequenceCommand('sequence1', true));
+
+        // Wait for all commands to be sent, but handle failures gracefully
+        await Promise.all(commands).catch(cmdError => {
+            console.error("A command failed to send:", cmdError);
+            // We proceed, but the hardware might be out of sync.
+            // The UI will correct itself based on the `/data/live` listener.
+        });
       
         toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
         setIsNewSessionDialogOpen(false);
@@ -506,7 +517,10 @@ function TestingComponent() {
     } catch (error: any) {
         toast({ variant: 'destructive', title: 'Failed to Start Session', description: error.message });
         if (newSessionId && firestore) {
-            await deleteDoc(doc(firestore, 'test_sessions', newSessionId));
+            // If session creation fails, try to clean up the document.
+            await deleteDoc(doc(firestore, 'test_sessions', newSessionId)).catch(delError => {
+                console.error("Cleanup failed: Could not delete orphaned session document.", delError);
+            });
         }
         stopSessionInContext();
     }
@@ -747,12 +761,12 @@ function TestingComponent() {
 
     const offlineMessage = useMemo(() => {
         if (!isDuringDowntime) {
-            return "Arduino is active (7 AM - 8 PM).";
+            return "Arduino is offline. Should be active between 7 AM - 8 PM.";
         }
         if (lastDataPointTimestamp) {
             return `Offline. Last seen ${formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true })}.`;
         }
-        return "Offline";
+        return "Offline. Active between 7 AM - 8 PM.";
     }, [isDuringDowntime, lastDataPointTimestamp]);
 
     const handlePrepareReport = async (config: ReportConfig) => {
@@ -1414,7 +1428,7 @@ function TestingComponent() {
                                 Latency: {latency !== null ? `${latency} ms` : 'N/A'}
                             </span>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1">Moving Avg: {movingAverageLength ?? 'N/A'}</p>
+                        <p className="text-xs text-muted-foreground mt-1">Moving Avg: {movingAverageLength !== null ? movingAverageLength : 'N/A'}</p>
                       </>
                     )}
                     <Dialog open={isCrashPanelOpen} onOpenChange={setIsCrashPanelOpen}>
@@ -1671,7 +1685,7 @@ function TestingComponent() {
                 </div>
             </CardHeader>
             <CardContent>
-                <div id="chart-container" ref={chartRef} className="h-96 w-full bg-background rounded-md p-2">
+                <div id="chart-container" ref={chartRef} className={cn("h-96 w-full bg-background rounded-md p-2", isScreenshotting && "screenshotting")}>
                   <ResponsiveContainer width="100%" height="100%">
                       <LineChart 
                         data={chartData}
