@@ -119,9 +119,7 @@ body {
   .screenshotting .recharts-tooltip-wrapper {
       display: none !important;
   }
-  .screenshotting .recharts-active-dot {
+  .screenshotting .recharts-active-dot, .screenshotting .recharts-reference-line-dot {
       display: none !important;
   }
 }
-
-    

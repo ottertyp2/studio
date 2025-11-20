@@ -1721,8 +1721,8 @@ function TestingComponent() {
                         />
                         <Legend content={renderLegendContent} />
                         
-                        <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
-                        <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
+                        <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} activeDot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
+                        <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} activeDot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
                         {comparisonSessions.map((session) => {
                             const window = measurementWindows[session.id];
@@ -1758,7 +1758,7 @@ function TestingComponent() {
                             stroke={CHART_COLORS[index % CHART_COLORS.length]} 
                             name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`} 
                             dot={false}
-                            activeDot={isScreenshotting ? false : undefined}
+                            activeDot={isScreenshotting ? false : { r: 4 }}
                             strokeWidth={2} 
                             connectNulls
                            />
@@ -1810,5 +1810,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
