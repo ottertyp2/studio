@@ -499,8 +499,11 @@ function TestingComponent() {
         // Wait for all commands to be sent, but handle failures gracefully
         await Promise.all(commands).catch(cmdError => {
             console.error("A command failed to send:", cmdError);
-            // We proceed, but the hardware might be out of sync.
-            // The UI will correct itself based on the `/data/live` listener.
+            if (newSessionId) {
+                deleteDoc(doc(firestore, 'test_sessions', newSessionId));
+                stopSessionInContext();
+                toast({ variant: 'destructive', title: 'Failed to Start Session', description: 'Could not communicate with the device.' });
+            }
         });
       
         toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
@@ -752,22 +755,12 @@ function TestingComponent() {
   }, [systemStartTime, totalDowntime, downtimeStart, now]);
 
 
-    const isDuringDowntime = useMemo(() => {
-        const now = new Date();
-        const hour = now.getHours();
-        // Offline from 8 PM (20:00) to 7 AM (07:00)
-        return hour >= 20 || hour < 7;
-    }, []);
-
     const offlineMessage = useMemo(() => {
-        if (!isDuringDowntime) {
-            return "Arduino is offline. Should be active between 7 AM - 8 PM.";
-        }
         if (lastDataPointTimestamp) {
             return `Offline. Last seen ${formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true })}.`;
         }
-        return "Offline. Active between 7 AM - 8 PM.";
-    }, [isDuringDowntime, lastDataPointTimestamp]);
+        return "Arduino is offline. Check connection and power.";
+    }, [lastDataPointTimestamp]);
 
     const handlePrepareReport = async (config: ReportConfig) => {
       if (!firestore) return;
@@ -1765,7 +1758,7 @@ function TestingComponent() {
                             stroke={CHART_COLORS[index % CHART_COLORS.length]} 
                             name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`} 
                             dot={false}
-                            activeDot={!isScreenshotting}
+                            activeDot={isScreenshotting ? false : undefined}
                             strokeWidth={2} 
                             connectNulls
                            />
