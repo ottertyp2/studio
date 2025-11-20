@@ -505,7 +505,7 @@ function TestingComponent() {
 
     } catch (error: any) {
         toast({ variant: 'destructive', title: 'Failed to Start Session', description: error.message });
-        if (newSessionId) {
+        if (newSessionId && firestore) {
             await deleteDoc(doc(firestore, 'test_sessions', newSessionId));
         }
         stopSessionInContext();
@@ -746,7 +746,7 @@ function TestingComponent() {
     }, []);
 
     const offlineMessage = useMemo(() => {
-        if (isDuringDowntime) {
+        if (!isDuringDowntime) {
             return "Arduino is active (7 AM - 8 PM).";
         }
         if (lastDataPointTimestamp) {
@@ -1751,6 +1751,7 @@ function TestingComponent() {
                             stroke={CHART_COLORS[index % CHART_COLORS.length]} 
                             name={`${session.vesselTypeName} - ${session.serialNumber || 'N/A'}`} 
                             dot={false}
+                            activeDot={!isScreenshotting}
                             strokeWidth={2} 
                             connectNulls
                            />
@@ -1802,3 +1803,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
