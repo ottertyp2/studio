@@ -42,6 +42,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [startTime, setStartTime] = useState<number | null>(null);
   const [totalDowntime, setTotalDowntime] = useState(0);
   const [downtimeStart, setDowntimeStart] = useState<number | null>(null);
+
+  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const startSession = useCallback((session: WithId<DocumentData>) => {
     runningTestSessionRef.current = session;
@@ -117,6 +119,16 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   }, [firestore, user, startSession, stopSession]);
 
   const handleNewDataPoint = useCallback((data: any) => {
+    if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+    }
+
+    setIsConnected(true);
+
+    connectionTimeoutRef.current = setTimeout(() => {
+        setIsConnected(false);
+    }, 3000); // 3-second timeout
+
     if (data === null || data === undefined) return;
 
     const lastUpdateTimestamp = data.lastUpdate ? new Date(data.lastUpdate).getTime() : null;
@@ -167,36 +179,28 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     if (!database) return;
     const systemStatusRef = ref(database, 'data/system/status');
 
-    const interval = setInterval(async () => {
-        const now = Date.now();
-        const isOnline = lastDataPointTimestamp !== null && (now - lastDataPointTimestamp) < 3000;
-        setIsConnected(isOnline);
-
-        if (isOnline) {
-            if (downtimeStart) {
-                 runTransaction(systemStatusRef, (status) => {
-                    if (status && status.downtimeStart) {
-                        const downDuration = now - status.downtimeStart;
-                        status.totalDowntime = (status.totalDowntime || 0) + downDuration;
-                        status.downtimeStart = null;
-                    }
-                    return status;
-                });
-            }
-        } else {
-            if (!downtimeStart) {
-                runTransaction(systemStatusRef, (status) => {
-                   if (status && !status.downtimeStart) {
-                       status.downtimeStart = now;
-                   }
-                   return status;
-                });
-            }
+    if (isConnected) {
+        if (downtimeStart) {
+             runTransaction(systemStatusRef, (status) => {
+                if (status && status.downtimeStart) {
+                    const downDuration = Date.now() - status.downtimeStart;
+                    status.totalDowntime = (status.totalDowntime || 0) + downDuration;
+                    status.downtimeStart = null;
+                }
+                return status;
+            });
         }
-    }, 1000); 
-
-    return () => clearInterval(interval);
-  }, [lastDataPointTimestamp, downtimeStart, database]);
+    } else {
+        if (!downtimeStart) {
+            runTransaction(systemStatusRef, (status) => {
+               if (status && !status.downtimeStart) {
+                   status.downtimeStart = Date.now();
+               }
+               return status;
+            });
+        }
+    }
+  }, [isConnected, downtimeStart, database]);
 
 
   const sendValveCommand = useCallback(async (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
@@ -275,7 +279,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       console.error("Firebase onValue error:", error);
     });
   
-    return () => unsubscribe();
+    return () => {
+        unsubscribe();
+        if (connectionTimeoutRef.current) {
+            clearTimeout(connectionTimeoutRef.current);
+        }
+    };
   }, [database, handleNewDataPoint]);
 
   useEffect(() => {
