@@ -1,5 +1,3 @@
-
-
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -1250,8 +1248,10 @@ export default function AdminPage() {
                 const vt = vesselTypes?.find(v => v.id === session.vesselTypeId);
                 if (config && vt) {
                     const start = findMeasurementStart(data, config, vt);
-                    const end = findMeasurementEnd(data, start.startIndex, config, vt);
-                    measurementWindows[session.id] = { start, end };
+                    const end = start ? findMeasurementEnd(data, start.startIndex, config, vt) : null;
+                    if (start && end) {
+                        measurementWindows[session.id] = { start, end };
+                    }
                 }
             }
         }
@@ -1273,7 +1273,7 @@ export default function AdminPage() {
         const chartDataForPdf = relevantSessions.flatMap(session => {
             const data = allSensorData[session.id];
             const window = measurementWindows[session.id];
-            if (!data || data.length === 0 || !window) return [];
+            if (!data || data.length === 0 || !window || !window.start) return [];
             
             const measurementStartTime = new Date(data[window.start.startIndex].timestamp).getTime();
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
@@ -1360,9 +1360,9 @@ export default function AdminPage() {
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
             const sessionVesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
             
-            const { startIndex } = findMeasurementStart(data, config, sessionVesselType);
-            const { endIndex } = findMeasurementEnd(data, startIndex, config, sessionVesselType);
-            const analysisData = data.slice(startIndex, endIndex + 1);
+            const startInfo = findMeasurementStart(data, config, sessionVesselType);
+            const endInfo = startInfo ? findMeasurementEnd(data, startInfo.startIndex, config, sessionVesselType) : null;
+            const analysisData = (startInfo && endInfo) ? data.slice(startInfo.startIndex, endInfo.endIndex + 1) : [];
 
             const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(session.startTime).getTime();
             const sessionEndTime = analysisData.length > 0 ? new Date(analysisData[analysisData.length - 1].timestamp).getTime() : (session.endTime ? new Date(session.endTime).getTime() : sessionStartTime);

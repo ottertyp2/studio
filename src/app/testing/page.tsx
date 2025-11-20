@@ -1,4 +1,3 @@
-
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -391,8 +390,8 @@ function TestingComponent() {
 
   const handleStartSession = async () => {
     if (!user || !activeTestBench || !newSessionData.sensorConfigurationId || !newSessionData.vesselTypeId || !database || !firestore || !vesselTypes) {
-      toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select a test bench, sensor, and vessel type.' });
-      return;
+        toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select a test bench, sensor, and vessel type.' });
+        return;
     }
     if (newSessionData.batchId === '' && newBatchName.trim() === '') {
         toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select or create a BatchID.' });
@@ -403,8 +402,8 @@ function TestingComponent() {
         return;
     }
     if(runningTestSession) {
-      toast({ variant: 'destructive', title: 'Session in Progress', description: 'Another session is already running.' });
-      return;
+        toast({ variant: 'destructive', title: 'Session in Progress', description: 'Another session is already running.' });
+        return;
     }
 
     const vesselType = vesselTypes.find(vt => vt.id === newSessionData.vesselTypeId);
@@ -413,20 +412,14 @@ function TestingComponent() {
         return;
     }
     
-    // --- Batch Validation Logic ---
     let finalBatchId = newSessionData.batchId;
-
     if (newSessionData.batchId === 'CREATE_NEW_BATCH') {
         if (!newBatchName.trim()) {
             toast({ variant: 'destructive', title: 'Missing Information', description: 'Please enter a name for the new batch.' });
             return;
         }
         const newBatchId = doc(collection(firestore, '_')).id;
-        const newBatchDoc: Batch = {
-            id: newBatchId,
-            name: newBatchName.trim(),
-            vesselTypeId: newSessionData.vesselTypeId,
-        };
+        const newBatchDoc: Batch = { id: newBatchId, name: newBatchName.trim(), vesselTypeId: newSessionData.vesselTypeId };
         try {
             await addDocument(collection(firestore, 'batches'), newBatchDoc);
             finalBatchId = newBatchId;
@@ -439,43 +432,20 @@ function TestingComponent() {
     
     const serialNumberValue = parseInt(newSessionData.serialNumber.trim(), 10);
     if (isNaN(serialNumberValue)) {
-        toast({
-            variant: 'destructive',
-            title: 'Invalid BatchCount',
-            description: `BatchCount must be a numeric value.`
-        });
+        toast({ variant: 'destructive', title: 'Invalid BatchCount', description: `BatchCount must be a numeric value.` });
         return;
     }
     if (vesselType.maxBatchCount && (serialNumberValue < 1 || serialNumberValue > vesselType.maxBatchCount)) {
-        toast({
-            variant: 'destructive',
-            title: 'Invalid BatchCount',
-            description: `BatchCount for "${vesselType.name}" must be between 1 and ${vesselType.maxBatchCount}.`
-        });
+        toast({ variant: 'destructive', title: 'Invalid BatchCount', description: `BatchCount for "${vesselType.name}" must be between 1 and ${vesselType.maxBatchCount}.`});
         return;
     }
-
     if (finalBatchId) {
-        const q = query(
-            collection(firestore, 'test_sessions'),
-            where('batchId', '==', finalBatchId),
-            where('serialNumber', '==', newSessionData.serialNumber.trim())
-        );
+        const q = query(collection(firestore, 'test_sessions'), where('batchId', '==', finalBatchId), where('serialNumber', '==', newSessionData.serialNumber.trim()));
         const batchSessionsSnapshot = await getDocs(q);
         if (!batchSessionsSnapshot.empty) {
-            toast({
-                variant: 'destructive',
-                title: 'Duplicate BatchCount',
-                description: `BatchCount "${newSessionData.serialNumber.trim()}" has already been tested in this batch.`
-            });
+            toast({ variant: 'destructive', title: 'Duplicate BatchCount', description: `BatchCount "${newSessionData.serialNumber.trim()}" has already been tested in this batch.`});
             return;
         }
-    }
-    // --- End Batch Validation ---
-
-    const sensorConfig = sensorConfigs?.find(sc => sc.id === newSessionData.sensorConfigurationId);
-    if (sensorConfig) {
-      await sendMovingAverageCommand(sensorConfig.movingAverageLength || 10);
     }
 
     setComparisonData({});
@@ -496,27 +466,38 @@ function TestingComponent() {
       username: user.displayName || user.email || 'Unknown User',
     };
 
+    let newSessionId: string | null = null;
     try {
-      const docRef = await addDocument(collection(firestore, 'test_sessions'), newSessionDocData);
-      const newSessionWithId: WithId<TestSession> = { id: docRef.id, ...newSessionDocData };
+        const docRef = await addDocument(collection(firestore, 'test_sessions'), newSessionDocData);
+        newSessionId = docRef.id;
+        const newSessionWithId: WithId<TestSession> = { id: docRef.id, ...newSessionDocData };
       
-      startSessionInContext(newSessionWithId);
+        startSessionInContext(newSessionWithId);
+        
+        const sensorConfig = sensorConfigs?.find(sc => sc.id === newSessionData.sensorConfigurationId);
+        if (sensorConfig) {
+            await sendMovingAverageCommand(sensorConfig.movingAverageLength || 10);
+        }
+        await sendRecordingCommand(true);
+        await sendSequenceCommand('sequence1', true);
       
-      await sendRecordingCommand(true);
-      await sendSequenceCommand('sequence1', true);
-      
-      toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
-      setIsNewSessionDialogOpen(false);
-      setNewSessionData(prev => ({ 
-        vesselTypeId: prev.vesselTypeId,
-        batchId: finalBatchId,
-        sensorConfigurationId: prev.sensorConfigurationId,
-        serialNumber: '', 
-        description: '' 
-      }));
-      setNewBatchName('');
+        toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
+        setIsNewSessionDialogOpen(false);
+        setNewSessionData(prev => ({ 
+            vesselTypeId: prev.vesselTypeId,
+            batchId: finalBatchId,
+            sensorConfigurationId: prev.sensorConfigurationId,
+            serialNumber: '', 
+            description: '' 
+        }));
+        setNewBatchName('');
+
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Failed to Start Session', description: error.message });
+        toast({ variant: 'destructive', title: 'Failed to Start Session', description: error.message });
+        if (newSessionId) {
+            await deleteDoc(doc(firestore, 'test_sessions', newSessionId));
+        }
+        stopSessionInContext();
     }
   };
   
@@ -746,21 +727,22 @@ function TestingComponent() {
   }, [systemStartTime, totalDowntime, downtimeStart, now]);
 
 
-  const isDuringDowntime = useMemo(() => {
-    const now = new Date();
-    const hour = now.getHours();
-    return hour >= 20 || hour < 8;
-  }, []);
+    const isDuringDowntime = useMemo(() => {
+        const now = new Date();
+        const hour = now.getHours();
+        // Offline from 8 PM (20:00) to 7 AM (07:00)
+        return hour >= 20 || hour < 7;
+    }, []);
 
-  const offlineMessage = useMemo(() => {
-    if (isDuringDowntime) {
-      return "Arduino is not sending data during this time.";
-    }
-    if (lastDataPointTimestamp) {
-      return `Offline. Last seen ${formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true })}.`;
-    }
-    return "Offline";
-  }, [isDuringDowntime, lastDataPointTimestamp]);
+    const offlineMessage = useMemo(() => {
+        if (isDuringDowntime) {
+            return "Arduino is scheduled offline (8 PM - 7 AM).";
+        }
+        if (lastDataPointTimestamp) {
+            return `Offline. Last seen ${formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true })}.`;
+        }
+        return "Offline";
+    }, [isDuringDowntime, lastDataPointTimestamp]);
 
   const generateReport = async (reportConfig: { type: 'single' | 'batch' | 'custom'; sessionId?: string; batchId?: string; }) => {
     if (!firestore || !chartRef.current) {
@@ -1688,9 +1670,6 @@ function TestingComponent() {
                         {comparisonSessions.map((session) => {
                             const window = measurementWindows[session.id];
                             if (!window || !window.start) return null;
-
-                            const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-                            if (!vesselType) return null;
 
                             return (
                                 <React.Fragment key={session.id}>

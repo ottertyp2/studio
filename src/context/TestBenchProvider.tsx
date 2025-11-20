@@ -1,4 +1,3 @@
-
 'use client';
 import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -81,24 +80,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         }
     });
 
-    // Finalize downtime calculation on page close
-    const handleBeforeUnload = async () => {
-        const statusRef = ref(database, 'data/system/status');
-        const currentStatus = await get(statusRef);
-        if (currentStatus.exists() && currentStatus.val().downtimeStart) {
-            const start = currentStatus.val().downtimeStart;
-            const elapsed = Date.now() - start;
-            const newTotal = (currentStatus.val().totalDowntime || 0) + elapsed;
-            await set(ref(database, 'data/system/status/totalDowntime'), newTotal);
-            await set(ref(database, 'data/system/status/downtimeStart'), null);
-        }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
     return () => {
         unsubscribe();
-        window.removeEventListener('beforeunload', handleBeforeUnload);
     };
 }, [database]);
 
@@ -147,7 +130,21 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setLatency(data.latency !== undefined ? data.latency : null);
     setSequenceFailureCount(data.sequenceFailureCount || 0);
     
-    if (data.sensor !== null && data.lastUpdate) {
+    // Update statuses based on hardware's actual state from /live
+    setValve1Status(data.valve1 ? 'ON' : 'OFF');
+    setValve2Status(data.valve2 ? 'ON' : 'OFF');
+    setSequence1Running(data.sequence1_running === true);
+    setSequence2Running(data.sequence2_running === true);
+    setIsRecording(data.recording === true);
+    setMovingAverageLength(data.movingAverageLength ?? null);
+
+    // Unlock UI controls when they are no longer running
+    if (data.valve1 === false && data.valve2 === false) setLockedValves([]);
+    if (data.sequence1_running === false) setLockedSequences(prev => prev.filter(s => s !== 'sequence1'));
+    if (data.sequence2_running === false) setLockedSequences(prev => prev.filter(s => s !== 'sequence2'));
+
+
+    if (data.sensor !== null && data.lastUpdate && data.recording === true) {
         setLocalDataLog(prevLog => {
             const newDataPoint = { value: data.sensor, timestamp: new Date(data.lastUpdate).toISOString() };
             if(prevLog.length > 0 && prevLog[0].timestamp === newDataPoint.timestamp) {
@@ -155,17 +152,17 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             }
             return [newDataPoint, ...prevLog].slice(0, 1000)
         });
-    }
 
-    if (runningTestSessionRef.current && firestore && isRecording && data.sensor != null && data.lastUpdate) {
-        const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
-        const dataToSave = {
-            value: data.sensor,
-            timestamp: new Date(data.lastUpdate).toISOString(),
-        };
-        addDocumentNonBlocking(sessionDataRef, dataToSave);
+        if (runningTestSessionRef.current && firestore) {
+            const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
+            const dataToSave = {
+                value: data.sensor,
+                timestamp: new Date(data.lastUpdate).toISOString(),
+            };
+            addDocumentNonBlocking(sessionDataRef, dataToSave);
+        }
     }
-  }, [firestore, isRecording]);
+  }, [firestore]);
   
   useEffect(() => {
     if (!database) return;
@@ -176,31 +173,21 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         const isOnline = lastDataPointTimestamp !== null && (now - lastDataPointTimestamp) < 3000;
         setIsConnected(isOnline);
 
+        // This logic now runs on all clients, but runTransaction is atomic and safe.
         if (isOnline) {
-            // Check if there was a downtime period that needs to be closed
-            const currentDowntimeStart = downtimeStart;
-            if (currentDowntimeStart && !downtimeProcessedByThisClient.current) {
-                downtimeProcessedByThisClient.current = true; // Mark that this client is handling it
-
-                const downDuration = now - currentDowntimeStart;
-                
-                await runTransaction(systemStatusRef, (status) => {
+            if (downtimeStart) {
+                 runTransaction(systemStatusRef, (status) => {
                     if (status && status.downtimeStart) {
+                        const downDuration = now - status.downtimeStart;
                         status.totalDowntime = (status.totalDowntime || 0) + downDuration;
                         status.downtimeStart = null;
                     }
                     return status;
                 });
-                
-                // Allow this client to process future downtimes
-                setTimeout(() => {
-                  downtimeProcessedByThisClient.current = false;
-                }, 2000); 
             }
         } else {
-            // If offline, ensure downtimeStart is set in RTDB
-            if (downtimeStart === null) {
-                await runTransaction(systemStatusRef, (status) => {
+            if (!downtimeStart) {
+                runTransaction(systemStatusRef, (status) => {
                    if (status && !status.downtimeStart) {
                        status.downtimeStart = now;
                    }
@@ -225,9 +212,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const commandPath = `data/commands/${valve.toLowerCase()}`;
     try {
         await set(ref(database, commandPath), state === 'ON');
-        setTimeout(() => {
-            setLockedValves(prev => prev.filter(v => v !== valve));
-        }, 2000); // Safety timeout
+        // The lock is now removed by the /live data listener, not a timeout
     } catch (error: any) {
         console.error('Failed to send command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
@@ -259,9 +244,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
       try {
           await set(ref(database, commandPath), state);
-           setTimeout(() => {
-              setLockedSequences(prev => prev.filter(s => s !== sequence));
-          }, 3000); // Safety timeout
+           // The lock is now removed by the /live data listener, not a timeout
       } catch (error: any) {
           console.error('Failed to send sequence command:', error);
           toast({ variant: 'destructive', title: 'Sequence Command Failed', description: error.message });
@@ -300,53 +283,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribe();
   }, [database, handleNewDataPoint]);
 
-  // Separate listener for recording status from /data/commands
-  useEffect(() => {
-    if (!database) return;
-    const recordingRef = ref(database, 'data/commands/recording');
-    const unsubscribe = onValue(recordingRef, (snap) => {
-      const isRec = snap.val();
-      setIsRecording(isRec === true);
-    });
-    return () => unsubscribe();
-  }, [database]);
-
-
-  // Listener for /data/commands to get valve and sequence status
-  useEffect(() => {
-    if (!database) return;
-    const commandsRef = ref(database, 'data/commands');
-
-    const unsubscribe = onValue(commandsRef, (snap) => {
-        const data = snap.val();
-        if (data) {
-            // Update valve statuses from /data/commands
-            if (data.valve1 !== undefined) {
-                setValve1Status(data.valve1 ? 'ON' : 'OFF');
-                setLockedValves(prev => prev.filter(v => v !== 'VALVE1'));
-            }
-            if (data.valve2 !== undefined) {
-                setValve2Status(data.valve2 ? 'ON' : 'OFF');
-                setLockedValves(prev => prev.filter(v => v !== 'VALVE2'));
-            }
-
-            // Update sequence statuses from /data/commands
-            if (data.sequence1 !== undefined) {
-                setSequence1Running(data.sequence1 === true);
-                setLockedSequences(prev => prev.filter(s => s !== 'sequence1'));
-            }
-            if (data.sequence2 !== undefined) {
-                setSequence2Running(data.sequence2 === true);
-                setLockedSequences(prev => prev.filter(s => s !== 'sequence2'));
-            }
-            if (data.movingAverageLength !== undefined) {
-                setMovingAverageLength(data.movingAverageLength);
-            }
-        }
-    });
-
-    return () => unsubscribe();
-  }, [database]);
 
   const value = {
     isConnected,
