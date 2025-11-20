@@ -6,6 +6,7 @@ import { TestBenchContext, ValveStatus } from './TestBenchContext';
 import { useFirebase, useUser, addDocumentNonBlocking, WithId } from '@/firebase';
 import { ref, onValue, set, get, runTransaction } from 'firebase/database';
 import { collection, query, where, onSnapshot, limit, DocumentData, collectionGroup, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { writeBatch } from 'firebase/firestore';
 
 export type RtdbSensorData = {
   timestamp: string;
@@ -350,3 +351,5 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
+
+    
