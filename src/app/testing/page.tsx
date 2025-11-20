@@ -1,3 +1,4 @@
+
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -754,38 +755,37 @@ function TestingComponent() {
     }, [isDuringDowntime, lastDataPointTimestamp]);
 
     const handlePrepareReport = async (config: ReportConfig) => {
-        if (!firestore) return;
-    
-        let sessionsToReport: WithId<TestSession>[] = [];
-    
-        if (config.type === 'single' && config.sessionId) {
-            const sessionDoc = await getDoc(doc(firestore, 'test_sessions', config.sessionId));
-            if (sessionDoc.exists()) {
-                sessionsToReport = [{ id: sessionDoc.id, ...sessionDoc.data() } as WithId<TestSession>];
-            }
-        } else if (config.type === 'custom') {
-            sessionsToReport = comparisonSessions;
-        } else if (config.type === 'batch' && config.batchId) {
-            const q = query(collection(firestore, 'test_sessions'), where('batchId', '==', config.batchId), where('status', '==', 'COMPLETED'));
-            const snapshot = await getDocs(q);
-            sessionsToReport = snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as WithId<TestSession>);
-        }
-    
-        if (sessionsToReport.length === 0) {
-            toast({ title: 'No Sessions Found', description: 'No completed sessions match the criteria for this report.', variant: 'destructive' });
-            return;
-        }
-    
-        const unclassifiedCount = sessionsToReport.filter(s => !s.classification).length;
-        setUnclassifiedCountInReport(unclassifiedCount);
-        setReportConfig(config);
-    
-        if (unclassifiedCount > 0) {
-            setIsUnclassifiedReportConfirmOpen(true);
-        } else {
-            // If no unclassified sessions, proceed directly
-            await generateReport(config);
-        }
+      if (!firestore) return;
+  
+      let sessionsToReport: WithId<TestSession>[] = [];
+  
+      if (config.type === 'single' && config.sessionId) {
+          const sessionDoc = await getDoc(doc(firestore, 'test_sessions', config.sessionId));
+          if (sessionDoc.exists()) {
+              sessionsToReport = [{ id: sessionDoc.id, ...sessionDoc.data() } as WithId<TestSession>];
+          }
+      } else if (config.type === 'custom') {
+          sessionsToReport = comparisonSessions;
+      } else if (config.type === 'batch' && config.batchId) {
+          const q = query(collection(firestore, 'test_sessions'), where('batchId', '==', config.batchId), where('status', '==', 'COMPLETED'));
+          const snapshot = await getDocs(q);
+          sessionsToReport = snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as WithId<TestSession>);
+      }
+  
+      if (sessionsToReport.length === 0) {
+          toast({ title: 'No Sessions Found', description: 'No completed sessions match the criteria for this report.', variant: 'destructive' });
+          return;
+      }
+  
+      const problemCount = sessionsToReport.filter(s => !s.classification || s.classification === 'UNCLASSIFIABLE').length;
+      setUnclassifiedCountInReport(problemCount);
+      setReportConfig(config);
+  
+      if (problemCount > 0) {
+          setIsUnclassifiedReportConfirmOpen(true);
+      } else {
+          await generateReport(config);
+      }
     };
     
     const generateReport = async (reportConfig: ReportConfig | null) => {
@@ -1713,9 +1713,9 @@ function TestingComponent() {
 
                         {comparisonSessions.map((session) => {
                             const window = measurementWindows[session.id];
-                            if (!window || !window.start) return null;
+                            if (!window?.start) return null;
 
-                             return (
+                            return (
                                 <React.Fragment key={session.id}>
                                     <ReferenceLine
                                         x={window.start.startTime}
@@ -1760,11 +1760,11 @@ function TestingComponent() {
         <AlertDialog open={isUnclassifiedReportConfirmOpen} onOpenChange={setIsUnclassifiedReportConfirmOpen}>
             <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>Report Contains Unclassified Sessions</AlertDialogTitle>
+                    <AlertDialogTitle>Report Contains Problematic Sessions</AlertDialogTitle>
                     <AlertDialogDescription>
-                        This report includes {unclassifiedCountInReport} session(s) that have not been classified yet. This may result in an incomplete or misleading report.
+                        This report includes {unclassifiedCountInReport} session(s) that are unclassified or unclassifiable. This may result in an incomplete or misleading report.
                         <br/><br/>
-                        Do you still wish to proceed with generating the report?
+                        Do you still wish to proceed?
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

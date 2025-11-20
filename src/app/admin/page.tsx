@@ -1,3 +1,4 @@
+
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -1800,10 +1801,13 @@ export default function AdminPage() {
         }
 
         let inputData = [...sensorDataValues];
-        while (inputData.length < modelInputShape) {
-            inputData.push(0);
+        if (inputData.length > modelInputShape) {
+            inputData = inputData.slice(inputData.length - modelInputShape);
+        } else {
+            while (inputData.length < modelInputShape) {
+                inputData.unshift(0); // Pad at the beginning
+            }
         }
-        inputData = inputData.slice(0, modelInputShape);
 
         const inputTensor = tf.tensor2d([inputData]);
         const prediction = model.predict(inputTensor) as tf.Tensor;
