@@ -149,11 +149,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setSequence1Running(data.sequence1_running === true);
     setSequence2Running(data.sequence2_running === true);
     setIsRecording(data.recording === true);
-
-    if (data.valve1 === false && data.valve2 === false) setLockedValves([]);
-    if (data.sequence1_running === false) setLockedSequences(prev => prev.filter(s => s !== 'sequence1'));
-    if (data.sequence2_running === false) setLockedSequences(prev => prev.filter(s => s !== 'sequence2'));
-
+    
+    // As soon as we receive new data, we know any pending commands have been processed.
+    // Clear all locks.
+    setLockedValves([]);
+    setLockedSequences([]);
 
     if (data.sensor !== null && data.lastUpdate && data.recording === true) {
         setLocalDataLog(prevLog => {
