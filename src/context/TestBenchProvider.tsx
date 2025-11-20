@@ -5,7 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 import { TestBenchContext, ValveStatus } from './TestBenchContext';
 import { useFirebase, useUser, addDocumentNonBlocking, WithId } from '@/firebase';
 import { ref, onValue, set, get, runTransaction } from 'firebase/database';
-import { collection, query, where, onSnapshot, limit, DocumentData, collectionGroup, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, limit, DocumentData, collectionGroup, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 export type RtdbSensorData = {
   timestamp: string;
@@ -49,9 +49,15 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const stopSession = useCallback(() => {
-    runningTestSessionRef.current = null;
-    setRunningTestSession(null);
-  }, []);
+    if (runningTestSessionRef.current) {
+        if (firestore) {
+            const sessionRef = doc(firestore, 'test_sessions', runningTestSessionRef.current.id);
+            updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
+        }
+        runningTestSessionRef.current = null;
+        setRunningTestSession(null);
+    }
+  }, [firestore]);
 
 
   useEffect(() => {
@@ -59,7 +65,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
     const systemStatusRef = ref(database, 'data/system/status');
 
-    // Listener for centralized system status
     const unsubscribe = onValue(systemStatusRef, (snapshot) => {
         const status = snapshot.val();
         if (status) {
@@ -67,7 +72,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             setTotalDowntime(status.totalDowntime || 0);
             setDowntimeStart(status.downtimeStart || null);
         } else {
-            // Initialize if it doesn't exist
             const now = Date.now();
             set(systemStatusRef, {
                 startTime: now,
@@ -128,19 +132,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setLatency(data.latency !== undefined ? data.latency : null);
     setSequenceFailureCount(data.sequenceFailureCount || 0);
     
-    // Update statuses based on hardware's actual state from /live
     setValve1Status(data.valve1 ? 'ON' : 'OFF');
     setValve2Status(data.valve2 ? 'ON' : 'OFF');
     setSequence1Running(data.sequence1_running === true);
     setSequence2Running(data.sequence2_running === true);
     setIsRecording(data.recording === true);
-    
-    if (data.movingAverageLength !== undefined) {
-      setMovingAverageLength(data.movingAverageLength);
-    }
 
-
-    // Unlock UI controls when they are no longer running
     if (data.valve1 === false && data.valve2 === false) setLockedValves([]);
     if (data.sequence1_running === false) setLockedSequences(prev => prev.filter(s => s !== 'sequence1'));
     if (data.sequence2_running === false) setLockedSequences(prev => prev.filter(s => s !== 'sequence2'));
@@ -196,7 +193,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 });
             }
         }
-    }, 1000); // Check every second
+    }, 1000); 
 
     return () => clearInterval(interval);
   }, [lastDataPointTimestamp, downtimeStart, database]);
@@ -213,7 +210,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const commandPath = `data/commands/${valve.toLowerCase()}`;
     try {
         await set(ref(database, commandPath), state === 'ON');
-        // The lock is now removed by the /live data listener, not a timeout
     } catch (error: any) {
         console.error('Failed to send command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
@@ -245,7 +241,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
       try {
           await set(ref(database, commandPath), state);
-           // The lock is now removed by the /live data listener, not a timeout
       } catch (error: any) {
           console.error('Failed to send sequence command:', error);
           toast({ variant: 'destructive', title: 'Sequence Command Failed', description: error.message });
@@ -266,7 +261,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [database, toast]);
 
-  // Listener for /data/live data
   useEffect(() => {
     if (!database) return;
   
@@ -284,6 +278,16 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribe();
   }, [database, handleNewDataPoint]);
 
+  useEffect(() => {
+    if (!database) return;
+    const mavRef = ref(database, 'data/commands/movingAverageLength');
+    const unsubscribe = onValue(mavRef, (snapshot) => {
+        const val = snapshot.val();
+        setMovingAverageLength(val ?? null);
+    });
+    return () => unsubscribe();
+  }, [database]);
+
 
   const value = {
     isConnected,
@@ -299,7 +303,21 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     sendValveCommand,
     sendRecordingCommand,
     sendMovingAverageCommand,
-    deleteSession: async () => {},
+    deleteSession: async (sessionId: string) => {
+        if (!firestore) return;
+        const sessionRef = doc(firestore, 'test_sessions', sessionId);
+        const dataQuery = query(collection(firestore, `test_sessions/${sessionId}/sensor_data`));
+        
+        try {
+            const dataSnapshot = await getDocs(dataQuery);
+            const batch = writeBatch(firestore);
+            dataSnapshot.forEach(doc => batch.delete(doc.ref));
+            batch.delete(sessionRef);
+            await batch.commit();
+        } catch (e) {
+            console.error("Failed to delete session", e);
+        }
+    },
     pendingValves: [],
     lockedValves,
     startTime,
