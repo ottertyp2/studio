@@ -53,7 +53,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, WithId, addDocument } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
 import { useTestBench } from '@/context/TestBenchContext';
-import { collection, query, where, onSnapshot, doc, getDocs, orderBy, limit, getDoc, writeBatch } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDocs, orderBy, limit, getDoc, writeBatch, deleteDoc } from 'firebase/firestore';
 import { ref, get } from 'firebase/database';
 import { formatDistanceToNow, format, addDays } from 'date-fns';
 import { convertRawValue, findMeasurementStart, findMeasurementEnd, toBase64 } from '@/lib/utils';
@@ -173,6 +173,13 @@ type CrashReport = {
     };
 };
 
+type ReportConfig = {
+    type: 'single' | 'batch' | 'custom';
+    sessionId?: string;
+    batchId?: string;
+};
+
+
 const CHART_COLORS = [
   'hsl(var(--chart-1))',
   'hsl(var(--chart-2))',
@@ -231,8 +238,10 @@ function TestingComponent() {
 
   const [now, setNow] = useState(Date.now());
   
-  const [reportType, setReportType] = useState<'single' | 'batch' | 'custom' | null>(null);
-  
+  const [reportConfig, setReportConfig] = useState<ReportConfig | null>(null);
+  const [isUnclassifiedReportConfirmOpen, setIsUnclassifiedReportConfirmOpen] = useState(false);
+  const [unclassifiedCountInReport, setUnclassifiedCountInReport] = useState(0);
+
   const [isCrashPanelOpen, setIsCrashPanelOpen] = useState(false);
   const [crashReport, setCrashReport] = useState<CrashReport | null>(null);
   const [crashAnalysis, setCrashAnalysis] = useState<AnalyzeArduinoCrashesOutput | null>(null);
@@ -744,9 +753,44 @@ function TestingComponent() {
         return "Offline";
     }, [isDuringDowntime, lastDataPointTimestamp]);
 
-  const generateReport = async (reportConfig: { type: 'single' | 'batch' | 'custom'; sessionId?: string; batchId?: string; }) => {
-    if (!firestore || !chartRef.current) {
-        toast({ variant: 'destructive', title: 'Report Failed', description: 'Dependencies not ready.' });
+    const handlePrepareReport = async (config: ReportConfig) => {
+        if (!firestore) return;
+    
+        let sessionsToReport: WithId<TestSession>[] = [];
+    
+        if (config.type === 'single' && config.sessionId) {
+            const sessionDoc = await getDoc(doc(firestore, 'test_sessions', config.sessionId));
+            if (sessionDoc.exists()) {
+                sessionsToReport = [{ id: sessionDoc.id, ...sessionDoc.data() } as WithId<TestSession>];
+            }
+        } else if (config.type === 'custom') {
+            sessionsToReport = comparisonSessions;
+        } else if (config.type === 'batch' && config.batchId) {
+            const q = query(collection(firestore, 'test_sessions'), where('batchId', '==', config.batchId), where('status', '==', 'COMPLETED'));
+            const snapshot = await getDocs(q);
+            sessionsToReport = snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as WithId<TestSession>);
+        }
+    
+        if (sessionsToReport.length === 0) {
+            toast({ title: 'No Sessions Found', description: 'No completed sessions match the criteria for this report.', variant: 'destructive' });
+            return;
+        }
+    
+        const unclassifiedCount = sessionsToReport.filter(s => !s.classification).length;
+        setUnclassifiedCountInReport(unclassifiedCount);
+        setReportConfig(config);
+    
+        if (unclassifiedCount > 0) {
+            setIsUnclassifiedReportConfirmOpen(true);
+        } else {
+            // If no unclassified sessions, proceed directly
+            await generateReport(config);
+        }
+    };
+    
+    const generateReport = async (reportConfig: ReportConfig | null) => {
+    if (!reportConfig || !firestore || !chartRef.current) {
+        toast({ variant: 'destructive', title: 'Report Failed', description: 'Configuration or dependencies not ready.' });
         return;
     }
 
@@ -949,7 +993,7 @@ function TestingComponent() {
             setComparisonSessions(originalComparisonSessions);
         }
         setIsHistoryPanelOpen(false);
-        setReportType(null);
+        setReportConfig(null);
     }
   };
 
@@ -1348,7 +1392,7 @@ function TestingComponent() {
                     
                     <div className={`text-sm mt-2 flex items-center justify-center gap-1 ${isConnected ? 'text-green-600' : 'text-destructive'}`}>
                         {isConnected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
-                        <span>{isConnected ? `Online` : offlineMessage}</span>
+                        <span>{isConnected ? `Online (7am - 8pm)` : offlineMessage}</span>
                     </div>
                      <p className="text-xs text-muted-foreground mt-1">
                         Downtime: {downtimePercentage.toFixed(2)}%
@@ -1547,7 +1591,7 @@ function TestingComponent() {
                                                           <Button variant="ghost" size="sm">Actions</Button>
                                                       </DropdownMenuTrigger>
                                                       <DropdownMenuContent>
-                                                          <DropdownMenuItem onSelect={() => generateReport({ type: 'single', sessionId: session.id })}>
+                                                          <DropdownMenuItem onSelect={() => handlePrepareReport({ type: 'single', sessionId: session.id })}>
                                                               <FileText className="mr-2 h-4 w-4"/> Generate Report
                                                           </DropdownMenuItem>
                                                           <DropdownMenuSeparator/>
@@ -1568,7 +1612,7 @@ function TestingComponent() {
                                 </div>
                                 <DialogFooter>
                                     <Button variant="outline" onClick={() => setIsHistoryPanelOpen(false)}>Close</Button>
-                                    <Button onClick={() => { generateReport({ type: 'custom' }) }} disabled={isGeneratingReport || comparisonSessions.length === 0}>
+                                    <Button onClick={() => { handlePrepareReport({ type: 'custom' }) }} disabled={isGeneratingReport || comparisonSessions.length === 0}>
                                         {isGeneratingReport ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <FileText className="mr-2 h-4 w-4"/>}
                                         Create Custom Report
                                     </Button>
@@ -1582,7 +1626,7 @@ function TestingComponent() {
                              <DropdownMenuContent>
                                 <DropdownMenuItem onSelect={() => {
                                   if (comparisonSessions.length === 1) {
-                                      generateReport({ type: 'single', sessionId: comparisonSessions[0].id });
+                                      handlePrepareReport({ type: 'single', sessionId: comparisonSessions[0].id });
                                   } else {
                                       toast({title: "Select a Single Session", description: "Open the comparison panel to select one session to generate a single report."});
                                       setIsHistoryPanelOpen(true);
@@ -1591,7 +1635,7 @@ function TestingComponent() {
                                    <FileText className="mr-2 h-4 w-4" />
                                    Single Session Report
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => { generateReport({ type: 'custom' }) }} disabled={comparisonSessions.length === 0}>
+                                <DropdownMenuItem onSelect={() => { handlePrepareReport({ type: 'custom' }) }} disabled={comparisonSessions.length === 0}>
                                    <Layers className="mr-2 h-4 w-4" />
                                    Custom Report from Selection
                                 </DropdownMenuItem>
@@ -1604,7 +1648,7 @@ function TestingComponent() {
                                         <DropdownMenuSubContent>
                                             <ScrollArea className="h-[200px]">
                                                 {batches?.map(batch => (
-                                                    <DropdownMenuItem key={batch.id} onSelect={() => generateReport({type: 'batch', batchId: batch.id})}>
+                                                    <DropdownMenuItem key={batch.id} onSelect={() => handlePrepareReport({type: 'batch', batchId: batch.id})}>
                                                         <span>{batch.name}</span>
                                                     </DropdownMenuItem>
                                                 ))}
@@ -1671,7 +1715,7 @@ function TestingComponent() {
                             const window = measurementWindows[session.id];
                             if (!window || !window.start) return null;
 
-                            return (
+                             return (
                                 <React.Fragment key={session.id}>
                                     <ReferenceLine
                                         x={window.start.startTime}
@@ -1712,6 +1756,24 @@ function TestingComponent() {
             </Card>
         </div>
       </main>
+
+        <AlertDialog open={isUnclassifiedReportConfirmOpen} onOpenChange={setIsUnclassifiedReportConfirmOpen}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Report Contains Unclassified Sessions</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This report includes {unclassifiedCountInReport} session(s) that have not been classified yet. This may result in an incomplete or misleading report.
+                        <br/><br/>
+                        Do you still wish to proceed with generating the report?
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => setReportConfig(null)}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => generateReport(reportConfig)}>Proceed Anyway</AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+
     </div>
   );
 }

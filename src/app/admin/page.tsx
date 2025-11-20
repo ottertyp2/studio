@@ -1031,6 +1031,7 @@ export default function AdminPage() {
     if (!firestore) return;
     deleteDocumentNonBlocking(doc(firestore, 'vessel_types', vesselTypeId));
     toast({ title: 'Vessel Type Deleted' });
+    setDeleteConfirmationText('');
   };
 
   const handleAddBatch = () => {
@@ -2691,18 +2692,25 @@ export default function AdminPage() {
                                                         </Dialog>
                                                         <AlertDialog>
                                                             <AlertDialogTrigger asChild>
-                                                                <Button size="sm" variant="destructive">Del</Button>
+                                                              <Button size="sm" variant="destructive" onClick={() => setDeleteConfirmationText('')}>Del</Button>
                                                             </AlertDialogTrigger>
                                                             <AlertDialogContent>
                                                                 <AlertDialogHeader>
-                                                                    <AlertDialogTitle className="text-destructive">Delete Vessel Type?</AlertDialogTitle>
+                                                                    <AlertDialogTitle className="text-destructive font-bold text-lg">Delete Vessel Type?</AlertDialogTitle>
                                                                     <AlertDialogDescription>
-                                                                        Are you sure you want to delete "{p.name}"? This action cannot be undone. Associated test sessions will not be deleted.
+                                                                        Are you sure you want to delete "{p.name}"? This action cannot be undone. Associated test sessions will not be deleted, but may become orphaned. To confirm, type <strong>delete</strong> below.
                                                                     </AlertDialogDescription>
+                                                                    <Input 
+                                                                        id="delete-confirm-vessel-input"
+                                                                        value={deleteConfirmationText}
+                                                                        onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                                                                        className="mt-4"
+                                                                        placeholder="delete"
+                                                                    />
                                                                 </AlertDialogHeader>
                                                                 <AlertDialogFooter>
-                                                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                    <AlertDialogAction variant="destructive" onClick={() => handleDeleteVesselType(p.id)}>Delete</AlertDialogAction>
+                                                                    <AlertDialogCancel onClick={() => setDeleteConfirmationText('')}>Cancel</AlertDialogCancel>
+                                                                    <AlertDialogAction variant="destructive" disabled={deleteConfirmationText !== 'delete'} onClick={() => handleDeleteVesselType(p.id)}>Delete</AlertDialogAction>
                                                                 </AlertDialogFooter>
                                                             </AlertDialogContent>
                                                         </AlertDialog>

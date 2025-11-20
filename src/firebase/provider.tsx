@@ -166,53 +166,56 @@ export const useUser = (): UserHookResult => {
   const [userError, setUserError] = useState<Error | null>(null);
 
   useEffect(() => {
+    setIsUserLoading(true);
     let roleUnsubscribe: (() => void) | undefined;
 
-    const authUnsubscribe = onAuthStateChanged(auth, (authUser) => {
-      // If a role listener is active from a previous user, unsubscribe from it.
-      if (roleUnsubscribe) {
-        roleUnsubscribe();
-      }
+    const authUnsubscribe = onAuthStateChanged(
+      auth,
+      (authUser) => {
+        setUser(authUser);
+        if (roleUnsubscribe) {
+          roleUnsubscribe();
+          setUserRole(null);
+        }
 
-      setUser(authUser);
-
-      if (authUser) {
-        // User is logged in. Set up the role listener.
-        const userDocRef = doc(firestore, 'users', authUser.uid);
-        roleUnsubscribe = onSnapshot(userDocRef, 
-          (doc) => {
-            if (doc.exists()) {
-              setUserRole(doc.data()?.role || 'user');
-            } else {
-              setUserRole('user'); // Default role if doc doesn't exist
-            }
-            setIsUserLoading(false); // Loading is complete
-          }, 
-          (error) => {
-            const permissionError = new FirestorePermissionError({
+        if (authUser) {
+          const userDocRef = doc(firestore, 'users', authUser.uid);
+          roleUnsubscribe = onSnapshot(
+            userDocRef,
+            (docSnapshot) => {
+              if (docSnapshot.exists()) {
+                setUserRole(docSnapshot.data()?.role || 'user');
+              } else {
+                setUserRole('user'); // Default role
+              }
+              setIsUserLoading(false);
+            },
+            (error) => {
+              console.error("Firestore role listener error:", error);
+              const permissionError = new FirestorePermissionError({
                 path: `users/${authUser.uid}`,
                 operation: 'get',
-            });
-            errorEmitter.emit('permission-error', permissionError);
-            setUserError(permissionError);
-            setUserRole('user'); // Default role on error
-            setIsUserLoading(false);
-          }
-        );
-      } else {
-        // User is logged out. Clear role and stop loading.
+              });
+              errorEmitter.emit('permission-error', permissionError);
+              setUserError(permissionError);
+              setUserRole('user'); // Fallback role on error
+              setIsUserLoading(false);
+            }
+          );
+        } else {
+          // No user, stop loading
+          setIsUserLoading(false);
+        }
+      },
+      (error) => {
+        console.error("Auth state change error:", error);
+        setUserError(error);
+        setUser(null);
         setUserRole(null);
         setIsUserLoading(false);
       }
-    }, (error) => {
-      console.error("Auth state change error:", error);
-      setUserError(error);
-      setUser(null);
-      setUserRole(null);
-      setIsUserLoading(false);
-    });
+    );
 
-    // Cleanup both listeners on component unmount
     return () => {
       authUnsubscribe();
       if (roleUnsubscribe) {

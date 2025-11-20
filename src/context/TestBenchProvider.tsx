@@ -4,7 +4,7 @@ import { useToast } from '@/hooks/use-toast';
 import { TestBenchContext, ValveStatus } from './TestBenchContext';
 import { useFirebase, useUser, addDocumentNonBlocking, WithId } from '@/firebase';
 import { ref, onValue, set, get, runTransaction } from 'firebase/database';
-import { collection, query, where, onSnapshot, limit, DocumentData, collectionGroup, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, limit, DocumentData, collectionGroup, getDocs, doc, updateDoc } from 'firebase/firestore';
 
 export type RtdbSensorData = {
   timestamp: string;
@@ -42,9 +42,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [totalDowntime, setTotalDowntime] = useState(0);
   const [downtimeStart, setDowntimeStart] = useState<number | null>(null);
   
-  // Ref to track if this client instance is the one that handled the reconnect.
-  const downtimeProcessedByThisClient = useRef(false);
-
   const startSession = useCallback((session: WithId<DocumentData>) => {
     runningTestSessionRef.current = session;
     setRunningTestSession(session);
