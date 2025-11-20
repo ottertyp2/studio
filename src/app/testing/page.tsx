@@ -478,33 +478,19 @@ function TestingComponent() {
       username: user.displayName || user.email || 'Unknown User',
     };
 
-    let newSessionId: string | null = null;
+    let docRef: any = null;
     try {
-        const docRef = await addDocument(collection(firestore, 'test_sessions'), newSessionDocData);
-        newSessionId = docRef.id;
+        docRef = await addDocument(collection(firestore, 'test_sessions'), newSessionDocData);
         const newSessionWithId: WithId<TestSession> = { id: docRef.id, ...newSessionDocData };
       
         startSessionInContext(newSessionWithId);
         
         const sensorConfig = sensorConfigs?.find(sc => sc.id === newSessionData.sensorConfigurationId);
-        
-        // Asynchronously send commands but don't wait for them
-        const commands: Promise<void>[] = [];
         if (sensorConfig) {
-            commands.push(sendMovingAverageCommand(sensorConfig.movingAverageLength || 10));
+          await sendMovingAverageCommand(sensorConfig.movingAverageLength || 10);
         }
-        commands.push(sendRecordingCommand(true));
-        commands.push(sendSequenceCommand('sequence1', true));
-
-        // Wait for all commands to be sent, but handle failures gracefully
-        await Promise.all(commands).catch(cmdError => {
-            console.error("A command failed to send:", cmdError);
-            if (newSessionId) {
-                deleteDoc(doc(firestore, 'test_sessions', newSessionId));
-                stopSessionInContext();
-                toast({ variant: 'destructive', title: 'Failed to Start Session', description: 'Could not communicate with the device.' });
-            }
-        });
+        await sendRecordingCommand(true);
+        await sendSequenceCommand('sequence1', true);
       
         toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
         setIsNewSessionDialogOpen(false);
@@ -519,9 +505,8 @@ function TestingComponent() {
 
     } catch (error: any) {
         toast({ variant: 'destructive', title: 'Failed to Start Session', description: error.message });
-        if (newSessionId && firestore) {
-            // If session creation fails, try to clean up the document.
-            await deleteDoc(doc(firestore, 'test_sessions', newSessionId)).catch(delError => {
+        if (docRef && firestore) {
+            await deleteDoc(doc(firestore, 'test_sessions', docRef.id)).catch(delError => {
                 console.error("Cleanup failed: Could not delete orphaned session document.", delError);
             });
         }
