@@ -229,6 +229,7 @@ function TestingComponent() {
 
   const chartRef = useRef<HTMLDivElement>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [isScreenshotting, setIsScreenshotting] = useState(false);
   
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
   const [sessionHistory, setSessionHistory] = useState<WithId<TestSession>[]>([]);
@@ -746,7 +747,7 @@ function TestingComponent() {
 
     const offlineMessage = useMemo(() => {
         if (isDuringDowntime) {
-            return "Arduino is scheduled offline (8 PM - 7 AM).";
+            return "Arduino is active (7 AM - 8 PM).";
         }
         if (lastDataPointTimestamp) {
             return `Offline. Last seen ${formatDistanceToNow(lastDataPointTimestamp, { addSuffix: true })}.`;
@@ -856,10 +857,18 @@ function TestingComponent() {
         
         await new Promise(resolve => setTimeout(resolve, 1500));
 
-        const chartImage = await htmlToImage.toPng(chartRef.current, {
-            quality: 0.95,
-            backgroundColor: '#ffffff'
-        });
+        let chartImage = '';
+        try {
+            setIsScreenshotting(true);
+            await new Promise(r => setTimeout(r, 100)); // Short delay to allow UI to update
+            chartImage = await htmlToImage.toPng(chartRef.current, {
+                quality: 0.95,
+                backgroundColor: '#ffffff'
+            });
+        } finally {
+            setIsScreenshotting(false);
+        }
+
 
         const sessionsByVessel: Record<string, TestSession[]> = {};
         const allTestSessionsSnapshot = await getDocs(collection(firestore, 'test_sessions'));
@@ -1391,8 +1400,7 @@ function TestingComponent() {
                     </p>
                     
                     <div className={`text-sm mt-2 flex items-center justify-center gap-1 ${isConnected ? 'text-green-600' : 'text-destructive'}`}>
-                        {isConnected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
-                        <span>{isConnected ? `Online (7am - 8pm)` : offlineMessage}</span>
+                        {isConnected ? `Online` : offlineMessage}
                     </div>
                      <p className="text-xs text-muted-foreground mt-1">
                         Downtime: {downtimePercentage.toFixed(2)}%
@@ -1496,9 +1504,8 @@ function TestingComponent() {
                                     <DialogTitle>Select Sessions for Comparison or Report</DialogTitle>
                                     <DialogDescription>Use the filters to find sessions. Selected sessions will appear on the chart.</DialogDescription>
                                 </DialogHeader>
-                                <div className="flex-shrink-0">
-                                    {/* Filter and Sort Controls */}
-                                    <div className="flex flex-col sm:flex-row gap-2">
+                                <div className="my-4">
+                                    <div className="flex flex-col sm:flex-row gap-2 mb-4">
                                         <Input
                                             placeholder="Search sessions..."
                                             value={sessionSearchTerm}
@@ -1570,45 +1577,43 @@ function TestingComponent() {
                                             </DropdownMenu>
                                         </div>
                                     </div>
-                                </div>
-                                <div className="my-4">
-                                  <ScrollArea className="h-[60vh]">
-                                      {isHistoryLoading ? <p>Loading...</p> :
-                                      <div className="space-y-2 pr-4">
-                                          {filteredHistory.map(session => (
-                                              <div key={session.id} className={`flex items-center gap-4 p-2 rounded-md transition-colors`}>
-                                                  <Checkbox
-                                                      id={`select-${session.id}`}
-                                                      checked={comparisonSessions.some(s => s.id === session.id)}
-                                                      onCheckedChange={() => handleToggleComparison(session)}
-                                                  />
-                                                  <Label htmlFor={`select-${session.id}`} className="flex-grow cursor-pointer">
-                                                      <p className="font-semibold">{session.vesselTypeName} - {session.serialNumber || 'N/A'}</p>
-                                                      <p className="text-xs text-muted-foreground">{new Date(session.startTime).toLocaleString()} by {session.username}</p>
-                                                  </Label>
-                                                   <DropdownMenu>
-                                                      <DropdownMenuTrigger asChild>
-                                                          <Button variant="ghost" size="sm">Actions</Button>
-                                                      </DropdownMenuTrigger>
-                                                      <DropdownMenuContent>
-                                                          <DropdownMenuItem onSelect={() => handlePrepareReport({ type: 'single', sessionId: session.id })}>
-                                                              <FileText className="mr-2 h-4 w-4"/> Generate Report
-                                                          </DropdownMenuItem>
-                                                          <DropdownMenuSeparator/>
-                                                          <DropdownMenuItem onSelect={() => handleToggleComparison(session)}>
-                                                              {comparisonSessions.some(s => s.id === session.id) ? 'Remove from Comparison' : 'Add to Comparison'}
-                                                          </DropdownMenuItem>
-                                                          <DropdownMenuItem onSelect={() => handleDeleteSession(session.id)}>
-                                                              <Trash2 className="mr-2 h-4 w-4 text-destructive"/>
-                                                              <span className="text-destructive">Delete Session</span>
-                                                          </DropdownMenuItem>
-                                                      </DropdownMenuContent>
-                                                  </DropdownMenu>
-                                              </div>
-                                          ))}
-                                      </div>
-                                      }
-                                  </ScrollArea>
+                                    <ScrollArea className="h-[60vh]">
+                                        {isHistoryLoading ? <p>Loading...</p> :
+                                        <div className="space-y-2 pr-4">
+                                            {filteredHistory.map(session => (
+                                                <div key={session.id} className={`flex items-center gap-4 p-2 rounded-md transition-colors`}>
+                                                    <Checkbox
+                                                        id={`select-${session.id}`}
+                                                        checked={comparisonSessions.some(s => s.id === session.id)}
+                                                        onCheckedChange={() => handleToggleComparison(session)}
+                                                    />
+                                                    <Label htmlFor={`select-${session.id}`} className="flex-grow cursor-pointer">
+                                                        <p className="font-semibold">{session.vesselTypeName} - {session.serialNumber || 'N/A'}</p>
+                                                        <p className="text-xs text-muted-foreground">{new Date(session.startTime).toLocaleString()} by {session.username}</p>
+                                                    </Label>
+                                                     <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button variant="ghost" size="sm">Actions</Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent>
+                                                            <DropdownMenuItem onSelect={() => handlePrepareReport({ type: 'single', sessionId: session.id })}>
+                                                                <FileText className="mr-2 h-4 w-4"/> Generate Report
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuSeparator/>
+                                                            <DropdownMenuItem onSelect={() => handleToggleComparison(session)}>
+                                                                {comparisonSessions.some(s => s.id === session.id) ? 'Remove from Comparison' : 'Add to Comparison'}
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem onSelect={() => handleDeleteSession(session.id)}>
+                                                                <Trash2 className="mr-2 h-4 w-4 text-destructive"/>
+                                                                <span className="text-destructive">Delete Session</span>
+                                                            </DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        }
+                                    </ScrollArea>
                                 </div>
                                 <DialogFooter>
                                     <Button variant="outline" onClick={() => setIsHistoryPanelOpen(false)}>Close</Button>
@@ -1690,6 +1695,7 @@ function TestingComponent() {
                             tickFormatter={(value) => value.toFixed(2)}
                         />
                         <Tooltip
+                            active={isScreenshotting ? false : undefined}
                             contentStyle={{
                                 backgroundColor: 'hsl(var(--background) / 0.8)',
                                 borderColor: 'hsl(var(--border))',
