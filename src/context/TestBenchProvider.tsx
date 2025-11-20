@@ -134,7 +134,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setSequence1Running(data.sequence1_running === true);
     setSequence2Running(data.sequence2_running === true);
     setIsRecording(data.recording === true);
-    setMovingAverageLength(data.movingAverageLength ?? null);
+    
+    if (data.movingAverageLength !== undefined) {
+      setMovingAverageLength(data.movingAverageLength);
+    }
+
 
     // Unlock UI controls when they are no longer running
     if (data.valve1 === false && data.valve2 === false) setLockedValves([]);
@@ -171,7 +175,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         const isOnline = lastDataPointTimestamp !== null && (now - lastDataPointTimestamp) < 3000;
         setIsConnected(isOnline);
 
-        // This logic now runs on all clients, but runTransaction is atomic and safe.
         if (isOnline) {
             if (downtimeStart) {
                  runTransaction(systemStatusRef, (status) => {
