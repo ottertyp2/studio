@@ -280,7 +280,7 @@ function TestingComponent() {
   const { data: batches } = useCollection<Batch>(batchesCollectionRef);
 
   const measurementWindows = useMemo(() => {
-    const results: Record<string, { start: { startIndex: number; startTime: number } | null; end: { endIndex: number; endTime: number; isComplete: boolean } | null; }> = {};
+    const results: Record<string, { start: { startIndex: number; startTime: number; absoluteStartTime: number } | null; end: { endIndex: number; endTime: number; isComplete: boolean } | null; }> = {};
     comparisonSessions.forEach(session => {
         const data = comparisonData[session.id];
         if (data && data.length > 0) {
@@ -1724,14 +1724,19 @@ function TestingComponent() {
                         <Line type="monotone" dataKey="minGuideline" stroke="hsl(var(--chart-2))" name="Min Guideline" dot={false} activeDot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
                         <Line type="monotone" dataKey="maxGuideline" stroke="hsl(var(--destructive))" name="Max Guideline" dot={false} activeDot={false} strokeWidth={1} strokeDasharray="5 5" connectNulls />
 
-                        {comparisonSessions.map((session) => {
+                        {comparisonSessions.map((session, index) => {
                             const window = measurementWindows[session.id];
                             if (!window?.start) return null;
+                            const sessionData = comparisonData[session.id];
+                            if (!sessionData || sessionData.length === 0) return null;
+                            const sessionStartTime = new Date(sessionData[0].timestamp).getTime();
+                            const xPosition = (window.start.absoluteStartTime - sessionStartTime) / 1000;
+
 
                             return (
-                                <React.Fragment key={session.id}>
+                                <React.Fragment key={`ref-lines-${session.id}`}>
                                     <ReferenceLine
-                                        x={window.start.startTime}
+                                        x={xPosition}
                                         stroke="hsl(var(--primary))"
                                         strokeDasharray="3 3"
                                         strokeWidth={2}

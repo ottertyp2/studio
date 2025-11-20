@@ -105,7 +105,7 @@ export const toBase64 = (url: string): Promise<string> => {
   });
 };
 
-export const findMeasurementStart = (data: { value: number; timestamp: string }[], config: SensorConfig | null | undefined, vesselType: VesselType | null | undefined): { startIndex: number; startTime: number } | null => {
+export const findMeasurementStart = (data: { value: number; timestamp: string }[], config: SensorConfig | null | undefined, vesselType: VesselType | null | undefined): { startIndex: number; startTime: number; absoluteStartTime: number; } | null => {
     if (!data || data.length < 2 || !config || !vesselType || vesselType.pressureTarget === undefined || vesselType.timeBufferInSeconds === undefined) {
         return null;
     }
@@ -139,8 +139,9 @@ export const findMeasurementStart = (data: { value: number; timestamp: string }[
     
     const sessionStartTime = new Date(data[0].timestamp).getTime();
     const startTimeInSeconds = (new Date(data[finalStartIndex].timestamp).getTime() - sessionStartTime) / 1000;
+    const absoluteStartTime = new Date(data[finalStartIndex].timestamp).getTime();
 
-    return { startIndex: finalStartIndex, startTime: startTimeInSeconds };
+    return { startIndex: finalStartIndex, startTime: startTimeInSeconds, absoluteStartTime };
 };
 
 
