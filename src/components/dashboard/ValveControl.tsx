@@ -7,8 +7,49 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { Loader2, GaugeCircle, SlidersHorizontal, Square } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import React from 'react';
 
-const ValveRow = ({ valveName, valveId, status, onToggle, isLocked, isDisabled }: { valveName: string, valveId: 'VALVE1' | 'VALVE2', status: ValveStatus, onToggle: (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => void, isLocked: boolean, isDisabled: boolean}) => {
+
+const ProtectedValveAction: React.FC<{
+  isSessionRunning: boolean;
+  onConfirm: () => void;
+  actionType: 'toggle' | 'sequence';
+  valveName?: string;
+  newState?: ValveStatus;
+  children: React.ReactNode;
+}> = ({ isSessionRunning, onConfirm, actionType, valveName, newState, children }) => {
+    if (!isSessionRunning) {
+        return <div onClick={onConfirm}>{children}</div>;
+    }
+
+    const title = actionType === 'toggle' 
+        ? `Manually ${newState === 'ON' ? 'Open' : 'Close'} ${valveName}?`
+        : `Manually Start ${valveName}?`;
+    
+    const description = `A test session is currently running. Manually changing valve or sequence states can disrupt the test and lead to invalid data. Are you sure you want to proceed?`;
+
+    return (
+        <AlertDialog>
+            <AlertDialogTrigger asChild>
+                {children}
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>{title}</AlertDialogTitle>
+                    <AlertDialogDescription>{description}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={onConfirm}>Confirm</AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+    );
+};
+
+
+const ValveRow = ({ valveName, valveId, status, onToggle, isLocked, isDisabled, isSessionRunning }: { valveName: string, valveId: 'VALVE1' | 'VALVE2', status: ValveStatus, onToggle: (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => void, isLocked: boolean, isDisabled: boolean, isSessionRunning: boolean }) => {
     const isChecked = status === 'ON';
     
     return (
@@ -25,12 +66,21 @@ const ValveRow = ({ valveName, valveId, status, onToggle, isLocked, isDisabled }
                         {isDisabled ? 'Offline' : status}
                     </span>
                 )}
-                <Switch
-                    id={`valve-${valveId.toLowerCase()}-switch`}
-                    checked={isChecked}
-                    onCheckedChange={(checked) => onToggle(valveId, checked ? 'ON' : 'OFF')}
-                    disabled={isDisabled || isLocked}
-                />
+                 <ProtectedValveAction 
+                    isSessionRunning={isSessionRunning}
+                    onConfirm={() => onToggle(valveId, isChecked ? 'OFF' : 'ON')}
+                    actionType="toggle"
+                    valveName={valveName}
+                    newState={isChecked ? 'OFF' : 'ON'}
+                 >
+                    <Switch
+                        id={`valve-${valveId.toLowerCase()}-switch`}
+                        checked={isChecked}
+                        onCheckedChange={() => {}} // The action is handled by the wrapper
+                        disabled={isDisabled || isLocked}
+                        className={isSessionRunning ? 'cursor-pointer' : ''}
+                    />
+                </ProtectedValveAction>
             </div>
         </div>
     );
@@ -38,7 +88,7 @@ const ValveRow = ({ valveName, valveId, status, onToggle, isLocked, isDisabled }
 
 
 export default function ValveControl() {
-  const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves, sequence1Running, sequence2Running, sendSequenceCommand, lockedSequences } = useTestBench();
+  const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves, sequence1Running, sequence2Running, sendSequenceCommand, lockedSequences, runningTestSession } = useTestBench();
 
   const handleToggle = (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!isConnected) return;
@@ -52,6 +102,7 @@ export default function ValveControl() {
 
   const isSequence1Locked = lockedSequences.includes('sequence1');
   const isSequence2Locked = lockedSequences.includes('sequence2');
+  const isSessionRunning = !!runningTestSession;
 
   return (
     <Card className="w-full backdrop-blur-sm border-slate-300/80 shadow-lg">
@@ -67,6 +118,7 @@ export default function ValveControl() {
                 onToggle={handleToggle}
                 isLocked={lockedValves.includes('VALVE1')}
                 isDisabled={!isConnected}
+                isSessionRunning={isSessionRunning}
             />
             <Separator />
             <ValveRow 
@@ -76,10 +128,10 @@ export default function ValveControl() {
                 onToggle={handleToggle}
                 isLocked={lockedValves.includes('VALVE2')}
                 isDisabled={!isConnected}
+                isSessionRunning={isSessionRunning}
             />
             <Separator />
             <div className="flex flex-col gap-2 pt-2">
-                {/* Sequence 1 UI */}
                 {sequence1Running ? (
                   <Button
                     variant="destructive"
@@ -90,17 +142,22 @@ export default function ValveControl() {
                     Stop Pressure Test
                   </Button>
                 ) : (
-                  <Button
-                    onClick={() => handleSequence('sequence1', true)}
-                    disabled={!isConnected || sequence2Running || isSequence1Locked}
-                    className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
+                  <ProtectedValveAction
+                    isSessionRunning={isSessionRunning}
+                    onConfirm={() => handleSequence('sequence1', true)}
+                    actionType="sequence"
+                    valveName="Pressure Test"
                   >
-                    {isSequence1Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GaugeCircle className="mr-2 h-4 w-4" />}
-                    Pressure Test
-                  </Button>
+                     <Button
+                        disabled={!isConnected || sequence2Running || isSequence1Locked}
+                        className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md w-full"
+                      >
+                        {isSequence1Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GaugeCircle className="mr-2 h-4 w-4" />}
+                        Pressure Test
+                      </Button>
+                  </ProtectedValveAction>
                 )}
 
-                {/* Sequence 2 UI */}
                 {sequence2Running ? (
                   <Button
                     variant="destructive"
@@ -111,19 +168,23 @@ export default function ValveControl() {
                     Stop Setup Test
                   </Button>
                 ) : (
-                  <Button
-                    onClick={() => handleSequence('sequence2', true)}
-                    disabled={!isConnected || sequence1Running || isSequence2Locked}
-                    className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md"
+                  <ProtectedValveAction
+                    isSessionRunning={isSessionRunning}
+                    onConfirm={() => handleSequence('sequence2', true)}
+                    actionType="sequence"
+                    valveName="Setup Test"
                   >
-                    {isSequence2Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <SlidersHorizontal className="mr-2 h-4 w-4" />}
-                    Setup Test
-                  </Button>
+                     <Button
+                        disabled={!isConnected || sequence1Running || isSequence2Locked}
+                        className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md w-full"
+                      >
+                        {isSequence2Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <SlidersHorizontal className="mr-2 h-4 w-4" />}
+                        Setup Test
+                      </Button>
+                  </ProtectedValveAction>
                 )}
             </div>
         </CardContent>
     </Card>
   );
 }
-
-    

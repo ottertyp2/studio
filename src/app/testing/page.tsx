@@ -1246,7 +1246,7 @@ function TestingComponent() {
             <span>Time Remaining: {minutes}:{seconds.toString().padStart(2, '0')}</span>
         </div>
     );
-};
+  };
 
 
   return (
@@ -1848,6 +1848,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
-    
