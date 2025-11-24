@@ -97,8 +97,6 @@ const SessionTimer = ({
     session,
     vesselType,
     measurementWindow,
-    onStopSession,
-    onClassify,
 }: {
     session: WithId<any>;
     vesselType: WithId<VesselType> | undefined;
@@ -106,42 +104,35 @@ const SessionTimer = ({
         start: { absoluteStartTime: number; } | null;
         end: { isComplete: boolean; } | null;
     } | undefined;
-    onStopSession: () => void;
-    onClassify: (session: WithId<any>) => void;
 }) => {
-    const { toast } = useToast();
     const [remainingTime, setRemainingTime] = useState<number | null>(null);
 
     useEffect(() => {
+        console.log('[Timer Effect] Running. Session:', session?.id, 'VesselType:', vesselType?.id, 'MeasurementStart:', measurementWindow?.start?.absoluteStartTime);
+    
         if (!session?.id || !vesselType?.id || !vesselType.durationSeconds || !measurementWindow?.start?.absoluteStartTime) {
+            console.log('[Timer Effect] Conditions not met, clearing timer.');
             setRemainingTime(null);
             return;
         }
 
+        console.log('[Timer Effect] Conditions met, setting up interval.');
+    
         const interval = setInterval(() => {
             const measurementStartTime = measurementWindow.start!.absoluteStartTime;
             const elapsed = (Date.now() - measurementStartTime) / 1000;
             const remaining = Math.max(0, vesselType.durationSeconds! - elapsed);
             
+            console.log(`[Timer Tick] Remaining: ${remaining}`);
             setRemainingTime(remaining);
-
-            if (remaining === 0) {
-                toast({
-                    title: 'Session Automatically Completed',
-                    description: 'Classifying results and closing valves...',
-                });
-                onClassify(session);
-                setTimeout(() => {
-                    onStopSession();
-                }, 3000);
-                clearInterval(interval);
-            }
+    
         }, 1000);
-
+    
         return () => {
+            console.log('[Timer Effect] Cleanup.');
             clearInterval(interval);
         };
-    }, [session?.id, vesselType?.id, vesselType?.durationSeconds, measurementWindow?.start?.absoluteStartTime, onStopSession, onClassify, session, toast]);
+    }, [session?.id, vesselType?.id, vesselType?.durationSeconds, measurementWindow?.start?.absoluteStartTime]);
 
 
     if (remainingTime === null || remainingTime < 0) {
@@ -196,8 +187,6 @@ export default function ValveControl({ vesselTypes, measurementWindows, onClassi
                         session={runningTestSession} 
                         vesselType={vesselType}
                         measurementWindow={measurementWindow}
-                        onStopSession={onStopSession}
-                        onClassify={onClassify}
                     />
                 </>
             ) : !isConnected && (
