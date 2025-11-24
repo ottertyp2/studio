@@ -10,6 +10,7 @@ import { Loader2, GaugeCircle, SlidersHorizontal, Square, Timer } from 'lucide-r
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import React, { useState, useEffect } from 'react';
 import type { WithId } from '@/firebase';
+import { useToast } from '@/hooks/use-toast';
 
 const ProtectedValveAction: React.FC<{
   isSessionRunning: boolean;
@@ -96,7 +97,8 @@ const SessionTimer = ({
     session,
     vesselType,
     measurementWindow,
-    stopSession,
+    onStopSession,
+    onClassify,
 }: {
     session: WithId<any>;
     vesselType: WithId<VesselType> | undefined;
@@ -104,8 +106,10 @@ const SessionTimer = ({
         start: { absoluteStartTime: number; } | null;
         end: { isComplete: boolean; } | null;
     } | undefined;
-    stopSession: () => void;
+    onStopSession: () => void;
+    onClassify: (session: WithId<any>) => void;
 }) => {
+    const { toast } = useToast();
     const [remainingTime, setRemainingTime] = useState<number | null>(null);
 
     useEffect(() => {
@@ -122,7 +126,14 @@ const SessionTimer = ({
             setRemainingTime(remaining);
 
             if (remaining === 0) {
-                stopSession();
+                toast({
+                    title: 'Session Automatically Completed',
+                    description: 'Classifying results and closing valves...',
+                });
+                onClassify(session);
+                setTimeout(() => {
+                    onStopSession();
+                }, 3000);
                 clearInterval(interval);
             }
         }, 1000);
@@ -130,7 +141,7 @@ const SessionTimer = ({
         return () => {
             clearInterval(interval);
         };
-    }, [session?.id, vesselType?.id, vesselType?.durationSeconds, measurementWindow?.start?.absoluteStartTime, stopSession]);
+    }, [session?.id, vesselType?.id, vesselType?.durationSeconds, measurementWindow?.start?.absoluteStartTime, onStopSession, onClassify, session, toast]);
 
 
     if (remainingTime === null || remainingTime < 0) {
@@ -152,8 +163,8 @@ const SessionTimer = ({
 };
 
 
-export default function ValveControl({ vesselTypes, measurementWindows }: { vesselTypes: WithId<VesselType>[] | null, measurementWindows: any }) {
-  const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves, sequence1Running, sequence2Running, sendSequenceCommand, lockedSequences, runningTestSession, stopSession } = useTestBench();
+export default function ValveControl({ vesselTypes, measurementWindows, onClassify, onStopSession }: { vesselTypes: WithId<VesselType>[] | null, measurementWindows: any, onClassify: (session: WithId<any>) => void, onStopSession: () => void }) {
+  const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves, sequence1Running, sequence2Running, sendSequenceCommand, lockedSequences, runningTestSession } = useTestBench();
   
   const isSessionRunning = !!runningTestSession;
   const vesselType = isSessionRunning ? vesselTypes?.find(vt => vt.id === runningTestSession.vesselTypeId) : undefined;
@@ -185,7 +196,8 @@ export default function ValveControl({ vesselTypes, measurementWindows }: { vess
                         session={runningTestSession} 
                         vesselType={vesselType}
                         measurementWindow={measurementWindow}
-                        stopSession={stopSession}
+                        onStopSession={onStopSession}
+                        onClassify={onClassify}
                     />
                 </>
             ) : !isConnected && (

@@ -51,7 +51,7 @@ import {
 } from 'recharts';
 import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle, Square, GaugeCircle, SlidersHorizontal, Filter, ListTree, Calendar as CalendarIcon, RotateCcw, Layers } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, WithId, addDocument } from '@/firebase';
+import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, WithId, addDocument, setDocument } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
 import { useTestBench } from '@/context/TestBenchContext';
 import { collection, query, where, onSnapshot, doc, getDocs, orderBy, limit, getDoc, writeBatch, deleteDoc } from 'firebase/firestore';
@@ -527,6 +527,94 @@ function TestingComponent() {
     toast({ title: 'Session Stopped', description: 'Data recording has ended and valves have been closed.' });
   };
   
+  const handleClassifyByGuideline = async (session: WithId<TestSession>) => {
+    if (!firestore || !vesselTypes || !sensorConfigs) {
+        toast({ variant: 'destructive', title: 'Prerequisites Missing', description: 'Vessel types or sensor configurations not loaded.' });
+        return;
+    }
+
+    const vesselType = vesselTypes.find(vt => vt.id === session.vesselTypeId);
+    if (!vesselType || !vesselType.minCurve || !vesselType.maxCurve || vesselType.minCurve.length < 4 || vesselType.maxCurve.length < 4) {
+        toast({ variant: 'destructive', title: 'Guideline Missing', description: `Incomplete guidelines for vessel type "${session.vesselTypeName}".` });
+        return;
+    }
+
+    const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
+    if (!config) {
+        toast({ variant: 'destructive', title: 'Configuration Missing', description: 'Sensor configuration for this session not found.' });
+        return;
+    }
+
+    try {
+        const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+        const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
+        const snapshot = await getDocs(q);
+        const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
+
+        if (sensorData.length === 0) {
+            toast({ variant: 'warning', title: 'No Data', description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" has no data to classify.` });
+            return;
+        }
+
+        const { startIndex } = findMeasurementStart(sensorData, config, vesselType) || { startIndex: 0 };
+        const { endIndex, isComplete } = findMeasurementEnd(sensorData, startIndex, config, vesselType);
+        
+        if (!isComplete) {
+            await setDocument(doc(firestore, 'test_sessions', session.id), { classification: 'UNCLASSIFIABLE' }, { merge: true });
+            toast({ 
+                title: 'Classification: Unclassifiable', 
+                description: `Session did not run for the required duration of ${vesselType.durationSeconds}s.` 
+            });
+            return;
+        }
+
+        const analysisData = sensorData.slice(startIndex, endIndex + 1);
+
+        if (analysisData.length === 0) {
+            toast({ variant: 'warning', title: 'No Usable Data', description: 'No data available within the detected measurement window.' });
+            return;
+        }
+
+        const sessionStartTime = new Date(analysisData[0].timestamp).getTime();
+
+        const interpolateBezierCurve = (curve: { x: number, y: number }[], x: number) => {
+            if (!curve || curve.length !== 4) return undefined;
+            const [p0, p1, p2, p3] = curve;
+            const totalXRange = p3.x - p0.x;
+            if (totalXRange <= 0) return p0.y;
+            const t = (x - p0.x) / totalXRange;
+            if (t < 0) return p0.y;
+            if (t > 1) return p3.y;
+            const u = 1 - t;
+            const tt = t * t;
+            const uu = u * u;
+            const uuu = uu * u;
+            const ttt = tt * t;
+            return uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+        };
+
+        const isFailed = analysisData.some(dataPoint => {
+            const timeElapsed = (new Date(dataPoint.timestamp).getTime() - sessionStartTime) / 1000;
+            const convertedValue = convertRawValue(dataPoint.value, config);
+            const minGuideline = interpolateBezierCurve(vesselType.minCurve, timeElapsed);
+            const maxGuideline = interpolateBezierCurve(vesselType.maxCurve, timeElapsed);
+            if (minGuideline === undefined || maxGuideline === undefined) return false;
+            return convertedValue < minGuideline || convertedValue > maxGuideline;
+        });
+
+        const classification = isFailed ? 'LEAK' : 'DIFFUSION';
+        
+        await setDocument(doc(firestore, 'test_sessions', session.id), { classification }, { merge: true });
+        toast({ 
+            title: 'Classification Complete', 
+            description: `Session classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'}.` 
+        });
+
+    } catch (e: any) {
+        toast({ variant: 'destructive', title: `Guideline Classification Failed`, description: e.message });
+    }
+  };
+
   useEffect(() => {
     if (comparisonSessions.length === 0 || !firestore) {
       setComparisonData({});
@@ -1172,7 +1260,7 @@ function TestingComponent() {
 
     return filtered.sort((a, b) => {
         switch (sessionSortOrder) {
-            case 'startTime-asc': return new Date(a.startTime).getTime - new Date(b.startTime).getTime();
+            case 'startTime-asc': return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
             default: return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
         }
     });
@@ -1454,7 +1542,12 @@ function TestingComponent() {
                 </div>
                 </CardContent>
             </Card>
-            {isConnected && <ValveControl vesselTypes={vesselTypes} measurementWindows={measurementWindows} />}
+            {isConnected && <ValveControl 
+                                vesselTypes={vesselTypes} 
+                                measurementWindows={measurementWindows} 
+                                onClassify={handleClassifyByGuideline}
+                                onStopSession={handleStopSession}
+                            />}
         </div>
 
         <div className="lg:col-span-3 animate-in">
