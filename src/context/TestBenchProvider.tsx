@@ -171,7 +171,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 value: data.sensor,
                 timestamp: new Date(data.lastUpdate).toISOString(),
             };
-            addDocumentNonBlocking(sessionDataRef, dataToSave);
+            addDocumentNonBlocking(sessionDataRef, dataToSave)
+                .catch((error) => console.error('Firestore write failed:', error));
         }
     }
   }, [firestore]);
