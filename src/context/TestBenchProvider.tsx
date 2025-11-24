@@ -53,7 +53,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   const stopSession = useCallback(() => {
     if (runningTestSessionRef.current) {
-        console.log('[SessionListener][COMPLETED]', runningTestSessionRef.current);
         if (firestore) {
             const sessionRef = doc(firestore, 'test_sessions', runningTestSessionRef.current.id);
             updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
@@ -109,7 +108,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       if (!querySnapshot.empty) {
         const runningSessionDoc = querySnapshot.docs[0];
         const session = { id: runningSessionDoc.id, ...runningSessionDoc.data() } as WithId<DocumentData>;
-         console.log('[SessionListener][RUNNING]', session);
         if (runningTestSessionRef.current?.id !== session.id) {
           startSession(session);
         }
@@ -127,7 +125,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   }, [firestore, user, startSession, stopSession]);
 
   const handleNewDataPoint = useCallback((data: any) => {
-    console.log('[handleNewDataPoint] Received:', data);
     if (connectionTimeoutRef.current) {
         clearTimeout(connectionTimeoutRef.current);
     }
@@ -158,8 +155,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setSequence1Running(data.sequence1_running === true);
     setSequence2Running(data.sequence2_running === true);
     
-    // The recording status from the live path is the device's actual state.
-    // If it's present, it's the source of truth.
+    // The recording status from the live path is the source of truth.
     if (data.recording !== undefined) {
       setIsRecording(data.recording === true);
     }
@@ -167,7 +163,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setLockedValves([]);
     setLockedSequences([]);
 
-    console.log('[handleNewDataPoint] isRecording Flag:', data.recording);
     if (data.sensor !== null && data.lastUpdate && isRecording) {
         setLocalDataLog(prevLog => {
             const newDataPoint = { value: data.sensor, timestamp: new Date(data.lastUpdate).toISOString() };
@@ -177,9 +172,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             return [newDataPoint, ...prevLog].slice(0, 1000)
         });
 
-        console.log('[handleNewDataPoint] runningTestSessionRef:', runningTestSessionRef.current);
-        console.log('[handleNewDataPoint] Firestore Instance:', firestore);
-        console.log('[handleNewDataPoint] Data to Save:', data.sensor, data.lastUpdate);
         if (runningTestSessionRef.current && firestore) {
             const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
             const dataToSave = {
@@ -187,7 +179,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 timestamp: new Date(data.lastUpdate).toISOString(),
             };
             addDocumentNonBlocking(sessionDataRef, dataToSave)
-                .then(() => console.log('[handleNewDataPoint] Firestore write success:', dataToSave))
                 .catch((error) => console.error('[handleNewDataPoint] Firestore write FAILED:', error));
         }
     }
@@ -294,7 +285,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   
     const liveUnsubscribe = onValue(liveDataRef, (snap) => {
       const data = snap.val();
-      console.log('[RTDB] Live Data Snapshot:', data);
       if (data) {
         handleNewDataPoint(data);
       }
@@ -304,7 +294,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
     const commandsUnsubscribe = onValue(commandsRef, (snap) => {
       const commands = snap.val();
-      console.log('[RTDB] Commands Snapshot:', commands);
       if (commands) {
         // If the live data from the device *doesn't* include a 'recording' flag,
         // we fall back to trusting the command.
@@ -392,5 +381,3 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
-
-    
