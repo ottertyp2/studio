@@ -1,4 +1,3 @@
-
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -16,12 +15,12 @@ import {
 } from "@/components/ui/alert-dialog"
 import {
   Dialog,
+  DialogTrigger,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import {
   Card,
@@ -1197,25 +1196,18 @@ function TestingComponent() {
     setSessionDateFilter(undefined);
   };
 
-  const SessionTimer = ({ session }: { session: WithId<TestSession> | null }) => {
+  const SessionTimer = ({ session, measurementWindow, vesselType }: { session: WithId<TestSession> | null, measurementWindow: any, vesselType: VesselType | null | undefined }) => {
     const [remainingTime, setRemainingTime] = useState<number | null>(null);
 
     useEffect(() => {
-        if (!session || session.status !== 'RUNNING') {
+        if (!session || session.status !== 'RUNNING' || !vesselType?.durationSeconds) {
             setRemainingTime(null);
             return;
         }
 
-        const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
-        const duration = vesselType?.durationSeconds;
-
-        if (!duration) {
-            setRemainingTime(null);
-            return;
-        }
+        const duration = vesselType.durationSeconds;
 
         const interval = setInterval(() => {
-            const measurementWindow = measurementWindows[session.id];
             if (measurementWindow?.start) {
                 const elapsed = (Date.now() - measurementWindow.start.absoluteStartTime) / 1000;
                 const remaining = Math.max(0, duration - elapsed);
@@ -1226,7 +1218,7 @@ function TestingComponent() {
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [session, vesselTypes, measurementWindows]);
+    }, [session, vesselType, measurementWindow]);
 
     if (remainingTime === null || !session || session.status !== 'RUNNING') return null;
 
@@ -1239,8 +1231,7 @@ function TestingComponent() {
             <span>Time Remaining: {minutes}:{seconds.toString().padStart(2, '0')}</span>
         </div>
     );
-  };
-
+};
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-4">
@@ -1303,7 +1294,11 @@ function TestingComponent() {
                             <p>Vessel: <span className="font-medium text-foreground">{runningTestSession.vesselTypeName}</span></p>
                             <p>BatchCount: <span className="font-medium text-foreground">{runningTestSession.serialNumber || 'N/A'}</span></p>
                         </div>
-                        <SessionTimer session={runningTestSession} />
+                        <SessionTimer 
+                          session={runningTestSession} 
+                          measurementWindow={measurementWindows[runningTestSession.id]}
+                          vesselType={vesselTypes?.find(vt => vt.id === runningTestSession.vesselTypeId)}
+                        />
                         <Button onClick={handleStopSession} variant="destructive" className="mt-2">
                           <Square className="mr-2 h-4 w-4" /> Stop Session
                         </Button>
@@ -1843,4 +1838,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
