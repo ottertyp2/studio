@@ -157,13 +157,18 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setValve2Status(data.valve2 ? 'ON' : 'OFF');
     setSequence1Running(data.sequence1_running === true);
     setSequence2Running(data.sequence2_running === true);
-    setIsRecording(data.recording === true);
+    
+    // The recording status from the live path is the device's actual state.
+    // If it's present, it's the source of truth.
+    if (data.recording !== undefined) {
+      setIsRecording(data.recording === true);
+    }
     
     setLockedValves([]);
     setLockedSequences([]);
 
     console.log('[handleNewDataPoint] isRecording Flag:', data.recording);
-    if (data.sensor !== null && data.lastUpdate && data.recording === true) {
+    if (data.sensor !== null && data.lastUpdate && isRecording) {
         setLocalDataLog(prevLog => {
             const newDataPoint = { value: data.sensor, timestamp: new Date(data.lastUpdate).toISOString() };
             if(prevLog.length > 0 && prevLog[0].timestamp === newDataPoint.timestamp) {
@@ -186,7 +191,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 .catch((error) => console.error('[handleNewDataPoint] Firestore write FAILED:', error));
         }
     }
-  }, [firestore]);
+  }, [firestore, isRecording]);
   
   useEffect(() => {
     if (!database) return;
@@ -241,6 +246,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
     try {
         await set(ref(database, 'data/commands/recording'), shouldRecord);
+        // Optimistically update the UI state.
+        // If the live listener receives a different value, it will override this.
+        setIsRecording(shouldRecord);
     } catch (error: any) {
         console.error('Failed to send recording command:', error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
@@ -282,19 +290,39 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     if (!database) return;
   
     const liveDataRef = ref(database, 'data/live');
+    const commandsRef = ref(database, 'data/commands');
   
-    const unsubscribe = onValue(liveDataRef, (snap) => {
+    const liveUnsubscribe = onValue(liveDataRef, (snap) => {
       const data = snap.val();
       console.log('[RTDB] Live Data Snapshot:', data);
       if (data) {
         handleNewDataPoint(data);
       }
     }, (error) => {
-      console.error("Firebase onValue error:", error);
+      console.error("Firebase onValue error (live):", error);
+    });
+
+    const commandsUnsubscribe = onValue(commandsRef, (snap) => {
+      const commands = snap.val();
+      console.log('[RTDB] Commands Snapshot:', commands);
+      if (commands) {
+        // If the live data from the device *doesn't* include a 'recording' flag,
+        // we fall back to trusting the command.
+        if (commands.recording !== undefined) {
+           get(ref(database, 'data/live/recording')).then(liveRecordingSnap => {
+               if (!liveRecordingSnap.exists()) {
+                   setIsRecording(commands.recording);
+               }
+           });
+        }
+      }
+    }, (error) => {
+      console.error("Firebase onValue error (commands):", error);
     });
   
     return () => {
-        unsubscribe();
+        liveUnsubscribe();
+        commandsUnsubscribe();
         if (connectionTimeoutRef.current) {
             clearTimeout(connectionTimeoutRef.current);
         }
@@ -364,3 +392,5 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
+
+    
