@@ -8,7 +8,8 @@ import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { Loader2, GaugeCircle, SlidersHorizontal, Square, Timer } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import type { WithId } from '@/firebase';
 
 const ProtectedValveAction: React.FC<{
   isSessionRunning: boolean;
@@ -85,11 +86,83 @@ const ValveRow = ({ valveName, valveId, status, onToggle, isLocked, isDisabled, 
     );
 };
 
+type VesselType = {
+    id: string;
+    name: string;
+    durationSeconds?: number;
+}
 
-export default function ValveControl() {
+const SessionTimer = ({
+    session,
+    vesselType,
+    measurementWindow,
+}: {
+    session: WithId<any>;
+    vesselType: WithId<VesselType> | undefined;
+    measurementWindow: {
+        start: { absoluteStartTime: number; } | null;
+        end: { isComplete: boolean; } | null;
+    } | undefined;
+}) => {
+    const [remainingTime, setRemainingTime] = useState<number | null>(null);
+
+    useEffect(() => {
+        console.log('TIMER EFFECT RUNNING');
+        console.log('Session:', session);
+        console.log('VesselType:', vesselType);
+        console.log('MeasurementWindow:', measurementWindow);
+
+        if (!session || !vesselType || !vesselType.durationSeconds || !measurementWindow?.start) {
+            setRemainingTime(null);
+            console.log('TIMER BAIL: Missing required data');
+            return;
+        }
+
+        const interval = setInterval(() => {
+            const measurementStartTime = measurementWindow.start!.absoluteStartTime;
+            const elapsed = (Date.now() - measurementStartTime) / 1000;
+            const remaining = Math.max(0, vesselType.durationSeconds! - elapsed);
+            setRemainingTime(remaining);
+            console.log('TIMER TICK:', {
+                measurementStartTime,
+                elapsed,
+                remaining,
+                duration: vesselType.durationSeconds,
+            });
+
+            if (remaining === 0) {
+                clearInterval(interval);
+            }
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [session, vesselType, measurementWindow]);
+
+    if (remainingTime === null || remainingTime <= 0) {
+        return null;
+    }
+
+    const formatTime = (seconds: number) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    return (
+        <div className="flex items-center justify-center gap-2 pt-1 text-2xl font-mono text-primary">
+            <Timer className="h-6 w-6" />
+            <span>Time Remaining: {formatTime(remainingTime)}</span>
+        </div>
+    );
+};
+
+
+export default function ValveControl({ vesselTypes, measurementWindows }: { vesselTypes: WithId<VesselType>[] | null, measurementWindows: any }) {
   const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves, sequence1Running, sequence2Running, sendSequenceCommand, lockedSequences, runningTestSession } = useTestBench();
   
   const isSessionRunning = !!runningTestSession;
+  const vesselType = isSessionRunning ? vesselTypes?.find(vt => vt.id === runningTestSession.vesselTypeId) : undefined;
+  const measurementWindow = isSessionRunning ? measurementWindows?.[runningTestSession.id] : undefined;
 
   const handleToggle = (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!isConnected) return;
@@ -108,7 +181,13 @@ export default function ValveControl() {
     <Card className="w-full backdrop-blur-sm border-slate-300/80 shadow-lg">
         <CardHeader className="p-4 text-center">
             <CardTitle className="text-xl">Valve Control</CardTitle>
-            {!isConnected && (
+            {isSessionRunning && runningTestSession ? (
+                <SessionTimer 
+                   session={runningTestSession} 
+                   vesselType={vesselType}
+                   measurementWindow={measurementWindow}
+                />
+            ) : !isConnected && (
                <CardDescription className="text-xs">Connect a device to enable controls.</CardDescription>
             )}
         </CardHeader>

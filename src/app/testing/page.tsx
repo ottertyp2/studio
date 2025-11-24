@@ -190,66 +190,6 @@ const CHART_COLORS = [
   'hsl(var(--chart-5))',
 ];
 
-const SessionTimer = ({
-    session,
-    vesselType,
-    measurementWindow,
-}: {
-    session: WithId<TestSession>;
-    vesselType: WithId<VesselType> | undefined;
-    measurementWindow: {
-        start: {
-            startIndex: number;
-            startTime: number;
-            absoluteStartTime: number;
-        } | null;
-        end: {
-            endIndex: number;
-            endTime: number;
-            isComplete: boolean;
-        } | null;
-    } | undefined;
-}) => {
-    const [remainingTime, setRemainingTime] = useState<number | null>(null);
-
-    useEffect(() => {
-        if (!session || !vesselType || !vesselType.durationSeconds || !measurementWindow?.start) {
-            setRemainingTime(null);
-            return;
-        }
-
-        const interval = setInterval(() => {
-            const measurementStartTime = measurementWindow.start!.absoluteStartTime;
-            const elapsed = (Date.now() - measurementStartTime) / 1000;
-            const remaining = Math.max(0, vesselType.durationSeconds! - elapsed);
-            setRemainingTime(remaining);
-
-            if (remaining === 0) {
-                clearInterval(interval);
-            }
-        }, 1000);
-
-        return () => clearInterval(interval);
-    }, [session, vesselType, measurementWindow]);
-
-    if (remainingTime === null || remainingTime <= 0) {
-        return null;
-    }
-
-    const formatTime = (seconds: number) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = Math.floor(seconds % 60);
-        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    };
-
-    return (
-        <div className="flex items-center justify-center gap-2 pt-1 text-lg font-mono text-primary">
-            <Timer className="h-5 w-5" />
-            <span>Time Remaining: {formatTime(remainingTime)}</span>
-        </div>
-    );
-};
-
 
 function TestingComponent() {
   const router = useRouter();
@@ -1319,11 +1259,6 @@ function TestingComponent() {
                             <p>Vessel: <span className="font-medium text-foreground">{runningTestSession.vesselTypeName}</span></p>
                             <p>BatchCount: <span className="font-medium text-foreground">{runningTestSession.serialNumber || 'N/A'}</span></p>
                         </div>
-                        <SessionTimer 
-                           session={runningTestSession as WithId<TestSession>} 
-                           vesselType={vesselTypes?.find(vt => vt.id === runningTestSession.vesselTypeId) as WithId<VesselType>}
-                           measurementWindow={measurementWindows[runningTestSession.id]}
-                        />
                         <Button onClick={handleStopSession} variant="destructive" className="mt-2">
                           <Square className="mr-2 h-4 w-4" /> Stop Session
                         </Button>
@@ -1519,7 +1454,7 @@ function TestingComponent() {
                 </div>
                 </CardContent>
             </Card>
-            {isConnected && <ValveControl />}
+            {isConnected && <ValveControl vesselTypes={vesselTypes} measurementWindows={measurementWindows} />}
         </div>
 
         <div className="lg:col-span-3 animate-in">
