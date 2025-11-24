@@ -53,6 +53,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   const stopSession = useCallback(() => {
     if (runningTestSessionRef.current) {
+        console.log('[SessionListener][COMPLETED]', runningTestSessionRef.current);
         if (firestore) {
             const sessionRef = doc(firestore, 'test_sessions', runningTestSessionRef.current.id);
             updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
@@ -108,6 +109,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       if (!querySnapshot.empty) {
         const runningSessionDoc = querySnapshot.docs[0];
         const session = { id: runningSessionDoc.id, ...runningSessionDoc.data() } as WithId<DocumentData>;
+         console.log('[SessionListener][RUNNING]', session);
         if (runningTestSessionRef.current?.id !== session.id) {
           startSession(session);
         }
@@ -125,6 +127,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   }, [firestore, user, startSession, stopSession]);
 
   const handleNewDataPoint = useCallback((data: any) => {
+    console.log('[handleNewDataPoint] Received:', data);
     if (connectionTimeoutRef.current) {
         clearTimeout(connectionTimeoutRef.current);
     }
@@ -156,11 +159,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setSequence2Running(data.sequence2_running === true);
     setIsRecording(data.recording === true);
     
-    // As soon as we receive new data, we know any pending commands have been processed.
-    // Clear all locks.
     setLockedValves([]);
     setLockedSequences([]);
 
+    console.log('[handleNewDataPoint] isRecording Flag:', data.recording);
     if (data.sensor !== null && data.lastUpdate && data.recording === true) {
         setLocalDataLog(prevLog => {
             const newDataPoint = { value: data.sensor, timestamp: new Date(data.lastUpdate).toISOString() };
@@ -170,6 +172,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             return [newDataPoint, ...prevLog].slice(0, 1000)
         });
 
+        console.log('[handleNewDataPoint] runningTestSessionRef:', runningTestSessionRef.current);
+        console.log('[handleNewDataPoint] Firestore Instance:', firestore);
+        console.log('[handleNewDataPoint] Data to Save:', data.sensor, data.lastUpdate);
         if (runningTestSessionRef.current && firestore) {
             const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
             const dataToSave = {
@@ -177,7 +182,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 timestamp: new Date(data.lastUpdate).toISOString(),
             };
             addDocumentNonBlocking(sessionDataRef, dataToSave)
-                .catch((error) => console.error('Firestore write failed:', error));
+                .then(() => console.log('[handleNewDataPoint] Firestore write success:', dataToSave))
+                .catch((error) => console.error('[handleNewDataPoint] Firestore write FAILED:', error));
         }
     }
   }, [firestore]);
@@ -222,7 +228,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     try {
         await set(ref(database, commandPath), state === 'ON');
     } catch (error: any) {
-        console.error('Failed to send command:', error);
+        console.error(`Failed to send command for ${valve}:`, error);
         toast({ variant: 'destructive', title: 'Command Failed', description: error.message });
         setLockedValves(prev => prev.filter(v => v !== valve)); 
     }
@@ -253,7 +259,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       try {
           await set(ref(database, commandPath), state);
       } catch (error: any) {
-          console.error('Failed to send sequence command:', error);
+          console.error(`Failed to send sequence command for ${sequence}:`, error);
           toast({ variant: 'destructive', title: 'Sequence Command Failed', description: error.message });
           setLockedSequences(prev => prev.filter(s => s !== sequence));
       }
@@ -279,6 +285,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   
     const unsubscribe = onValue(liveDataRef, (snap) => {
       const data = snap.val();
+      console.log('[RTDB] Live Data Snapshot:', data);
       if (data) {
         handleNewDataPoint(data);
       }
