@@ -97,6 +97,8 @@ const SessionTimer = ({
     session,
     vesselType,
     measurementWindow,
+    onStopSession,
+    onClassify
 }: {
     session: WithId<any>;
     vesselType: WithId<VesselType> | undefined;
@@ -104,19 +106,25 @@ const SessionTimer = ({
         start: { absoluteStartTime: number; } | null;
         end: { isComplete: boolean; } | null;
     } | undefined;
+    onStopSession: () => void;
+    onClassify: (session: WithId<any>) => void;
 }) => {
     const [remainingTime, setRemainingTime] = useState<number | null>(null);
+    const { toast } = useToast();
+    const stopTriggeredRef = React.useRef(false);
 
     useEffect(() => {
         console.log('[Timer Effect] Running. Session:', session?.id, 'VesselType:', vesselType?.id, 'MeasurementStart:', measurementWindow?.start?.absoluteStartTime);
-    
-        if (!session?.id || !vesselType?.id || !vesselType.durationSeconds || !measurementWindow?.start?.absoluteStartTime) {
+
+        if (!session?.id || !vesselType?.id || !vesselType.durationSeconds || !measurementWindow?.start) {
             console.log('[Timer Effect] Conditions not met, clearing timer.');
             setRemainingTime(null);
+            stopTriggeredRef.current = false; // Reset trigger
             return;
         }
 
         console.log('[Timer Effect] Conditions met, setting up interval.');
+        stopTriggeredRef.current = false; // Reset trigger on new session/start
     
         const interval = setInterval(() => {
             const measurementStartTime = measurementWindow.start!.absoluteStartTime;
@@ -132,7 +140,24 @@ const SessionTimer = ({
             console.log('[Timer Effect] Cleanup.');
             clearInterval(interval);
         };
-    }, [session?.id, vesselType?.id, vesselType?.durationSeconds, measurementWindow?.start?.absoluteStartTime]);
+    }, [session?.id, vesselType?.id, vesselType?.durationSeconds, measurementWindow?.start]);
+
+    useEffect(() => {
+        if (remainingTime !== null && remainingTime <= 0 && !stopTriggeredRef.current) {
+            stopTriggeredRef.current = true; // Prevents multiple triggers
+            
+            toast({
+                title: 'Session Automatically Completed',
+                description: 'Classifying results and stopping session...',
+            });
+            
+            onClassify(session);
+            
+            setTimeout(() => {
+                onStopSession();
+            }, 3000);
+        }
+    }, [remainingTime, onStopSession, onClassify, session, toast]);
 
 
     if (remainingTime === null || remainingTime < 0) {
@@ -187,6 +212,8 @@ export default function ValveControl({ vesselTypes, measurementWindows, onClassi
                         session={runningTestSession} 
                         vesselType={vesselType}
                         measurementWindow={measurementWindow}
+                        onStopSession={onStopSession}
+                        onClassify={onClassify}
                     />
                 </>
             ) : !isConnected && (
