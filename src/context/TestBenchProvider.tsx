@@ -1,3 +1,4 @@
+
 'use client';
 import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -44,13 +45,13 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [downtimeStart, setDowntimeStart] = useState<number | null>(null);
 
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const sessionEndTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  const startSession = useCallback((session: WithId<DocumentData>) => {
-    runningTestSessionRef.current = session;
-    setRunningTestSession(session);
-  }, []);
-
   const stopSession = useCallback(() => {
+    if (sessionEndTimeoutRef.current) {
+        clearTimeout(sessionEndTimeoutRef.current);
+        sessionEndTimeoutRef.current = null;
+    }
     if (runningTestSessionRef.current) {
         if (firestore) {
             const sessionRef = doc(firestore, 'test_sessions', runningTestSessionRef.current.id);
@@ -60,6 +61,34 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         setRunningTestSession(null);
     }
   }, [firestore]);
+
+  const startSession = useCallback((session: WithId<DocumentData>) => {
+    runningTestSessionRef.current = session;
+    setRunningTestSession(session);
+    
+    if (sessionEndTimeoutRef.current) {
+        clearTimeout(sessionEndTimeoutRef.current);
+    }
+
+    if (firestore) {
+      getDocs(collection(firestore, 'vessel_types')).then(vesselTypesSnapshot => {
+        const vesselTypes = vesselTypesSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+        const vesselType = vesselTypes.find(vt => vt.id === session.vesselTypeId);
+        const duration = vesselType?.durationSeconds;
+        
+        if (duration) {
+            sessionEndTimeoutRef.current = setTimeout(() => {
+                toast({
+                    title: 'Session Automatically Ended',
+                    description: `The session for ${session.vesselTypeName} has completed its configured duration.`,
+                });
+                stopSession();
+            }, duration * 1000);
+        }
+      });
+    }
+
+  }, [firestore, stopSession, toast]);
 
 
   useEffect(() => {

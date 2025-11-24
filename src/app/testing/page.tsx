@@ -1197,45 +1197,6 @@ function TestingComponent() {
     setSessionDateFilter(undefined);
   };
 
-  const SessionTimer = ({ session, measurementWindow, vesselType }: { session: WithId<TestSession> | null, measurementWindow: any, vesselType: VesselType | null | undefined }) => {
-    const [remainingTime, setRemainingTime] = useState<number | null>(null);
-
-    useEffect(() => {
-        if (!session || session.status !== 'RUNNING' || !vesselType?.durationSeconds) {
-            setRemainingTime(null);
-            return;
-        }
-
-        const duration = vesselType.durationSeconds;
-
-        const interval = setInterval(() => {
-            if (measurementWindow?.start?.absoluteStartTime) {
-                const elapsed = (Date.now() - measurementWindow.start.absoluteStartTime) / 1000;
-                const remaining = Math.max(0, duration - elapsed);
-                setRemainingTime(remaining);
-            } else {
-                setRemainingTime(duration);
-            }
-        }, 1000);
-
-        return () => clearInterval(interval);
-    }, [session, vesselType, measurementWindow]);
-
-    if (remainingTime === null || !session || session.status !== 'RUNNING') {
-        return null;
-    }
-
-    const minutes = Math.floor(remainingTime / 60);
-    const seconds = Math.floor(remainingTime % 60);
-
-    return (
-        <div className="text-center text-sm text-muted-foreground flex items-center justify-center gap-2 mt-2">
-            <Timer className="h-4 w-4" />
-            <span>Time Remaining: {minutes}:{seconds.toString().padStart(2, '0')}</span>
-        </div>
-    );
-};
-
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-4">
       <header className="w-full max-w-7xl mx-auto mb-6 animate-in">
@@ -1297,11 +1258,6 @@ function TestingComponent() {
                             <p>Vessel: <span className="font-medium text-foreground">{runningTestSession.vesselTypeName}</span></p>
                             <p>BatchCount: <span className="font-medium text-foreground">{runningTestSession.serialNumber || 'N/A'}</span></p>
                         </div>
-                        <SessionTimer 
-                          session={runningTestSession} 
-                          measurementWindow={measurementWindows[runningTestSession.id]}
-                          vesselType={vesselTypes?.find(vt => vt.id === runningTestSession.vesselTypeId)}
-                        />
                         <Button onClick={handleStopSession} variant="destructive" className="mt-2">
                           <Square className="mr-2 h-4 w-4" /> Stop Session
                         </Button>
@@ -1497,7 +1453,7 @@ function TestingComponent() {
                 </div>
                 </CardContent>
             </Card>
-            {isConnected && <ValveControl />}
+            {isConnected && <ValveControl vesselTypes={vesselTypes} />}
         </div>
 
         <div className="lg:col-span-3 animate-in">

@@ -6,9 +6,16 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
-import { Loader2, GaugeCircle, SlidersHorizontal, Square } from 'lucide-react';
+import { Loader2, GaugeCircle, SlidersHorizontal, Square, Timer } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import type { WithId } from '@/firebase';
+
+type VesselType = {
+    id: string;
+    name: string;
+    durationSeconds?: number;
+};
 
 
 const ProtectedValveAction: React.FC<{
@@ -87,8 +94,33 @@ const ValveRow = ({ valveName, valveId, status, onToggle, isLocked, isDisabled, 
 };
 
 
-export default function ValveControl() {
+export default function ValveControl({ vesselTypes }: { vesselTypes: WithId<VesselType>[] | null }) {
   const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves, sequence1Running, sequence2Running, sendSequenceCommand, lockedSequences, runningTestSession } = useTestBench();
+  const [remainingTime, setRemainingTime] = useState<number | null>(null);
+
+  const isSessionRunning = !!runningTestSession;
+  const vesselType = vesselTypes?.find(vt => vt.id === runningTestSession?.vesselTypeId);
+  const duration = vesselType?.durationSeconds;
+
+  useEffect(() => {
+    if (!isSessionRunning || !duration || !runningTestSession?.startTime) {
+      setRemainingTime(null);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const startTime = new Date(runningTestSession.startTime).getTime();
+      const elapsed = (Date.now() - startTime) / 1000;
+      const remaining = Math.max(0, duration - elapsed);
+      setRemainingTime(remaining);
+      
+      if (remaining === 0) {
+        clearInterval(interval);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isSessionRunning, duration, runningTestSession?.startTime]);
 
   const handleToggle = (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!isConnected) return;
@@ -102,13 +134,25 @@ export default function ValveControl() {
 
   const isSequence1Locked = lockedSequences.includes('sequence1');
   const isSequence2Locked = lockedSequences.includes('sequence2');
-  const isSessionRunning = !!runningTestSession;
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   return (
     <Card className="w-full backdrop-blur-sm border-slate-300/80 shadow-lg">
         <CardHeader className="p-4 text-center">
             <CardTitle className="text-xl">Valve Control</CardTitle>
-            {!isConnected && <CardDescription className="text-xs">Connect a device to enable controls.</CardDescription>}
+            {isSessionRunning && remainingTime !== null ? (
+              <div className="flex items-center justify-center gap-2 pt-1 text-lg font-mono text-primary">
+                <Timer className="h-5 w-5" />
+                <span>{formatTime(remainingTime)}</span>
+              </div>
+            ) : !isConnected ? (
+               <CardDescription className="text-xs">Connect a device to enable controls.</CardDescription>
+            ): null}
         </CardHeader>
         <CardContent className="p-4 pt-0 space-y-3">
             <ValveRow 
