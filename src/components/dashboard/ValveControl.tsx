@@ -107,14 +107,8 @@ const SessionTimer = ({
     const [remainingTime, setRemainingTime] = useState<number | null>(null);
 
     useEffect(() => {
-        console.log('TIMER EFFECT RUNNING');
-        console.log('Session:', session);
-        console.log('VesselType:', vesselType);
-        console.log('MeasurementWindow:', measurementWindow);
-
         if (!session || !vesselType || !vesselType.durationSeconds || !measurementWindow?.start) {
             setRemainingTime(null);
-            console.log('TIMER BAIL: Missing required data');
             return;
         }
 
@@ -123,12 +117,6 @@ const SessionTimer = ({
             const elapsed = (Date.now() - measurementStartTime) / 1000;
             const remaining = Math.max(0, vesselType.durationSeconds! - elapsed);
             setRemainingTime(remaining);
-            console.log('TIMER TICK:', {
-                measurementStartTime,
-                elapsed,
-                remaining,
-                duration: vesselType.durationSeconds,
-            });
 
             if (remaining === 0) {
                 clearInterval(interval);
@@ -151,7 +139,7 @@ const SessionTimer = ({
     return (
         <div className="flex items-center justify-center gap-2 pt-1 text-2xl font-mono text-primary">
             <Timer className="h-6 w-6" />
-            <span>Time Remaining: {formatTime(remainingTime)}</span>
+            <span>{formatTime(remainingTime)}</span>
         </div>
     );
 };
@@ -182,11 +170,16 @@ export default function ValveControl({ vesselTypes, measurementWindows }: { vess
         <CardHeader className="p-4 text-center">
             <CardTitle className="text-xl">Valve Control</CardTitle>
             {isSessionRunning && runningTestSession ? (
-                <SessionTimer 
-                   session={runningTestSession} 
-                   vesselType={vesselType}
-                   measurementWindow={measurementWindow}
-                />
+                <>
+                    <CardDescription>
+                        Time Remaining:
+                    </CardDescription>
+                    <SessionTimer 
+                        session={runningTestSession} 
+                        vesselType={vesselType}
+                        measurementWindow={measurementWindow}
+                    />
+                </>
             ) : !isConnected && (
                <CardDescription className="text-xs">Connect a device to enable controls.</CardDescription>
             )}
