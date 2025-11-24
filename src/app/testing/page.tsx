@@ -1201,43 +1201,33 @@ function TestingComponent() {
     const [remainingTime, setRemainingTime] = useState<number | null>(null);
 
     useEffect(() => {
-        console.log("Timer Effect triggered", { session, vesselType, measurementWindow });
         if (!session || session.status !== 'RUNNING' || !vesselType?.durationSeconds) {
-            console.log("Timer condition not met, setting to null");
             setRemainingTime(null);
             return;
         }
 
         const duration = vesselType.durationSeconds;
-        console.log("Timer duration:", duration);
 
         const interval = setInterval(() => {
-            if (measurementWindow?.start) {
+            if (measurementWindow?.start?.absoluteStartTime) {
                 const elapsed = (Date.now() - measurementWindow.start.absoluteStartTime) / 1000;
                 const remaining = Math.max(0, duration - elapsed);
                 setRemainingTime(remaining);
-                console.log("Timer Tick (with measurement start):", { elapsed, remaining });
             } else {
                 setRemainingTime(duration);
-                console.log("Timer Tick (no measurement start yet): showing full duration", duration);
             }
         }, 1000);
 
-        return () => {
-            console.log("Timer cleanup");
-            clearInterval(interval);
-        };
+        return () => clearInterval(interval);
     }, [session, vesselType, measurementWindow]);
 
     if (remainingTime === null || !session || session.status !== 'RUNNING') {
-        console.log("Timer rendering NULL", { remainingTime, sessionStatus: session?.status });
         return null;
     }
 
     const minutes = Math.floor(remainingTime / 60);
     const seconds = Math.floor(remainingTime % 60);
 
-    console.log("Rendering timer with time:", { minutes, seconds });
     return (
         <div className="text-center text-sm text-muted-foreground flex items-center justify-center gap-2 mt-2">
             <Timer className="h-4 w-4" />
@@ -1851,5 +1841,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
