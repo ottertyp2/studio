@@ -67,21 +67,26 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     if (!database) return;
 
     const systemStatusRef = ref(database, 'data/system/status');
-
-    const unsubscribe = onValue(systemStatusRef, (snapshot) => {
-        const status = snapshot.val();
-        if (status) {
-            setStartTime(status.startTime || null);
-            setTotalDowntime(status.totalDowntime || 0);
-            setDowntimeStart(status.downtimeStart || null);
-        } else {
+    
+    // First, check for existence and initialize if needed.
+    get(systemStatusRef).then(snapshot => {
+        if (!snapshot.exists()) {
             const now = Date.now();
             set(systemStatusRef, {
                 startTime: now,
                 totalDowntime: 0,
                 downtimeStart: null,
             });
-            setStartTime(now);
+        }
+    });
+
+    // Then, set up the real-time listener.
+    const unsubscribe = onValue(systemStatusRef, (snapshot) => {
+        const status = snapshot.val();
+        if (status) {
+            setStartTime(status.startTime || null);
+            setTotalDowntime(status.totalDowntime || 0);
+            setDowntimeStart(status.downtimeStart || null);
         }
     });
 
