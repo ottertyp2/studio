@@ -4,7 +4,7 @@
 
 You are responsible for maintaining the CHANGELOG. Follow these rules:
 
-1. **File Format**: Maintain a CHANGELOG.md file in the project root
+1. **File Format**: in the project root Maintain a CHANGELOG.md file
 2. **For Every Code Change**: 
    - Analyze the changes you've made
    - Add a new entry in [Date] format

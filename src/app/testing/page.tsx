@@ -216,6 +216,7 @@ function TestingComponent() {
     startSession: startSessionInContext,
     stopSession: stopSessionInContext,
     sendSequenceCommand,
+    sendValveCommand
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
@@ -518,6 +519,8 @@ function TestingComponent() {
     if (!runningTestSession || !database || !firestore) return;
     
     await sendRecordingCommand(false);
+    await sendValveCommand('VALVE1', 'OFF');
+    await sendValveCommand('VALVE2', 'OFF');
 
     const sessionRef = doc(firestore, 'test_sessions', runningTestSession.id);
     await updateDocumentNonBlocking(sessionRef, {
@@ -527,7 +530,7 @@ function TestingComponent() {
     
     stopSessionInContext();
 
-    toast({ title: 'Session Stopped', description: 'Data recording has ended.' });
+    toast({ title: 'Session Stopped', description: 'Data recording has ended and valves have been closed.' });
   };
   
   useEffect(() => {
@@ -1201,6 +1204,50 @@ function TestingComponent() {
     setSessionDateFilter(undefined);
   };
 
+  const SessionTimer = ({ session }: { session: WithId<TestSession> | null }) => {
+    const [remainingTime, setRemainingTime] = useState<number | null>(null);
+
+    useEffect(() => {
+        if (!session || session.status !== 'RUNNING') {
+            setRemainingTime(null);
+            return;
+        }
+
+        const vesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+        const duration = vesselType?.durationSeconds;
+
+        if (!duration) {
+            setRemainingTime(null);
+            return;
+        }
+
+        const interval = setInterval(() => {
+            const measurementWindow = measurementWindows[session.id];
+            if (measurementWindow?.start) {
+                const elapsed = (Date.now() - measurementWindow.start.absoluteStartTime) / 1000;
+                const remaining = Math.max(0, duration - elapsed);
+                setRemainingTime(remaining);
+            } else {
+                setRemainingTime(duration); // Show full duration until measurement starts
+            }
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [session, vesselTypes, measurementWindows]);
+
+    if (remainingTime === null || !session || session.status !== 'RUNNING') return null;
+
+    const minutes = Math.floor(remainingTime / 60);
+    const seconds = Math.floor(remainingTime % 60);
+
+    return (
+        <div className="text-center text-sm text-muted-foreground flex items-center justify-center gap-2 mt-2">
+            <Timer className="h-4 w-4" />
+            <span>Time Remaining: {minutes}:{seconds.toString().padStart(2, '0')}</span>
+        </div>
+    );
+};
+
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-4">
@@ -1261,7 +1308,8 @@ function TestingComponent() {
                             <p>Vessel: <span className="font-medium text-foreground">{runningTestSession.vesselTypeName}</span></p>
                             <p>BatchCount: <span className="font-medium text-foreground">{runningTestSession.serialNumber || 'N/A'}</span></p>
                         </div>
-                        <Button onClick={handleStopSession} variant="destructive">
+                        <SessionTimer session={runningTestSession} />
+                        <Button onClick={handleStopSession} variant="destructive" className="mt-2">
                           <Square className="mr-2 h-4 w-4" /> Stop Session
                         </Button>
                     </div>
