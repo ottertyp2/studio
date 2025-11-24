@@ -452,14 +452,6 @@ function TestingComponent() {
         toast({ variant: 'destructive', title: 'Invalid BatchCount', description: `BatchCount for "${vesselType.name}" must be between 1 and ${vesselType.maxBatchCount}.`});
         return;
     }
-    if (finalBatchId) {
-        const q = query(collection(firestore, 'test_sessions'), where('batchId', '==', finalBatchId), where('serialNumber', '==', newSessionData.serialNumber.trim()));
-        const batchSessionsSnapshot = await getDocs(q);
-        if (!batchSessionsSnapshot.empty) {
-            toast({ variant: 'destructive', title: 'Duplicate BatchCount', description: `BatchCount "${newSessionData.serialNumber.trim()}" has already been tested in this batch.`});
-            return;
-        }
-    }
 
     setComparisonData({});
     setComparisonSessions([]);
