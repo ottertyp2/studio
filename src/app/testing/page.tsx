@@ -511,6 +511,7 @@ function TestingComponent() {
     if (!runningTestSession || !database || !firestore) return;
     
     await sendRecordingCommand(false);
+    await sendSequenceCommand('sequence1', false);
     await sendValveCommand('VALVE1', 'OFF');
     await sendValveCommand('VALVE2', 'OFF');
 
@@ -1840,3 +1841,4 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
