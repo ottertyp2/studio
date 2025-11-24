@@ -114,22 +114,29 @@ const SessionTimer = ({
     const stopTriggeredRef = React.useRef(false);
 
     useEffect(() => {
+        console.log('[Timer Effect] Running. Session:', session, 'VesselType:', vesselType, 'Window:', measurementWindow);
+
         if (!session?.id || !vesselType?.id || !vesselType.durationSeconds || !measurementWindow?.start) {
+            console.log('[Timer Effect] Conditions not met, clearing timer.');
             setRemainingTime(null);
             return;
         }
+
+        console.log('[Timer Effect] Conditions met, setting up interval.');
 
         const interval = setInterval(() => {
             const measurementStartTime = measurementWindow.start!.absoluteStartTime;
             const elapsed = (Date.now() - measurementStartTime) / 1000;
             const remaining = Math.max(0, vesselType.durationSeconds! - elapsed);
+            console.log(`[Timer Tick] Remaining: ${remaining}`);
             setRemainingTime(remaining);
         }, 1000);
 
         return () => {
+            console.log('[Timer Effect] Cleanup.');
             clearInterval(interval);
         };
-    }, [session?.id, vesselType?.id, vesselType?.durationSeconds, measurementWindow?.start]);
+    }, [session?.id, vesselType?.id, vesselType?.durationSeconds, measurementWindow?.start?.absoluteStartTime]);
 
     useEffect(() => {
         if (remainingTime !== null && remainingTime <= 0 && !stopTriggeredRef.current) {
@@ -147,20 +154,21 @@ const SessionTimer = ({
             }, 3000);
         }
 
+        // Reset the trigger flag if a new session starts with positive time
         if (remainingTime !== null && remainingTime > 0) {
             stopTriggeredRef.current = false;
         }
-    }, [remainingTime, onStopSession, onClassify, session, toast]);
-
-    if (remainingTime === null || remainingTime < 0) {
-        return null;
-    }
+    }, [remainingTime, onClassify, onStopSession, session, toast]);
 
     const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
         return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
+
+    if (remainingTime === null || remainingTime < 0) {
+        return null;
+    }
 
     return (
         <div className="flex items-center justify-center gap-2 pt-1 text-2xl font-mono text-primary">
