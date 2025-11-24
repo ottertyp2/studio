@@ -96,6 +96,7 @@ const SessionTimer = ({
     session,
     vesselType,
     measurementWindow,
+    stopSession,
 }: {
     session: WithId<any>;
     vesselType: WithId<VesselType> | undefined;
@@ -103,6 +104,7 @@ const SessionTimer = ({
         start: { absoluteStartTime: number; } | null;
         end: { isComplete: boolean; } | null;
     } | undefined;
+    stopSession: () => void;
 }) => {
     const [remainingTime, setRemainingTime] = useState<number | null>(null);
 
@@ -116,9 +118,11 @@ const SessionTimer = ({
             const measurementStartTime = measurementWindow.start!.absoluteStartTime;
             const elapsed = (Date.now() - measurementStartTime) / 1000;
             const remaining = Math.max(0, vesselType.durationSeconds! - elapsed);
+            
             setRemainingTime(remaining);
 
             if (remaining === 0) {
+                stopSession();
                 clearInterval(interval);
             }
         }, 1000);
@@ -126,10 +130,10 @@ const SessionTimer = ({
         return () => {
             clearInterval(interval);
         };
-    }, [session?.id, vesselType?.id, vesselType?.durationSeconds, measurementWindow?.start?.absoluteStartTime]);
+    }, [session?.id, vesselType?.id, vesselType?.durationSeconds, measurementWindow?.start?.absoluteStartTime, stopSession]);
 
 
-    if (remainingTime === null || remainingTime <= 0) {
+    if (remainingTime === null || remainingTime < 0) {
         return null;
     }
 
@@ -149,7 +153,7 @@ const SessionTimer = ({
 
 
 export default function ValveControl({ vesselTypes, measurementWindows }: { vesselTypes: WithId<VesselType>[] | null, measurementWindows: any }) {
-  const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves, sequence1Running, sequence2Running, sendSequenceCommand, lockedSequences, runningTestSession } = useTestBench();
+  const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves, sequence1Running, sequence2Running, sendSequenceCommand, lockedSequences, runningTestSession, stopSession } = useTestBench();
   
   const isSessionRunning = !!runningTestSession;
   const vesselType = isSessionRunning ? vesselTypes?.find(vt => vt.id === runningTestSession.vesselTypeId) : undefined;
@@ -181,6 +185,7 @@ export default function ValveControl({ vesselTypes, measurementWindows }: { vess
                         session={runningTestSession} 
                         vesselType={vesselType}
                         measurementWindow={measurementWindow}
+                        stopSession={stopSession}
                     />
                 </>
             ) : !isConnected && (
