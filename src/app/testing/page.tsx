@@ -483,7 +483,6 @@ function TestingComponent() {
           await sendMovingAverageCommand(sensorConfig.movingAverageLength || 10);
         }
         await sendRecordingCommand(true);
-        await sendSequenceCommand('sequence1', true);
       
         toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
         setIsNewSessionDialogOpen(false);
@@ -1252,10 +1251,12 @@ function TestingComponent() {
                 BioThrust Live Dashboard
                 </CardTitle>
                  <div className="flex items-center gap-2">
-                    <Button onClick={() => router.push('/admin')} variant="outline">
-                        <Cog className="h-4 w-4 mr-2" />
-                        Manage
-                    </Button>
+                    {userRole === 'superadmin' && (
+                        <Button onClick={() => router.push('/admin')} variant="outline">
+                            <Cog className="h-4 w-4 mr-2" />
+                            Manage
+                        </Button>
+                    )}
                     <Button onClick={handleSignOut} variant="ghost">
                         <LogOut className="h-4 w-4 mr-2" />
                         Logout
@@ -1841,4 +1842,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
