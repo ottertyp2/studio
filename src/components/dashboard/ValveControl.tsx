@@ -114,37 +114,26 @@ const SessionTimer = ({
     const stopTriggeredRef = React.useRef(false);
 
     useEffect(() => {
-        console.log('[Timer Effect] Running. Session:', session?.id, 'VesselType:', vesselType?.id, 'MeasurementStart:', measurementWindow?.start?.absoluteStartTime);
-
         if (!session?.id || !vesselType?.id || !vesselType.durationSeconds || !measurementWindow?.start) {
-            console.log('[Timer Effect] Conditions not met, clearing timer.');
             setRemainingTime(null);
-            stopTriggeredRef.current = false; // Reset trigger
             return;
         }
 
-        console.log('[Timer Effect] Conditions met, setting up interval.');
-        stopTriggeredRef.current = false; // Reset trigger on new session/start
-    
         const interval = setInterval(() => {
             const measurementStartTime = measurementWindow.start!.absoluteStartTime;
             const elapsed = (Date.now() - measurementStartTime) / 1000;
             const remaining = Math.max(0, vesselType.durationSeconds! - elapsed);
-            
-            console.log(`[Timer Tick] Remaining: ${remaining}`);
             setRemainingTime(remaining);
-    
         }, 1000);
-    
+
         return () => {
-            console.log('[Timer Effect] Cleanup.');
             clearInterval(interval);
         };
     }, [session?.id, vesselType?.id, vesselType?.durationSeconds, measurementWindow?.start]);
 
     useEffect(() => {
         if (remainingTime !== null && remainingTime <= 0 && !stopTriggeredRef.current) {
-            stopTriggeredRef.current = true; // Prevents multiple triggers
+            stopTriggeredRef.current = true;
             
             toast({
                 title: 'Session Automatically Completed',
@@ -157,8 +146,11 @@ const SessionTimer = ({
                 onStopSession();
             }, 3000);
         }
-    }, [remainingTime, onStopSession, onClassify, session, toast]);
 
+        if (remainingTime !== null && remainingTime > 0) {
+            stopTriggeredRef.current = false;
+        }
+    }, [remainingTime, onStopSession, onClassify, session, toast]);
 
     if (remainingTime === null || remainingTime < 0) {
         return null;
@@ -183,7 +175,7 @@ export default function ValveControl({ vesselTypes, measurementWindows, onClassi
   const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves, sequence1Running, sequence2Running, sendSequenceCommand, lockedSequences, runningTestSession } = useTestBench();
   
   const isSessionRunning = !!runningTestSession;
-  const vesselType = isSessionRunning ? vesselTypes?.find(vt => vt.id === runningTestSession.vesselTypeId) : undefined;
+  const vesselType = isSessionRunning && vesselTypes ? vesselTypes.find(vt => vt.id === runningTestSession.vesselTypeId) : undefined;
   const measurementWindow = isSessionRunning ? measurementWindows?.[runningTestSession.id] : undefined;
 
   const handleToggle = (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
@@ -203,7 +195,7 @@ export default function ValveControl({ vesselTypes, measurementWindows, onClassi
     <Card className="w-full backdrop-blur-sm border-slate-300/80 shadow-lg">
         <CardHeader className="p-4 text-center">
             <CardTitle className="text-xl">Valve Control</CardTitle>
-            {isSessionRunning && runningTestSession ? (
+            {isSessionRunning && runningTestSession && vesselType ? (
                 <>
                     <CardDescription>
                         Time Remaining:
@@ -259,7 +251,7 @@ export default function ValveControl({ vesselTypes, measurementWindows, onClassi
                     valveName="Pressure Test"
                   >
                      <Button
-                        disabled={!isConnected || sequence2Running || isSequence1Locked}
+                        disabled={!isConnected || sequence2Running || isSequence1Locked || isSessionRunning}
                         className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md w-full"
                       >
                         {isSequence1Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GaugeCircle className="mr-2 h-4 w-4" />}
@@ -285,7 +277,7 @@ export default function ValveControl({ vesselTypes, measurementWindows, onClassi
                     valveName="Setup Test"
                   >
                      <Button
-                        disabled={!isConnected || sequence1Running || isSequence2Locked}
+                        disabled={!isConnected || sequence1Running || isSequence2Locked || isSessionRunning}
                         className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md w-full"
                       >
                         {isSequence2Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <SlidersHorizontal className="mr-2 h-4 w-4" />}
