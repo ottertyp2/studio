@@ -107,19 +107,15 @@ const SessionTimer = ({
     const [remainingTime, setRemainingTime] = useState<number | null>(null);
 
     useEffect(() => {
-        console.log("[Timer Effect] Running. Session:", session, "VesselType:", vesselType, "Window:", measurementWindow);
-        if (!session || !vesselType || !vesselType.durationSeconds || !measurementWindow?.start) {
-            console.log("[Timer Effect] Conditions not met, clearing timer.");
+        if (!session?.id || !vesselType?.id || !vesselType.durationSeconds || !measurementWindow?.start?.absoluteStartTime) {
             setRemainingTime(null);
             return;
         }
 
-        console.log("[Timer Effect] Conditions met, setting up interval.");
         const interval = setInterval(() => {
             const measurementStartTime = measurementWindow.start!.absoluteStartTime;
             const elapsed = (Date.now() - measurementStartTime) / 1000;
             const remaining = Math.max(0, vesselType.durationSeconds! - elapsed);
-            console.log(`[Timer Tick] Remaining time: ${remaining}`);
             setRemainingTime(remaining);
 
             if (remaining === 0) {
@@ -128,10 +124,10 @@ const SessionTimer = ({
         }, 1000);
 
         return () => {
-            console.log("[Timer Effect] Cleanup.");
             clearInterval(interval);
         };
-    }, [session, vesselType, measurementWindow]);
+    }, [session?.id, vesselType?.id, vesselType?.durationSeconds, measurementWindow?.start?.absoluteStartTime]);
+
 
     if (remainingTime === null || remainingTime <= 0) {
         return null;
