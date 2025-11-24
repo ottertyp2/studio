@@ -482,7 +482,7 @@ function TestingComponent() {
         if (sensorConfig) {
           await sendMovingAverageCommand(sensorConfig.movingAverageLength || 10);
         }
-        await sendRecordingCommand(true);
+        await sendSequenceCommand('sequence1', true);
       
         toast({ title: 'Session Started', description: `Recording data for ${vesselType.name}...` });
         setIsNewSessionDialogOpen(false);
@@ -1842,3 +1842,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
