@@ -224,6 +224,7 @@ type VesselType = {
     guidelineEditorMaxY?: number;
     pressureTarget?: number;
     timeBufferInSeconds?: number;
+    preFlightLowerPressureLimit?: number;
     preFlightUpperPressureLimit?: number;
 }
 
@@ -298,7 +299,7 @@ export default function AdminPage() {
   const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
   
   // VesselType State
-  const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '', durationSeconds: 60, maxBatchCount: 10, pressureTarget: 0.3, timeBufferInSeconds: 5, preFlightUpperPressureLimit: 1.0 });
+  const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '', durationSeconds: 60, maxBatchCount: 10, pressureTarget: 0.3, timeBufferInSeconds: 5, preFlightLowerPressureLimit: 0.2, preFlightUpperPressureLimit: 1.0 });
   const [editingVesselType, setEditingVesselType] = useState<VesselType | null>(null);
   const [minCurvePoints, setMinCurvePoints] = useState<{x: number, y: number}[]>([]);
   const [maxCurvePoints, setMaxCurvePoints] = useState<{x: number, y: number}[]>([]);
@@ -1021,13 +1022,14 @@ export default function AdminPage() {
       maxBatchCount: Number(newVesselType.maxBatchCount) || 10,
       pressureTarget: Number(newVesselType.pressureTarget) || 0.3,
       timeBufferInSeconds: Number(newVesselType.timeBufferInSeconds) || 5,
+      preFlightLowerPressureLimit: Number(newVesselType.preFlightLowerPressureLimit) || 0.2,
       preFlightUpperPressureLimit: Number(newVesselType.preFlightUpperPressureLimit) || 1.0,
       minCurve: [],
       maxCurve: []
     };
     addDocumentNonBlocking(vesselTypesCollectionRef, docToSave);
     toast({ title: 'Vessel Type Added', description: `Added "${docToSave.name}" to the catalog.` });
-    setNewVesselType({ name: '', durationSeconds: 60, maxBatchCount: 10, pressureTarget: 0.3, timeBufferInSeconds: 5, preFlightUpperPressureLimit: 1.0 });
+    setNewVesselType({ name: '', durationSeconds: 60, maxBatchCount: 10, pressureTarget: 0.3, timeBufferInSeconds: 5, preFlightLowerPressureLimit: 0.2, preFlightUpperPressureLimit: 1.0 });
   };
 
   const handleDeleteVesselType = (vesselTypeId: string) => {
@@ -1076,6 +1078,7 @@ export default function AdminPage() {
         maxBatchCount: Number(editingVesselType.maxBatchCount) || 10,
         pressureTarget: Number(editingVesselType.pressureTarget) || 0,
         timeBufferInSeconds: Number(editingVesselType.timeBufferInSeconds) || 0,
+        preFlightLowerPressureLimit: Number(editingVesselType.preFlightLowerPressureLimit) || 0.2,
         preFlightUpperPressureLimit: Number(editingVesselType.preFlightUpperPressureLimit) || 1.0,
         guidelineEditorMaxX: Number(guidelineEditorMaxX),
         guidelineEditorMaxY: Number(guidelineEditorMaxY),
@@ -1243,7 +1246,6 @@ export default function AdminPage() {
             const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
             const snapshot = await getDocs(q);
             const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
-
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
             const vt = vesselTypes?.find(v => v.id === session.vesselTypeId);
             
@@ -1258,7 +1260,7 @@ export default function AdminPage() {
                     }
                     if (endIndex > startIndex) {
                        measurementWindows[session.id] = { startIndex, endIndex };
-                       allSensorData[session.id] = sensorData.slice(startIndex, endIndex + 1);
+                       allSensorData[session.id] = sensorData;
                     } else {
                        allSensorData[session.id] = [];
                     }
@@ -1289,10 +1291,13 @@ export default function AdminPage() {
             const window = measurementWindows[session.id];
             if (!data || data.length === 0 || !window) return [];
             
-            const measurementStartTime = new Date(data[0].timestamp).getTime();
+            const analysisData = data.slice(window.startIndex, window.endIndex + 1);
+            if(analysisData.length === 0) return [];
+            
+            const measurementStartTime = new Date(analysisData[0].timestamp).getTime();
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
 
-            return data.map(d => {
+            return analysisData.map(d => {
                 const time = (new Date(d.timestamp).getTime() - measurementStartTime) / 1000;
                 const value = convertRawValue(d.value, config || null);
 
@@ -1370,8 +1375,11 @@ export default function AdminPage() {
                 passResult = `Passed on try #${realAttemptNumber}`;
             }
 
-            const analysisData = allSensorData[session.id] || [];
+            const data = allSensorData[session.id] || [];
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+            const window = measurementWindows[session.id];
+            const analysisData = (window) ? data.slice(window.startIndex, window.endIndex + 1) : [];
+
             
             const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(session.startTime).getTime();
             const sessionEndTime = analysisData.length > 0 ? new Date(analysisData[analysisData.length - 1].timestamp).getTime() : (session.endTime ? new Date(session.endTime).getTime() : sessionStartTime);
@@ -2582,6 +2590,10 @@ export default function AdminPage() {
                                     <Input id="new-vessel-type-time-buffer" type="number" placeholder="5" value={newVesselType.timeBufferInSeconds || ''} onChange={(e) => setNewVesselType(p => ({ ...p, timeBufferInSeconds: Number(e.target.value) }))} />
                                 </div>
                                 <div className="space-y-2">
+                                    <Label htmlFor="new-vessel-type-preflight-lower">Pre-Flight Lower Limit</Label>
+                                    <Input id="new-vessel-type-preflight-lower" type="number" placeholder="0.2" value={newVesselType.preFlightLowerPressureLimit || ''} onChange={(e) => setNewVesselType(p => ({ ...p, preFlightLowerPressureLimit: Number(e.target.value) }))} />
+                                </div>
+                                <div className="space-y-2">
                                     <Label htmlFor="new-vessel-type-preflight-upper">Pre-Flight Upper Limit</Label>
                                     <Input id="new-vessel-type-preflight-upper" type="number" placeholder="1.0" value={newVesselType.preFlightUpperPressureLimit || ''} onChange={(e) => setNewVesselType(p => ({ ...p, preFlightUpperPressureLimit: Number(e.target.value) }))} />
                                 </div>
@@ -2661,6 +2673,10 @@ export default function AdminPage() {
                                                                             <div className="space-y-2">
                                                                                 <Label>Time Buffer (s)</Label>
                                                                                 <Input type="number" value={editingVesselType?.timeBufferInSeconds || ''} onChange={(e) => setEditingVesselType(p => p ? { ...p, timeBufferInSeconds: Number(e.target.value) } : null)} />
+                                                                            </div>
+                                                                            <div className="space-y-2">
+                                                                                <Label>Pre-Flight Lower</Label>
+                                                                                <Input type="number" value={editingVesselType?.preFlightLowerPressureLimit || ''} onChange={(e) => setEditingVesselType(p => p ? { ...p, preFlightLowerPressureLimit: Number(e.target.value) } : null)} />
                                                                             </div>
                                                                             <div className="space-y-2">
                                                                                 <Label>Pre-Flight Upper</Label>

@@ -256,6 +256,10 @@
                 "type": "number",
                 "description": "The delay in seconds after the pressure target is met before the measurement window officially begins."
             },
+            "preFlightLowerPressureLimit": {
+                "type": "number",
+                "description": "The lower pressure limit for the pre-flight check."
+            },
             "preFlightUpperPressureLimit": {
                 "type": "number",
                 "description": "The upper pressure limit for the pre-flight check."

@@ -212,16 +212,16 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
         const sensorConfig = sensorConfigsRef.current.find(sc => sc.id === session.sensorConfigurationId);
         
-        if (vesselType && sensorConfig && vesselType.pressureTarget !== undefined && vesselType.preFlightUpperPressureLimit !== undefined) {
+        if (vesselType && sensorConfig && vesselType.preFlightUpperPressureLimit !== undefined) {
             const convertedValue = convertRawValue(data.sensor, sensorConfig);
-            const inRange = convertedValue >= vesselType.pressureTarget && convertedValue <= vesselType.preFlightUpperPressureLimit;
+            // Use pressureTarget as fallback for lower limit for backward compatibility
+            const lowerLimit = vesselType.preFlightLowerPressureLimit ?? vesselType.pressureTarget ?? 0;
+            const inRange = convertedValue >= lowerLimit && convertedValue <= vesselType.preFlightUpperPressureLimit;
             set(ref(database, 'data/commands/preFlightCheck'), inRange);
         } else {
-            // If the vessel type doesn't have the required properties, it's not in range.
             set(ref(database, 'data/commands/preFlightCheck'), false);
         }
     } else if (database) {
-        // If no session is running, always set the pre-flight check to false.
         set(ref(database, 'data/commands/preFlightCheck'), false);
     }
 
