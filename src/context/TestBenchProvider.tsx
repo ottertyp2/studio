@@ -1,3 +1,4 @@
+
 'use client';
 import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -216,9 +217,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             const inRange = convertedValue >= vesselType.pressureTarget && convertedValue <= vesselType.preFlightUpperPressureLimit;
             set(ref(database, 'data/commands/preFlightCheck'), inRange);
         } else {
+            // If the vessel type doesn't have the required properties, it's not in range.
             set(ref(database, 'data/commands/preFlightCheck'), false);
         }
     } else if (database) {
+        // If no session is running, always set the pre-flight check to false.
         set(ref(database, 'data/commands/preFlightCheck'), false);
     }
 
