@@ -1236,23 +1236,37 @@ export default function AdminPage() {
         }
 
         const allSensorData: Record<string, SensorData[]> = {};
-        const measurementWindows: Record<string, { start: ReturnType<typeof findMeasurementStart>; end: ReturnType<typeof findMeasurementEnd>; }> = {};
+        const measurementWindows: Record<string, { startIndex: number; endIndex: number; }> = {};
 
         for (const session of relevantSessions) {
             const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
             const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
             const snapshot = await getDocs(q);
-            const data = snapshot.docs.map(doc => doc.data() as SensorData);
-            allSensorData[session.id] = data;
+            const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
 
-            if (data.length > 0) {
-                const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-                const vt = vesselTypes?.find(v => v.id === session.vesselTypeId);
-                if (config && vt) {
-                    const start = findMeasurementStart(data, config, vt);
-                    const end = start ? findMeasurementEnd(data, start.startIndex, config, vt) : { endIndex: data.length -1, endTime: 0, isComplete: false};
-                    measurementWindows[session.id] = { start, end };
+            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+            const vt = vesselTypes?.find(v => v.id === session.vesselTypeId);
+            
+            if (sensorData.length > 0 && config && vt) {
+                const startResult = findMeasurementStart(sensorData, config, vt);
+                if (startResult) {
+                    const { startIndex } = startResult;
+                    let { endIndex, isComplete } = findMeasurementEnd(sensorData, startIndex, config, vt);
+
+                    if (!isComplete || endIndex === -1) {
+                        endIndex = sensorData.length - 1;
+                    }
+                    if (endIndex > startIndex) {
+                       measurementWindows[session.id] = { startIndex, endIndex };
+                       allSensorData[session.id] = sensorData.slice(startIndex, endIndex + 1);
+                    } else {
+                       allSensorData[session.id] = [];
+                    }
+                } else {
+                    allSensorData[session.id] = [];
                 }
+            } else {
+                allSensorData[session.id] = [];
             }
         }
         
@@ -1273,9 +1287,9 @@ export default function AdminPage() {
         const chartDataForPdf = relevantSessions.flatMap(session => {
             const data = allSensorData[session.id];
             const window = measurementWindows[session.id];
-            if (!data || data.length === 0 || !window || !window.start) return [];
+            if (!data || data.length === 0 || !window) return [];
             
-            const measurementStartTime = new Date(data[window.start.startIndex].timestamp).getTime();
+            const measurementStartTime = new Date(data[0].timestamp).getTime();
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
 
             return data.map(d => {
@@ -1356,12 +1370,9 @@ export default function AdminPage() {
                 passResult = `Passed on try #${realAttemptNumber}`;
             }
 
-            const data = allSensorData[session.id] || [];
+            const analysisData = allSensorData[session.id] || [];
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-            const window = measurementWindows[session.id];
             
-            const analysisData = (window && window.start && window.end) ? data.slice(window.start.startIndex, window.end.endIndex + 1) : [];
-
             const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(session.startTime).getTime();
             const sessionEndTime = analysisData.length > 0 ? new Date(analysisData[analysisData.length - 1].timestamp).getTime() : (session.endTime ? new Date(session.endTime).getTime() : sessionStartTime);
             const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
@@ -3149,5 +3160,3 @@ const renderAIModelManagement = () => {
     </div>
   );
 }
-
-    
