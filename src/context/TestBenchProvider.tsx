@@ -1,4 +1,3 @@
-
 'use client';
 import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -7,6 +6,8 @@ import { useFirebase, useUser, addDocumentNonBlocking, WithId } from '@/firebase
 import { ref, onValue, set, get, runTransaction } from 'firebase/database';
 import { collection, query, where, onSnapshot, limit, DocumentData, collectionGroup, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { writeBatch } from 'firebase/firestore';
+import { convertRawValue } from '@/lib/utils';
+import type { VesselType } from '@/lib/utils';
 
 export type RtdbSensorData = {
   timestamp: string;
@@ -46,6 +47,23 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const sessionEndTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const vesselTypesRef = useRef<VesselType[]>([]);
+  const sensorConfigsRef = useRef<any[]>([]);
+
+  // Pre-fetch vessel types and sensor configs
+  useEffect(() => {
+    if (!firestore) return;
+    const unsubVesselTypes = onSnapshot(collection(firestore, 'vessel_types'), (snapshot) => {
+        vesselTypesRef.current = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as VesselType));
+    });
+    const unsubSensorConfigs = onSnapshot(collection(firestore, 'sensor_configurations'), (snapshot) => {
+        sensorConfigsRef.current = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    });
+    return () => {
+        unsubVesselTypes();
+        unsubSensorConfigs();
+    };
+  }, [firestore]);
   
   const stopSession = useCallback(() => {
     if (sessionEndTimeoutRef.current) {
@@ -71,21 +89,18 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
 
     if (firestore) {
-      getDocs(collection(firestore, 'vessel_types')).then(vesselTypesSnapshot => {
-        const vesselTypes = vesselTypesSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
-        const vesselType = vesselTypes.find(vt => vt.id === session.vesselTypeId);
-        const duration = vesselType?.durationSeconds;
-        
-        if (duration) {
-            sessionEndTimeoutRef.current = setTimeout(() => {
-                toast({
-                    title: 'Session Automatically Ended',
-                    description: `The session for ${session.vesselTypeName} has completed its configured duration.`,
-                });
-                stopSession();
-            }, duration * 1000);
-        }
-      });
+      const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
+      const duration = vesselType?.durationSeconds;
+      
+      if (duration) {
+          sessionEndTimeoutRef.current = setTimeout(() => {
+              toast({
+                  title: 'Session Automatically Ended',
+                  description: `The session for ${session.vesselTypeName} has completed its configured duration.`,
+              });
+              stopSession();
+          }, duration * 1000);
+      }
     }
 
   }, [firestore, stopSession, toast]);
@@ -183,13 +198,30 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setSequence1Running(data.sequence1_running === true);
     setSequence2Running(data.sequence2_running === true);
     
-    // The recording status from the live path is the source of truth.
     if (data.recording !== undefined) {
       setIsRecording(data.recording === true);
     }
     
     setLockedValves([]);
     setLockedSequences([]);
+
+    // Pre-flight check logic
+    if (runningTestSessionRef.current && data.sensor !== null && database) {
+        const session = runningTestSessionRef.current;
+        const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
+        const sensorConfig = sensorConfigsRef.current.find(sc => sc.id === session.sensorConfigurationId);
+        
+        if (vesselType && sensorConfig && vesselType.pressureTarget !== undefined && vesselType.preFlightUpperPressureLimit !== undefined) {
+            const convertedValue = convertRawValue(data.sensor, sensorConfig);
+            const inRange = convertedValue >= vesselType.pressureTarget && convertedValue <= vesselType.preFlightUpperPressureLimit;
+            set(ref(database, 'data/commands/preFlightCheck'), inRange);
+        } else {
+            set(ref(database, 'data/commands/preFlightCheck'), false);
+        }
+    } else if (database) {
+        set(ref(database, 'data/commands/preFlightCheck'), false);
+    }
+
 
     if (data.sensor !== null && data.lastUpdate && isRecording) {
         setLocalDataLog(prevLog => {
@@ -210,7 +242,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 .catch((error) => console.error('[handleNewDataPoint] Firestore write FAILED:', error));
         }
     }
-  }, [firestore, isRecording]);
+  }, [firestore, isRecording, database]);
   
   useEffect(() => {
     if (!database) return;

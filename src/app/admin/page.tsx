@@ -1,4 +1,3 @@
-
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -224,6 +223,7 @@ type VesselType = {
     guidelineEditorMaxY?: number;
     pressureTarget?: number;
     timeBufferInSeconds?: number;
+    preFlightUpperPressureLimit?: number;
 }
 
 type Batch = {
@@ -297,7 +297,7 @@ export default function AdminPage() {
   const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
   
   // VesselType State
-  const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '', durationSeconds: 60, maxBatchCount: 10, pressureTarget: 0.3, timeBufferInSeconds: 5 });
+  const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '', durationSeconds: 60, maxBatchCount: 10, pressureTarget: 0.3, timeBufferInSeconds: 5, preFlightUpperPressureLimit: 1.0 });
   const [editingVesselType, setEditingVesselType] = useState<VesselType | null>(null);
   const [minCurvePoints, setMinCurvePoints] = useState<{x: number, y: number}[]>([]);
   const [maxCurvePoints, setMaxCurvePoints] = useState<{x: number, y: number}[]>([]);
@@ -1020,12 +1020,13 @@ export default function AdminPage() {
       maxBatchCount: Number(newVesselType.maxBatchCount) || 10,
       pressureTarget: Number(newVesselType.pressureTarget) || 0.3,
       timeBufferInSeconds: Number(newVesselType.timeBufferInSeconds) || 5,
+      preFlightUpperPressureLimit: Number(newVesselType.preFlightUpperPressureLimit) || 1.0,
       minCurve: [],
       maxCurve: []
     };
     addDocumentNonBlocking(vesselTypesCollectionRef, docToSave);
     toast({ title: 'Vessel Type Added', description: `Added "${docToSave.name}" to the catalog.` });
-    setNewVesselType({ name: '', durationSeconds: 60, maxBatchCount: 10, pressureTarget: 0.3, timeBufferInSeconds: 5 });
+    setNewVesselType({ name: '', durationSeconds: 60, maxBatchCount: 10, pressureTarget: 0.3, timeBufferInSeconds: 5, preFlightUpperPressureLimit: 1.0 });
   };
 
   const handleDeleteVesselType = (vesselTypeId: string) => {
@@ -1074,6 +1075,7 @@ export default function AdminPage() {
         maxBatchCount: Number(editingVesselType.maxBatchCount) || 10,
         pressureTarget: Number(editingVesselType.pressureTarget) || 0,
         timeBufferInSeconds: Number(editingVesselType.timeBufferInSeconds) || 0,
+        preFlightUpperPressureLimit: Number(editingVesselType.preFlightUpperPressureLimit) || 1.0,
         guidelineEditorMaxX: Number(guidelineEditorMaxX),
         guidelineEditorMaxY: Number(guidelineEditorMaxY),
     });
@@ -1225,9 +1227,6 @@ export default function AdminPage() {
     }
     
     try {
-        const allTestSessionsSnapshot = await getDocs(collection(firestore, 'test_sessions'));
-        const allTestSessions = allTestSessionsSnapshot.docs.map(d => ({id: d.id, ...d.data()}) as TestSession);
-        
         const relevantSessions = testSessions.filter(s => s.vesselTypeId === vesselType.id && s.status === 'COMPLETED') as TestSession[];
         if (relevantSessions.length === 0) {
             toast({ title: 'No Data', description: 'No completed test sessions found for this vessel type.' });
@@ -1236,7 +1235,7 @@ export default function AdminPage() {
         }
 
         const allSensorData: Record<string, SensorData[]> = {};
-        const measurementWindows: Record<string, { start: { startIndex: number; startTime: number }; end: { endIndex: number; endTime: number }; }> = {};
+        const measurementWindows: Record<string, { start: ReturnType<typeof findMeasurementStart>; end: ReturnType<typeof findMeasurementEnd>; }> = {};
 
         for (const session of relevantSessions) {
             const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
@@ -1250,10 +1249,8 @@ export default function AdminPage() {
                 const vt = vesselTypes?.find(v => v.id === session.vesselTypeId);
                 if (config && vt) {
                     const start = findMeasurementStart(data, config, vt);
-                    const end = start ? findMeasurementEnd(data, start.startIndex, config, vt) : null;
-                    if (start && end) {
-                        measurementWindows[session.id] = { start, end };
-                    }
+                    const end = start ? findMeasurementEnd(data, start.startIndex, config, vt) : { endIndex: data.length -1, endTime: 0, isComplete: false};
+                    measurementWindows[session.id] = { start, end };
                 }
             }
         }
@@ -1326,7 +1323,7 @@ export default function AdminPage() {
         }
         
         const sessionsByVessel: Record<string, TestSession[]> = {};
-        allTestSessions.forEach(session => {
+        testSessions.forEach(session => {
             const key = `${session.vesselTypeId}§${session.serialNumber || 'N/A'}`;
             if (!sessionsByVessel[key]) {
                 sessionsByVessel[key] = [];
@@ -1360,11 +1357,9 @@ export default function AdminPage() {
 
             const data = allSensorData[session.id] || [];
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-            const sessionVesselType = vesselTypes?.find(vt => vt.id === session.vesselTypeId);
+            const window = measurementWindows[session.id];
             
-            const startInfo = findMeasurementStart(data, config, sessionVesselType);
-            const endInfo = startInfo ? findMeasurementEnd(data, startInfo.startIndex, config, sessionVesselType) : null;
-            const analysisData = (startInfo && endInfo) ? data.slice(startInfo.startIndex, endInfo.endIndex + 1) : [];
+            const analysisData = (window && window.start && window.end) ? data.slice(window.start.startIndex, window.end.endIndex + 1) : [];
 
             const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(session.startTime).getTime();
             const sessionEndTime = analysisData.length > 0 ? new Date(analysisData[analysisData.length - 1].timestamp).getTime() : (session.endTime ? new Date(session.endTime).getTime() : sessionStartTime);
@@ -2574,6 +2569,10 @@ export default function AdminPage() {
                                     <Label htmlFor="new-vessel-type-time-buffer">Time Buffer (s)</Label>
                                     <Input id="new-vessel-type-time-buffer" type="number" placeholder="5" value={newVesselType.timeBufferInSeconds || ''} onChange={(e) => setNewVesselType(p => ({ ...p, timeBufferInSeconds: Number(e.target.value) }))} />
                                 </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="new-vessel-type-preflight-upper">Pre-Flight Upper Limit</Label>
+                                    <Input id="new-vessel-type-preflight-upper" type="number" placeholder="1.0" value={newVesselType.preFlightUpperPressureLimit || ''} onChange={(e) => setNewVesselType(p => ({ ...p, preFlightUpperPressureLimit: Number(e.target.value) }))} />
+                                </div>
                             </div>
                             <Button onClick={handleAddVesselType} size="sm" className="w-full mt-2">Add Vessel Type</Button>
                         </div>
@@ -2650,6 +2649,10 @@ export default function AdminPage() {
                                                                             <div className="space-y-2">
                                                                                 <Label>Time Buffer (s)</Label>
                                                                                 <Input type="number" value={editingVesselType?.timeBufferInSeconds || ''} onChange={(e) => setEditingVesselType(p => p ? { ...p, timeBufferInSeconds: Number(e.target.value) } : null)} />
+                                                                            </div>
+                                                                            <div className="space-y-2">
+                                                                                <Label>Pre-Flight Upper</Label>
+                                                                                <Input type="number" value={editingVesselType?.preFlightUpperPressureLimit || ''} onChange={(e) => setEditingVesselType(p => p ? { ...p, preFlightUpperPressureLimit: Number(e.target.value) } : null)} />
                                                                             </div>
                                                                         </div>
                                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">

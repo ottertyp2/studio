@@ -1,5 +1,3 @@
-
-
 {
   "entities": {
     "User": {
@@ -257,6 +255,10 @@
             "timeBufferInSeconds": {
                 "type": "number",
                 "description": "The delay in seconds after the pressure target is met before the measurement window officially begins."
+            },
+            "preFlightUpperPressureLimit": {
+                "type": "number",
+                "description": "The upper pressure limit for the pre-flight check."
             }
         },
         "required": ["id", "name"]
@@ -523,7 +525,8 @@
               "recording": { "type": "boolean" },
               "sequence1": { "type": "boolean" },
               "sequence2": { "type": "boolean" },
-              "movingAverageLength": { "type": "number" }
+              "movingAverageLength": { "type": "number" },
+              "preFlightCheck": { "type": "boolean" }
             }
         },
         {
@@ -546,7 +549,3 @@
     ]
   }
 }
-
-    
-
-    
