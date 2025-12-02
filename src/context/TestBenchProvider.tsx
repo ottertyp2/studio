@@ -67,12 +67,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!firestore) return;
     const unsubVesselTypes = onSnapshot(collection(firestore, 'vessel_types'), (snapshot) => {
-        const types = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<VesselType>));
+        const types = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as WithId<VesselType>));
         setVesselTypes(types);
         console.log(`[DEBUG Provider] Vessel types loaded: ${types.length} items.`);
     });
     const unsubSensorConfigs = onSnapshot(collection(firestore, 'sensor_configurations'), (snapshot) => {
-        const configs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorConfig>));
+        const configs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as WithId<SensorConfig>));
         setSensorConfigs(configs);
         console.log(`[DEBUG Provider] Sensor configs loaded: ${configs.length} items.`);
     });
@@ -235,7 +235,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         console.log('[DEBUG] Firestore sensorConfigs loaded:', sensorConfigsRef.current.length);
         console.log('[DEBUG] all sensorConfigs:', sensorConfigsRef.current.map(sc => ({id: sc.id, name: sc.name})));
         console.log('[DEBUG] session.vesselTypeId:', session.vesselTypeId);
-        console.log('[DEBUG Provider] vesselTypesRef.current:', vesselTypesRef.current.map(vt => ({id: vt.id, name: vt.name})));
+        console.log('[DEBUG Provider] vesselTypesRef.current:', vesselTypesRef.current);
 
 
         const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
