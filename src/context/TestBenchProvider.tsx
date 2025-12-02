@@ -67,10 +67,14 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!firestore) return;
     const unsubVesselTypes = onSnapshot(collection(firestore, 'vessel_types'), (snapshot) => {
-        setVesselTypes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<VesselType>)));
+        const types = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<VesselType>));
+        setVesselTypes(types);
+        console.log(`[DEBUG Provider] Vessel types loaded: ${types.length} items.`);
     });
     const unsubSensorConfigs = onSnapshot(collection(firestore, 'sensor_configurations'), (snapshot) => {
-        setSensorConfigs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorConfig>)));
+        const configs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorConfig>));
+        setSensorConfigs(configs);
+        console.log(`[DEBUG Provider] Sensor configs loaded: ${configs.length} items.`);
     });
     return () => {
         unsubVesselTypes();
@@ -225,9 +229,14 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     if (session && data.sensor !== null && database) {
         console.log('[DEBUG preFlightCheck] runningTestSession:', !!session);
         console.log('[DEBUG preFlightCheck] data.sensor:', data.sensor);
+        console.log('[DEBUG preFlightCheck] database available:', !!database);
+
         console.log('[DEBUG] session.sensorConfigurationId:', session.sensorConfigurationId);
         console.log('[DEBUG] Firestore sensorConfigs loaded:', sensorConfigsRef.current.length);
         console.log('[DEBUG] all sensorConfigs:', sensorConfigsRef.current.map(sc => ({id: sc.id, name: sc.name})));
+        console.log('[DEBUG] session.vesselTypeId:', session.vesselTypeId);
+        console.log('[DEBUG Provider] vesselTypesRef.current:', vesselTypesRef.current.map(vt => ({id: vt.id, name: vt.name})));
+
 
         const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
         const sensorConfig = sensorConfigsRef.current.find(sc => sc.id === session.sensorConfigurationId);
