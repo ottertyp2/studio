@@ -213,14 +213,15 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         const session = runningTestSessionRef.current;
         console.log('[DEBUG] session.sensorConfigurationId:', session.sensorConfigurationId);
         console.log('[DEBUG] all sensorConfigs:', sensorConfigsRef.current.map(sc => ({id: sc.id, name: sc.name})));
+        console.log('[DEBUG] Firestore sensorConfigs loaded:', sensorConfigsRef.current.length);
 
-        const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
-        const sensorConfig = sensorConfigsRef.current.find(sc => sc.id === session.sensorConfigurationId);
-        
         console.log('[DEBUG preFlightCheck] runningTestSession:', !!runningTestSessionRef.current);
         console.log('[DEBUG preFlightCheck] data.sensor:', data.sensor);
         console.log('[DEBUG preFlightCheck] database available:', !!database);
 
+        const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
+        const sensorConfig = sensorConfigsRef.current.find(sc => sc.id === session.sensorConfigurationId);
+        
         console.log('[DEBUG preFlightCheck] vesselType found:', !!vesselType, vesselType?.name);
         console.log('[DEBUG preFlightCheck] sensorConfig found:', !!sensorConfig, sensorConfig?.name);
 
