@@ -209,17 +209,33 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setLockedSequences([]);
 
     // Pre-flight check logic
+    console.log('[DEBUG preFlightCheck] runningTestSession:', !!runningTestSessionRef.current);
+    console.log('[DEBUG preFlightCheck] data.sensor:', data.sensor);
+    console.log('[DEBUG preFlightCheck] database available:', !!database);
+
     if (runningTestSessionRef.current && data.sensor !== null && database) {
         const session = runningTestSessionRef.current;
         const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
         const sensorConfig = sensorConfigsRef.current.find(sc => sc.id === session.sensorConfigurationId);
         
+        console.log('[DEBUG preFlightCheck] vesselType found:', !!vesselType, vesselType?.name);
+        console.log('[DEBUG preFlightCheck] sensorConfig found:', !!sensorConfig, sensorConfig?.name);
+
         if (vesselType && sensorConfig && vesselType.preFlightUpperPressureLimit !== undefined) {
+            console.log('[DEBUG preFlightCheck] upperLimit defined:', vesselType?.preFlightUpperPressureLimit !== undefined);
+            
             const convertedValue = convertRawValue(data.sensor, sensorConfig);
-            // Use pressureTarget as fallback for lower limit for backward compatibility
+            console.log('[DEBUG preFlightCheck] rawValue:', data.sensor, '→ converted:', convertedValue);
+
             const lowerLimit = vesselType.preFlightLowerPressureLimit ?? vesselType.pressureTarget ?? 0;
+            console.log('[DEBUG preFlightCheck] lowerLimit:', lowerLimit, '(from preFlightLowerPressureLimit / pressureTarget)');
+            console.log('[DEBUG preFlightCheck] upperLimit:', vesselType?.preFlightUpperPressureLimit);
+
             const inRange = convertedValue >= lowerLimit && convertedValue <= vesselType.preFlightUpperPressureLimit;
+            console.log('[DEBUG preFlightCheck] inRange:', inRange, '→', convertedValue >= lowerLimit ? 'OK low' : 'FAIL low', '|', convertedValue <= vesselType.preFlightUpperPressureLimit ? 'OK high' : 'FAIL high');
+
             set(ref(database, 'data/commands/preFlightCheck'), inRange);
+            console.log('[DEBUG preFlightCheck] SET to RTDB:', inRange);
         } else {
             // If the conditions aren't met (e.g., vesselType not configured), ensure the check is false.
             set(ref(database, 'data/commands/preFlightCheck'), false);
