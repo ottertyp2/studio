@@ -6,14 +6,18 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-type SensorConfig = {
+export type SensorConfig = {
+    id: string;
+    name: string;
     mode: 'RAW' | 'VOLTAGE' | 'CUSTOM';
+    unit: string;
     arduinoVoltage: number;
     adcBitResolution: number;
     min: number; // Raw ADC value for custom min
     max: number; // Raw ADC value for custom max
     customUnitMin: number;
     customUnitMax: number;
+    decimalPlaces: number;
 };
 
 export type VesselType = {

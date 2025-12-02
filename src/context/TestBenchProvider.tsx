@@ -8,7 +8,7 @@ import { ref, onValue, set, get, runTransaction } from 'firebase/database';
 import { collection, query, where, onSnapshot, limit, DocumentData, collectionGroup, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { writeBatch } from 'firebase/firestore';
 import { convertRawValue } from '@/lib/utils';
-import type { VesselType } from '@/lib/utils';
+import type { VesselType, SensorConfig } from '@/lib/utils';
 
 export type RtdbSensorData = {
   timestamp: string;
@@ -48,17 +48,29 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const sessionEndTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const vesselTypesRef = useRef<VesselType[]>([]);
-  const sensorConfigsRef = useRef<any[]>([]);
+  
+  const [vesselTypes, setVesselTypes] = useState<WithId<VesselType>[]>([]);
+  const [sensorConfigs, setSensorConfigs] = useState<WithId<SensorConfig>[]>([]);
+  const vesselTypesRef = useRef<WithId<VesselType>[]>([]);
+  const sensorConfigsRef = useRef<WithId<SensorConfig>[]>([]);
+  
+  useEffect(() => {
+    vesselTypesRef.current = vesselTypes;
+  }, [vesselTypes]);
+
+  useEffect(() => {
+    sensorConfigsRef.current = sensorConfigs;
+  }, [sensorConfigs]);
+
 
   // Pre-fetch vessel types and sensor configs
   useEffect(() => {
     if (!firestore) return;
     const unsubVesselTypes = onSnapshot(collection(firestore, 'vessel_types'), (snapshot) => {
-        vesselTypesRef.current = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as VesselType));
+        setVesselTypes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<VesselType>)));
     });
     const unsubSensorConfigs = onSnapshot(collection(firestore, 'sensor_configurations'), (snapshot) => {
-        sensorConfigsRef.current = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setSensorConfigs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorConfig>)));
     });
     return () => {
         unsubVesselTypes();
@@ -212,8 +224,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     if (runningTestSessionRef.current && data.sensor !== null && database) {
         const session = runningTestSessionRef.current;
         console.log('[DEBUG] session.sensorConfigurationId:', session.sensorConfigurationId);
-        console.log('[DEBUG] all sensorConfigs:', sensorConfigsRef.current.map(sc => ({id: sc.id, name: sc.name})));
         console.log('[DEBUG] Firestore sensorConfigs loaded:', sensorConfigsRef.current.length);
+        console.log('[DEBUG] all sensorConfigs:', sensorConfigsRef.current.map(sc => ({id: sc.id, name: sc.name})));
 
         console.log('[DEBUG preFlightCheck] runningTestSession:', !!runningTestSessionRef.current);
         console.log('[DEBUG preFlightCheck] data.sensor:', data.sensor);
