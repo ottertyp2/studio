@@ -219,9 +219,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             const inRange = convertedValue >= lowerLimit && convertedValue <= vesselType.preFlightUpperPressureLimit;
             set(ref(database, 'data/commands/preFlightCheck'), inRange);
         } else {
+            // If the conditions aren't met (e.g., vesselType not configured), ensure the check is false.
             set(ref(database, 'data/commands/preFlightCheck'), false);
         }
     } else if (database) {
+        // Explicitly set to false if no session is running.
         set(ref(database, 'data/commands/preFlightCheck'), false);
     }
 
