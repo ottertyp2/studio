@@ -192,6 +192,8 @@ type SensorData = {
   value: number;
   testSessionId?: string;
   testBenchId: string;
+  valve1: 'ON' | 'OFF';
+  valve2: 'ON' | 'OFF';
 }
 
 type TestSession = {
@@ -730,7 +732,17 @@ export default function AdminPage() {
             return;
         }
 
-        const { startIndex } = findMeasurementStart(sensorData, config, vesselType);
+        const startResult = findMeasurementStart(sensorData, config, vesselType);
+        if (!startResult) {
+            handleSetSessionClassification(session.id, 'UNCLASSIFIABLE');
+            toast({ 
+                title: 'Classification: Unclassifiable', 
+                description: `Could not determine a valid measurement start for "${session.vesselTypeName} - ${session.serialNumber}".` 
+            });
+            return;
+        }
+
+        const { startIndex } = startResult;
         const { endIndex, isComplete } = findMeasurementEnd(sensorData, startIndex, config, vesselType);
         
         if (!isComplete) {
@@ -1258,6 +1270,7 @@ export default function AdminPage() {
                     if (!isComplete || endIndex === -1) {
                         endIndex = sensorData.length - 1;
                     }
+
                     if (endIndex > startIndex) {
                        measurementWindows[session.id] = { startIndex, endIndex };
                        allSensorData[session.id] = sensorData;
@@ -1378,8 +1391,7 @@ export default function AdminPage() {
             const data = allSensorData[session.id] || [];
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
             const window = measurementWindows[session.id];
-            const analysisData = (window) ? data.slice(window.startIndex, window.endIndex + 1) : [];
-
+            const analysisData = (window) ? allSensorData[session.id].slice(window.startIndex, window.endIndex + 1) : [];
             
             const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(session.startTime).getTime();
             const sessionEndTime = analysisData.length > 0 ? new Date(analysisData[analysisData.length - 1].timestamp).getTime() : (session.endTime ? new Date(session.endTime).getTime() : sessionStartTime);
@@ -1494,7 +1506,7 @@ export default function AdminPage() {
         return;
       }
       
-      const sensorData = snapshot.docs.map(doc => doc.data());
+      const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
   
       const csvData = sensorData.map(d => {
         const converted = config ? convertRawValue(d.value, config) : d.value;
@@ -1545,7 +1557,7 @@ export default function AdminPage() {
         
         const snapshot = await getDocs(q);
         if (!snapshot.empty) {
-          const sensorData = snapshot.docs.map(doc => doc.data());
+          const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
           sensorData.forEach(d => {
             const converted = config ? convertRawValue(d.value, config) : d.value;
             allCsvData.push({

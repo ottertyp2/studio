@@ -121,6 +121,8 @@ type SensorData = {
   timestamp: string;
   value: number; 
   id: string;
+  valve1: 'ON' | 'OFF';
+  valve2: 'ON' | 'OFF';
 };
 
 type ChartDataPoint = {
@@ -556,7 +558,17 @@ function TestingComponent() {
             return;
         }
 
-        const { startIndex } = findMeasurementStart(sensorData, config, vesselType) || { startIndex: 0 };
+        const startResult = findMeasurementStart(sensorData, config, vesselType);
+        if (!startResult) {
+            await setDocument(doc(firestore, 'test_sessions', session.id), { classification: 'UNCLASSIFIABLE' }, { merge: true });
+            toast({ 
+                title: 'Classification: Unclassifiable', 
+                description: `Could not determine a valid measurement start point for this session.` 
+            });
+            return;
+        }
+        
+        const { startIndex } = startResult;
         const { endIndex, isComplete } = findMeasurementEnd(sensorData, startIndex, config, vesselType);
         
         if (!isComplete) {

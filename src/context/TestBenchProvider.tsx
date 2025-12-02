@@ -194,8 +194,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setLatency(data.latency !== undefined ? data.latency : null);
     setSequenceFailureCount(data.sequenceFailureCount || 0);
     
-    setValve1Status(data.valve1 ? 'ON' : 'OFF');
-    setValve2Status(data.valve2 ? 'ON' : 'OFF');
+    const v1Status = data.valve1 ? 'ON' : 'OFF';
+    const v2Status = data.valve2 ? 'ON' : 'OFF';
+    setValve1Status(v1Status);
+    setValve2Status(v2Status);
     setSequence1Running(data.sequence1_running === true);
     setSequence2Running(data.sequence2_running === true);
     
@@ -242,6 +244,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             const dataToSave = {
                 value: data.sensor,
                 timestamp: new Date(data.lastUpdate).toISOString(),
+                valve1: v1Status,
+                valve2: v2Status
             };
             addDocumentNonBlocking(sessionDataRef, dataToSave)
                 .catch((error) => console.error('[handleNewDataPoint] Firestore write FAILED:', error));

@@ -107,43 +107,39 @@ export const toBase64 = (url: string): Promise<string> => {
   });
 };
 
-export const findMeasurementStart = (data: { value: number; timestamp: string }[], config: SensorConfig | null | undefined, vesselType: VesselType | null | undefined): { startIndex: number; startTime: number; absoluteStartTime: number; } | null => {
-    if (!data || data.length < 2 || !config || !vesselType || vesselType.pressureTarget === undefined || vesselType.timeBufferInSeconds === undefined) {
+export const findMeasurementStart = (data: { value: number; timestamp: string; valve1: 'ON' | 'OFF'; valve2: 'ON' | 'OFF' }[], config: SensorConfig | null | undefined, vesselType: VesselType | null | undefined): { startIndex: number; startTime: number; absoluteStartTime: number; } | null => {
+    if (!data || data.length < 2) {
         return null;
     }
 
-    const pressureTarget = vesselType.pressureTarget;
-    const timeBufferMs = vesselType.timeBufferInSeconds * 1000;
-
-    let pressureTargetMetIndex = -1;
+    let valve2OnIndex = -1;
+    // Find the first point where VALVE2 is ON
     for (let i = 0; i < data.length; i++) {
-        const convertedValue = convertRawValue(data[i].value, config);
-        if (convertedValue >= pressureTarget) {
-            pressureTargetMetIndex = i;
+        if (data[i].valve2 === 'ON') {
+            valve2OnIndex = i;
             break;
         }
     }
 
-    if (pressureTargetMetIndex === -1) {
-        // Pressure target was never met, so no valid start.
+    // If VALVE2 was never ON, we can't determine a start
+    if (valve2OnIndex === -1) {
         return null;
     }
-    
-    const pressureTargetMetTime = new Date(data[pressureTargetMetIndex].timestamp).getTime();
-    const measurementStartTime = pressureTargetMetTime + timeBufferMs;
 
-    let finalStartIndex = data.findIndex(d => new Date(d.timestamp).getTime() >= measurementStartTime);
-    
-    if (finalStartIndex === -1) {
-       // Session ended before buffer time was up. No valid measurement window.
-       return null;
+    // After VALVE2 was ON, find the first point where VALVE1 is OFF
+    for (let i = valve2OnIndex; i < data.length; i++) {
+        if (data[i].valve1 === 'OFF') {
+            const finalStartIndex = i;
+            const sessionStartTime = new Date(data[0].timestamp).getTime();
+            const startTimeInSeconds = (new Date(data[finalStartIndex].timestamp).getTime() - sessionStartTime) / 1000;
+            const absoluteStartTime = new Date(data[finalStartIndex].timestamp).getTime();
+
+            return { startIndex: finalStartIndex, startTime: startTimeInSeconds, absoluteStartTime };
+        }
     }
-    
-    const sessionStartTime = new Date(data[0].timestamp).getTime();
-    const startTimeInSeconds = (new Date(data[finalStartIndex].timestamp).getTime() - sessionStartTime) / 1000;
-    const absoluteStartTime = new Date(data[finalStartIndex].timestamp).getTime();
 
-    return { startIndex: finalStartIndex, startTime: startTimeInSeconds, absoluteStartTime };
+    // If the sequence (VALVE2 ON -> VALVE1 OFF) didn't complete
+    return null;
 };
 
 
