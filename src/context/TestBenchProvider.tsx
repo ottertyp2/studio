@@ -221,15 +221,13 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setLockedSequences([]);
 
     // Pre-flight check logic
-    if (runningTestSessionRef.current && data.sensor !== null && database) {
-        const session = runningTestSessionRef.current;
+    const session = runningTestSessionRef.current;
+    if (session && data.sensor !== null && database) {
+        console.log('[DEBUG preFlightCheck] runningTestSession:', !!session);
+        console.log('[DEBUG preFlightCheck] data.sensor:', data.sensor);
         console.log('[DEBUG] session.sensorConfigurationId:', session.sensorConfigurationId);
         console.log('[DEBUG] Firestore sensorConfigs loaded:', sensorConfigsRef.current.length);
         console.log('[DEBUG] all sensorConfigs:', sensorConfigsRef.current.map(sc => ({id: sc.id, name: sc.name})));
-
-        console.log('[DEBUG preFlightCheck] runningTestSession:', !!runningTestSessionRef.current);
-        console.log('[DEBUG preFlightCheck] data.sensor:', data.sensor);
-        console.log('[DEBUG preFlightCheck] database available:', !!database);
 
         const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
         const sensorConfig = sensorConfigsRef.current.find(sc => sc.id === session.sensorConfigurationId);
