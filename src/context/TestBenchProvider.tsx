@@ -54,31 +54,36 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const vesselTypesRef = useRef<WithId<VesselType>[]>([]);
   const sensorConfigsRef = useRef<WithId<SensorConfig>[]>([]);
   
-  const preFlightTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const preFlightSucceededRef = useRef<boolean>(false);
+  // Refs for the new pre-flight check logic
+  const preFlightMasterTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const preFlightStabilityTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const preFlightStateRef = useRef<'idle' | 'waiting_for_range' | 'timing_stability' | 'passed'>('idle');
   
   useEffect(() => {
     vesselTypesRef.current = vesselTypes;
+    console.log('[DEBUG] vesselTypesRef updated:', vesselTypesRef.current.map(v => ({id: v.id, name: v.name})));
   }, [vesselTypes]);
 
   useEffect(() => {
     sensorConfigsRef.current = sensorConfigs;
+    console.log('[DEBUG] sensorConfigsRef updated:', sensorConfigsRef.current.map(s => ({id: s.id, name: s.name})));
   }, [sensorConfigs]);
 
 
   // Pre-fetch vessel types and sensor configs
   useEffect(() => {
     if (!firestore) return;
+    console.log('[DEBUG Provider] Setting up listeners for vessel_types and sensor_configurations.');
     const unsubVesselTypes = onSnapshot(collection(firestore, 'vessel_types'), (snapshot) => {
-        const types = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as WithId<VesselType>));
+        const types = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<VesselType>));
         setVesselTypes(types);
-        console.log(`[DEBUG Provider] Vessel types loaded: ${types.length} items.`);
-    });
+    }, (error) => console.error("[ERROR] Failed to load vessel types:", error));
+    
     const unsubSensorConfigs = onSnapshot(collection(firestore, 'sensor_configurations'), (snapshot) => {
-        const configs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as WithId<SensorConfig>));
+        const configs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorConfig>));
         setSensorConfigs(configs);
-        console.log(`[DEBUG Provider] Sensor configs loaded: ${configs.length} items.`);
-    });
+    }, (error) => console.error("[ERROR] Failed to load sensor configs:", error));
+    
     return () => {
         unsubVesselTypes();
         unsubSensorConfigs();
@@ -86,14 +91,22 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   }, [firestore]);
   
   const stopSession = useCallback(() => {
+    // Clear all timers related to session and pre-flight
     if (sessionEndTimeoutRef.current) {
         clearTimeout(sessionEndTimeoutRef.current);
         sessionEndTimeoutRef.current = null;
     }
-    if (preFlightTimerRef.current) {
-        clearTimeout(preFlightTimerRef.current);
-        preFlightTimerRef.current = null;
+    if (preFlightMasterTimeoutRef.current) {
+        clearTimeout(preFlightMasterTimeoutRef.current);
+        preFlightMasterTimeoutRef.current = null;
     }
+    if (preFlightStabilityTimerRef.current) {
+        clearTimeout(preFlightStabilityTimerRef.current);
+        preFlightStabilityTimerRef.current = null;
+    }
+    preFlightStateRef.current = 'idle';
+
+
     if (runningTestSessionRef.current) {
         if (firestore) {
             const sessionRef = doc(firestore, 'test_sessions', runningTestSessionRef.current.id);
@@ -109,14 +122,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setRunningTestSession(session);
     
     // Reset pre-flight state for the new session
-    preFlightSucceededRef.current = false;
-    if (preFlightTimerRef.current) {
-        clearTimeout(preFlightTimerRef.current);
-    }
+    preFlightStateRef.current = 'waiting_for_range';
+    if (preFlightMasterTimeoutRef.current) clearTimeout(preFlightMasterTimeoutRef.current);
+    if (preFlightStabilityTimerRef.current) clearTimeout(preFlightStabilityTimerRef.current);
 
-    if (sessionEndTimeoutRef.current) {
-        clearTimeout(sessionEndTimeoutRef.current);
-    }
+    if (sessionEndTimeoutRef.current) clearTimeout(sessionEndTimeoutRef.current);
 
     if (firestore) {
       const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
@@ -132,17 +142,18 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
           }, duration * 1000);
       }
       
-      // Start the 100-second pre-flight failure timer
-      preFlightTimerRef.current = setTimeout(() => {
-        if (!preFlightSucceededRef.current) {
+      // Start the 120-second master timeout for the pre-flight check
+      preFlightMasterTimeoutRef.current = setTimeout(() => {
+        if (preFlightStateRef.current === 'waiting_for_range') {
             toast({
                 variant: 'destructive',
                 title: 'Pre-flight Check Failed',
-                description: 'The pressure did not enter the required range within 100 seconds. Stopping session.',
+                description: 'The pressure did not enter the required range within 120 seconds. Stopping session.',
+                duration: 10000,
             });
             stopSession();
         }
-      }, 100000); // 100 seconds
+      }, 120000); // 120 seconds
     }
 
   }, [firestore, stopSession, toast]);
@@ -249,32 +260,53 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setLockedValves([]);
     setLockedSequences([]);
 
-    // Pre-flight check logic
+    // New, stateful pre-flight check logic
     const session = runningTestSessionRef.current;
-    if (session && data.sensor !== null && database && !preFlightSucceededRef.current) {
-        
+    if (session && data.sensor !== null && database) {
         const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
         const sensorConfig = sensorConfigsRef.current.find(sc => sc.id === session.sensorConfigurationId);
-
+        
         if (vesselType && sensorConfig && vesselType.preFlightUpperPressureLimit !== undefined) {
-            
             const convertedValue = convertRawValue(data.sensor, sensorConfig);
-
             const lowerLimit = vesselType.preFlightLowerPressureLimit ?? vesselType.pressureTarget ?? 0;
             const upperLimit = vesselType.preFlightUpperPressureLimit;
             const inRange = convertedValue >= lowerLimit && convertedValue <= upperLimit;
 
-            if (inRange) {
-                set(ref(database, 'data/commands/preFlightCheck'), true);
-                preFlightSucceededRef.current = true; // Mark as succeeded
-                if (preFlightTimerRef.current) {
-                    clearTimeout(preFlightTimerRef.current); // Cancel the failure timer
-                    preFlightTimerRef.current = null;
+            if (preFlightStateRef.current === 'waiting_for_range' && inRange) {
+                // Value just entered the range, start the 100-second stability timer
+                preFlightStateRef.current = 'timing_stability';
+                if (preFlightMasterTimeoutRef.current) {
+                    clearTimeout(preFlightMasterTimeoutRef.current); // Cancel the master timeout
+                    preFlightMasterTimeoutRef.current = null;
                 }
+                
+                preFlightStabilityTimerRef.current = setTimeout(() => {
+                    // Timer completed successfully!
+                    if (preFlightStateRef.current === 'timing_stability') {
+                        preFlightStateRef.current = 'passed';
+                        set(ref(database, 'data/commands/preFlightCheck'), true);
+                        toast({
+                            title: 'Pre-flight Check Passed',
+                            description: 'Pressure stable. Proceeding with measurement.',
+                        });
+                    }
+                }, 100000); // 100 seconds
+            } else if (preFlightStateRef.current === 'timing_stability' && !inRange) {
+                // Value fell out of range during the stability timing
+                if (preFlightStabilityTimerRef.current) {
+                    clearTimeout(preFlightStabilityTimerRef.current);
+                    preFlightStabilityTimerRef.current = null;
+                }
+                preFlightStateRef.current = 'idle'; // Reset state
+                toast({
+                    variant: 'destructive',
+                    title: 'Pre-flight Check Failed',
+                    description: `Pressure left the valid range (${lowerLimit.toFixed(2)} - ${upperLimit.toFixed(2)}). Failed at ${convertedValue.toFixed(2)}. Stopping session.`,
+                    duration: 10000,
+                });
+                stopSession();
             }
-            // If not in range, we do nothing and let the 100-second timer run its course.
-        } else {
-            // If the conditions aren't met (e.g., vesselType not configured), we still let the timer decide.
+            // If state is idle, passed, or waiting_for_range (but not in range), do nothing.
         }
     } else if (database && !session) {
         // Explicitly set to false if no session is running.
@@ -303,7 +335,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 .catch((error) => console.error('[handleNewDataPoint] Firestore write FAILED:', error));
         }
     }
-  }, [firestore, isRecording, database, stopSession]);
+  }, [firestore, isRecording, database, stopSession, toast]);
   
   useEffect(() => {
     if (!database) return;
