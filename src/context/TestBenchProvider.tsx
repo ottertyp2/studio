@@ -97,10 +97,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         sessionEndTimeoutRef.current = null;
     }
     if (preFlightMasterTimeoutRef.current) {
+        console.log('[DEBUG TIMER] Clearing master timer during stopSession.');
         clearTimeout(preFlightMasterTimeoutRef.current);
         preFlightMasterTimeoutRef.current = null;
     }
     if (preFlightStabilityTimerRef.current) {
+        console.log('[DEBUG TIMER] Clearing stability timer during stopSession.');
         clearTimeout(preFlightStabilityTimerRef.current);
         preFlightStabilityTimerRef.current = null;
     }
@@ -129,8 +131,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     runningTestSessionRef.current = session;
     setRunningTestSession(session);
     
-    // Reset pre-flight state for the new session
     preFlightStateRef.current = 'waiting_for_range';
+    console.log(`[DEBUG STATE] Session ${session.id} started. State -> waiting_for_range`);
     if (preFlightMasterTimeoutRef.current) clearTimeout(preFlightMasterTimeoutRef.current);
     if (preFlightStabilityTimerRef.current) clearTimeout(preFlightStabilityTimerRef.current);
 
@@ -150,18 +152,22 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
           }, duration * 1000);
       }
       
-      // Start the 120-second master timeout for the pre-flight check
+      // Start the 20-second master timeout for the pre-flight check
       preFlightMasterTimeoutRef.current = setTimeout(() => {
         if (preFlightStateRef.current === 'waiting_for_range') {
+            console.error('[DEBUG TIMER] Master 20s timer FAILED. State was still waiting_for_range.');
             toast({
                 variant: 'destructive',
                 title: 'Pre-flight Check Failed',
-                description: 'The pressure did not enter the required range within 120 seconds. Stopping session.',
+                description: 'The pressure did not enter the required range within 20 seconds. Stopping session.',
                 duration: 10000,
             });
             stopSession();
+        } else {
+             console.log('[DEBUG TIMER] Master 20s timer expired, but state was already', preFlightStateRef.current, '. No action taken.');
         }
-      }, 120000); // 120 seconds
+      }, 20000); // 20 seconds for debug
+       console.log('[DEBUG TIMER] Master 20s timer SET.');
     }
 
   }, [firestore, stopSession, toast]);
@@ -268,14 +274,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setLockedValves([]);
     setLockedSequences([]);
 
-    // New, stateful pre-flight check logic
     const session = runningTestSessionRef.current;
-    
     if (session && data.sensor !== null && database) {
-
         const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
         const sensorConfig = sensorConfigsRef.current.find(sc => sc.id === session.sensorConfigurationId);
-
+        
         if (vesselType && sensorConfig && vesselType.preFlightUpperPressureLimit !== undefined) {
             const convertedValue = convertRawValue(data.sensor, sensorConfig);
             const lowerLimit = vesselType.preFlightLowerPressureLimit ?? vesselType.pressureTarget ?? 0;
@@ -283,33 +286,36 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             const inRange = convertedValue >= lowerLimit && convertedValue <= upperLimit;
 
             if (preFlightStateRef.current === 'waiting_for_range' && inRange) {
-                // Value just entered the range, start the 100-second stability timer
                 preFlightStateRef.current = 'timing_stability';
+                console.log(`[DEBUG STATE] Value ${convertedValue.toFixed(2)} entered range [${lowerLimit}, ${upperLimit}]. State -> timing_stability`);
                 
-                // CRITICAL FIX: Cancel the master timer now that the stability check has begun.
                 if (preFlightMasterTimeoutRef.current) {
+                    console.log('[DEBUG TIMER] Master 20s timer CLEARED because stability check started.');
                     clearTimeout(preFlightMasterTimeoutRef.current);
                     preFlightMasterTimeoutRef.current = null;
                 }
                 
                 preFlightStabilityTimerRef.current = setTimeout(() => {
-                    // Timer completed successfully!
                     if (preFlightStateRef.current === 'timing_stability') {
                         preFlightStateRef.current = 'passed';
                         set(ref(database, 'data/commands/preFlightCheck'), true);
+                        console.log('[DEBUG STATE] Stability timer completed. State -> passed. SET preFlightCheck to TRUE.');
                         toast({
                             title: 'Pre-flight Check Passed',
                             description: 'Pressure stable. Proceeding with measurement.',
                         });
                     }
-                }, 100000); // 100 seconds
+                }, 10000); // 10 seconds for debug
+                 console.log('[DEBUG TIMER] Stability 10s timer SET.');
+
             } else if (preFlightStateRef.current === 'timing_stability' && !inRange) {
-                // Value fell out of range during the stability timing
                 if (preFlightStabilityTimerRef.current) {
+                    console.log('[DEBUG TIMER] Stability timer CLEARED because value left range.');
                     clearTimeout(preFlightStabilityTimerRef.current);
                     preFlightStabilityTimerRef.current = null;
                 }
                 preFlightStateRef.current = 'idle'; // Reset state
+                console.error(`[DEBUG STATE] Stability FAILED. Value ${convertedValue.toFixed(2)} left range [${lowerLimit}, ${upperLimit}]. State -> idle.`);
                 toast({
                     variant: 'destructive',
                     title: 'Pre-flight Check Failed',
@@ -318,14 +324,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 });
                 stopSession();
             }
-        } else {
-           if (database && preFlightStateRef.current !== 'passed') {
-                set(ref(database, 'data/commands/preFlightCheck'), false);
-           }
-        }
-    } else {
-        if (database && preFlightStateRef.current !== 'passed') {
-            set(ref(database, 'data/commands/preFlightCheck'), false);
         }
     }
 
