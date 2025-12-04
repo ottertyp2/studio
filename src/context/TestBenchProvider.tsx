@@ -260,16 +260,17 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         
         console.log('--- PRE-FLIGHT CHECK TICK ---');
         console.log(`[DEBUG STATE] Current State: ${preFlightStateRef.current}`);
-        console.log('[DEBUG] Raw sensor value:', data.sensor);
+        console.log(`[DEBUG ID] Searching for Vessel ID: ${session.vesselTypeId}`);
         
-        if (vesselType && sensorConfig && vesselType.preFlightUpperPressureLimit !== undefined) {
+        if (vesselType && sensorConfig && vesselType.preFlightUpperPressureLimit !== undefined && vesselType.preFlightLowerPressureLimit !== undefined) {
             const convertedValue = convertRawValue(data.sensor, sensorConfig);
-            const lowerLimit = vesselType.preFlightLowerPressureLimit ?? vesselType.pressureTarget ?? 0;
+            const lowerLimit = vesselType.preFlightLowerPressureLimit;
             const upperLimit = vesselType.preFlightUpperPressureLimit;
             const inRange = convertedValue >= lowerLimit && convertedValue <= upperLimit;
 
-            console.log(`[DEBUG] Converted Value: ${convertedValue.toFixed(3)}`);
-            console.log(`[DEBUG] Range Check: [${lowerLimit}, ${upperLimit}] -> In Range? ${inRange}`);
+            console.log(`[DEBUG VAL] Raw: ${data.sensor} -> Converted: ${convertedValue.toFixed(3)}`);
+            console.log(`[DEBUG RANGE] Checking against [${lowerLimit}, ${upperLimit}]. In Range? ${inRange}`);
+
 
             if (preFlightStateRef.current === 'waiting_for_range' && inRange) {
                 preFlightStateRef.current = 'timing_stability';
@@ -311,9 +312,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 stopSession();
             }
         } else {
-             console.log(`[DEBUG] Skipping pre-flight check. Reason:
-             - vesselType found: ${!!vesselType}
-             - sensorConfig found: ${!!sensorConfig}
+             console.log(`[DEBUG] Skipping pre-flight check logic because a prerequisite is missing:
+             - VesselType found: ${!!vesselType}
+             - SensorConfig found: ${!!sensorConfig}
+             - preFlightLowerPressureLimit defined: ${vesselType ? vesselType.preFlightLowerPressureLimit !== undefined : 'N/A'}
              - preFlightUpperPressureLimit defined: ${vesselType ? vesselType.preFlightUpperPressureLimit !== undefined : 'N/A'}`);
         }
     }
@@ -340,7 +342,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 .catch((error) => console.error('[handleNewDataPoint] Firestore write FAILED:', error));
         }
     }
-  }, [firestore, isRecording, database, stopSession, toast]);
+  }, [firestore, database, isRecording, stopSession, toast, vesselTypes, sensorConfigs]);
   
   useEffect(() => {
     if (!database) return;
@@ -539,3 +541,5 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
+
+    
