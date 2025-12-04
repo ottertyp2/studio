@@ -54,6 +54,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const vesselTypesRef = useRef<WithId<VesselType>[]>([]);
   const sensorConfigsRef = useRef<WithId<SensorConfig>[]>([]);
   
+  const preFlightTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const preFlightSucceededRef = useRef<boolean>(false);
+  
   useEffect(() => {
     vesselTypesRef.current = vesselTypes;
   }, [vesselTypes]);
@@ -87,6 +90,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         clearTimeout(sessionEndTimeoutRef.current);
         sessionEndTimeoutRef.current = null;
     }
+    if (preFlightTimerRef.current) {
+        clearTimeout(preFlightTimerRef.current);
+        preFlightTimerRef.current = null;
+    }
     if (runningTestSessionRef.current) {
         if (firestore) {
             const sessionRef = doc(firestore, 'test_sessions', runningTestSessionRef.current.id);
@@ -101,6 +108,12 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     runningTestSessionRef.current = session;
     setRunningTestSession(session);
     
+    // Reset pre-flight state for the new session
+    preFlightSucceededRef.current = false;
+    if (preFlightTimerRef.current) {
+        clearTimeout(preFlightTimerRef.current);
+    }
+
     if (sessionEndTimeoutRef.current) {
         clearTimeout(sessionEndTimeoutRef.current);
     }
@@ -118,6 +131,18 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
               stopSession();
           }, duration * 1000);
       }
+      
+      // Start the 100-second pre-flight failure timer
+      preFlightTimerRef.current = setTimeout(() => {
+        if (!preFlightSucceededRef.current) {
+            toast({
+                variant: 'destructive',
+                title: 'Pre-flight Check Failed',
+                description: 'The pressure did not enter the required range within 100 seconds. Stopping session.',
+            });
+            stopSession();
+        }
+      }, 100000); // 100 seconds
     }
 
   }, [firestore, stopSession, toast]);
@@ -226,44 +251,32 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
     // Pre-flight check logic
     const session = runningTestSessionRef.current;
-    if (session && data.sensor !== null && database) {
-        console.log('[DEBUG preFlightCheck] runningTestSession:', !!session);
-        console.log('[DEBUG preFlightCheck] data.sensor:', data.sensor);
-        console.log('[DEBUG preFlightCheck] database available:', !!database);
-
-        console.log('[DEBUG] session.sensorConfigurationId:', session.sensorConfigurationId);
-        console.log('[DEBUG] Firestore sensorConfigs loaded:', sensorConfigsRef.current.length);
-        console.log('[DEBUG] all sensorConfigs:', sensorConfigsRef.current.map(sc => ({id: sc.id, name: sc.name})));
-        console.log('[DEBUG] session.vesselTypeId:', session.vesselTypeId);
-        console.log('[DEBUG Provider] vesselTypesRef.current:', vesselTypesRef.current);
-
-
+    if (session && data.sensor !== null && database && !preFlightSucceededRef.current) {
+        
         const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
         const sensorConfig = sensorConfigsRef.current.find(sc => sc.id === session.sensorConfigurationId);
-        
-        console.log('[DEBUG preFlightCheck] vesselType found:', !!vesselType, vesselType?.name);
-        console.log('[DEBUG preFlightCheck] sensorConfig found:', !!sensorConfig, sensorConfig?.name);
 
         if (vesselType && sensorConfig && vesselType.preFlightUpperPressureLimit !== undefined) {
-            console.log('[DEBUG preFlightCheck] upperLimit defined:', vesselType?.preFlightUpperPressureLimit !== undefined);
             
             const convertedValue = convertRawValue(data.sensor, sensorConfig);
-            console.log('[DEBUG preFlightCheck] rawValue:', data.sensor, '→ converted:', convertedValue);
 
             const lowerLimit = vesselType.preFlightLowerPressureLimit ?? vesselType.pressureTarget ?? 0;
-            console.log('[DEBUG preFlightCheck] lowerLimit:', lowerLimit, '(from preFlightLowerPressureLimit / pressureTarget)');
-            console.log('[DEBUG preFlightCheck] upperLimit:', vesselType?.preFlightUpperPressureLimit);
+            const upperLimit = vesselType.preFlightUpperPressureLimit;
+            const inRange = convertedValue >= lowerLimit && convertedValue <= upperLimit;
 
-            const inRange = convertedValue >= lowerLimit && convertedValue <= vesselType.preFlightUpperPressureLimit;
-            console.log('[DEBUG preFlightCheck] inRange:', inRange, '→', convertedValue >= lowerLimit ? 'OK low' : 'FAIL low', '|', convertedValue <= vesselType.preFlightUpperPressureLimit ? 'OK high' : 'FAIL high');
-
-            set(ref(database, 'data/commands/preFlightCheck'), inRange);
-            console.log('[DEBUG preFlightCheck] SET to RTDB:', inRange);
+            if (inRange) {
+                set(ref(database, 'data/commands/preFlightCheck'), true);
+                preFlightSucceededRef.current = true; // Mark as succeeded
+                if (preFlightTimerRef.current) {
+                    clearTimeout(preFlightTimerRef.current); // Cancel the failure timer
+                    preFlightTimerRef.current = null;
+                }
+            }
+            // If not in range, we do nothing and let the 100-second timer run its course.
         } else {
-            // If the conditions aren't met (e.g., vesselType not configured), ensure the check is false.
-            set(ref(database, 'data/commands/preFlightCheck'), false);
+            // If the conditions aren't met (e.g., vesselType not configured), we still let the timer decide.
         }
-    } else if (database) {
+    } else if (database && !session) {
         // Explicitly set to false if no session is running.
         set(ref(database, 'data/commands/preFlightCheck'), false);
     }
@@ -290,7 +303,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 .catch((error) => console.error('[handleNewDataPoint] Firestore write FAILED:', error));
         }
     }
-  }, [firestore, isRecording, database]);
+  }, [firestore, isRecording, database, stopSession]);
   
   useEffect(() => {
     if (!database) return;
