@@ -60,28 +60,29 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   
   useEffect(() => {
     vesselTypesRef.current = vesselTypes;
+    console.log('[DEBUG REF UPDATE] vesselTypesRef.current updated. Length:', vesselTypes.length);
   }, [vesselTypes]);
 
   useEffect(() => {
     sensorConfigsRef.current = sensorConfigs;
+    console.log('[DEBUG REF UPDATE] sensorConfigsRef.current updated. Length:', sensorConfigs.length);
   }, [sensorConfigs]);
 
 
   // Pre-fetch vessel types and sensor configs
   useEffect(() => {
     if (!firestore) return;
-    console.log('[DEBUG Provider] Setting up listeners for vessel_types and sensor_configurations.');
     
     const unsubVesselTypes = onSnapshot(collection(firestore, 'vessel_types'), (snapshot) => {
         const types = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<VesselType>));
         setVesselTypes(types);
-        console.log(`[DEBUG] Loaded ${types.length} vessel types into context.`);
+        console.log(`[DEBUG DATA LOAD] Loaded ${types.length} vessel types from Firestore.`, types.map(t => t.id));
     }, (error) => console.error("[ERROR] Failed to load vessel types:", error));
     
     const unsubSensorConfigs = onSnapshot(collection(firestore, 'sensor_configurations'), (snapshot) => {
         const configs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorConfig>));
         setSensorConfigs(configs);
-        console.log(`[DEBUG] Loaded ${configs.length} sensor configs into context.`);
+        console.log(`[DEBUG DATA LOAD] Loaded ${configs.length} sensor configs from Firestore.`, configs.map(c => c.id));
     }, (error) => console.error("[ERROR] Failed to load sensor configs:", error));
     
     return () => {
@@ -255,13 +256,21 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
     const session = runningTestSessionRef.current;
     if (session && data.sensor !== null && database) {
-        const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
-        const sensorConfig = sensorConfigsRef.current.find(sc => sc.id === session.sensorConfigurationId);
         
         console.log('--- PRE-FLIGHT CHECK TICK ---');
         console.log(`[DEBUG STATE] Current State: ${preFlightStateRef.current}`);
-        console.log(`[DEBUG ID] Searching for Vessel ID: ${session.vesselTypeId}`);
+        console.log(`[DEBUG ID] Searching for Vessel ID: "${session.vesselTypeId}"`);
         
+        console.log('[DEBUG CONTEXT] Checking vesselTypesRef.current:', vesselTypesRef.current.map(vt => vt.id));
+
+        const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
+        const sensorConfig = sensorConfigsRef.current.find(sc => sc.id === session.sensorConfigurationId);
+        
+        const isVesselTypeFound = !!vesselType;
+        const isSensorConfigFound = !!sensorConfig;
+        
+        console.log(`[DEBUG FIND] vesselType found: ${isVesselTypeFound}, sensorConfig found: ${isSensorConfigFound}`);
+
         if (vesselType && sensorConfig && vesselType.preFlightUpperPressureLimit !== undefined && vesselType.preFlightLowerPressureLimit !== undefined) {
             const convertedValue = convertRawValue(data.sensor, sensorConfig);
             const lowerLimit = vesselType.preFlightLowerPressureLimit;
@@ -312,9 +321,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 stopSession();
             }
         } else {
-             console.log(`[DEBUG] Skipping pre-flight check logic because a prerequisite is missing:
-             - VesselType found: ${!!vesselType}
-             - SensorConfig found: ${!!sensorConfig}
+             console.log(`[DEBUG SKIP] Skipping pre-flight check because a prerequisite is missing:
+             - vesselType found: ${!!vesselType}
+             - sensorConfig found: ${!!sensorConfig}
              - preFlightLowerPressureLimit defined: ${vesselType ? vesselType.preFlightLowerPressureLimit !== undefined : 'N/A'}
              - preFlightUpperPressureLimit defined: ${vesselType ? vesselType.preFlightUpperPressureLimit !== undefined : 'N/A'}`);
         }
@@ -342,7 +351,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 .catch((error) => console.error('[handleNewDataPoint] Firestore write FAILED:', error));
         }
     }
-  }, [firestore, database, isRecording, stopSession, toast, vesselTypes, sensorConfigs]);
+  }, [firestore, database, isRecording, stopSession, toast]);
   
   useEffect(() => {
     if (!database) return;
@@ -541,5 +550,3 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
-
-    
