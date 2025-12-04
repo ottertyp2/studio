@@ -47,7 +47,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [downtimeStart, setDowntimeStart] = useState<number | null>(null);
 
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const sessionEndTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const [vesselTypes, setVesselTypes] = useState<WithId<VesselType>[]>([]);
   const [sensorConfigs, setSensorConfigs] = useState<WithId<SensorConfig>[]>([]);
@@ -72,6 +71,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!firestore) return;
     console.log('[DEBUG Provider] Setting up listeners for vessel_types and sensor_configurations.');
+    
     const unsubVesselTypes = onSnapshot(collection(firestore, 'vessel_types'), (snapshot) => {
         const types = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<VesselType>));
         setVesselTypes(types);
@@ -92,10 +92,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   
   const stopSession = useCallback(() => {
     // Clear all timers related to session and pre-flight
-    if (sessionEndTimeoutRef.current) {
-        clearTimeout(sessionEndTimeoutRef.current);
-        sessionEndTimeoutRef.current = null;
-    }
     if (preFlightMasterTimeoutRef.current) {
         console.log('[DEBUG TIMER] Clearing master timer during stopSession.');
         clearTimeout(preFlightMasterTimeoutRef.current);
@@ -135,40 +131,23 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     console.log(`[DEBUG STATE] Session ${session.id} started. State -> waiting_for_range`);
     if (preFlightMasterTimeoutRef.current) clearTimeout(preFlightMasterTimeoutRef.current);
     if (preFlightStabilityTimerRef.current) clearTimeout(preFlightStabilityTimerRef.current);
-
-    if (sessionEndTimeoutRef.current) clearTimeout(sessionEndTimeoutRef.current);
-
-    if (firestore) {
-      const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
-      const duration = vesselType?.durationSeconds;
-      
-      if (duration) {
-          sessionEndTimeoutRef.current = setTimeout(() => {
-              toast({
-                  title: 'Session Automatically Ended',
-                  description: `The session for ${session.vesselTypeName} has completed its configured duration.`,
-              });
-              stopSession();
-          }, duration * 1000);
+    
+    // Start the master timeout for the pre-flight check
+    preFlightMasterTimeoutRef.current = setTimeout(() => {
+      if (preFlightStateRef.current === 'waiting_for_range') {
+          console.error('[DEBUG TIMER] Master 20s timer FAILED. State was still waiting_for_range.');
+          toast({
+              variant: 'destructive',
+              title: 'Pre-flight Check Failed',
+              description: 'The pressure did not enter the required range within 20 seconds. Stopping session.',
+              duration: 10000,
+          });
+          stopSession();
+      } else {
+            console.log('[DEBUG TIMER] Master 20s timer expired, but state was already', preFlightStateRef.current, '. No action taken.');
       }
-      
-      // Start the 20-second master timeout for the pre-flight check
-      preFlightMasterTimeoutRef.current = setTimeout(() => {
-        if (preFlightStateRef.current === 'waiting_for_range') {
-            console.error('[DEBUG TIMER] Master 20s timer FAILED. State was still waiting_for_range.');
-            toast({
-                variant: 'destructive',
-                title: 'Pre-flight Check Failed',
-                description: 'The pressure did not enter the required range within 20 seconds. Stopping session.',
-                duration: 10000,
-            });
-            stopSession();
-        } else {
-             console.log('[DEBUG TIMER] Master 20s timer expired, but state was already', preFlightStateRef.current, '. No action taken.');
-        }
-      }, 20000); // 20 seconds for debug
-       console.log('[DEBUG TIMER] Master 20s timer SET.');
-    }
+    }, 20000); // 20 seconds for debug
+      console.log('[DEBUG TIMER] Master 20s timer SET.');
 
   }, [firestore, stopSession, toast]);
 
@@ -279,15 +258,23 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         const vesselType = vesselTypesRef.current.find(vt => vt.id === session.vesselTypeId);
         const sensorConfig = sensorConfigsRef.current.find(sc => sc.id === session.sensorConfigurationId);
         
+        console.log('--- PRE-FLIGHT CHECK TICK ---');
+        console.log(`[DEBUG STATE] Current State: ${preFlightStateRef.current}`);
+        console.log('[DEBUG] Raw sensor value:', data.sensor);
+        
         if (vesselType && sensorConfig && vesselType.preFlightUpperPressureLimit !== undefined) {
             const convertedValue = convertRawValue(data.sensor, sensorConfig);
             const lowerLimit = vesselType.preFlightLowerPressureLimit ?? vesselType.pressureTarget ?? 0;
             const upperLimit = vesselType.preFlightUpperPressureLimit;
             const inRange = convertedValue >= lowerLimit && convertedValue <= upperLimit;
 
+            console.log(`[DEBUG] Converted Value: ${convertedValue.toFixed(3)}`);
+            console.log(`[DEBUG] Range Check: [${lowerLimit}, ${upperLimit}]`);
+            console.log(`[DEBUG] Is in range? ${inRange}`);
+
             if (preFlightStateRef.current === 'waiting_for_range' && inRange) {
                 preFlightStateRef.current = 'timing_stability';
-                console.log(`[DEBUG STATE] Value ${convertedValue.toFixed(2)} entered range [${lowerLimit}, ${upperLimit}]. State -> timing_stability`);
+                console.log(`[DEBUG STATE] Value ${convertedValue.toFixed(2)} entered range. State -> timing_stability`);
                 
                 if (preFlightMasterTimeoutRef.current) {
                     console.log('[DEBUG TIMER] Master 20s timer CLEARED because stability check started.');
@@ -324,6 +311,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 });
                 stopSession();
             }
+        } else {
+             console.log('[DEBUG] Skipping pre-flight check: vesselType, sensorConfig, or preFlightUpperPressureLimit is missing.');
         }
     }
 
