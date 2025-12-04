@@ -141,6 +141,8 @@ type VesselType = {
     maxCurve: {x: number, y: number}[];
     pressureTarget?: number;
     timeBufferInSeconds?: number;
+    preFlightLowerPressureLimit?: number;
+    preFlightUpperPressureLimit?: number;
 }
 
 type Batch = {
@@ -511,22 +513,16 @@ function TestingComponent() {
   };
   
   const handleStopSession = async () => {
-    if (!runningTestSession || !database || !firestore) return;
+    if (!runningTestSession) return;
     
     await sendRecordingCommand(false);
     await sendSequenceCommand('sequence1', false);
     await sendValveCommand('VALVE1', 'OFF');
     await sendValveCommand('VALVE2', 'OFF');
 
-    const sessionRef = doc(firestore, 'test_sessions', runningTestSession.id);
-    await updateDocumentNonBlocking(sessionRef, {
-      status: 'COMPLETED',
-      endTime: new Date().toISOString(),
-    });
-    
-    stopSessionInContext();
+    stopSessionInContext(); // This now updates Firestore status internally
 
-    toast({ title: 'Session Stopped', description: 'Data recording has ended and valves have been closed.' });
+    toast({ title: 'Session Stopped', description: 'Data recording has ended and all valves have been closed.' });
   };
   
   const handleClassifyByGuideline = async (session: WithId<TestSession>) => {
