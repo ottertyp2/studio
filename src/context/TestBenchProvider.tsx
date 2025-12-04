@@ -248,9 +248,13 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     if (session && data.sensor !== null && database) {
         
         console.log('--- PRE-FLIGHT CHECK TICK ---');
-        console.log(`[DEBUG STATE] Current State: ${preFlightStateRef.current}`);
         
+        // Detailed logging for vessel type lookup
+        console.log(`[DEBUG LOOKUP] Attempting to find vesselType with ID: "${session.vesselTypeId}"`);
+        console.log(`[DEBUG LOOKUP] Searching in vesselTypes array (length ${vesselTypes.length}):`, vesselTypes);
         const vesselType = vesselTypes.find(vt => vt.id === session.vesselTypeId);
+        console.log(`[DEBUG LOOKUP] Result of vesselType find:`, vesselType);
+
         const sensorConfig = sensorConfigs.find(sc => sc.id === session.sensorConfigurationId);
         
         const isVesselTypeFound = !!vesselType;
@@ -535,5 +539,3 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
-
-    
