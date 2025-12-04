@@ -423,10 +423,11 @@ function TestingComponent() {
         toast({ variant: 'destructive', title: 'Session in Progress', description: 'Another session is already running.' });
         return;
     }
-
+    
+    // --- New Validation Step ---
     const vesselType = vesselTypes.find(vt => vt.id === newSessionData.vesselTypeId);
     if (!vesselType) {
-        toast({ variant: 'destructive', title: 'Error', description: 'Selected vessel type not found.' });
+        toast({ variant: 'destructive', title: 'Error', description: 'Selected vessel type not found. Please refresh and try again.' });
         return;
     }
     
@@ -1298,8 +1299,8 @@ function TestingComponent() {
     !newSessionData.vesselTypeId ||
     !newSessionData.sensorConfigurationId ||
     !newSessionData.serialNumber.trim() ||
-    (newSessionData.batchId === 'CREATE_NEW_BATCH' && !newBatchName.trim()) ||
-    (newSessionData.batchId === '');
+    (newSessionData.batchId === '' && !newBatchName.trim()) ||
+    (newSessionData.batchId === 'CREATE_NEW_BATCH' && !newBatchName.trim());
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-4">
