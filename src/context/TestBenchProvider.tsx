@@ -35,7 +35,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const [sequenceFailureCount, setSequenceFailureCount] = useState<number>(0);
   const [movingAverageLength, setMovingAverageLength] = useState<number | null>(null);
   
-  const runningTestSessionRef = useRef<WithId<DocumentData> | null>(null);
   const [runningTestSession, setRunningTestSession] = useState<WithId<DocumentData> | null>(null);
 
   const [lockedValves, setLockedValves] = useState<('VALVE1' | 'VALVE2')[]>([]);
@@ -66,7 +65,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const unsubVesselTypes = onSnapshot(collection(firestore, 'vessel_types'), (snapshot) => {
         const types = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<VesselType>));
         setVesselTypes(types);
-        console.log(`[DEBUG DATA LOAD] SUCCESS: Loaded ${types.length} vessel types from Firestore.`);
+        console.log(`[DEBUG DATA LOAD] SUCCESS: Loaded ${types.length} vessel types from Firestore.`, types);
     }, (error) => console.error("[ERROR] Failed to load vessel types:", error));
     
     const unsubSensorConfigs = onSnapshot(collection(firestore, 'sensor_configurations'), (snapshot) => {
@@ -104,18 +103,16 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       set(ref(database, 'data/commands/recording'), false);
     }
 
-    if (runningTestSessionRef.current) {
+    if (runningTestSession) {
         if (firestore) {
-            const sessionRef = doc(firestore, 'test_sessions', runningTestSessionRef.current.id);
+            const sessionRef = doc(firestore, 'test_sessions', runningTestSession.id);
             updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
         }
-        runningTestSessionRef.current = null;
         setRunningTestSession(null);
     }
-  }, [firestore, database]);
+  }, [firestore, database, runningTestSession]);
 
   const startSession = useCallback((session: WithId<DocumentData>) => {
-    runningTestSessionRef.current = session;
     setRunningTestSession(session);
     
     preFlightStateRef.current = 'waiting_for_range';
@@ -188,11 +185,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       if (!querySnapshot.empty) {
         const runningSessionDoc = querySnapshot.docs[0];
         const session = { id: runningSessionDoc.id, ...runningSessionDoc.data() } as WithId<DocumentData>;
-        if (runningTestSessionRef.current?.id !== session.id) {
+        if (runningTestSession?.id !== session.id) {
           startSession(session);
         }
       } else {
-        if (runningTestSessionRef.current) {
+        if (runningTestSession) {
           stopSession();
         }
       }
@@ -202,7 +199,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     return () => {
         unsubscribe();
     }
-  }, [firestore, user, startSession, stopSession]);
+  }, [firestore, user, startSession, stopSession, runningTestSession]);
 
   const handleNewDataPoint = useCallback((data: any) => {
     if (connectionTimeoutRef.current) {
@@ -244,7 +241,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     setLockedValves([]);
     setLockedSequences([]);
 
-    const session = runningTestSessionRef.current;
+    const session = runningTestSession;
     if (session && data.sensor !== null && database) {
         
         console.log('--- PRE-FLIGHT CHECK TICK ---');
@@ -253,8 +250,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         console.log(`[DEBUG LOOKUP] Attempting to find vesselType with ID: "${session.vesselTypeId}"`);
         console.log(`[DEBUG LOOKUP] Searching in vesselTypes array (length ${vesselTypes.length}):`, vesselTypes);
         const vesselType = vesselTypes.find(vt => vt.id === session.vesselTypeId);
-        console.log(`[DEBUG LOOKUP] Result of vesselType find:`, vesselType);
-
+        
         const sensorConfig = sensorConfigs.find(sc => sc.id === session.sensorConfigurationId);
         
         const isVesselTypeFound = !!vesselType;
@@ -328,8 +324,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             return [newDataPoint, ...prevLog].slice(0, 1000)
         });
 
-        if (runningTestSessionRef.current && firestore) {
-            const sessionDataRef = collection(firestore, 'test_sessions', runningTestSessionRef.current.id, 'sensor_data');
+        if (runningTestSession && firestore) {
+            const sessionDataRef = collection(firestore, 'test_sessions', runningTestSession.id, 'sensor_data');
             const dataToSave = {
                 value: data.sensor,
                 timestamp: new Date(data.lastUpdate).toISOString(),
@@ -340,7 +336,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 .catch((error) => console.error('[handleNewDataPoint] Firestore write FAILED:', error));
         }
     }
-  }, [firestore, database, isRecording, stopSession, toast, vesselTypes, sensorConfigs]);
+  }, [firestore, database, isRecording, stopSession, toast, vesselTypes, sensorConfigs, runningTestSession]);
   
   useEffect(() => {
     if (!database) return;
