@@ -63,7 +63,14 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     console.log("[DEBUG DATA LOAD] Setting up Firestore listeners for vessel_types and sensor_configurations.");
 
     const unsubVesselTypes = onSnapshot(collection(firestore, 'vessel_types'), (snapshot) => {
-        const types = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<VesselType>));
+        const types = snapshot.docs.map(doc => {
+            const data = doc.data();
+            delete data.id; // Remove the incorrect id field
+            return { 
+              id: doc.id,  // Use only the document ID
+              ...data 
+            } as WithId<VesselType>;
+          });
         setVesselTypes(types);
         console.log(`[DEBUG DATA LOAD] SUCCESS: Loaded ${types.length} vessel types from Firestore.`, types);
     }, (error) => console.error("[ERROR] Failed to load vessel types:", error));
@@ -245,8 +252,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     if (session && data.sensor !== null && database) {
         
         console.log('--- PRE-FLIGHT CHECK TICK ---');
-        
-        // Detailed logging for vessel type lookup
         console.log(`[DEBUG LOOKUP] Attempting to find vesselType with ID: "${session.vesselTypeId}"`);
         console.log(`[DEBUG LOOKUP] Searching in vesselTypes array (length ${vesselTypes.length}):`, vesselTypes);
         const vesselType = vesselTypes.find(vt => vt.id === session.vesselTypeId);
