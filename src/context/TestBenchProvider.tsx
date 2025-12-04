@@ -66,7 +66,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const unsubVesselTypes = onSnapshot(collection(firestore, 'vessel_types'), (snapshot) => {
         const types = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<VesselType>));
         setVesselTypes(types);
-        console.log(`[DEBUG DATA LOAD] SUCCESS: Loaded ${types.length} vessel types from Firestore.`, types.map(t => t.id));
+        console.log(`[DEBUG DATA LOAD] SUCCESS: Loaded ${types.length} vessel types from Firestore.`);
     }, (error) => console.error("[ERROR] Failed to load vessel types:", error));
     
     const unsubSensorConfigs = onSnapshot(collection(firestore, 'sensor_configurations'), (snapshot) => {
@@ -249,7 +249,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         
         console.log('--- PRE-FLIGHT CHECK TICK ---');
         console.log(`[DEBUG STATE] Current State: ${preFlightStateRef.current}`);
-        console.log(`[DEBUG ID] Searching for Vessel ID: "${session.vesselTypeId}"`);
         
         const vesselType = vesselTypes.find(vt => vt.id === session.vesselTypeId);
         const sensorConfig = sensorConfigs.find(sc => sc.id === session.sensorConfigurationId);
@@ -257,8 +256,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         const isVesselTypeFound = !!vesselType;
         const isSensorConfigFound = !!sensorConfig;
         
-        console.log(`[DEBUG FIND] vesselType found: ${isVesselTypeFound}, sensorConfig found: ${isSensorConfigFound}`);
-
         if (vesselType && sensorConfig && vesselType.preFlightUpperPressureLimit !== undefined && vesselType.preFlightLowerPressureLimit !== undefined) {
             const convertedValue = convertRawValue(data.sensor, sensorConfig);
             const lowerLimit = vesselType.preFlightLowerPressureLimit;
@@ -310,8 +307,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             }
         } else {
              console.log(`[DEBUG SKIP] Skipping pre-flight check. Reason:
-             - vesselType found: ${!!vesselType}
-             - sensorConfig found: ${!!sensorConfig}
+             - vesselType found: ${isVesselTypeFound}
+             - sensorConfig found: ${isSensorConfigFound}
              - preFlightLowerPressureLimit defined: ${vesselType ? vesselType.preFlightLowerPressureLimit !== undefined : 'N/A'}
              - preFlightUpperPressureLimit defined: ${vesselType ? vesselType.preFlightUpperPressureLimit !== undefined : 'N/A'}`);
         }
@@ -538,3 +535,5 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     </TestBenchContext.Provider>
   );
 };
+
+    
