@@ -4,7 +4,7 @@
 import { firebaseConfig } from '@/firebase/config';
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore'
+import { getFirestore, initializeFirestore } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage';
 import { getDatabase, Database } from 'firebase/database';
 
@@ -37,10 +37,14 @@ export function initializeFirebase() {
 }
 
 export function getSdks(firebaseApp: FirebaseApp) {
+  const firestore = initializeFirestore(firebaseApp, {
+    localCache: { kind: 'memory' }, // Use in-memory cache, or 'none' to disable completely
+  });
+
   return {
     firebaseApp,
     auth: getAuth(firebaseApp),
-    firestore: getFirestore(firebaseApp),
+    firestore: firestore,
     storage: getStorage(firebaseApp),
     database: getDatabase(firebaseApp, firebaseConfig.databaseURL),
   };
