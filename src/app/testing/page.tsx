@@ -1294,6 +1294,13 @@ function TestingComponent() {
     setSessionDateFilter(undefined);
   };
 
+  const isStartSessionDisabled =
+    !newSessionData.vesselTypeId ||
+    !newSessionData.sensorConfigurationId ||
+    !newSessionData.serialNumber.trim() ||
+    (newSessionData.batchId === 'CREATE_NEW_BATCH' && !newBatchName.trim()) ||
+    (newSessionData.batchId === '');
+
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950 text-foreground p-4">
       <header className="w-full max-w-7xl mx-auto mb-6 animate-in">
@@ -1441,7 +1448,7 @@ function TestingComponent() {
                                 </div>
                             </div>
                             <DialogFooter>
-                                <Button onClick={handleStartSession} disabled={!newSessionData.vesselTypeId || !newSessionData.sensorConfigurationId || (newSessionData.batchId === '' && newBatchName.trim() === '')}>Start Session</Button>
+                                <Button onClick={handleStartSession} disabled={isStartSessionDisabled}>Start Session</Button>
                             </DialogFooter>
                         </DialogContent>
                     </Dialog>
