@@ -269,8 +269,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             const inRange = convertedValue >= lowerLimit && convertedValue <= upperLimit;
 
             console.log(`[DEBUG] Converted Value: ${convertedValue.toFixed(3)}`);
-            console.log(`[DEBUG] Range Check: [${lowerLimit}, ${upperLimit}]`);
-            console.log(`[DEBUG] Is in range? ${inRange}`);
+            console.log(`[DEBUG] Range Check: [${lowerLimit}, ${upperLimit}] -> In Range? ${inRange}`);
 
             if (preFlightStateRef.current === 'waiting_for_range' && inRange) {
                 preFlightStateRef.current = 'timing_stability';
@@ -312,7 +311,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 stopSession();
             }
         } else {
-             console.log('[DEBUG] Skipping pre-flight check: vesselType, sensorConfig, or preFlightUpperPressureLimit is missing.');
+             console.log(`[DEBUG] Skipping pre-flight check. Reason:
+             - vesselType found: ${!!vesselType}
+             - sensorConfig found: ${!!sensorConfig}
+             - preFlightUpperPressureLimit defined: ${vesselType ? vesselType.preFlightUpperPressureLimit !== undefined : 'N/A'}`);
         }
     }
 
