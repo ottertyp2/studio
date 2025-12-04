@@ -419,8 +419,17 @@ function TestingComponent() {
         toast({ variant: 'destructive', title: 'Missing Information', description: 'BatchCount is required.' });
         return;
     }
-    if(runningTestSession) {
-        toast({ variant: 'destructive', title: 'Session in Progress', description: 'Another session is already running.' });
+    
+    // --- Stale Session Cleanup ---
+    if(runningTestSession && runningTestSession.userId !== user.uid) {
+        toast({
+            title: "Stale Session Detected",
+            description: `Stopping a running session from another user (${runningTestSession.username}) to start a new one.`
+        });
+        stopSessionInContext(); // Stop the stale session
+        await new Promise(resolve => setTimeout(resolve, 500)); // Give a moment for state to clear
+    } else if (runningTestSession) {
+        toast({ variant: 'destructive', title: 'Session in Progress', description: 'Another session is already running on your account.' });
         return;
     }
     
