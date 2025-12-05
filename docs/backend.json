@@ -1,5 +1,4 @@
 
-
 {
   "entities": {
     "User": {
@@ -249,6 +248,18 @@
             "guidelineEditorMaxY": {
                 "type": "number",
                 "description": "The last used maximum Y-axis value for the guideline editor."
+            },
+            "timeBufferInSeconds": {
+                "type": "number",
+                "description": "The delay in seconds after the pressure target is met before the measurement window officially begins."
+            },
+            "preFlightLowerPressureLimit": {
+                "type": "number",
+                "description": "The lower pressure limit for the pre-flight check."
+            },
+            "preFlightUpperPressureLimit": {
+                "type": "number",
+                "description": "The upper pressure limit for the pre-flight check."
             }
         },
         "required": ["id", "name"]
@@ -395,30 +406,48 @@
         "path": "/users/{userId}",
         "definition": {
             "entityName": "User",
-            "schema": {
-                "$ref": "#/entities/User"
-            },
+            "schema": { "$ref": "#/entities/User" },
             "description": "Stores user profile information and role."
         }
       },
       {
-        "path": "/sensor_configurations/{sensorConfigurationId}/sensor_data/{sensorDataId}",
+        "path": "/users/{userId}/sensor_configurations/{sensorConfigurationId}",
         "definition": {
-          "entityName": "SensorData",
-          "schema": {
-            "$ref": "#/entities/SensorData"
-          },
-          "description": "Stores sensor data points associated with a specific sensor configuration."
+          "entityName": "SensorConfiguration",
+          "schema": { "$ref": "#/entities/SensorConfiguration" },
+          "description": "Stores sensor configurations for a specific user."
         }
       },
       {
-        "path": "/sensor_configurations/{sensorConfigurationId}",
+        "path": "/users/{userId}/test_sessions/{testSessionId}",
         "definition": {
-          "entityName": "SensorConfiguration",
-          "schema": {
-            "$ref": "#/entities/SensorConfiguration"
-          },
-          "description": "Stores all sensor configurations globally."
+          "entityName": "TestSession",
+          "schema": { "$ref": "#/entities/TestSession" },
+          "description": "Stores test sessions for a specific user."
+        }
+      },
+      {
+        "path": "/users/{userId}/test_sessions/{testSessionId}/sensor_data/{sensorDataId}",
+        "definition": {
+          "entityName": "SensorData",
+          "schema": { "$ref": "#/entities/SensorData" },
+          "description": "Stores sensor data points associated with a specific test session."
+        }
+      },
+      {
+        "path": "/users/{userId}/batches/{batchId}",
+        "definition": {
+          "entityName": "Batch",
+          "schema": { "$ref": "#/entities/Batch" },
+          "description": "Stores production batches created by a specific user."
+        }
+      },
+      {
+        "path": "/users/{userId}/reports/{reportId}",
+        "definition": {
+            "entityName": "Report",
+            "schema": { "$ref": "#/entities/Report" },
+            "description": "Stores metadata for generated PDF reports for a specific user."
         }
       },
       {
@@ -426,25 +455,7 @@
         "definition": {
           "entityName": "TestBench",
           "schema": { "$ref": "#/entities/TestBench" },
-          "description": "Stores all available test benches and their live data/commands."
-        }
-      },
-      {
-        "path": "/analysis_results/{analysisResultId}",
-        "definition": {
-          "entityName": "AnalysisResult",
-          "schema": {
-            "$ref": "#/entities/AnalysisResult"
-          },
-          "description": "Stores leak analysis results generated from sensor data."
-        }
-      },
-       {
-        "path": "/test_sessions/{testSessionId}",
-        "definition": {
-          "entityName": "TestSession",
-          "schema": { "$ref": "#/entities/TestSession" },
-          "description": "Stores all test sessions globally."
+          "description": "Global collection for all available test benches."
         }
       },
       {
@@ -452,15 +463,7 @@
         "definition": {
             "entityName": "VesselType",
             "schema": { "$ref": "#/entities/VesselType" },
-            "description": "Stores all available vessel types."
-        }
-      },
-       {
-        "path": "/batches/{batchId}",
-        "definition": {
-          "entityName": "Batch",
-          "schema": { "$ref": "#/entities/Batch" },
-          "description": "Stores all production batches."
+            "description": "Global collection for all available vessel types."
         }
       },
       {
@@ -468,23 +471,7 @@
         "definition": {
             "entityName": "MLModel",
             "schema": { "$ref": "#/entities/MLModel" },
-            "description": "Stores metadata for machine learning models."
-        }
-      },
-      {
-        "path": "/trainDataSets/{trainDataSetId}",
-        "definition": {
-            "entityName": "TrainDataSet",
-            "schema": { "$ref": "#/entities/TrainDataSet" },
-            "description": "Stores metadata for training datasets."
-        }
-      },
-      {
-        "path": "/reports/{reportId}",
-        "definition": {
-            "entityName": "Report",
-            "schema": { "$ref": "#/entities/Report" },
-            "description": "Stores metadata for generated PDF reports."
+            "description": "Global collection for machine learning models."
         }
       }
     ]
@@ -515,7 +502,8 @@
               "recording": { "type": "boolean" },
               "sequence1": { "type": "boolean" },
               "sequence2": { "type": "boolean" },
-              "movingAverageLength": { "type": "number" }
+              "movingAverageLength": { "type": "number" },
+              "preFlightCheck": { "type": "boolean" }
             }
         },
         {
@@ -538,5 +526,3 @@
     ]
   }
 }
-
-    

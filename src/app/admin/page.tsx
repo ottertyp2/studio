@@ -72,7 +72,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { FlaskConical, LogOut, MoreHorizontal, PackagePlus, Trash2, BrainCircuit, User, Server, Tag, Sparkles, Filter, ListTree, FileText, Download, Upload, FileSignature, Layers, Calendar as CalendarIcon, RotateCcw, ShieldCheck, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useMemoFirebase, addDocumentNonBlocking, useCollection, setDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking, useUser, addDocument, useDoc } from '@/firebase';
-import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, doc, query, getDocs, writeBatch, where, setDoc, updateDoc, deleteDoc, onSnapshot, orderBy, collectionGroup } from 'firebase/firestore';
 import { signOut, adminCreateUser } from '@/firebase/non-blocking-login';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
@@ -316,9 +316,9 @@ export default function AdminPage() {
   // Batch State
   const [newBatch, setNewBatch] = useState<Partial<Batch>>({ name: '' });
   const batchesCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
-    return collection(firestore, 'batches');
-  }, [firestore]);
+    if (!firestore || !user) return null;
+    return collection(firestore, `users/${user.uid}/batches`);
+  }, [firestore, user]);
   const { data: batches, isLoading: isBatchesLoading } = useCollection<Batch>(batchesCollectionRef);
   
   const [automatedTrainingStatus, setAutomatedTrainingStatus] = useState<AutomatedTrainingStatus>({ step: 'Idle', progress: 0, details: '' });
@@ -352,36 +352,37 @@ export default function AdminPage() {
   
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
-    return collection(firestore, `sensor_configurations`);
+    return collection(firestore, `users/${user.uid}/sensor_configurations`);
   }, [firestore, user]);
 
-  const { data: sensorConfigs, isLoading: isSensorConfigsLoading, error: sensorConfigsError } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
+  const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
-      if (!firestore || !user) return null;
-      return query(collection(firestore, `test_sessions`), orderBy('startTime', 'desc'));
-  }, [firestore, user]);
+    if (!firestore) return null;
+    const sessionsGroup = collectionGroup(firestore, 'test_sessions');
+    return query(sessionsGroup, orderBy('startTime', 'desc'));
+  }, [firestore]);
 
-  const { data: testSessions, isLoading: isTestSessionsLoading, error: testSessionsError } = useCollection<TestSession>(testSessionsCollectionRef);
+  const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
   
   const usersCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore) return null;
     return collection(firestore, 'users');
-  }, [firestore, user]);
+  }, [firestore]);
 
-  const { data: users, isLoading: isUsersLoading, error: usersError } = useCollection<AppUser>(usersCollectionRef);
+  const { data: users, isLoading: isUsersLoading } = useCollection<AppUser>(usersCollectionRef);
 
   const testBenchesCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore) return null;
     return collection(firestore, 'testbenches');
-  }, [firestore, user]);
+  }, [firestore]);
 
-  const { data: testBenches, isLoading: isTestBenchesLoading, error: testBenchesError } = useCollection<TestBench>(testBenchesCollectionRef);
+  const { data: testBenches, isLoading: isTestBenchesLoading } = useCollection<TestBench>(testBenchesCollectionRef);
 
   const vesselTypesCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore) return null;
     return collection(firestore, 'vessel_types');
-  }, [firestore, user]);
+  }, [firestore]);
 
   const { data: vesselTypes, isLoading: isVesselTypesLoading } = useCollection<VesselType>(vesselTypesCollectionRef);
 
@@ -404,7 +405,7 @@ export default function AdminPage() {
     const unsubscribers: (() => void)[] = [];
 
     testSessions.forEach(session => {
-        const sensorDataRef = collection(firestore, 'test_sessions', session.id, 'sensor_data');
+        const sensorDataRef = collection(firestore, 'users', session.userId, 'test_sessions', session.id, 'sensor_data');
         
         const unsubscribe = onSnapshot(sensorDataRef, (snapshot) => {
             setSessionDataCounts(prevCounts => ({
@@ -424,7 +425,7 @@ export default function AdminPage() {
     return () => {
         unsubscribers.forEach(unsub => unsub());
     };
-}, [firestore, testSessions]);
+  }, [firestore, testSessions]);
 
 
   useEffect(() => {
@@ -446,16 +447,31 @@ export default function AdminPage() {
       location: newTestBench.location || '',
       description: newTestBench.description || ''
     };
-    addDocumentNonBlocking(testBenchesCollectionRef, docToSave);
+    setDoc(doc(testBenchesCollectionRef, newId), docToSave);
     toast({ title: 'Test Bench Added', description: `Added "${docToSave.name}" to the catalog.` });
     setNewTestBench({ name: '', location: '', description: '' });
   };
 
-  const handleDeleteTestBench = (benchId: string) => {
+  const handleDeleteTestBench = async (benchId: string) => {
     if (!firestore) return;
-    deleteDocumentNonBlocking(doc(firestore, 'testbenches', benchId));
-    toast({ title: 'Test Bench Deleted' });
-    setDeleteConfirmationText('');
+    const batch = writeBatch(firestore);
+
+    const configsQuery = query(collectionGroup(firestore, 'sensor_configurations'), where('testBenchId', '==', benchId));
+    const configsSnapshot = await getDocs(configsQuery);
+
+    configsSnapshot.forEach(configDoc => {
+      batch.delete(configDoc.ref);
+    });
+
+    batch.delete(doc(firestore, 'testbenches', benchId));
+
+    try {
+      await batch.commit();
+      toast({ title: 'Test Bench Deleted', description: 'Test bench and associated sensor configurations were deleted.' });
+      setDeleteConfirmationText('');
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Deletion Failed', description: e.message });
+    }
   };
 
 
@@ -543,7 +559,7 @@ export default function AdminPage() {
       movingAverageLength: typeof tempSensorConfig.movingAverageLength === 'number' ? tempSensorConfig.movingAverageLength : 10,
     };
 
-    const configRef = doc(firestore, `sensor_configurations`, configId);
+    const configRef = doc(firestore, `users/${user.uid}/sensor_configurations`, configId);
     await setDocumentNonBlocking(configRef, configToSave, { merge: true });
 
     // Also update the RTDB command value
@@ -591,50 +607,39 @@ export default function AdminPage() {
     });
   };
 
-  const handleDeleteSensorConfig = async (configId: string) => {
-    if (!firestore || !configId) return;
+  const handleDeleteSensorConfig = async (configId: string, ownerId: string) => {
+    if (!firestore || !configId || !ownerId) return;
 
     const batch = writeBatch(firestore);
 
-    const sessionsQuery = query(collection(firestore, 'test_sessions'), where('sensorConfigurationId', '==', configId));
+    const sessionsQuery = query(collectionGroup(firestore, 'test_sessions'), where('sensorConfigurationId', '==', configId));
     const sessionsSnapshot = await getDocs(sessionsQuery);
-    const sessionsToDelete = sessionsSnapshot.docs;
 
-    for (const sessionDoc of sessionsToDelete) {
-        const sensorDataRef = collection(firestore, 'test_sessions', sessionDoc.id, 'sensor_data');
-        const dataSnapshot = await getDocs(sensorDataRef);
-        dataSnapshot.forEach(doc => {
-            batch.delete(doc.ref);
-        });
-        batch.delete(sessionDoc.ref);
+    for (const sessionDoc of sessionsSnapshot.docs) {
+      const sensorDataRef = collection(sessionDoc.ref, 'sensor_data');
+      const dataSnapshot = await getDocs(sensorDataRef);
+      dataSnapshot.forEach(dataDoc => {
+        batch.delete(dataDoc.ref);
+      });
+      batch.delete(sessionDoc.ref);
     }
 
-    const configRef = doc(firestore, `sensor_configurations`, configId);
+    const configRef = doc(firestore, `users/${ownerId}/sensor_configurations`, configId);
     batch.delete(configRef);
 
     try {
-        await batch.commit();
-        toast({ 
-          title: "Cleanup Complete", 
-          description: `Configuration and its associated data and sessions were deleted.` 
-        });
-        if (activeSensorConfigId === configId) {
-            setActiveSensorConfigId(sensorConfigs?.[0]?.id || null);
-        }
-        setTempSensorConfig(null);
-        setDeleteConfirmationText('');
-    } catch (e) {
-        toast({
-            variant: 'destructive',
-            title: 'Error During Deletion',
-            description: (e as Error).message
-        });
+      await batch.commit();
+      toast({ title: "Cleanup Complete", description: "Configuration and all its associated sessions and data were deleted." });
+      setTempSensorConfig(null);
+      setDeleteConfirmationText('');
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Error During Deletion', description: e.message });
     }
   };
   
-  const handleStopTestSession = (sessionId: string) => {
+  const handleStopTestSession = (session: TestSession) => {
       if (!firestore) return;
-      const sessionRef = doc(firestore, 'test_sessions', sessionId);
+      const sessionRef = doc(firestore, 'users', session.userId, 'test_sessions', session.id);
       updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
       toast({title: 'Test Session Ended'});
   };
@@ -643,26 +648,20 @@ export default function AdminPage() {
     if (!firestore) return;
     const batch = writeBatch(firestore);
 
-    let dataDeletedCount = 0;
-
-    const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+    const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
     try {
         const querySnapshot = await getDocs(sensorDataRef);
         querySnapshot.forEach(doc => {
             batch.delete(doc.ref);
         });
-        dataDeletedCount = querySnapshot.size;
-    } catch (e) {
-    }
+        
+        const sessionRef = doc(firestore, `users/${session.userId}/test_sessions`, session.id);
+        batch.delete(sessionRef);
 
-    const sessionRef = doc(firestore, `test_sessions`, session.id);
-    batch.delete(sessionRef);
-
-    try {
         await batch.commit();
         toast({
             title: 'Session Deleted',
-            description: `Session for "${session.vesselTypeName} / ${batches?.find(b => b.id === session.batchId)?.name} / BatchCount: ${session.serialNumber}" and ${dataDeletedCount} data points deleted.`
+            description: `Session and ${querySnapshot.size} data points deleted.`
         });
     } catch (serverError) {
         toast({
@@ -673,23 +672,22 @@ export default function AdminPage() {
     }
   };
 
-  const handleSetSessionClassification = (sessionId: string, classification: 'LEAK' | 'DIFFUSION' | 'UNCLASSIFIABLE' | null) => {
+  const handleSetSessionClassification = (session: TestSession, classification: 'LEAK' | 'DIFFUSION' | 'UNCLASSIFIABLE' | null) => {
     if (!firestore) return;
-    const sessionRef = doc(firestore, 'test_sessions', sessionId);
+    const sessionRef = doc(firestore, 'users', session.userId, 'test_sessions', session.id);
     const updateData: { classification: 'LEAK' | 'DIFFUSION' | 'UNCLASSIFIABLE' | null } = { classification };
     
-    // Explicitly handle setting to null if that's intended
     if (classification === null) {
-      (updateData as any).classification = null; // This might be required depending on your Firestore rules or data model.
+      (updateData as any).classification = null; 
     }
   
     updateDocumentNonBlocking(sessionRef, updateData);
   };
 
-  const handleAssignSessionToBatch = (sessionId: string, newBatchId: string) => {
+  const handleAssignSessionToBatch = (session: TestSession, newBatchId: string) => {
     if (!firestore) return;
     const batchName = batches?.find(b => b.id === newBatchId)?.name || 'Unknown';
-    const sessionRef = doc(firestore, 'test_sessions', sessionId);
+    const sessionRef = doc(firestore, 'users', session.userId, 'test_sessions', session.id);
     
     if (newBatchId === '') {
        updateDocumentNonBlocking(sessionRef, { batchId: '' });
@@ -720,7 +718,7 @@ export default function AdminPage() {
     }
 
     try {
-        const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+        const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
         const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
         const snapshot = await getDocs(q);
         const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
@@ -732,7 +730,7 @@ export default function AdminPage() {
 
         const startResult = findMeasurementStart(sensorData, config, vesselType);
         if (!startResult) {
-            handleSetSessionClassification(session.id, 'UNCLASSIFIABLE');
+            handleSetSessionClassification(session, 'UNCLASSIFIABLE');
             toast({ 
                 title: 'Classification: Unclassifiable', 
                 description: `Could not determine a valid measurement start for "${session.vesselTypeName} - ${session.serialNumber}".` 
@@ -744,7 +742,7 @@ export default function AdminPage() {
         const { endIndex, isComplete } = findMeasurementEnd(sensorData, startIndex, config, vesselType);
         
         if (!isComplete) {
-            handleSetSessionClassification(session.id, 'UNCLASSIFIABLE');
+            handleSetSessionClassification(session, 'UNCLASSIFIABLE');
             toast({ 
                 title: 'Classification: Unclassifiable', 
                 description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" did not run for the required duration of ${vesselType.durationSeconds}s.` 
@@ -797,7 +795,7 @@ export default function AdminPage() {
 
         const classification = isFailed ? 'LEAK' : 'DIFFUSION';
         
-        handleSetSessionClassification(session.id, classification);
+        handleSetSessionClassification(session, classification);
         toast({ 
             title: 'Classification Complete & Updated', 
             description: `Session for "${session.vesselTypeName} - ${session.serialNumber}" classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'}.` 
@@ -1036,20 +1034,43 @@ export default function AdminPage() {
       minCurve: [],
       maxCurve: []
     };
-    addDocumentNonBlocking(vesselTypesCollectionRef, docToSave);
+    setDoc(doc(vesselTypesCollectionRef, newId), docToSave);
     toast({ title: 'Vessel Type Added', description: `Added "${docToSave.name}" to the catalog.` });
     setNewVesselType({ name: '', durationSeconds: 60, maxBatchCount: 10, timeBufferInSeconds: 5, preFlightLowerPressureLimit: 0.2, preFlightUpperPressureLimit: 1.0 });
   };
 
-  const handleDeleteVesselType = (vesselTypeId: string) => {
+  const handleDeleteVesselType = async (vesselTypeId: string) => {
     if (!firestore) return;
-    deleteDocumentNonBlocking(doc(firestore, 'vessel_types', vesselTypeId));
-    toast({ title: 'Vessel Type Deleted' });
-    setDeleteConfirmationText('');
+    const batchCmd = writeBatch(firestore);
+    
+    // Find all test sessions that use this vessel type across all users
+    const sessionsQuery = query(collectionGroup(firestore, 'test_sessions'), where('vesselTypeId', '==', vesselTypeId));
+    const sessionsSnapshot = await getDocs(sessionsQuery);
+    
+    for (const sessionDoc of sessionsSnapshot.docs) {
+        // For each session, find and delete its sensor_data subcollection
+        const sensorDataQuery = collection(firestore, sessionDoc.ref.path, 'sensor_data');
+        const sensorDataSnapshot = await getDocs(sensorDataQuery);
+        sensorDataSnapshot.forEach(dataDoc => batchCmd.delete(dataDoc.ref));
+        
+        // Delete the session itself
+        batchCmd.delete(sessionDoc.ref);
+    }
+    
+    // Delete the vessel type
+    batchCmd.delete(doc(firestore, 'vessel_types', vesselTypeId));
+
+    try {
+        await batchCmd.commit();
+        toast({ title: 'Vessel Type Deleted', description: 'Vessel type and all associated test sessions and data were deleted.' });
+        setDeleteConfirmationText('');
+    } catch (e: any) {
+        toast({ variant: 'destructive', title: 'Deletion Failed', description: e.message });
+    }
   };
 
   const handleAddBatch = () => {
-    if (!firestore || !newBatch.name?.trim() || !newBatch.vesselTypeId || !batchesCollectionRef) {
+    if (!firestore || !newBatch.name?.trim() || !newBatch.vesselTypeId || !batchesCollectionRef || !user) {
       toast({ variant: 'destructive', title: 'Error', description: 'BatchID and Vessel Type are required.' });
       return;
     }
@@ -1065,21 +1086,20 @@ export default function AdminPage() {
   };
 
   const handleDeleteBatch = (batchId: string) => {
-    if (!firestore) return;
-    deleteDocumentNonBlocking(doc(firestore, 'batches', batchId));
+    if (!firestore || !batchesCollectionRef) return;
+    deleteDocumentNonBlocking(doc(batchesCollectionRef, batchId));
     toast({ title: 'Batch Deleted' });
   };
   
   const handleUpdateBatchVesselType = (batchId: string, newVesselTypeId: string) => {
-    if (!firestore || !batchId || !newVesselTypeId) return;
-    const batchRef = doc(firestore, 'batches', batchId);
-    updateDocumentNonBlocking(batchRef, { vesselTypeId: newVesselTypeId });
+    if (!firestore || !batchId || !newVesselTypeId || !batchesCollectionRef) return;
+    updateDocumentNonBlocking(doc(batchesCollectionRef, batchId), { vesselTypeId: newVesselTypeId });
     toast({ title: 'Batch Updated', description: 'The associated vessel type has been changed.' });
   };
 
   const handleSaveGuidelines = () => {
-    if (!firestore || !editingVesselType) return;
-    const profileRef = doc(firestore, 'vessel_types', editingVesselType.id);
+    if (!firestore || !editingVesselType || !vesselTypesCollectionRef) return;
+    const profileRef = doc(vesselTypesCollectionRef, editingVesselType.id);
     updateDocumentNonBlocking(profileRef, {
         minCurve: minCurvePoints,
         maxCurve: maxCurvePoints,
@@ -1250,7 +1270,7 @@ export default function AdminPage() {
         const measurementWindows: Record<string, { startIndex: number; endIndex: number; }> = {};
 
         for (const session of relevantSessions) {
-            const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+            const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
             const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
             const snapshot = await getDocs(q);
             const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
@@ -1491,7 +1511,7 @@ export default function AdminPage() {
       return;
     }
   
-    const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+    const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
     const q = query(sensorDataRef, orderBy("timestamp", "asc"));
     const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
     
@@ -1547,7 +1567,7 @@ export default function AdminPage() {
     try {
       let allCsvData: any[] = [];
       for (const session of filteredAndSortedSessions) {
-        const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+        const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
         const q = query(sensorDataRef, orderBy("timestamp", "asc"));
         const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
         
@@ -1627,7 +1647,7 @@ export default function AdminPage() {
                         toast({ title: "Created New Vessel Type", description: `Created "${newVesselType.name}" from imported session.` });
                     }
 
-                    const sessionRef = doc(firestore, 'test_sessions', firstRow.id);
+                    const sessionRef = doc(firestore, `users/${user.uid}/test_sessions`, firstRow.id);
 
                     const sessionDoc: Omit<TestSession, 'classification'> & { classification?: 'LEAK' | 'DIFFUSION' | 'UNCLASSIFIABLE' | undefined } = {
                         id: firstRow.id,
@@ -1641,8 +1661,8 @@ export default function AdminPage() {
                         testBenchId: firstRow.testBenchId,
                         sensorConfigurationId: firstRow.sensorConfigurationId,
                         measurementType: firstRow.measurementType,
-                        userId: firstRow.userId,
-                        username: firstRow.username,
+                        userId: user.uid, // Assign to current user
+                        username: user.displayName || user.email || 'N/A', // Assign to current user
                         batchId: firstRow.batchId,
                     };
 
@@ -1707,7 +1727,7 @@ export default function AdminPage() {
             const session = classifiedSessions[i];
             setAutomatedTrainingStatus({ step: 'Preparing Data', progress: (i / classifiedSessions.length) * 20, details: `Processing session ${i + 1}/${classifiedSessions.length}` });
 
-            const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+            const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
             const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
             const snapshot = await getDocs(q);
             const dataPoints = snapshot.docs.map(d => d.data().value);
@@ -1809,7 +1829,7 @@ export default function AdminPage() {
         
         const model = await tf.models.modelFromJSON(activeModel.modelData.modelTopology as any, {weightData: weightData});
 
-        const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+        const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
         const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
         const snapshot = await getDocs(q);
         const sensorDataValues = snapshot.docs.map(doc => doc.data().value);
@@ -1837,7 +1857,7 @@ export default function AdminPage() {
         const [leakProb, diffusionProb] = await prediction.data();
 
         const classification = leakProb > diffusionProb ? 'LEAK' : 'DIFFUSION';
-        handleSetSessionClassification(session.id, classification);
+        handleSetSessionClassification(session, classification);
 
         toast({
             title: `AI Classification: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'}`,
@@ -1962,7 +1982,7 @@ export default function AdminPage() {
 
 
   const renderSensorConfigurator = () => {
-    if (!tempSensorConfig || userRole !== 'superadmin') return null;
+    if (!tempSensorConfig || userRole !== 'superadmin' || !user) return null;
     return (
         <Card className="mt-6 animate-in">
             <CardHeader>
@@ -2313,7 +2333,7 @@ export default function AdminPage() {
                             </div>
                             <div className="flex flex-col gap-2 items-end shrink-0">
                                 {session.status === 'RUNNING' && (
-                                    <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session.id)}>Stop</Button>
+                                    <Button size="sm" variant="destructive" onClick={() => handleStopTestSession(session)}>Stop</Button>
                                 )}
                                 <div className="flex gap-2">
                                 <DropdownMenu>
@@ -2341,12 +2361,12 @@ export default function AdminPage() {
                                       <DropdownMenuPortal>
                                         <DropdownMenuSubContent>
                                             <ScrollArea className="h-[200px]">
-                                            <DropdownMenuItem onSelect={() => handleAssignSessionToBatch(session.id, '')}>
+                                            <DropdownMenuItem onSelect={() => handleAssignSessionToBatch(session, '')}>
                                                 <span className="italic text-muted-foreground">Remove from Batch</span>
                                             </DropdownMenuItem>
                                             <DropdownMenuSeparator/>
                                             {batches?.filter(b => b.vesselTypeId === session.vesselTypeId).map(batch => (
-                                                <DropdownMenuItem key={batch.id} onSelect={() => handleAssignSessionToBatch(session.id, batch.id)}>
+                                                <DropdownMenuItem key={batch.id} onSelect={() => handleAssignSessionToBatch(session, batch.id)}>
                                                     <span>{batch.name}</span>
                                                 </DropdownMenuItem>
                                             ))}
@@ -2379,11 +2399,11 @@ export default function AdminPage() {
                                       </DropdownMenuSubTrigger>
                                       <DropdownMenuPortal>
                                           <DropdownMenuSubContent>
-                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'LEAK')}>Not Passed</DropdownMenuItem>
-                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'DIFFUSION')}>Passed</DropdownMenuItem>
-                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, 'UNCLASSIFIABLE')}>Unclassifiable</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session, 'LEAK')}>Not Passed</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session, 'DIFFUSION')}>Passed</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session, 'UNCLASSIFIABLE')}>Unclassifiable</DropdownMenuItem>
                                             <DropdownMenuSeparator />
-                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session.id, null)}>Clear Classification</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSetSessionClassification(session, null)}>Clear Classification</DropdownMenuItem>
                                           </DropdownMenuSubContent>
                                       </DropdownMenuPortal>
                                     </DropdownMenuSub>
@@ -2733,7 +2753,7 @@ export default function AdminPage() {
                                                                 <AlertDialogHeader>
                                                                     <AlertDialogTitle className="text-destructive font-bold text-lg">Delete Vessel Type?</AlertDialogTitle>
                                                                     <AlertDialogDescription>
-                                                                        Are you sure you want to delete "{p.name}"? This action cannot be undone. Associated test sessions will not be deleted, but may become orphaned. To confirm, type <strong>delete</strong> below.
+                                                                        This is a critical action. Deleting "{p.name}" will also delete all test sessions and sensor data associated with it across all users. This action cannot be undone. To confirm, type <strong>delete</strong> below.
                                                                     </AlertDialogDescription>
                                                                     <Input 
                                                                         id="delete-confirm-vessel-input"
@@ -2764,7 +2784,9 @@ export default function AdminPage() {
     </Card>
 );
 
-const renderBatchManagement = () => (
+const renderBatchManagement = () => {
+    if (!user) return null;
+    return (
     <Card className="animate-in">
         <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="item-1">
@@ -2775,28 +2797,26 @@ const renderBatchManagement = () => (
                     </div>
                 </AccordionTrigger>
                 <AccordionContent className="p-6 pt-0">
-                    {userRole === 'superadmin' && (
-                        <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
-                            <h3 className="font-semibold text-center">New Batch</h3>
-                            <div className="space-y-2">
-                                <Label htmlFor="new-batch-name">BatchID</Label>
-                                <Input id="new-batch-name" placeholder="e.g., 2024-Q3-PROD" value={newBatch.name || ''} onChange={(e) => setNewBatch(p => ({ ...p, name: e.target.value }))} />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="new-batch-vessel-type">Vessel Type</Label>
-                                <Select onValueChange={(value) => setNewBatch(p => ({ ...p, vesselTypeId: value }))}>
-                                    <SelectTrigger id="new-batch-vessel-type">
-                                        <SelectValue placeholder="Select a vessel type" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {isVesselTypesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                                        vesselTypes?.map(vt => <SelectItem key={vt.id} value={vt.id}>{vt.name}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <Button onClick={handleAddBatch} size="sm" className="w-full mt-2" disabled={!newBatch.name || !newBatch.vesselTypeId}>Add Batch</Button>
+                    <div className="space-y-4 mb-4 p-4 border rounded-lg bg-background/50">
+                        <h3 className="font-semibold text-center">New Batch</h3>
+                        <div className="space-y-2">
+                            <Label htmlFor="new-batch-name">BatchID</Label>
+                            <Input id="new-batch-name" placeholder="e.g., 2024-Q3-PROD" value={newBatch.name || ''} onChange={(e) => setNewBatch(p => ({ ...p, name: e.target.value }))} />
                         </div>
-                    )}
+                        <div className="space-y-2">
+                            <Label htmlFor="new-batch-vessel-type">Vessel Type</Label>
+                            <Select onValueChange={(value) => setNewBatch(p => ({ ...p, vesselTypeId: value }))}>
+                                <SelectTrigger id="new-batch-vessel-type">
+                                    <SelectValue placeholder="Select a vessel type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {isVesselTypesLoading ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
+                                    vesselTypes?.map(vt => <SelectItem key={vt.id} value={vt.id}>{vt.name}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <Button onClick={handleAddBatch} size="sm" className="w-full mt-2" disabled={!newBatch.name || !newBatch.vesselTypeId}>Add Batch</Button>
+                    </div>
                     {isBatchesLoading ? <p className="text-center pt-10">Loading batches...</p> : (
                         <ScrollArea className="h-56">
                             <div className="space-y-2">
@@ -2805,37 +2825,31 @@ const renderBatchManagement = () => (
                                         <div className='flex justify-between items-center gap-2'>
                                             <p className='font-semibold'>{b.name}</p>
                                             <div className="flex items-center gap-2">
-                                                {userRole === 'superadmin' ? (
-                                                    <>
-                                                        <Select value={b.vesselTypeId} onValueChange={(newVesselTypeId) => handleUpdateBatchVesselType(b.id, newVesselTypeId)}>
-                                                            <SelectTrigger className="w-[150px] bg-background">
-                                                                <SelectValue placeholder="Assign Vessel Type" />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                {vesselTypes?.map(vt => <SelectItem key={vt.id} value={vt.id}>{vt.name}</SelectItem>)}
-                                                            </SelectContent>
-                                                        </Select>
-                                                        <AlertDialog>
-                                                            <AlertDialogTrigger asChild>
-                                                                <Button size="sm" variant="destructive">Delete</Button>
-                                                            </AlertDialogTrigger>
-                                                            <AlertDialogContent>
-                                                                <AlertDialogHeader>
-                                                                    <AlertDialogTitle className="text-destructive">Delete Batch?</AlertDialogTitle>
-                                                                    <AlertDialogDescription>
-                                                                        Are you sure you want to delete batch "{b.name}"? This action cannot be undone. Associated test sessions will not be deleted.
-                                                                    </AlertDialogDescription>
-                                                                </AlertDialogHeader>
-                                                                <AlertDialogFooter>
-                                                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                    <AlertDialogAction variant="destructive" onClick={() => handleDeleteBatch(b.id)}>Delete</AlertDialogAction>
-                                                                </AlertDialogFooter>
-                                                            </AlertDialogContent>
-                                                        </AlertDialog>
-                                                    </>
-                                                ) : (
-                                                    <p className="text-sm text-muted-foreground">{vesselTypes?.find(vt => vt.id === b.vesselTypeId)?.name}</p>
-                                                )}
+                                                <Select value={b.vesselTypeId} onValueChange={(newVesselTypeId) => handleUpdateBatchVesselType(b.id, newVesselTypeId)}>
+                                                    <SelectTrigger className="w-[150px] bg-background">
+                                                        <SelectValue placeholder="Assign Vessel Type" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {vesselTypes?.map(vt => <SelectItem key={vt.id} value={vt.id}>{vt.name}</SelectItem>)}
+                                                    </SelectContent>
+                                                </Select>
+                                                <AlertDialog>
+                                                    <AlertDialogTrigger asChild>
+                                                        <Button size="sm" variant="destructive">Delete</Button>
+                                                    </AlertDialogTrigger>
+                                                    <AlertDialogContent>
+                                                        <AlertDialogHeader>
+                                                            <AlertDialogTitle className="text-destructive">Delete Batch?</AlertDialogTitle>
+                                                            <AlertDialogDescription>
+                                                                Are you sure you want to delete batch "{b.name}"? This action cannot be undone. Associated test sessions will not be deleted.
+                                                            </AlertDialogDescription>
+                                                        </AlertDialogHeader>
+                                                        <AlertDialogFooter>
+                                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteBatch(b.id)}>Delete</AlertDialogAction>
+                                                        </AlertDialogFooter>
+                                                    </AlertDialogContent>
+                                                </AlertDialog>
                                             </div>
                                         </div>
                                     </Card>
@@ -2847,7 +2861,7 @@ const renderBatchManagement = () => (
             </AccordionItem>
         </Accordion>
     </Card>
-);
+)};
 
 const renderAIModelManagement = () => {
     if(userRole !== 'superadmin') return null;
@@ -3104,11 +3118,9 @@ const renderAIModelManagement = () => {
                             </div>
                           </AccordionTrigger>
                           <AccordionContent className="p-6 pt-0">
-                              {userRole === 'superadmin' && (
-                                <div className="flex justify-center mb-4">
-                                    <Button onClick={handleNewSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">New Configuration</Button>
-                                </div>
-                              )}
+                              <div className="flex justify-center mb-4">
+                                  <Button onClick={handleNewSensorConfig} className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">New Configuration</Button>
+                              </div>
                               {isSensorConfigsLoading ? <p className="text-center pt-10">Loading sensors...</p> :
                               <ScrollArea className="h-72">
                                   <div className="space-y-2">
@@ -3120,37 +3132,35 @@ const renderAIModelManagement = () => {
                                                       <p className="text-sm text-muted-foreground">{c.mode} ({c.unit})</p>
                                                       <p className="text-xs text-muted-foreground">Bench: {testBenches?.find(b => b.id === c.testBenchId)?.name || 'N/A'}</p>
                                                   </div>
-                                                  {userRole === 'superadmin' && (
-                                                      <div className='flex gap-2'>
-                                                          <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
-                                                          <AlertDialog>
-                                                              <AlertDialogTrigger asChild>
-                                                                <Button size="sm" variant="destructive" onClick={() => setDeleteConfirmationText('')}>Delete</Button>
-                                                              </AlertDialogTrigger>
-                                                              <AlertDialogContent>
-                                                              <AlertDialogHeader>
-                                                                  <AlertDialogTitle className="text-destructive font-bold text-lg">Permanently Delete Configuration?</AlertDialogTitle>
-                                                                  <AlertDialogDescription>
-                                                                    This will permanently delete the configuration "{c.name}" and all of its associated test sessions and sensor data. This action is irreversible.
-                                                                    <br/><br/>
-                                                                    To confirm, type <strong>delete</strong> below.
-                                                                  </AlertDialogDescription>
-                                                                  <Input 
-                                                                    id="delete-confirm-sensor-input"
-                                                                    value={deleteConfirmationText}
-                                                                    onChange={(e) => setDeleteConfirmationText(e.target.value)}
-                                                                    className="mt-4"
-                                                                    placeholder="delete"
-                                                                  />
-                                                              </AlertDialogHeader>
-                                                              <AlertDialogFooter>
-                                                                  <AlertDialogCancel onClick={() => setDeleteConfirmationText('')}>Cancel</AlertDialogCancel>
-                                                                  <AlertDialogAction variant="destructive" disabled={deleteConfirmationText !== 'delete'} onClick={() => handleDeleteSensorConfig(c.id)}>Delete</AlertDialogAction>
-                                                              </AlertDialogFooter>
-                                                              </AlertDialogContent>
-                                                          </AlertDialog>
-                                                      </div>
-                                                  )}
+                                                  <div className='flex gap-2'>
+                                                      <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
+                                                      <AlertDialog>
+                                                          <AlertDialogTrigger asChild>
+                                                            <Button size="sm" variant="destructive" onClick={() => setDeleteConfirmationText('')}>Delete</Button>
+                                                          </AlertDialogTrigger>
+                                                          <AlertDialogContent>
+                                                          <AlertDialogHeader>
+                                                              <AlertDialogTitle className="text-destructive font-bold text-lg">Permanently Delete Configuration?</AlertDialogTitle>
+                                                              <AlertDialogDescription>
+                                                                This will permanently delete the configuration "{c.name}" and all of its associated test sessions and sensor data. This action is irreversible.
+                                                                <br/><br/>
+                                                                To confirm, type <strong>delete</strong> below.
+                                                              </AlertDialogDescription>
+                                                              <Input 
+                                                                id="delete-confirm-sensor-input"
+                                                                value={deleteConfirmationText}
+                                                                onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                                                                className="mt-4"
+                                                                placeholder="delete"
+                                                              />
+                                                          </AlertDialogHeader>
+                                                          <AlertDialogFooter>
+                                                              <AlertDialogCancel onClick={() => setDeleteConfirmationText('')}>Cancel</AlertDialogCancel>
+                                                              <AlertDialogAction variant="destructive" disabled={deleteConfirmationText !== 'delete'} onClick={() => handleDeleteSensorConfig(c.id, c.ownerId || '')}>Delete</AlertDialogAction>
+                                                          </AlertDialogFooter>
+                                                          </AlertDialogContent>
+                                                      </AlertDialog>
+                                                  </div>
                                               </div>
                                           </Card>
                                       ))}
