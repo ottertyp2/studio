@@ -5,6 +5,11 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  experimental: {
+    allowedDevOrigins: [
+        "https://9000-firebase-studio-1759737186585.cluster-lu4mup47g5gm4rtyvhzpwbfadi.cloudworkstations.dev"
+    ]
+  },
   images: {
     remotePatterns: [
       {
