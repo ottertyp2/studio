@@ -56,6 +56,9 @@ export interface TestBenchContextType {
   runningTestSession: WithId<DocumentData> | null;
   startSession: (session: WithId<DocumentData>) => void;
   stopSession: () => void;
+  isOverPressureWarning: boolean;
+  overPressureDetails: { limit: number } | null;
+  clearOverPressureWarning: () => void;
 }
 
 export const TestBenchContext = createContext<TestBenchContextType | undefined>(undefined);

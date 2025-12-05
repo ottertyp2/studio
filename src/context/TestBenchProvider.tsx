@@ -54,6 +54,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const preFlightMasterTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const preFlightStabilityTimerRef = useRef<NodeJS.Timeout | null>(null);
   const preFlightStateRef = useRef<'idle' | 'waiting_for_range' | 'timing_stability' | 'passed'>('idle');
+
+  // State for over-pressure warning
+  const [isOverPressureWarning, setIsOverPressureWarning] = useState(false);
+  const [overPressureDetails, setOverPressureDetails] = useState<{limit: number} | null>(null);
   
 
   // Pre-fetch vessel types and sensor configs
@@ -114,6 +118,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   }, [firestore, database, runningTestSession, user]);
 
   const startSession = useCallback((session: WithId<DocumentData>) => {
+    // Clear any previous warnings when a new session starts
+    setIsOverPressureWarning(false);
+    setOverPressureDetails(null);
+
     setRunningTestSession(session);
     
     preFlightStateRef.current = 'waiting_for_range';
@@ -261,12 +269,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             
             // Immediate failure if upper limit is ever exceeded
             if (convertedValue > upperLimit) {
-                toast({
-                    variant: 'destructive',
-                    title: 'Pre-flight Check Failed',
-                    description: `Pressure exceeded upper limit of ${upperLimit.toFixed(2)}. Stopping session.`,
-                    duration: 10000,
-                });
+                setOverPressureDetails({ limit: upperLimit });
+                setIsOverPressureWarning(true);
                 stopSession();
                 return; // Stop further processing for this data point
             }
@@ -424,6 +428,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [database, toast]);
 
+  const clearOverPressureWarning = useCallback(() => {
+    setIsOverPressureWarning(false);
+    setOverPressureDetails(null);
+  }, []);
+
   useEffect(() => {
     if (!database) return;
   
@@ -518,6 +527,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     runningTestSession,
     startSession: startSession,
     stopSession: stopSession,
+    isOverPressureWarning,
+    overPressureDetails,
+    clearOverPressureWarning,
   };
 
   return (

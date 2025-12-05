@@ -220,7 +220,10 @@ function TestingComponent() {
     startSession: startSessionInContext,
     stopSession: stopSessionInContext,
     sendSequenceCommand,
-    sendValveCommand
+    sendValveCommand,
+    isOverPressureWarning,
+    overPressureDetails,
+    clearOverPressureWarning
   } = useTestBench();
 
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
@@ -1118,7 +1121,10 @@ function TestingComponent() {
   useEffect(() => {
     if (!user || !firestore) return;
     setIsHistoryLoading(true);
-    const q = query(collection(firestore, `users/${user.uid}/test_sessions`), orderBy('startTime', 'desc'));
+    const q = query(
+        collection(firestore, `users/${user.uid}/test_sessions`),
+        orderBy('startTime', 'desc')
+    );
     const unsubscribe = onSnapshot(q, 
         (snapshot) => {
             const history = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<TestSession>));
@@ -1907,6 +1913,26 @@ function TestingComponent() {
             </AlertDialogContent>
         </AlertDialog>
 
+        <AlertDialog open={isOverPressureWarning} onOpenChange={(open) => !open && clearOverPressureWarning()}>
+            <AlertDialogContent className="border-destructive border-4">
+                <AlertDialogHeader>
+                    <AlertDialogTitle className="text-3xl text-destructive flex items-center gap-4">
+                        <AlertCircle className="h-12 w-12" />
+                        DANGER: PRESSURE LIMIT EXCEEDED
+                    </AlertDialogTitle>
+                    <AlertDialogDescription className="text-lg pt-4">
+                        The pressure exceeded the upper limit of{' '}
+                        <span className="font-bold text-destructive">{overPressureDetails?.limit.toFixed(2)}</span>.
+                        The session has been stopped and all valves have been closed for safety.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogAction onClick={clearOverPressureWarning} variant="destructive">
+                        Acknowledge
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
     </div>
   );
 }
