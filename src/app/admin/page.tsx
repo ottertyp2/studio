@@ -1,4 +1,3 @@
-
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -224,7 +223,6 @@ type VesselType = {
     maxCurve: {x: number, y: number}[];
     guidelineEditorMaxX?: number;
     guidelineEditorMaxY?: number;
-    pressureTarget?: number;
     timeBufferInSeconds?: number;
     preFlightLowerPressureLimit?: number;
     preFlightUpperPressureLimit?: number;
@@ -301,7 +299,7 @@ export default function AdminPage() {
   const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
   
   // VesselType State
-  const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '', durationSeconds: 60, maxBatchCount: 10, pressureTarget: 0.3, timeBufferInSeconds: 5, preFlightLowerPressureLimit: 0.2, preFlightUpperPressureLimit: 1.0 });
+  const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '', durationSeconds: 60, maxBatchCount: 10, timeBufferInSeconds: 5, preFlightLowerPressureLimit: 0.2, preFlightUpperPressureLimit: 1.0 });
   const [editingVesselType, setEditingVesselType] = useState<VesselType | null>(null);
   const [minCurvePoints, setMinCurvePoints] = useState<{x: number, y: number}[]>([]);
   const [maxCurvePoints, setMaxCurvePoints] = useState<{x: number, y: number}[]>([]);
@@ -1032,7 +1030,6 @@ export default function AdminPage() {
       name: newVesselType.name,
       durationSeconds: Number(newVesselType.durationSeconds) || 60,
       maxBatchCount: Number(newVesselType.maxBatchCount) || 10,
-      pressureTarget: Number(newVesselType.pressureTarget) || 0.3,
       timeBufferInSeconds: Number(newVesselType.timeBufferInSeconds) || 5,
       preFlightLowerPressureLimit: Number(newVesselType.preFlightLowerPressureLimit) || 0.2,
       preFlightUpperPressureLimit: Number(newVesselType.preFlightUpperPressureLimit) || 1.0,
@@ -1041,7 +1038,7 @@ export default function AdminPage() {
     };
     addDocumentNonBlocking(vesselTypesCollectionRef, docToSave);
     toast({ title: 'Vessel Type Added', description: `Added "${docToSave.name}" to the catalog.` });
-    setNewVesselType({ name: '', durationSeconds: 60, maxBatchCount: 10, pressureTarget: 0.3, timeBufferInSeconds: 5, preFlightLowerPressureLimit: 0.2, preFlightUpperPressureLimit: 1.0 });
+    setNewVesselType({ name: '', durationSeconds: 60, maxBatchCount: 10, timeBufferInSeconds: 5, preFlightLowerPressureLimit: 0.2, preFlightUpperPressureLimit: 1.0 });
   };
 
   const handleDeleteVesselType = (vesselTypeId: string) => {
@@ -1088,7 +1085,6 @@ export default function AdminPage() {
         maxCurve: maxCurvePoints,
         durationSeconds: Number(editingVesselType.durationSeconds) || 60,
         maxBatchCount: Number(editingVesselType.maxBatchCount) || 10,
-        pressureTarget: Number(editingVesselType.pressureTarget) || 0,
         timeBufferInSeconds: Number(editingVesselType.timeBufferInSeconds) || 0,
         preFlightLowerPressureLimit: Number(editingVesselType.preFlightLowerPressureLimit) || 0.2,
         preFlightUpperPressureLimit: Number(editingVesselType.preFlightUpperPressureLimit) || 1.0,
@@ -2594,10 +2590,6 @@ export default function AdminPage() {
                                     <Input id="new-vessel-type-batch-size" type="number" placeholder="10" value={newVesselType.maxBatchCount || ''} onChange={(e) => setNewVesselType(p => ({ ...p, maxBatchCount: Number(e.target.value) }))} />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="new-vessel-type-pressure-target">Pressure Target</Label>
-                                    <Input id="new-vessel-type-pressure-target" type="number" placeholder="0.3" value={newVesselType.pressureTarget || ''} onChange={(e) => setNewVesselType(p => ({ ...p, pressureTarget: Number(e.target.value) }))} />
-                                </div>
-                                <div className="space-y-2">
                                     <Label htmlFor="new-vessel-type-time-buffer">Time Buffer (s)</Label>
                                     <Input id="new-vessel-type-time-buffer" type="number" placeholder="5" value={newVesselType.timeBufferInSeconds || ''} onChange={(e) => setNewVesselType(p => ({ ...p, timeBufferInSeconds: Number(e.target.value) }))} />
                                 </div>
@@ -2677,10 +2669,6 @@ export default function AdminPage() {
                                                                             <div className="space-y-2">
                                                                                 <Label>Max Batch Size</Label>
                                                                                 <Input type="number" value={editingVesselType?.maxBatchCount || ''} onChange={(e) => setEditingVesselType(p => p ? {...p, maxBatchCount: Number(e.target.value)} : null)} />
-                                                                            </div>
-                                                                            <div className="space-y-2">
-                                                                                <Label>Pressure Target</Label>
-                                                                                <Input type="number" value={editingVesselType?.pressureTarget || ''} onChange={(e) => setEditingVesselType(p => p ? { ...p, pressureTarget: Number(e.target.value) } : null)} />
                                                                             </div>
                                                                             <div className="space-y-2">
                                                                                 <Label>Time Buffer (s)</Label>

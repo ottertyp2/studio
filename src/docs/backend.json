@@ -248,10 +248,6 @@
                 "type": "number",
                 "description": "The last used maximum Y-axis value for the guideline editor."
             },
-            "pressureTarget": {
-                "type": "number",
-                "description": "The pressure threshold that must be met to begin the measurement window countdown."
-            },
             "timeBufferInSeconds": {
                 "type": "number",
                 "description": "The delay in seconds after the pressure target is met before the measurement window officially begins."

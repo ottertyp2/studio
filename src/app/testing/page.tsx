@@ -1,4 +1,3 @@
-
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -139,7 +138,6 @@ type VesselType = {
     maxBatchCount?: number;
     minCurve: {x: number, y: number}[];
     maxCurve: {x: number, y: number}[];
-    pressureTarget?: number;
     timeBufferInSeconds?: number;
     preFlightLowerPressureLimit?: number;
     preFlightUpperPressureLimit?: number;

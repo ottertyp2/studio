@@ -1,4 +1,3 @@
-
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -27,7 +26,6 @@ export type VesselType = {
     maxBatchCount?: number;
     minCurve: {x: number, y: number}[];
     maxCurve: {x: number, y: number}[];
-    pressureTarget?: number;
     timeBufferInSeconds?: number;
     preFlightLowerPressureLimit?: number;
     preFlightUpperPressureLimit?: number;
