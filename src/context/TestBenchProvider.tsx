@@ -63,7 +63,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const unsubVesselTypes = onSnapshot(collection(firestore, 'vessel_types'), (snapshot) => {
         const types = snapshot.docs.map(doc => {
             const data = doc.data();
-            delete data.id;
+            delete (data as any).id; // Remove the incorrect ID field from the data object
             return { 
               id: doc.id,
               ...data 
@@ -121,11 +121,11 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     if (preFlightStabilityTimerRef.current) clearTimeout(preFlightStabilityTimerRef.current);
     
     preFlightMasterTimeoutRef.current = setTimeout(() => {
-      if (preFlightStateRef.current === 'waiting_for_range') {
+      if (preFlightStateRef.current === 'waiting_for_range' || preFlightStateRef.current === 'timing_stability') {
           toast({
               variant: 'destructive',
-              title: 'Pre-flight Check Failed',
-              description: 'The pressure did not enter the required range within 20 seconds. Stopping session.',
+              title: 'Pre-flight Check Timed Out',
+              description: 'The pressure did not stabilize in the required range within 20 seconds. Stopping session.',
               duration: 10000,
           });
           stopSession();
@@ -253,19 +253,30 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         const vesselType = vesselTypes.find(vt => vt.id === session.vesselTypeId);
         const sensorConfig = sensorConfigs.find(sc => sc.id === session.sensorConfigurationId);
         
-        if (vesselType && sensorConfig && vesselType.preFlightUpperPressureLimit !== undefined && vesselType.preFlightLowerPressureLimit !== undefined) {
+        if (vesselType && sensorConfig && vesselType.preFlightUpperPressureLimit !== undefined && vesselType.preFlightLowerPressureLimit !== undefined && preFlightStateRef.current !== 'passed') {
             const convertedValue = convertRawValue(data.sensor, sensorConfig);
             const lowerLimit = vesselType.preFlightLowerPressureLimit;
             const upperLimit = vesselType.preFlightUpperPressureLimit;
             const inRange = convertedValue >= lowerLimit && convertedValue <= upperLimit;
+            
+            // Immediate failure if upper limit is ever exceeded
+            if (convertedValue > upperLimit) {
+                toast({
+                    variant: 'destructive',
+                    title: 'Pre-flight Check Failed',
+                    description: `Pressure exceeded upper limit of ${upperLimit.toFixed(2)}. Stopping session.`,
+                    duration: 10000,
+                });
+                stopSession();
+                return; // Stop further processing for this data point
+            }
 
             if (preFlightStateRef.current === 'waiting_for_range' && inRange) {
+                // Entered the range, start the stability timer
                 preFlightStateRef.current = 'timing_stability';
-                if (preFlightMasterTimeoutRef.current) {
-                    clearTimeout(preFlightMasterTimeoutRef.current);
-                    preFlightMasterTimeoutRef.current = null;
-                }
-                
+                toast({ title: 'Pre-flight: In Range', description: 'Pressure has entered the target range. Holding for 10 seconds...' });
+
+                if (preFlightStabilityTimerRef.current) clearTimeout(preFlightStabilityTimerRef.current);
                 preFlightStabilityTimerRef.current = setTimeout(() => {
                     if (preFlightStateRef.current === 'timing_stability') {
                         preFlightStateRef.current = 'passed';
@@ -274,22 +285,26 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                             title: 'Pre-flight Check Passed',
                             description: 'Pressure stable. Proceeding with measurement.',
                         });
+                        // Clean up master timeout as it's no longer needed
+                        if (preFlightMasterTimeoutRef.current) {
+                            clearTimeout(preFlightMasterTimeoutRef.current);
+                            preFlightMasterTimeoutRef.current = null;
+                        }
                     }
-                }, 10000);
+                }, 10000); // 10-second stability timer
 
             } else if (preFlightStateRef.current === 'timing_stability' && !inRange) {
+                // Fell out of range (below lower limit) during timing
+                preFlightStateRef.current = 'waiting_for_range';
+                toast({
+                    variant: 'default',
+                    title: 'Pre-flight: Stability Reset',
+                    description: `Pressure fell below the lower limit. Resetting stability timer.`,
+                });
                 if (preFlightStabilityTimerRef.current) {
                     clearTimeout(preFlightStabilityTimerRef.current);
                     preFlightStabilityTimerRef.current = null;
                 }
-                preFlightStateRef.current = 'idle';
-                toast({
-                    variant: 'destructive',
-                    title: 'Pre-flight Check Failed',
-                    description: `Pressure left the valid range (${lowerLimit.toFixed(2)} - ${upperLimit.toFixed(2)}). Failed at ${convertedValue.toFixed(2)}. Stopping session.`,
-                    duration: 10000,
-                });
-                stopSession();
             }
         }
     }
