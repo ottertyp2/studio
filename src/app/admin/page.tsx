@@ -1,3 +1,4 @@
+
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -651,7 +652,7 @@ export default function AdminPage() {
     const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
     try {
         const querySnapshot = await getDocs(sensorDataRef);
-        querySnapshot.forEach(doc => {
+        querySnapshot.docs.forEach(doc => {
             batch.delete(doc.ref);
         });
         
@@ -2214,16 +2215,7 @@ export default function AdminPage() {
                                         <AccordionContent className="pb-0">
                                             <div className="space-y-1 px-2 pb-2">
                                                 <Select value={sessionClassificationFilter} onValueChange={setSessionClassificationFilter}>
-                                                    <SelectTrigger><SelectValue/></SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="all">All Statuses</SelectItem>
-                                                        <SelectItem value="classified">Classified</SelectItem>
-                                                        <SelectItem value="unclassified">Unclassified</SelectItem>
-                                                        <SelectItem value="passed">Passed</SelectItem>
-                                                        <SelectItem value="not-passed">Not Passed</SelectItem>
-                                                        <SelectItem value="unclassifiable">Unclassifiable</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
+                                                    <SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All Statuses</SelectItem><SelectItem value="classified">Classified</SelectItem><SelectItem value="unclassified">Unclassified</SelectItem><SelectItem value="passed">Passed</SelectItem><SelectItem value="not-passed">Not Passed</SelectItem><SelectItem value="unclassifiable">Unclassifiable</SelectItem></SelectContent></Select>
                                             </div>
                                         </AccordionContent>
                                     </AccordionItem>
@@ -2255,9 +2247,7 @@ export default function AdminPage() {
                                         <AccordionTrigger className="text-sm font-semibold px-2 py-1.5">Test Benches</AccordionTrigger>
                                         <AccordionContent className="pb-0">
                                             {uniqueTestBenches.map(tb => (
-                                                <DropdownMenuCheckboxItem key={tb.id} checked={sessionTestBenchFilter.includes(tb.id)} onSelect={(e) => e.preventDefault()} onClick={() => toggleFilterItem(setSessionTestBenchFilter, tb.id)}>{tb.name}</DropdownMenuCheckboxItem>
-                                            ))}
-                                        </AccordionContent>
+                                                <DropdownMenuCheckboxItem key={tb.id} checked={sessionTestBenchFilter.includes(tb.id)} onSelect={(e) => e.preventDefault()} onClick={() => toggleFilterItem(setSessionTestBenchFilter, tb.id)}>{tb.name}</DropdownMenuCheckboxItem>))}</AccordionContent>
                                     </AccordionItem>
                                 </Accordion>
                             </div>
@@ -2751,7 +2741,7 @@ export default function AdminPage() {
                                                             </AlertDialogTrigger>
                                                             <AlertDialogContent>
                                                                 <AlertDialogHeader>
-                                                                    <AlertDialogTitle className="text-destructive font-bold text-lg">Delete Vessel Type?</AlertDialogTitle>
+                                                                    <AlertDialogTitle className="text-destructive font-bold text-lg">Permanently Delete Vessel Type?</AlertDialogTitle>
                                                                     <AlertDialogDescription>
                                                                         This is a critical action. Deleting "{p.name}" will also delete all test sessions and sensor data associated with it across all users. This action cannot be undone. To confirm, type <strong>delete</strong> below.
                                                                     </AlertDialogDescription>
@@ -3186,3 +3176,5 @@ const renderAIModelManagement = () => {
     </div>
   );
 }
+
+    
