@@ -1118,7 +1118,7 @@ function TestingComponent() {
   useEffect(() => {
     if (!user || !firestore) return;
     setIsHistoryLoading(true);
-    const q = query(collection(firestore, `users/${user.uid}/test_sessions`), orderBy('startTime', 'desc'));
+    const q = query(collectionGroup(firestore, `test_sessions`), orderBy('startTime', 'desc'));
     const unsubscribe = onSnapshot(q, 
         (snapshot) => {
             const history = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<TestSession>));
@@ -1929,5 +1929,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
