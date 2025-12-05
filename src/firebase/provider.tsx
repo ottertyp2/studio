@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect } from 'react';
@@ -155,6 +156,7 @@ export interface UserHookResult {
   user: User | null | undefined; // undefined during load, null if not auth'd
   userRole: string | null;
   isUserLoading: boolean;
+  isAuthReady: boolean; // ✅ NEW: True when auth state is resolved and token is ready
   userError: Error | null;
 }
 
@@ -163,49 +165,44 @@ export const useUser = (): UserHookResult => {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isUserLoading, setIsUserLoading] = useState(true);
+  const [isAuthReady, setIsAuthReady] = useState(false); // ✅ NEW
   const [userError, setUserError] = useState<Error | null>(null);
 
   useEffect(() => {
-    setIsUserLoading(true);
-    let roleUnsubscribe: (() => void) | undefined;
+    if (!auth || !firestore) {
+      setIsUserLoading(false);
+      setIsAuthReady(true);
+      return;
+    };
 
-    const authUnsubscribe = onAuthStateChanged(
+    const unsubscribe = onAuthStateChanged(
       auth,
-      (authUser) => {
-        setUser(authUser);
-        if (roleUnsubscribe) {
-          roleUnsubscribe();
+      async (currentUser) => {
+        if (currentUser) {
+          try {
+            // ✅ Force a token refresh to ensure it's ready
+            await currentUser.getIdToken(true);
+            
+            const userDocRef = doc(firestore, 'users', currentUser.uid);
+            const userSnap = await getDoc(userDocRef);
+            
+            if (userSnap.exists()) {
+              setUserRole(userSnap.data().role);
+            }
+            
+            setUser(currentUser);
+          } catch (error) {
+            console.error("Error during auth state processing:", error);
+            setUser(null);
+            setUserRole(null);
+          }
+        } else {
+          setUser(null);
           setUserRole(null);
         }
-
-        if (authUser) {
-          const userDocRef = doc(firestore, 'users', authUser.uid);
-          roleUnsubscribe = onSnapshot(
-            userDocRef,
-            (docSnapshot) => {
-              if (docSnapshot.exists()) {
-                setUserRole(docSnapshot.data()?.role || 'user');
-              } else {
-                setUserRole('user'); // Default role
-              }
-              setIsUserLoading(false);
-            },
-            (error) => {
-              console.error("Firestore role listener error:", error);
-              const permissionError = new FirestorePermissionError({
-                path: `users/${authUser.uid}`,
-                operation: 'get',
-              });
-              errorEmitter.emit('permission-error', permissionError);
-              setUserError(permissionError);
-              setUserRole('user'); // Fallback role on error
-              setIsUserLoading(false);
-            }
-          );
-        } else {
-          // No user, stop loading
-          setIsUserLoading(false);
-        }
+        
+        setIsUserLoading(false);
+        setIsAuthReady(true); // ✅ Auth process is complete
       },
       (error) => {
         console.error("Auth state change error:", error);
@@ -213,16 +210,12 @@ export const useUser = (): UserHookResult => {
         setUser(null);
         setUserRole(null);
         setIsUserLoading(false);
+        setIsAuthReady(true); // Mark as ready even on error
       }
     );
 
-    return () => {
-      authUnsubscribe();
-      if (roleUnsubscribe) {
-        roleUnsubscribe();
-      }
-    };
+    return () => unsubscribe();
   }, [auth, firestore]);
 
-  return { user, userRole, isUserLoading, userError };
+  return { user, userRole, isUserLoading, isAuthReady, userError };
 };
