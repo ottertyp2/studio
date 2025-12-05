@@ -1,3 +1,4 @@
+
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -325,9 +326,9 @@ export default function AdminPage() {
   // Batch State
   const [newBatch, setNewBatch] = useState<Partial<Batch>>({ name: '' });
   const batchesCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !auth?.currentUser) return null;
     return collection(firestore, `users/${user.uid}/batches`);
-  }, [firestore, user]);
+  }, [firestore, user, auth]);
   const { data: batches, isLoading: isBatchesLoading, error: batchesError } = useCollection<Batch>(batchesCollectionRef);
   
   useEffect(() => {
@@ -344,9 +345,9 @@ export default function AdminPage() {
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
 
   const modelsCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !auth?.currentUser) return null;
     return collection(firestore, 'mlModels');
-    }, [firestore, user]);
+    }, [firestore, user, auth]);
   const { data: mlModels, isLoading: isMlModelsLoading, error: mlModelsError } = useCollection<MLModel>(modelsCollectionRef);
   
   useEffect(() => {
@@ -354,9 +355,9 @@ export default function AdminPage() {
   }, [mlModels, isMlModelsLoading, mlModelsError]);
 
   const appSettingsDocRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !auth?.currentUser) return null;
     return doc(firestore, 'app_settings', 'config');
-    }, [firestore, user]);
+    }, [firestore, user, auth]);
   const { data: appSettings, isLoading: isAppSettingsLoading, error: appSettingsError } = useDoc<AppSettings>(appSettingsDocRef);
 
   useEffect(() => {
@@ -379,9 +380,9 @@ export default function AdminPage() {
   }, [user, isUserLoading, router]);
   
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !auth?.currentUser) return null;
     return collection(firestore, `users/${user.uid}/sensor_configurations`);
-  }, [firestore, user]);
+  }, [firestore, user, auth]);
 
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading, error: sensorConfigsError } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
 
@@ -391,10 +392,10 @@ export default function AdminPage() {
 
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !auth?.currentUser) return null;
     const sessionsGroup = collectionGroup(firestore, 'test_sessions');
     return query(sessionsGroup, orderBy('startTime', 'desc'));
-  }, [firestore, user]);
+  }, [firestore, user, auth]);
 
   const { data: testSessions, isLoading: isTestSessionsLoading, error: testSessionsError } = useCollection<TestSession>(testSessionsCollectionRef);
   
@@ -403,9 +404,9 @@ export default function AdminPage() {
   }, [testSessions, isTestSessionsLoading, testSessionsError]);
   
   const usersCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !auth?.currentUser) return null;
     return collection(firestore, 'users');
-  }, [firestore, user]);
+  }, [firestore, user, auth]);
 
   const { data: users, isLoading: isUsersLoading, error: usersError } = useCollection<AppUser>(usersCollectionRef);
 
@@ -415,9 +416,9 @@ export default function AdminPage() {
 
 
   const testBenchesCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !auth?.currentUser) return null;
     return collection(firestore, 'testbenches');
-  }, [firestore, user]);
+  }, [firestore, user, auth]);
 
   const { data: testBenches, isLoading: isTestBenchesLoading, error: testBenchesError } = useCollection<TestBench>(testBenchesCollectionRef);
 
@@ -427,9 +428,9 @@ export default function AdminPage() {
 
 
   const vesselTypesCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !auth?.currentUser) return null;
     return collection(firestore, 'vessel_types');
-  }, [firestore, user]);
+  }, [firestore, user, auth]);
 
   const { data: vesselTypes, isLoading: isVesselTypesLoading, error: vesselTypesError } = useCollection<VesselType>(vesselTypesCollectionRef);
   
@@ -3228,3 +3229,5 @@ const renderAIModelManagement = () => {
     </div>
   );
 }
+
+    
