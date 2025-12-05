@@ -36,8 +36,13 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
       throw new Error('This username is already taken. Please choose another one.');
     }
   } catch (e: any) {
-     // This catch block is now only for actual Firestore query failures (e.g., permissions).
-    throw new Error(`[E1] Could not verify username availability. Please check security rules. Original error: ${e.message}`);
+     // This catch block is now primarily for actual Firestore query failures (e.g., permissions).
+     const permissionError = new FirestorePermissionError({
+        path: 'users',
+        operation: 'list'
+     });
+     errorEmitter.emit('permission-error', permissionError);
+     throw new Error(`Could not verify username. This is likely a security rule issue. Original error: ${permissionError.message}`);
   }
 
 
@@ -53,7 +58,7 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
         throw new Error('This username is already taken as it maps to an existing email. Please choose another one.');
     }
     // For other auth errors (weak password, etc.)
-    throw new Error(`[E4] Firebase Auth account creation failed: ${authError.message}`);
+    throw new Error(`Firebase Auth account creation failed: ${authError.message}`);
   }
   
   const userDocRef = doc(firestore, 'users', user.uid);
@@ -74,7 +79,7 @@ export async function initiateEmailSignUp(authInstance: Auth, firestore: Firesto
     });
     errorEmitter.emit('permission-error', permissionError);
     // This error will be thrown to the Next.js overlay for the developer to debug security rules.
-    throw new Error(`[E5] User profile creation failed. Original error: ${permissionError.message}`);
+    throw new Error(`User profile creation failed. Original error: ${permissionError.message}`);
   }
 }
 
