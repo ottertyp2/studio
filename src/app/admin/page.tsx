@@ -1,4 +1,3 @@
-
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -276,11 +275,20 @@ async function serializeWeights(tensors: tf.Tensor[]): Promise<string> {
 
 
 export default function AdminPage() {
+  console.log('[AdminPage] Component Mounting...');
   const router = useRouter();
   const { toast } = useToast();
 
   const { user, userRole, isUserLoading } = useUser();
   const { firestore, auth, firebaseApp, database } = useFirebase();
+
+  useEffect(() => {
+    console.log('[DEBUG] Auth State:', {
+        isUserLoading,
+        user: user ? { uid: user.uid, email: user.email } : null,
+        userRole,
+    });
+  }, [user, userRole, isUserLoading]);
 
   const [activeSensorConfigId, setActiveSensorConfigId] = useState<string | null>(null);
   const [tempSensorConfig, setTempSensorConfig] = useState<Partial<SensorConfig> | null>(null);
@@ -320,8 +328,12 @@ export default function AdminPage() {
     if (!firestore || !user) return null;
     return collection(firestore, `users/${user.uid}/batches`);
   }, [firestore, user]);
-  const { data: batches, isLoading: isBatchesLoading } = useCollection<Batch>(batchesCollectionRef);
+  const { data: batches, isLoading: isBatchesLoading, error: batchesError } = useCollection<Batch>(batchesCollectionRef);
   
+  useEffect(() => {
+    console.log('[DEBUG] Batches:', { isLoading: isBatchesLoading, data: batches, error: batchesError });
+  }, [batches, isBatchesLoading, batchesError]);
+
   const [automatedTrainingStatus, setAutomatedTrainingStatus] = useState<AutomatedTrainingStatus>({ step: 'Idle', progress: 0, details: '' });
   const [isTraining, setIsTraining] = useState(false);
   const [newModelName, setNewModelName] = useState(`Leak-Diffusion-Model-${new Date().toISOString().split('T')[0]}`);
@@ -332,10 +344,18 @@ export default function AdminPage() {
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
 
   const modelsCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'mlModels') : null, [firestore]);
-  const { data: mlModels } = useCollection<MLModel>(modelsCollectionRef);
+  const { data: mlModels, isLoading: isMlModelsLoading, error: mlModelsError } = useCollection<MLModel>(modelsCollectionRef);
+  
+  useEffect(() => {
+    console.log('[DEBUG] ML Models:', { isLoading: isMlModelsLoading, data: mlModels, error: mlModelsError });
+  }, [mlModels, isMlModelsLoading, mlModelsError]);
 
   const appSettingsDocRef = useMemoFirebase(() => firestore ? doc(firestore, 'app_settings', 'config') : null, [firestore]);
-  const { data: appSettings } = useDoc<AppSettings>(appSettingsDocRef);
+  const { data: appSettings, isLoading: isAppSettingsLoading, error: appSettingsError } = useDoc<AppSettings>(appSettingsDocRef);
+
+  useEffect(() => {
+    console.log('[DEBUG] App Settings:', { isLoading: isAppSettingsLoading, data: appSettings, error: appSettingsError });
+  }, [appSettings, isAppSettingsLoading, appSettingsError]);
 
   useEffect(() => {
       if (mlModels && !activeModel) {
@@ -346,6 +366,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (!isUserLoading) {
       if (!user) {
+        console.log('[AdminPage] No user found, redirecting to /login');
         router.replace('/login');
       }
     }
@@ -356,7 +377,12 @@ export default function AdminPage() {
     return collection(firestore, `users/${user.uid}/sensor_configurations`);
   }, [firestore, user]);
 
-  const { data: sensorConfigs, isLoading: isSensorConfigsLoading } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
+  const { data: sensorConfigs, isLoading: isSensorConfigsLoading, error: sensorConfigsError } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
+
+  useEffect(() => {
+    console.log('[DEBUG] Sensor Configs:', { isLoading: isSensorConfigsLoading, data: sensorConfigs, error: sensorConfigsError });
+  }, [sensorConfigs, isSensorConfigsLoading, sensorConfigsError]);
+
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -364,28 +390,47 @@ export default function AdminPage() {
     return query(sessionsGroup, orderBy('startTime', 'desc'));
   }, [firestore]);
 
-  const { data: testSessions, isLoading: isTestSessionsLoading } = useCollection<TestSession>(testSessionsCollectionRef);
+  const { data: testSessions, isLoading: isTestSessionsLoading, error: testSessionsError } = useCollection<TestSession>(testSessionsCollectionRef);
+  
+  useEffect(() => {
+    console.log('[DEBUG] Test Sessions:', { isLoading: isTestSessionsLoading, data: testSessions, error: testSessionsError });
+  }, [testSessions, isTestSessionsLoading, testSessionsError]);
   
   const usersCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
     return collection(firestore, 'users');
   }, [firestore]);
 
-  const { data: users, isLoading: isUsersLoading } = useCollection<AppUser>(usersCollectionRef);
+  const { data: users, isLoading: isUsersLoading, error: usersError } = useCollection<AppUser>(usersCollectionRef);
+
+  useEffect(() => {
+    console.log('[DEBUG] Users:', { isLoading: isUsersLoading, data: users, error: usersError });
+  }, [users, isUsersLoading, usersError]);
+
 
   const testBenchesCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
     return collection(firestore, 'testbenches');
   }, [firestore]);
 
-  const { data: testBenches, isLoading: isTestBenchesLoading } = useCollection<TestBench>(testBenchesCollectionRef);
+  const { data: testBenches, isLoading: isTestBenchesLoading, error: testBenchesError } = useCollection<TestBench>(testBenchesCollectionRef);
+
+  useEffect(() => {
+    console.log('[DEBUG] Test Benches:', { isLoading: isTestBenchesLoading, data: testBenches, error: testBenchesError });
+  }, [testBenches, isTestBenchesLoading, testBenchesError]);
+
 
   const vesselTypesCollectionRef = useMemoFirebase(() => {
     if (!firestore) return null;
     return collection(firestore, 'vessel_types');
   }, [firestore]);
 
-  const { data: vesselTypes, isLoading: isVesselTypesLoading } = useCollection<VesselType>(vesselTypesCollectionRef);
+  const { data: vesselTypes, isLoading: isVesselTypesLoading, error: vesselTypesError } = useCollection<VesselType>(vesselTypesCollectionRef);
+  
+  useEffect(() => {
+    console.log('[DEBUG] Vessel Types:', { isLoading: isVesselTypesLoading, data: vesselTypes, error: vesselTypesError });
+  }, [vesselTypes, isVesselTypesLoading, vesselTypesError]);
+
 
   useEffect(() => {
     if (editingVesselType) {
@@ -414,6 +459,7 @@ export default function AdminPage() {
                 [session.id]: snapshot.size,
             }));
         }, (error) => {
+            console.warn(`[DEBUG] Could not get data count for session ${session.id}:`, error.message);
             setSessionDataCounts(prevCounts => ({
                 ...prevCounts,
                 [session.id]: prevCounts[session.id] || 0,
@@ -3176,5 +3222,3 @@ const renderAIModelManagement = () => {
     </div>
   );
 }
-
-    
