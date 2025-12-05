@@ -6,50 +6,22 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function isSuperAdmin() {
-      // Use exists() to check for document existence to prevent errors on non-existent paths.
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
-    }
     
-    // Global, public-read collections
-    match /vessel_types/{vesselTypeId} {
-      allow get, list: if isSignedIn();
-      allow write: if isSuperAdmin(); // Only admins can change vessel definitions
-    }
-    
-    match /testbenches/{testBenchId} {
-       allow get, list: if isSignedIn();
-       allow write: if isSuperAdmin(); // Only admins can manage test benches
-    }
-    
-    match /app_settings/{settingsId} {
-      allow get: if true;
-      allow write: if isSuperAdmin();
+    match /app_settings/config {
+      allow read, write: if true;
     }
 
-    // User-specific data
     match /users/{userId} {
-      allow get: if isOwner(userId) || isSuperAdmin();
-      allow list: if isSuperAdmin();
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) || isSuperAdmin();
-      allow delete: if isSuperAdmin() && request.auth.uid != userId;
+      // Any authenticated user can create/write their own user doc.
+      // Any client can read any user profile.
+      allow read: if true;
+      allow write: if isSignedIn();
     }
 
-    // All user-generated content is nested under their own user document
-    match /users/{userId}/{collection}/{docId} {
-       allow read, write: if isOwner(userId) || isSuperAdmin();
-    }
-    
-    match /users/{userId}/test_sessions/{testSessionId}/sensor_data/{sensorDataId} {
-        allow read, write: if isOwner(userId) || isSuperAdmin();
+    // This rule allows any authenticated user to perform any action on any other collection.
+    // This is required for the admin panel to list collections like `testbenches`, `vessel_types`, etc.
+    match /{path=**} {
+        allow read, write: if isSignedIn();
     }
   }
 }
-
-    
