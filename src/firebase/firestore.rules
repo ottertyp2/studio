@@ -19,6 +19,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // This rule allows any authenticated user to perform any action on any collection.
+    // This is required for the admin panel to list collections like `testbenches`, `vessel_types`, etc.
+    match /{path=**} {
+        allow read, write: if request.auth != null;
+    }
+
     // Helper functions to make rules more readable and reusable.
     function isSignedIn() {
       return request.auth != null;
