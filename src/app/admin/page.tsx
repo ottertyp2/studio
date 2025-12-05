@@ -343,14 +343,20 @@ export default function AdminPage() {
   const [isSignupConfirmOpen, setIsSignupConfirmOpen] = useState(false);
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
 
-  const modelsCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'mlModels') : null, [firestore]);
+  const modelsCollectionRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'mlModels');
+    }, [firestore, user]);
   const { data: mlModels, isLoading: isMlModelsLoading, error: mlModelsError } = useCollection<MLModel>(modelsCollectionRef);
   
   useEffect(() => {
     console.log('[DEBUG] ML Models:', { isLoading: isMlModelsLoading, data: mlModels, error: mlModelsError });
   }, [mlModels, isMlModelsLoading, mlModelsError]);
 
-  const appSettingsDocRef = useMemoFirebase(() => firestore ? doc(firestore, 'app_settings', 'config') : null, [firestore]);
+  const appSettingsDocRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return doc(firestore, 'app_settings', 'config');
+    }, [firestore, user]);
   const { data: appSettings, isLoading: isAppSettingsLoading, error: appSettingsError } = useDoc<AppSettings>(appSettingsDocRef);
 
   useEffect(() => {
@@ -385,10 +391,10 @@ export default function AdminPage() {
 
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     const sessionsGroup = collectionGroup(firestore, 'test_sessions');
     return query(sessionsGroup, orderBy('startTime', 'desc'));
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: testSessions, isLoading: isTestSessionsLoading, error: testSessionsError } = useCollection<TestSession>(testSessionsCollectionRef);
   
@@ -397,9 +403,9 @@ export default function AdminPage() {
   }, [testSessions, isTestSessionsLoading, testSessionsError]);
   
   const usersCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'users');
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: users, isLoading: isUsersLoading, error: usersError } = useCollection<AppUser>(usersCollectionRef);
 
@@ -409,9 +415,9 @@ export default function AdminPage() {
 
 
   const testBenchesCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'testbenches');
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: testBenches, isLoading: isTestBenchesLoading, error: testBenchesError } = useCollection<TestBench>(testBenchesCollectionRef);
 
@@ -421,9 +427,9 @@ export default function AdminPage() {
 
 
   const vesselTypesCollectionRef = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'vessel_types');
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: vesselTypes, isLoading: isVesselTypesLoading, error: vesselTypesError } = useCollection<VesselType>(vesselTypesCollectionRef);
   
