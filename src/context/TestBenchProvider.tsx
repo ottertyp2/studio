@@ -3,9 +3,9 @@
 import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { TestBenchContext, ValveStatus } from './TestBenchContext';
-import { useFirebase, useUser, addDocumentNonBlocking, WithId } from '@/firebase';
+import { useFirebase, useUser, addDocumentNonBlocking, WithId, setDocument } from '@/firebase';
 import { ref, onValue, set, get, runTransaction } from 'firebase/database';
-import { collection, query, where, onSnapshot, limit, DocumentData, collectionGroup, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, limit, DocumentData, collectionGroup, getDocs, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import { writeBatch } from 'firebase/firestore';
 import { convertRawValue } from '@/lib/utils';
 import type { VesselType, SensorConfig } from '@/lib/utils';
@@ -60,28 +60,24 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!firestore) return;
     
-    console.log("[DEBUG DATA LOAD] Setting up Firestore listeners for vessel_types and sensor_configurations.");
-
     const unsubVesselTypes = onSnapshot(collection(firestore, 'vessel_types'), (snapshot) => {
         const types = snapshot.docs.map(doc => {
             const data = doc.data();
-            delete data.id; // Remove the incorrect id field
+            delete data.id;
             return { 
-              id: doc.id,  // Use only the document ID
+              id: doc.id,
               ...data 
             } as WithId<VesselType>;
           });
         setVesselTypes(types);
-        console.log(`[DEBUG DATA LOAD] SUCCESS: Loaded ${types.length} vessel types from Firestore.`, types);
     }, (error) => console.error("[ERROR] Failed to load vessel types:", error));
     
-    const unsubSensorConfigs = onSnapshot(collection(firestore, 'sensor_configurations'), (snapshot) => {
+    const unsubSensorConfigs = onSnapshot(collectionGroup(firestore, 'sensor_configurations'), (snapshot) => {
         const configs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorConfig>));
         setSensorConfigs(configs);
     }, (error) => console.error("[ERROR] Failed to load sensor configs:", error));
     
     return () => {
-        console.log("[DEBUG DATA LOAD] Tearing down Firestore listeners.");
         unsubVesselTypes();
         unsubSensorConfigs();
     };
@@ -90,12 +86,10 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   const stopSession = useCallback(() => {
     // Clear all timers related to session and pre-flight
     if (preFlightMasterTimeoutRef.current) {
-        console.log('[DEBUG TIMER] Clearing master timer during stopSession.');
         clearTimeout(preFlightMasterTimeoutRef.current);
         preFlightMasterTimeoutRef.current = null;
     }
     if (preFlightStabilityTimerRef.current) {
-        console.log('[DEBUG TIMER] Clearing stability timer during stopSession.');
         clearTimeout(preFlightStabilityTimerRef.current);
         preFlightStabilityTimerRef.current = null;
     }
@@ -110,27 +104,24 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
       set(ref(database, 'data/commands/recording'), false);
     }
 
-    if (runningTestSession) {
+    if (runningTestSession && user) {
         if (firestore) {
-            const sessionRef = doc(firestore, 'test_sessions', runningTestSession.id);
+            const sessionRef = doc(firestore, 'users', user.uid, 'test_sessions', runningTestSession.id);
             updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
         }
         setRunningTestSession(null);
     }
-  }, [firestore, database, runningTestSession]);
+  }, [firestore, database, runningTestSession, user]);
 
   const startSession = useCallback((session: WithId<DocumentData>) => {
     setRunningTestSession(session);
     
     preFlightStateRef.current = 'waiting_for_range';
-    console.log(`[DEBUG STATE] Session ${session.id} started. State -> waiting_for_range`);
     if (preFlightMasterTimeoutRef.current) clearTimeout(preFlightMasterTimeoutRef.current);
     if (preFlightStabilityTimerRef.current) clearTimeout(preFlightStabilityTimerRef.current);
     
-    // Start the master timeout for the pre-flight check
     preFlightMasterTimeoutRef.current = setTimeout(() => {
       if (preFlightStateRef.current === 'waiting_for_range') {
-          console.error('[DEBUG TIMER] Master 20s timer FAILED. State was still waiting_for_range.');
           toast({
               variant: 'destructive',
               title: 'Pre-flight Check Failed',
@@ -138,11 +129,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
               duration: 10000,
           });
           stopSession();
-      } else {
-            console.log('[DEBUG TIMER] Master 20s timer expired, but state was already', preFlightStateRef.current, '. No action taken.');
       }
-    }, 20000); // 20 seconds for debug
-      console.log('[DEBUG TIMER] Master 20s timer SET.');
+    }, 20000);
 
   }, [firestore, stopSession, toast]);
 
@@ -152,39 +140,50 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
     const systemStatusRef = ref(database, 'data/system/status');
     
-    // First, check for existence and initialize if needed.
-    get(systemStatusRef).then(snapshot => {
-        if (!snapshot.exists()) {
-            const now = Date.now();
-            set(systemStatusRef, {
+    const now = Date.now();
+    const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
+
+    runTransaction(systemStatusRef, (status) => {
+        if (status) {
+            // Check if the tracking period is older than 24 hours and reset if it is
+            if (!status.startTime || status.startTime < twentyFourHoursAgo) {
+                console.log('Downtime tracker is older than 24 hours. Resetting.');
+                status.startTime = now;
+                status.totalDowntime = 0;
+                status.downtimeStart = isConnected ? null : now;
+            }
+        } else {
+            // Initialize if it doesn't exist
+            status = {
                 startTime: now,
                 totalDowntime: 0,
-                downtimeStart: null,
-            });
+                downtimeStart: isConnected ? null : now,
+            };
         }
+        return status;
+    }).then(() => {
+        // After transaction, set up the real-time listener
+        const unsubscribe = onValue(systemStatusRef, (snapshot) => {
+            const status = snapshot.val();
+            if (status) {
+                setStartTime(status.startTime || null);
+                setTotalDowntime(status.totalDowntime || 0);
+                setDowntimeStart(status.downtimeStart || null);
+            }
+        });
+        return unsubscribe;
+    }).catch(error => {
+        console.error("Failed to initialize or listen to downtime status:", error);
     });
 
-    // Then, set up the real-time listener.
-    const unsubscribe = onValue(systemStatusRef, (snapshot) => {
-        const status = snapshot.val();
-        if (status) {
-            setStartTime(status.startTime || null);
-            setTotalDowntime(status.totalDowntime || 0);
-            setDowntimeStart(status.downtimeStart || null);
-        }
-    });
-
-    return () => {
-        unsubscribe();
-    };
-}, [database]);
+}, [database, isConnected]);
 
 
   
   useEffect(() => {
     if (!user || !firestore) return;
     const q = query(
-      collection(firestore, 'test_sessions'),
+      collection(firestore, 'users', user.uid, 'test_sessions'),
       where('status', '==', 'RUNNING'),
       limit(1)
     );
@@ -251,15 +250,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const session = runningTestSession;
     if (session && data.sensor !== null && database) {
         
-        console.log('--- PRE-FLIGHT CHECK TICK ---');
-        console.log(`[DEBUG LOOKUP] Attempting to find vesselType with ID: "${session.vesselTypeId}"`);
-        console.log(`[DEBUG LOOKUP] Searching in vesselTypes array (length ${vesselTypes.length}):`, vesselTypes);
         const vesselType = vesselTypes.find(vt => vt.id === session.vesselTypeId);
-        
         const sensorConfig = sensorConfigs.find(sc => sc.id === session.sensorConfigurationId);
-        
-        const isVesselTypeFound = !!vesselType;
-        const isSensorConfigFound = !!sensorConfig;
         
         if (vesselType && sensorConfig && vesselType.preFlightUpperPressureLimit !== undefined && vesselType.preFlightLowerPressureLimit !== undefined) {
             const convertedValue = convertRawValue(data.sensor, sensorConfig);
@@ -267,16 +259,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             const upperLimit = vesselType.preFlightUpperPressureLimit;
             const inRange = convertedValue >= lowerLimit && convertedValue <= upperLimit;
 
-            console.log(`[DEBUG VAL] Raw: ${data.sensor} -> Converted: ${convertedValue.toFixed(3)}`);
-            console.log(`[DEBUG RANGE] Checking against [${lowerLimit}, ${upperLimit}]. In Range? ${inRange}`);
-
-
             if (preFlightStateRef.current === 'waiting_for_range' && inRange) {
                 preFlightStateRef.current = 'timing_stability';
-                console.log(`[DEBUG STATE] Value ${convertedValue.toFixed(2)} entered range. State -> timing_stability`);
-                
                 if (preFlightMasterTimeoutRef.current) {
-                    console.log('[DEBUG TIMER] Master 20s timer CLEARED because stability check started.');
                     clearTimeout(preFlightMasterTimeoutRef.current);
                     preFlightMasterTimeoutRef.current = null;
                 }
@@ -285,23 +270,19 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                     if (preFlightStateRef.current === 'timing_stability') {
                         preFlightStateRef.current = 'passed';
                         set(ref(database, 'data/commands/preFlightCheck'), true);
-                        console.log('[DEBUG STATE] Stability timer completed. State -> passed. SET preFlightCheck to TRUE.');
                         toast({
                             title: 'Pre-flight Check Passed',
                             description: 'Pressure stable. Proceeding with measurement.',
                         });
                     }
-                }, 10000); // 10 seconds for debug
-                 console.log('[DEBUG TIMER] Stability 10s timer SET.');
+                }, 10000);
 
             } else if (preFlightStateRef.current === 'timing_stability' && !inRange) {
                 if (preFlightStabilityTimerRef.current) {
-                    console.log('[DEBUG TIMER] Stability timer CLEARED because value left range.');
                     clearTimeout(preFlightStabilityTimerRef.current);
                     preFlightStabilityTimerRef.current = null;
                 }
-                preFlightStateRef.current = 'idle'; // Reset state
-                console.error(`[DEBUG STATE] Stability FAILED. Value ${convertedValue.toFixed(2)} left range [${lowerLimit}, ${upperLimit}]. State -> idle.`);
+                preFlightStateRef.current = 'idle';
                 toast({
                     variant: 'destructive',
                     title: 'Pre-flight Check Failed',
@@ -310,12 +291,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 });
                 stopSession();
             }
-        } else {
-             console.log(`[DEBUG SKIP] Skipping pre-flight check. Reason:
-             - vesselType found: ${isVesselTypeFound}
-             - sensorConfig found: ${isSensorConfigFound}
-             - preFlightLowerPressureLimit defined: ${vesselType ? vesselType.preFlightLowerPressureLimit !== undefined : 'N/A'}
-             - preFlightUpperPressureLimit defined: ${vesselType ? vesselType.preFlightUpperPressureLimit !== undefined : 'N/A'}`);
         }
     }
 
@@ -329,8 +304,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
             return [newDataPoint, ...prevLog].slice(0, 1000)
         });
 
-        if (runningTestSession && firestore) {
-            const sessionDataRef = collection(firestore, 'test_sessions', runningTestSession.id, 'sensor_data');
+        if (runningTestSession && firestore && user) {
+            const sessionDataRef = collection(firestore, 'users', user.uid, 'test_sessions', runningTestSession.id, 'sensor_data');
             const dataToSave = {
                 value: data.sensor,
                 timestamp: new Date(data.lastUpdate).toISOString(),
@@ -341,7 +316,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
                 .catch((error) => console.error('[handleNewDataPoint] Firestore write FAILED:', error));
         }
     }
-  }, [firestore, database, isRecording, stopSession, toast, vesselTypes, sensorConfigs, runningTestSession]);
+  }, [firestore, database, isRecording, stopSession, toast, vesselTypes, sensorConfigs, runningTestSession, user]);
   
   useEffect(() => {
     if (!database) return;
@@ -396,8 +371,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     }
     try {
         await set(ref(database, 'data/commands/recording'), shouldRecord);
-        // Optimistically update the UI state.
-        // If the live listener receives a different value, it will override this.
         setIsRecording(shouldRecord);
     } catch (error: any) {
         console.error('Failed to send recording command:', error);
@@ -454,8 +427,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const commandsUnsubscribe = onValue(commandsRef, (snap) => {
       const commands = snap.val();
       if (commands) {
-        // If the live data from the device *doesn't* include a 'recording' flag,
-        // we fall back to trusting the command.
         if (commands.recording !== undefined) {
            get(ref(database, 'data/live/recording')).then(liveRecordingSnap => {
                if (!liveRecordingSnap.exists()) {
@@ -503,9 +474,9 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     sendRecordingCommand,
     sendMovingAverageCommand,
     deleteSession: async (sessionId: string) => {
-        if (!firestore) return;
-        const sessionRef = doc(firestore, 'test_sessions', sessionId);
-        const dataQuery = query(collection(firestore, `test_sessions/${sessionId}/sensor_data`));
+        if (!firestore || !user) return;
+        const sessionRef = doc(firestore, 'users', user.uid, 'test_sessions', sessionId);
+        const dataQuery = query(collection(firestore, `users/${user.uid}/test_sessions/${sessionId}/sensor_data`));
         
         try {
             const dataSnapshot = await getDocs(dataQuery);

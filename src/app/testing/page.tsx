@@ -1,3 +1,4 @@
+
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -274,13 +275,13 @@ function TestingComponent() {
   const usersCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'users') : null, [firestore]);
   const { data: users } = useCollection<AppUser>(usersCollectionRef);
 
-  const sensorConfigsCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'sensor_configurations') : null, [firestore]);
+  const sensorConfigsCollectionRef = useMemoFirebase(() => firestore ? collectionGroup(firestore, 'sensor_configurations') : null, [firestore]);
   const { data: sensorConfigs } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
   
   const vesselTypesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'vessel_types') : null, [firestore]);
   const { data: vesselTypes } = useCollection<VesselType>(vesselTypesCollectionRef);
   
-  const batchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'batches') : null, [firestore]);
+  const batchesCollectionRef = useMemoFirebase(() => firestore ? collectionGroup(firestore, 'batches') : null, [firestore]);
   const { data: batches } = useCollection<Batch>(batchesCollectionRef);
 
   const measurementWindows = useMemo(() => {
@@ -303,13 +304,13 @@ function TestingComponent() {
   }, [comparisonSessions, comparisonData, sensorConfigs, vesselTypes]);
 
   useEffect(() => {
-    if (!newSessionData.batchId || newSessionData.batchId === 'CREATE_NEW_BATCH' || !firestore) {
+    if (!newSessionData.batchId || newSessionData.batchId === 'CREATE_NEW_BATCH' || !firestore || !user) {
       setTestedBatchCounts([]);
       return;
     }
   
     const q = query(
-      collection(firestore, 'test_sessions'),
+      collection(firestore, 'users', user.uid, 'test_sessions'),
       where('batchId', '==', newSessionData.batchId)
     );
   
@@ -321,7 +322,7 @@ function TestingComponent() {
     });
   
     return () => unsubscribe();
-  }, [newSessionData.batchId, firestore]);
+  }, [newSessionData.batchId, firestore, user]);
   
   const availableBatchCountsText = useMemo(() => {
     if (!newSessionData.vesselTypeId || !vesselTypes) return '';
@@ -418,20 +419,19 @@ function TestingComponent() {
         return;
     }
     
-    // --- Stale Session Cleanup ---
+    // Stale session cleanup
     if(runningTestSession && runningTestSession.userId !== user.uid) {
         toast({
             title: "Stale Session Detected",
             description: `Stopping a running session from another user (${runningTestSession.username}) to start a new one.`
         });
-        stopSessionInContext(); // Stop the stale session
-        await new Promise(resolve => setTimeout(resolve, 500)); // Give a moment for state to clear
+        stopSessionInContext();
+        await new Promise(resolve => setTimeout(resolve, 500));
     } else if (runningTestSession) {
         toast({ variant: 'destructive', title: 'Session in Progress', description: 'Another session is already running on your account.' });
         return;
     }
     
-    // --- New Validation Step ---
     const vesselType = vesselTypes.find(vt => vt.id === newSessionData.vesselTypeId);
     if (!vesselType) {
         toast({ variant: 'destructive', title: 'Error', description: 'Selected vessel type not found. Please refresh and try again.' });
@@ -444,10 +444,11 @@ function TestingComponent() {
             toast({ variant: 'destructive', title: 'Missing Information', description: 'Please enter a name for the new batch.' });
             return;
         }
+        const batchCollectionRef = collection(firestore, 'users', user.uid, 'batches');
         const newBatchId = doc(collection(firestore, '_')).id;
         const newBatchDoc: Batch = { id: newBatchId, name: newBatchName.trim(), vesselTypeId: newSessionData.vesselTypeId };
         try {
-            await addDocument(collection(firestore, 'batches'), newBatchDoc);
+            await setDoc(doc(batchCollectionRef, newBatchId), newBatchDoc);
             finalBatchId = newBatchId;
             toast({ title: 'Batch Created', description: `Batch "${newBatchDoc.name}" was successfully created.` });
         } catch (error: any) {
@@ -483,10 +484,11 @@ function TestingComponent() {
       userId: user.uid,
       username: user.displayName || user.email || 'Unknown User',
     };
-
+    
+    const testSessionsCollectionRef = collection(firestore, 'users', user.uid, 'test_sessions');
     let docRef: any = null;
     try {
-        docRef = await addDocument(collection(firestore, 'test_sessions'), newSessionDocData);
+        docRef = await addDocument(testSessionsCollectionRef, newSessionDocData);
         const newSessionWithId: WithId<TestSession> = { id: docRef.id, ...newSessionDocData };
       
         startSessionInContext(newSessionWithId);
@@ -511,8 +513,8 @@ function TestingComponent() {
 
     } catch (error: any) {
         toast({ variant: 'destructive', title: 'Failed to Start Session', description: error.message });
-        if (docRef && firestore) {
-            await deleteDoc(doc(firestore, 'test_sessions', docRef.id)).catch(delError => {
+        if (docRef && firestore && user) {
+            await deleteDoc(doc(firestore, 'users', user.uid, 'test_sessions', docRef.id)).catch(delError => {
                 console.error("Cleanup failed: Could not delete orphaned session document.", delError);
             });
         }
@@ -552,7 +554,7 @@ function TestingComponent() {
     }
 
     try {
-        const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
+        const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
         const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
         const snapshot = await getDocs(q);
         const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
@@ -564,7 +566,7 @@ function TestingComponent() {
 
         const startResult = findMeasurementStart(sensorData, config, vesselType);
         if (!startResult) {
-            await setDocument(doc(firestore, 'test_sessions', session.id), { classification: 'UNCLASSIFIABLE' }, { merge: true });
+            await setDocument(doc(firestore, `users/${session.userId}/test_sessions`, session.id), { classification: 'UNCLASSIFIABLE' }, { merge: true });
             toast({ 
                 title: 'Classification: Unclassifiable', 
                 description: `Could not determine a valid measurement start point for this session.` 
@@ -576,7 +578,7 @@ function TestingComponent() {
         const { endIndex, isComplete } = findMeasurementEnd(sensorData, startIndex, config, vesselType);
         
         if (!isComplete) {
-            await setDocument(doc(firestore, 'test_sessions', session.id), { classification: 'UNCLASSIFIABLE' }, { merge: true });
+            await setDocument(doc(firestore, `users/${session.userId}/test_sessions`, session.id), { classification: 'UNCLASSIFIABLE' }, { merge: true });
             toast({ 
                 title: 'Classification: Unclassifiable', 
                 description: `Session did not run for the required duration of ${vesselType.durationSeconds}s.` 
@@ -620,7 +622,7 @@ function TestingComponent() {
 
         const classification = isFailed ? 'LEAK' : 'DIFFUSION';
         
-        await setDocument(doc(firestore, 'test_sessions', session.id), { classification }, { merge: true });
+        await setDocument(doc(firestore, `users/${session.userId}/test_sessions`, session.id), { classification }, { merge: true });
         toast({ 
             title: 'Classification Complete', 
             description: `Session classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'}.` 
@@ -650,7 +652,7 @@ function TestingComponent() {
 
     comparisonSessions.forEach(session => {
         const dataQuery = query(
-          collection(firestore, 'test_sessions', session.id, 'sensor_data'),
+          collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`),
           orderBy('timestamp', 'asc')
         );
 
@@ -676,11 +678,11 @@ function TestingComponent() {
     };
   }, [firestore, comparisonSessions, toast]);
 
-  const handleDeleteSession = async (sessionId: string) => {
+  const handleDeleteSession = async (session: WithId<TestSession>) => {
     if (!firestore) return;
 
-    const sessionRef = doc(firestore, 'test_sessions', sessionId);
-    const sensorDataRef = collection(firestore, 'test_sessions', sessionId, 'sensor_data');
+    const sessionRef = doc(firestore, 'users', session.userId, 'test_sessions', session.id);
+    const sensorDataRef = collection(firestore, 'users', session.userId, 'test_sessions', session.id, 'sensor_data');
 
     const batch = writeBatch(firestore);
 
@@ -696,8 +698,8 @@ function TestingComponent() {
 
         toast({ title: 'Session Deleted', description: `Session and ${snapshot.size} data points were removed.` });
 
-        setSessionHistory(prev => prev.filter(s => s.id !== sessionId));
-        setComparisonSessions(prev => prev.filter(s => s.id !== sessionId));
+        setSessionHistory(prev => prev.filter(s => s.id !== session.id));
+        setComparisonSessions(prev => prev.filter(s => s.id !== session.id));
     } catch (e: any) {
         toast({ variant: 'destructive', title: 'Deletion Failed', description: e.message });
     }
@@ -829,15 +831,26 @@ function TestingComponent() {
     };
   }, [currentValue, displaySensorConfigId, sensorConfigs]);
   
-  const downtimePercentage = useMemo(() => {
-    if (!systemStartTime) return 0;
-    const totalElapsed = Date.now() - systemStartTime;
-    if (totalElapsed <= 0) return 0;
-    
-    const liveDowntime = downtimeStart ? (Date.now() - downtimeStart) : 0;
-    const currentTotalDowntime = totalDowntime + liveDowntime;
+  const downtimeInfo = useMemo(() => {
+    if (!systemStartTime) return { percentage: 0, text: 'N/A' };
+    const totalElapsed = now - systemStartTime;
+    if (totalElapsed <= 0) return { percentage: 0, text: '0s' };
 
-    return Math.min(100, (currentTotalDowntime / totalElapsed) * 100);
+    const liveDowntime = downtimeStart ? (now - downtimeStart) : 0;
+    const currentTotalDowntimeMs = totalDowntime + liveDowntime;
+    const percentage = Math.min(100, (currentTotalDowntimeMs / totalElapsed) * 100);
+
+    const totalSeconds = Math.floor(currentTotalDowntimeMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    let text = '';
+    if (hours > 0) text += `${hours}h `;
+    if (minutes > 0) text += `${minutes}m `;
+    text += `${seconds}s`;
+
+    return { percentage, text };
   }, [systemStartTime, totalDowntime, downtimeStart, now]);
 
 
@@ -849,19 +862,19 @@ function TestingComponent() {
     }, [lastDataPointTimestamp]);
 
     const handlePrepareReport = async (config: ReportConfig) => {
-      if (!firestore) return;
+      if (!firestore || !user) return;
   
       let sessionsToReport: WithId<TestSession>[] = [];
   
       if (config.type === 'single' && config.sessionId) {
-          const sessionDoc = await getDoc(doc(firestore, 'test_sessions', config.sessionId));
+          const sessionDoc = await getDoc(doc(firestore, `users/${user.uid}/test_sessions`, config.sessionId));
           if (sessionDoc.exists()) {
               sessionsToReport = [{ id: sessionDoc.id, ...sessionDoc.data() } as WithId<TestSession>];
           }
       } else if (config.type === 'custom') {
           sessionsToReport = comparisonSessions;
       } else if (config.type === 'batch' && config.batchId) {
-          const q = query(collection(firestore, 'test_sessions'), where('batchId', '==', config.batchId), where('status', '==', 'COMPLETED'));
+          const q = query(collection(firestore, `users/${user.uid}/test_sessions`), where('batchId', '==', config.batchId), where('status', '==', 'COMPLETED'));
           const snapshot = await getDocs(q);
           sessionsToReport = snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as WithId<TestSession>);
       }
@@ -883,7 +896,7 @@ function TestingComponent() {
     };
     
     const generateReport = async (reportConfig: ReportConfig | null) => {
-    if (!reportConfig || !firestore || !chartRef.current) {
+    if (!reportConfig || !firestore || !chartRef.current || !user) {
         toast({ variant: 'destructive', title: 'Report Failed', description: 'Configuration or dependencies not ready.' });
         return;
     }
@@ -915,7 +928,7 @@ function TestingComponent() {
     
     try {
         if (reportConfig.type === 'single' && reportConfig.sessionId) {
-            const sessionDoc = await getDoc(doc(firestore, 'test_sessions', reportConfig.sessionId));
+            const sessionDoc = await getDoc(doc(firestore, `users/${user.uid}/test_sessions`, reportConfig.sessionId));
             if (!sessionDoc.exists()) throw new Error('Selected session not found.');
             const session = { id: sessionDoc.id, ...sessionDoc.data() } as WithId<TestSession>;
             sessionsToReport = [session];
@@ -927,9 +940,11 @@ function TestingComponent() {
             reportTitle = `Custom Multi-Vessel Pressure Test Report`;
             reportFilename = `report-custom-${new Date().toISOString().split('T')[0]}`;
         } else if (reportConfig.type === 'batch' && reportConfig.batchId) {
-            const batch = batches?.find(b => b.id === reportConfig.batchId);
+            const batchDocRef = doc(firestore, `users/${user.uid}/batches`, reportConfig.batchId);
+            const batch = (await getDoc(batchDocRef)).data() as Batch | undefined;
             if (!batch) throw new Error('Selected batch not found.');
-            const q = query(collection(firestore, 'test_sessions'), where('batchId', '==', reportConfig.batchId), where('status', '==', 'COMPLETED'));
+
+            const q = query(collection(firestore, `users/${user.uid}/test_sessions`), where('batchId', '==', reportConfig.batchId), where('status', '==', 'COMPLETED'));
             const snapshot = await getDocs(q);
             sessionsToReport = snapshot.docs.map(d => ({id: d.id, ...d.data()}) as WithId<TestSession>);
             if (sessionsToReport.length === 0) throw new Error('No completed sessions found for this batch.');
@@ -943,7 +958,7 @@ function TestingComponent() {
         setComparisonSessions(sessionsToReport);
         
         for (const session of sessionsToReport) {
-            const dataSnapshot = await getDocs(query(collection(firestore, `test_sessions/${session.id}/sensor_data`), orderBy('timestamp')));
+            const dataSnapshot = await getDocs(query(collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`), orderBy('timestamp')));
             allSensorDataForReport[session.id] = dataSnapshot.docs.map(d => d.data() as SensorData);
         }
         setComparisonData(allSensorDataForReport);
@@ -964,7 +979,7 @@ function TestingComponent() {
 
 
         const sessionsByVessel: Record<string, TestSession[]> = {};
-        const allTestSessionsSnapshot = await getDocs(collection(firestore, 'test_sessions'));
+        const allTestSessionsSnapshot = await getDocs(collection(firestore, `users/${user.uid}/test_sessions`));
         const allTestSessions = allTestSessionsSnapshot.docs.map(d => ({id: d.id, ...d.data()}) as WithId<TestSession>);
 
         allTestSessions.forEach(session => {
@@ -1103,7 +1118,7 @@ function TestingComponent() {
   useEffect(() => {
     if (!user || !firestore) return;
     setIsHistoryLoading(true);
-    const q = query(collection(firestore, 'test_sessions'), orderBy('startTime', 'desc'));
+    const q = query(collection(firestore, `users/${user.uid}/test_sessions`), orderBy('startTime', 'desc'));
     const unsubscribe = onSnapshot(q, 
         (snapshot) => {
             const history = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<TestSession>));
@@ -1121,9 +1136,9 @@ function TestingComponent() {
 
     useEffect(() => {
         const sessionId = searchParams.get('sessionId');
-        if (sessionId && firestore) {
+        if (sessionId && firestore && user) {
             const fetchAndSetSession = async () => {
-                const sessionDocRef = doc(firestore, 'test_sessions', sessionId);
+                const sessionDocRef = doc(firestore, `users/${user.uid}/test_sessions`, sessionId);
                 try {
                     const sessionDoc = await getDoc(sessionDocRef);
                     if (sessionDoc.exists()) {
@@ -1142,7 +1157,7 @@ function TestingComponent() {
             fetchAndSetSession();
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchParams, firestore, router, toast]);
+    }, [searchParams, firestore, router, toast, user]);
 
   const handleToggleComparison = (session: WithId<TestSession>) => {
     setComparisonSessions(prev => {
@@ -1503,8 +1518,8 @@ function TestingComponent() {
                     <div className={`text-sm mt-2 flex items-center justify-center gap-1 ${isConnected ? 'text-green-600' : 'text-destructive'}`}>
                         {isConnected ? `Online` : offlineMessage}
                     </div>
-                     <p className="text-xs text-muted-foreground mt-1">
-                        Downtime: {downtimePercentage.toFixed(2)}%
+                     <p className="text-xs text-muted-foreground mt-1" title={`Total downtime over the last 24 hours: ${downtimeInfo.text}`}>
+                        Uptime (24h): {(100 - downtimeInfo.percentage).toFixed(2)}%
                     </p>
                     {isConnected && (
                       <>
@@ -1709,7 +1724,7 @@ function TestingComponent() {
                                                             <DropdownMenuItem onSelect={() => handleToggleComparison(session)}>
                                                                 {comparisonSessions.some(s => s.id === session.id) ? 'Remove from Comparison' : 'Add to Comparison'}
                                                             </DropdownMenuItem>
-                                                            <DropdownMenuItem onSelect={() => handleDeleteSession(session.id)}>
+                                                            <DropdownMenuItem onSelect={() => handleDeleteSession(session)}>
                                                                 <Trash2 className="mr-2 h-4 w-4 text-destructive"/>
                                                                 <span className="text-destructive">Delete Session</span>
                                                             </DropdownMenuItem>
