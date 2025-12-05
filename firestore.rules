@@ -18,12 +18,12 @@ service cloud.firestore {
     
     // Global, public-read collections
     match /vessel_types/{vesselTypeId} {
-      allow get, list: if true;
+      allow get, list: if isSignedIn();
       allow write: if isSuperAdmin(); // Only admins can change vessel definitions
     }
     
     match /testbenches/{testBenchId} {
-       allow get, list: if true;
+       allow get, list: if isSignedIn();
        allow write: if isSuperAdmin(); // Only admins can manage test benches
     }
     
@@ -51,3 +51,5 @@ service cloud.firestore {
     }
   }
 }
+
+    
