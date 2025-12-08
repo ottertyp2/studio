@@ -1,4 +1,5 @@
 
+
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -392,7 +393,7 @@ export default function AdminPage() {
     return collection(firestore, 'testbenches');
 }, [firestore, user, isAuthReady]);
 
-  const { data: testBenches, isLoading: isTestBenchesLoading, error: testBenchesError } = useCollection<TestBench>(testBenchesCollectionRef);
+  const { data: testBenches, isLoading: isTestBenchesLoading, error: isTestBenchesLoading } = useCollection<TestBench>(testBenchesCollectionRef);
 
 
   const vesselTypesCollectionRef = useMemoFirebase(() => {
@@ -1250,30 +1251,11 @@ export default function AdminPage() {
         }
 
         const allSensorData: Record<string, SensorData[]> = {};
-        const measurementWindows: Record<string, { startIndex: number; endIndex: number; isComplete: boolean; startResult: any; }> = {};
-
         for (const session of relevantSessions) {
             const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
             const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
             const snapshot = await getDocs(q);
-            const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
-            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-            const vt = vesselTypes?.find(v => v.id === session.vesselTypeId);
-            
-            allSensorData[session.id] = sensorData;
-
-            if (sensorData.length > 0 && config && vt) {
-                const startResult = findMeasurementStart(sensorData, config, vt);
-                if (startResult) {
-                    const endResult = findMeasurementEnd(sensorData, startResult.startIndex, config, vt);
-                    measurementWindows[session.id] = { 
-                        startIndex: startResult.startIndex, 
-                        endIndex: endResult.endIndex,
-                        isComplete: endResult.isComplete,
-                        startResult: startResult
-                    };
-                }
-            }
+            allSensorData[session.id] = snapshot.docs.map(doc => doc.data() as SensorData);
         }
         
         const vt = vesselTypes?.find(vt => vt.id === vesselType.id);
@@ -1292,14 +1274,18 @@ export default function AdminPage() {
         
         const chartDataForPdf = relevantSessions.flatMap(session => {
             const data = allSensorData[session.id];
-            const window = measurementWindows[session.id];
-            if (!data || data.length === 0 || !window) return [];
+            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
+            const vt = vesselTypes?.find(v => v.id === session.vesselTypeId);
+            if (!data || data.length === 0 || !config || !vt) return [];
+
+            const startResult = findMeasurementStart(data, config, vt);
+            if (!startResult) return [];
             
-            const analysisData = data.slice(window.startIndex, window.endIndex + 1);
+            const { endIndex } = findMeasurementEnd(data, startResult.startIndex, config, vt);
+            const analysisData = data.slice(startResult.startIndex, endIndex + 1);
             if(analysisData.length === 0) return [];
             
             const measurementStartTime = new Date(analysisData[0].timestamp).getTime();
-            const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
 
             return analysisData.map(d => {
                 const time = (new Date(d.timestamp).getTime() - measurementStartTime) / 1000;
@@ -1381,12 +1367,16 @@ export default function AdminPage() {
 
             const data = allSensorData[session.id] || [];
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-            const window = measurementWindows[session.id];
-
+            const vt = vesselTypes?.find(v => v.id === session.vesselTypeId);
+            
             let analysisData: SensorData[] = [];
-            if (window?.start) {
-              const endIndex = window.end?.isComplete ? window.end.endIndex : data.length - 1;
-              analysisData = data.slice(window.start.startIndex, endIndex + 1);
+            if (data.length > 0 && config && vt) {
+                const startResult = findMeasurementStart(data, config, vt);
+                if (startResult) {
+                    const endResult = findMeasurementEnd(data, startResult.startIndex, config, vt);
+                    const endIndex = endResult.isComplete ? endResult.endIndex : data.length - 1;
+                    analysisData = data.slice(startResult.startIndex, endIndex + 1);
+                }
             }
             
             const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(session.startTime).getTime();
@@ -3126,7 +3116,7 @@ const renderAIModelManagement = () => {
                                                       <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
                                                       <AlertDialog>
                                                           <AlertDialogTrigger asChild>
-                                                            <Button size="sm" variant="destructive" onClick={()={() => setDeleteConfirmationText('')}}>Delete</Button>
+                                                            <Button size="sm" variant="destructive" onClick={() => setDeleteConfirmationText('')}>Delete</Button>
                                                           </AlertDialogTrigger>
                                                           <AlertDialogContent>
                                                           <AlertDialogHeader>
