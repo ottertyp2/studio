@@ -411,23 +411,23 @@
         }
       },
       {
-        "path": "/users/{userId}/sensor_configurations/{sensorConfigurationId}",
+        "path": "/sensor_configurations/{sensorConfigurationId}",
         "definition": {
           "entityName": "SensorConfiguration",
           "schema": { "$ref": "#/entities/SensorConfiguration" },
-          "description": "Stores sensor configurations for a specific user."
+          "description": "Global collection for all sensor configurations."
         }
       },
       {
-        "path": "/users/{userId}/test_sessions/{testSessionId}",
+        "path": "/test_sessions/{testSessionId}",
         "definition": {
           "entityName": "TestSession",
           "schema": { "$ref": "#/entities/TestSession" },
-          "description": "Stores test sessions for a specific user."
+          "description": "Global collection for all test sessions."
         }
       },
       {
-        "path": "/users/{userId}/test_sessions/{testSessionId}/sensor_data/{sensorDataId}",
+        "path": "/test_sessions/{testSessionId}/sensor_data/{sensorDataId}",
         "definition": {
           "entityName": "SensorData",
           "schema": { "$ref": "#/entities/SensorData" },
@@ -435,19 +435,19 @@
         }
       },
       {
-        "path": "/users/{userId}/batches/{batchId}",
+        "path": "/batches/{batchId}",
         "definition": {
           "entityName": "Batch",
           "schema": { "$ref": "#/entities/Batch" },
-          "description": "Stores production batches created by a specific user."
+          "description": "Global collection for all production batches."
         }
       },
       {
-        "path": "/users/{userId}/reports/{reportId}",
+        "path": "/reports/{reportId}",
         "definition": {
             "entityName": "Report",
             "schema": { "$ref": "#/entities/Report" },
-            "description": "Stores metadata for generated PDF reports for a specific user."
+            "description": "Global collection for all generated PDF reports."
         }
       },
       {
@@ -526,3 +526,5 @@
     ]
   }
 }
+
+    

@@ -313,7 +313,7 @@ function TestingComponent() {
     }
   
     const q = query(
-      collection(firestore, 'users', user.uid, 'test_sessions'),
+      collection(firestore, 'test_sessions'),
       where('batchId', '==', newSessionData.batchId)
     );
   
@@ -447,7 +447,7 @@ function TestingComponent() {
             toast({ variant: 'destructive', title: 'Missing Information', description: 'Please enter a name for the new batch.' });
             return;
         }
-        const batchCollectionRef = collection(firestore, 'users', user.uid, 'batches');
+        const batchCollectionRef = collection(firestore, 'batches');
         const newBatchId = doc(collection(firestore, '_')).id;
         const newBatchDoc: Batch = { id: newBatchId, name: newBatchName.trim(), vesselTypeId: newSessionData.vesselTypeId };
         try {
@@ -488,7 +488,7 @@ function TestingComponent() {
       username: user.displayName || user.email || 'Unknown User',
     };
     
-    const testSessionsCollectionRef = collection(firestore, 'users', user.uid, 'test_sessions');
+    const testSessionsCollectionRef = collection(firestore, 'test_sessions');
     let docRef: any = null;
     try {
         docRef = await addDocument(testSessionsCollectionRef, newSessionDocData);
@@ -517,7 +517,7 @@ function TestingComponent() {
     } catch (error: any) {
         toast({ variant: 'destructive', title: 'Failed to Start Session', description: error.message });
         if (docRef && firestore && user) {
-            await deleteDoc(doc(firestore, 'users', user.uid, 'test_sessions', docRef.id)).catch(delError => {
+            await deleteDoc(doc(firestore, 'test_sessions', docRef.id)).catch(delError => {
                 console.error("Cleanup failed: Could not delete orphaned session document.", delError);
             });
         }
@@ -557,7 +557,7 @@ function TestingComponent() {
     }
 
     try {
-        const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
+        const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
         const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
         const snapshot = await getDocs(q);
         const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
@@ -569,7 +569,7 @@ function TestingComponent() {
 
         const startResult = findMeasurementStart(sensorData, config, vesselType);
         if (!startResult) {
-            await setDocument(doc(firestore, `users/${session.userId}/test_sessions`, session.id), { classification: 'UNCLASSIFIABLE' }, { merge: true });
+            await setDocument(doc(firestore, `test_sessions`, session.id), { classification: 'UNCLASSIFIABLE' }, { merge: true });
             toast({ 
                 title: 'Classification: Unclassifiable', 
                 description: `Could not determine a valid measurement start point for this session.` 
@@ -581,7 +581,7 @@ function TestingComponent() {
         const { endIndex, isComplete } = findMeasurementEnd(sensorData, startIndex, config, vesselType);
         
         if (!isComplete) {
-            await setDocument(doc(firestore, `users/${session.userId}/test_sessions`, session.id), { classification: 'UNCLASSIFIABLE' }, { merge: true });
+            await setDocument(doc(firestore, `test_sessions`, session.id), { classification: 'UNCLASSIFIABLE' }, { merge: true });
             toast({ 
                 title: 'Classification: Unclassifiable', 
                 description: `Session did not run for the required duration of ${vesselType.durationSeconds}s.` 
@@ -625,7 +625,7 @@ function TestingComponent() {
 
         const classification = isFailed ? 'LEAK' : 'DIFFUSION';
         
-        await setDocument(doc(firestore, `users/${session.userId}/test_sessions`, session.id), { classification }, { merge: true });
+        await setDocument(doc(firestore, `test_sessions`, session.id), { classification }, { merge: true });
         toast({ 
             title: 'Classification Complete', 
             description: `Session classified as: ${classification === 'LEAK' ? 'Not Passed' : 'Passed'}.` 
@@ -655,7 +655,7 @@ function TestingComponent() {
 
     comparisonSessions.forEach(session => {
         const dataQuery = query(
-          collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`),
+          collection(firestore, `test_sessions/${session.id}/sensor_data`),
           orderBy('timestamp', 'asc')
         );
 
@@ -684,8 +684,8 @@ function TestingComponent() {
   const handleDeleteSession = async (session: WithId<TestSession>) => {
     if (!firestore) return;
 
-    const sessionRef = doc(firestore, 'users', session.userId, 'test_sessions', session.id);
-    const sensorDataRef = collection(firestore, 'users', session.userId, 'test_sessions', session.id, 'sensor_data');
+    const sessionRef = doc(firestore, 'test_sessions', session.id);
+    const sensorDataRef = collection(firestore, 'test_sessions', session.id, 'sensor_data');
 
     const batch = writeBatch(firestore);
 
@@ -870,14 +870,14 @@ function TestingComponent() {
       let sessionsToReport: WithId<TestSession>[] = [];
   
       if (config.type === 'single' && config.sessionId) {
-          const sessionDoc = await getDoc(doc(firestore, `users/${user.uid}/test_sessions`, config.sessionId));
+          const sessionDoc = await getDoc(doc(firestore, `test_sessions`, config.sessionId));
           if (sessionDoc.exists()) {
               sessionsToReport = [{ id: sessionDoc.id, ...sessionDoc.data() } as WithId<TestSession>];
           }
       } else if (config.type === 'custom') {
           sessionsToReport = comparisonSessions;
       } else if (config.type === 'batch' && config.batchId) {
-          const q = query(collection(firestore, `users/${user.uid}/test_sessions`), where('batchId', '==', config.batchId), where('status', '==', 'COMPLETED'));
+          const q = query(collection(firestore, `test_sessions`), where('batchId', '==', config.batchId), where('status', '==', 'COMPLETED'));
           const snapshot = await getDocs(q);
           sessionsToReport = snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as WithId<TestSession>);
       }
@@ -931,7 +931,7 @@ function TestingComponent() {
     
     try {
         if (reportConfig.type === 'single' && reportConfig.sessionId) {
-            const sessionDoc = await getDoc(doc(firestore, `users/${user.uid}/test_sessions`, reportConfig.sessionId));
+            const sessionDoc = await getDoc(doc(firestore, `test_sessions`, reportConfig.sessionId));
             if (!sessionDoc.exists()) throw new Error('Selected session not found.');
             const session = { id: sessionDoc.id, ...sessionDoc.data() } as WithId<TestSession>;
             sessionsToReport = [session];
@@ -943,11 +943,11 @@ function TestingComponent() {
             reportTitle = `Custom Multi-Vessel Pressure Test Report`;
             reportFilename = `report-custom-${new Date().toISOString().split('T')[0]}`;
         } else if (reportConfig.type === 'batch' && reportConfig.batchId) {
-            const batchDocRef = doc(firestore, `users/${user.uid}/batches`, reportConfig.batchId);
+            const batchDocRef = doc(firestore, `batches`, reportConfig.batchId);
             const batch = (await getDoc(batchDocRef)).data() as Batch | undefined;
             if (!batch) throw new Error('Selected batch not found.');
 
-            const q = query(collection(firestore, `users/${user.uid}/test_sessions`), where('batchId', '==', reportConfig.batchId), where('status', '==', 'COMPLETED'));
+            const q = query(collection(firestore, `test_sessions`), where('batchId', '==', reportConfig.batchId), where('status', '==', 'COMPLETED'));
             const snapshot = await getDocs(q);
             sessionsToReport = snapshot.docs.map(d => ({id: d.id, ...d.data()}) as WithId<TestSession>);
             if (sessionsToReport.length === 0) throw new Error('No completed sessions found for this batch.');
@@ -961,7 +961,7 @@ function TestingComponent() {
         setComparisonSessions(sessionsToReport);
         
         for (const session of sessionsToReport) {
-            const dataSnapshot = await getDocs(query(collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`), orderBy('timestamp')));
+            const dataSnapshot = await getDocs(query(collection(firestore, `test_sessions/${session.id}/sensor_data`), orderBy('timestamp')));
             allSensorDataForReport[session.id] = dataSnapshot.docs.map(d => d.data() as SensorData);
         }
         setComparisonData(allSensorDataForReport);
@@ -982,7 +982,7 @@ function TestingComponent() {
 
 
         const sessionsByVessel: Record<string, TestSession[]> = {};
-        const allTestSessionsSnapshot = await getDocs(collection(firestore, `users/${user.uid}/test_sessions`));
+        const allTestSessionsSnapshot = await getDocs(collection(firestore, `test_sessions`));
         const allTestSessions = allTestSessionsSnapshot.docs.map(d => ({id: d.id, ...d.data()}) as WithId<TestSession>);
 
         allTestSessions.forEach(session => {
@@ -1122,7 +1122,7 @@ function TestingComponent() {
     if (!user || !firestore) return;
     setIsHistoryLoading(true);
     const q = query(
-        collection(firestore, `users/${user.uid}/test_sessions`),
+        collection(firestore, `test_sessions`),
         orderBy('startTime', 'desc')
     );
     const unsubscribe = onSnapshot(q, 
@@ -1144,7 +1144,7 @@ function TestingComponent() {
         const sessionId = searchParams.get('sessionId');
         if (sessionId && firestore && user) {
             const fetchAndSetSession = async () => {
-                const sessionDocRef = doc(firestore, `users/${user.uid}/test_sessions`, sessionId);
+                const sessionDocRef = doc(firestore, `test_sessions`, sessionId);
                 try {
                     const sessionDoc = await getDoc(sessionDocRef);
                     if (sessionDoc.exists()) {

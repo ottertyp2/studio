@@ -28,6 +28,8 @@ export type VesselType = {
     minCurve: {x: number, y: number}[];
     maxCurve: {x: number, y: number}[];
     timeBufferInSeconds?: number;
+    preFlightLowerPressureLimit?: number;
+    preFlightUpperPressureLimit?: number;
 }
 
 
