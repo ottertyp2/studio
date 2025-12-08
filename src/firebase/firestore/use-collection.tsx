@@ -62,12 +62,6 @@ export function useCollection<T = any>(
   const [error, setError] = useState<FirestoreError | Error | null>(null);
 
   useEffect(() => {
-    console.log('[DEBUG useCollection IN]', {
-      targetRefOrQuery: memoizedTargetRefOrQuery,
-      type: typeof memoizedTargetRefOrQuery,
-      isNull: memoizedTargetRefOrQuery === null,
-      isUndefined: memoizedTargetRefOrQuery === undefined
-    });
     // This guard is the critical fix. If the query isn't ready, do nothing.
     if (!memoizedTargetRefOrQuery) {
       setIsLoading(false);
@@ -98,8 +92,6 @@ export function useCollection<T = any>(
             ? (memoizedTargetRefOrQuery as CollectionReference).path
             : (memoizedTargetRefOrQuery as unknown as InternalQuery)._query.path.canonicalString()
         
-        console.log('[DEBUG useCollection PATH]', { path });
-        
         const contextualError = new FirestorePermissionError({
           operation: 'list',
           path,
@@ -118,7 +110,6 @@ export function useCollection<T = any>(
   }, [memoizedTargetRefOrQuery]);
   
   if(memoizedTargetRefOrQuery && !memoizedTargetRefOrQuery.__memo) {
-    console.warn('The query/reference passed to useCollection was not memoized with useMemoFirebase. This can lead to performance issues and infinite loops.', memoizedTargetRefOrQuery);
   }
   return { data, isLoading, error };
 }
