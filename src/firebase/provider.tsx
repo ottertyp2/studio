@@ -88,7 +88,6 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
       database: servicesAvailable ? database : null,
     };
   }, [firebaseApp, firestore, auth, storage, database]);
-  console.log('[DEBUG FirebaseProvider]', { contextValue });
   return (
     <FirebaseContext.Provider value={contextValue}>
       <FirebaseErrorListener />
