@@ -211,57 +211,59 @@ export default function ValveControl({ onStopSession }: { onStopSession: () => v
             />
             <Separator />
             <div className="flex flex-col gap-2 pt-2">
-                {sequence1Running ? (
+              {sequence1Running ? (
+                <Button
+                  variant="destructive"
+                  onClick={() => handleSequence('sequence1', false)}
+                  disabled={!isConnected || isSequence1Locked}
+                  className="w-full"
+                >
+                  {isSequence1Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
+                  Stop
+                </Button>
+              ) : (
+                <ProtectedValveAction
+                  isSessionRunning={isSessionRunning}
+                  onConfirm={() => handleSequence('sequence1', true)}
+                  actionType="sequence"
+                  valveName="Pressure Test"
+                >
                   <Button
-                    variant="destructive"
-                    onClick={() => handleSequence('sequence1', false)}
-                    disabled={!isConnected || isSequence1Locked}
+                    disabled={!isConnected || sequence2Running || isSequence1Locked || isSessionRunning}
+                    className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md w-full"
                   >
-                    {isSequence1Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
-                    Stop
+                    {isSequence1Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GaugeCircle className="mr-2 h-4 w-4" />}
+                    Pressure Test
                   </Button>
-                ) : (
-                  <ProtectedValveAction
-                    isSessionRunning={isSessionRunning}
-                    onConfirm={() => handleSequence('sequence1', true)}
-                    actionType="sequence"
-                    valveName="Pressure Test"
-                  >
-                     <Button
-                        disabled={!isConnected || sequence2Running || isSequence1Locked || isSessionRunning}
-                        className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md w-full"
-                      >
-                        {isSequence1Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GaugeCircle className="mr-2 h-4 w-4" />}
-                        Pressure Test
-                      </Button>
-                  </ProtectedValveAction>
-                )}
+                </ProtectedValveAction>
+              )}
 
-                {sequence2Running ? (
+              {sequence2Running ? (
+                <Button
+                  variant="destructive"
+                  onClick={() => handleSequence('sequence2', false)}
+                  disabled={!isConnected || isSequence2Locked}
+                  className="w-full"
+                >
+                  {isSequence2Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
+                  Stop
+                </Button>
+              ) : (
+                <ProtectedValveAction
+                  isSessionRunning={isSessionRunning}
+                  onConfirm={() => handleSequence('sequence2', true)}
+                  actionType="sequence"
+                  valveName="Setup Test"
+                >
                   <Button
-                    variant="destructive"
-                    onClick={() => handleSequence('sequence2', false)}
-                    disabled={!isConnected || isSequence2Locked}
+                    disabled={!isConnected || sequence1Running || isSequence2Locked || isSessionRunning}
+                    className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md w-full"
                   >
-                    {isSequence2Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
-                    Stop
+                    {isSequence2Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <SlidersHorizontal className="mr-2 h-4 w-4" />}
+                    Setup Test
                   </Button>
-                ) : (
-                  <ProtectedValveAction
-                    isSessionRunning={isSessionRunning}
-                    onConfirm={() => handleSequence('sequence2', true)}
-                    actionType="sequence"
-                    valveName="Setup Test"
-                  >
-                     <Button
-                        disabled={!isConnected || sequence1Running || isSequence2Locked || isSessionRunning}
-                        className="transition-all btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md w-full"
-                      >
-                        {isSequence2Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <SlidersHorizontal className="mr-2 h-4 w-4" />}
-                        Setup Test
-                      </Button>
-                  </ProtectedValveAction>
-                )}
+                </ProtectedValveAction>
+              )}
             </div>
         </CardContent>
     </Card>
