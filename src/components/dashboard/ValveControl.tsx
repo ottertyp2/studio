@@ -214,7 +214,7 @@ export default function ValveControl({ onStopSession }: { onStopSession: () => v
                     disabled={!isConnected || isSequence1Locked}
                   >
                     {isSequence1Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
-                    Stop Pressure Test
+                    Stop
                   </Button>
                 ) : (
                   <ProtectedValveAction
@@ -240,7 +240,7 @@ export default function ValveControl({ onStopSession }: { onStopSession: () => v
                     disabled={!isConnected || isSequence2Locked}
                   >
                     {isSequence2Locked ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
-                    Stop Setup Test
+                    Stop
                   </Button>
                 ) : (
                   <ProtectedValveAction
