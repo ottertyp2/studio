@@ -381,7 +381,7 @@ export default function AdminPage() {
   
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
     if (!firestore || !user || !isAuthReady) return null;
-    return collection(firestore, `users/${user.uid}/sensor_configurations`);
+    return collectionGroup(firestore, `sensor_configurations`);
   }, [firestore, user, isAuthReady]);
 
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading, error: sensorConfigsError } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
@@ -392,10 +392,10 @@ export default function AdminPage() {
 
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user || !isAuthReady || !user.uid) return null;
+    if (!firestore || !user || !isAuthReady) return null;
     const sessionsGroup = collectionGroup(firestore, 'test_sessions');
     return query(sessionsGroup, orderBy('startTime', 'desc'));
-  }, [firestore, user, isAuthReady, user?.uid]);
+  }, [firestore, user, isAuthReady]);
 
   const { data: testSessions, isLoading: isTestSessionsLoading, error: testSessionsError } = useCollection<TestSession>(testSessionsCollectionRef);
   

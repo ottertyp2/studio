@@ -62,7 +62,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
   // Pre-fetch vessel types and sensor configs
   useEffect(() => {
-    if (!firestore) return;
+    if (!firestore || !user) return; // Wait for user to be authenticated
     
     const unsubVesselTypes = onSnapshot(collection(firestore, 'vessel_types'), (snapshot) => {
         const types = snapshot.docs.map(doc => {
@@ -85,7 +85,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         unsubVesselTypes();
         unsubSensorConfigs();
     };
-  }, [firestore]);
+  }, [firestore, user]); // Add user to dependency array
   
   const stopSession = useCallback(() => {
     // Clear all timers related to session and pre-flight
