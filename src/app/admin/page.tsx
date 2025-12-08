@@ -1367,18 +1367,16 @@ export default function AdminPage() {
 
             const data = allSensorData[session.id] || [];
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
-            const vt = vesselTypes?.find(v => v.id === session.vesselTypeId);
             
-            let analysisData: SensorData[] = [];
+            let analysisData: SensorData[] = data;
+            const vt = vesselTypes?.find(v => v.id === session.vesselTypeId);
             if (data.length > 0 && config && vt) {
                 const startResult = findMeasurementStart(data, config, vt);
                 if (startResult) {
-                    const endResult = findMeasurementEnd(data, startResult.startIndex, config, vt);
-                    const endIndex = endResult.isComplete ? endResult.endIndex : data.length - 1;
-                    analysisData = data.slice(startResult.startIndex, endIndex + 1);
+                    analysisData = data.slice(startResult.startIndex);
                 }
             }
-            
+
             const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(session.startTime).getTime();
             const sessionEndTime = analysisData.length > 0 ? new Date(analysisData[analysisData.length - 1].timestamp).getTime() : (session.endTime ? new Date(session.endTime).getTime() : sessionStartTime);
             const duration = ((sessionEndTime - sessionStartTime) / 1000).toFixed(1);
