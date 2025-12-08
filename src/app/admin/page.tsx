@@ -276,7 +276,6 @@ async function serializeWeights(tensors: tf.Tensor[]): Promise<string> {
 
 
 export default function AdminPage() {
-  console.log('[AdminPage] Component Mounting...');
   const router = useRouter();
   const { toast } = useToast();
 
@@ -393,7 +392,7 @@ export default function AdminPage() {
 
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user || !isAuthReady) return null;
+    if (!firestore || !user || !isAuthReady || !user.uid) return null;
     const sessionsGroup = collectionGroup(firestore, 'test_sessions');
     return query(sessionsGroup, orderBy('startTime', 'desc'));
   }, [firestore, user, isAuthReady, user?.uid]);
