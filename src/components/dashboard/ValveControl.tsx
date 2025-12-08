@@ -178,14 +178,18 @@ export default function ValveControl({ onStopSession }: { onStopSession: () => v
                     </CardDescription>
                     <SessionTimer onStopSession={onStopSession}/>
                 </>
-            ) : !isConnected && (
-               <CardDescription className="text-xs">Connect a device to enable controls.</CardDescription>
+            ) : (
+              <>
+                {!isConnected && (
+                  <CardDescription className="text-xs">Connect a device to enable controls.</CardDescription>
+                )}
+              </>
             )}
+             <p className="text-xs text-center text-muted-foreground pt-2">
+                Manual controls are for debugging. For a recorded test, use "Start New Test Session".
+            </p>
         </CardHeader>
         <CardContent className="p-4 pt-0 space-y-3">
-            <p className="text-xs text-center text-muted-foreground p-2 bg-muted/50 rounded-md">
-                Manual controls are for setup and debugging. For a recorded test, please use the "Start New Test Session" button.
-            </p>
             <ValveRow 
                 valveName="Valve 1"
                 valveId="VALVE1"
