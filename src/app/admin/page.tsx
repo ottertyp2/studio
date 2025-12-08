@@ -1,3 +1,4 @@
+
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -1249,7 +1250,7 @@ export default function AdminPage() {
         }
 
         const allSensorData: Record<string, SensorData[]> = {};
-        const measurementWindows: Record<string, { startIndex: number; endIndex: number; }> = {};
+        const measurementWindows: Record<string, { startIndex: number; endIndex: number; isComplete: boolean; startResult: any; }> = {};
 
         for (const session of relevantSessions) {
             const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
@@ -1259,23 +1260,19 @@ export default function AdminPage() {
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
             const vt = vesselTypes?.find(v => v.id === session.vesselTypeId);
             
+            allSensorData[session.id] = sensorData;
+
             if (sensorData.length > 0 && config && vt) {
-                allSensorData[session.id] = sensorData;
                 const startResult = findMeasurementStart(sensorData, config, vt);
                 if (startResult) {
-                    const { startIndex } = startResult;
-                    let { endIndex, isComplete } = findMeasurementEnd(sensorData, startIndex, config, vt);
-
-                    if (!isComplete || endIndex === -1) {
-                        endIndex = sensorData.length - 1;
-                    }
-
-                    if (endIndex > startIndex) {
-                       measurementWindows[session.id] = { startIndex, endIndex };
-                    }
+                    const endResult = findMeasurementEnd(sensorData, startResult.startIndex, config, vt);
+                    measurementWindows[session.id] = { 
+                        startIndex: startResult.startIndex, 
+                        endIndex: endResult.endIndex,
+                        isComplete: endResult.isComplete,
+                        startResult: startResult
+                    };
                 }
-            } else {
-                allSensorData[session.id] = [];
             }
         }
         
@@ -1385,7 +1382,11 @@ export default function AdminPage() {
             const data = allSensorData[session.id] || [];
             const config = sensorConfigs?.find(c => c.id === session.sensorConfigurationId);
             const window = measurementWindows[session.id];
-            const analysisData = (window) ? allSensorData[session.id].slice(window.startIndex, window.endIndex + 1) : [];
+
+            let analysisData: SensorData[] = [];
+            if (window) {
+                analysisData = data.slice(window.startIndex, window.endIndex + 1);
+            }
             
             const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(session.startTime).getTime();
             const sessionEndTime = analysisData.length > 0 ? new Date(analysisData[analysisData.length - 1].timestamp).getTime() : (session.endTime ? new Date(session.endTime).getTime() : sessionStartTime);
@@ -3122,7 +3123,7 @@ const renderAIModelManagement = () => {
                                                       <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
                                                       <AlertDialog>
                                                           <AlertDialogTrigger asChild>
-                                                            <Button size="sm" variant="destructive" onClick={() => setDeleteConfirmationText('')}>Delete</Button>
+                                                            <Button size="sm" variant="destructive" onClick={()={() => setDeleteConfirmationText('')}>Delete</Button>
                                                           </AlertDialogTrigger>
                                                           <AlertDialogContent>
                                                           <AlertDialogHeader>
@@ -3170,3 +3171,5 @@ const renderAIModelManagement = () => {
     </div>
   );
 }
+
+    
