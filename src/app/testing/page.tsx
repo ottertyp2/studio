@@ -1,5 +1,4 @@
 
-
       
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
@@ -186,6 +185,14 @@ type ReportConfig = {
     batchId?: string;
 };
 
+type NewSessionData = {
+    vesselTypeId: string;
+    batchId: string;
+    serialNumber: string;
+    description: string;
+    sensorConfigurationId: string;
+};
+
 
 const CHART_COLORS = [
   'hsl(var(--chart-1))',
@@ -240,7 +247,7 @@ function TestingComponent() {
   const [activeTestBench, setActiveTestBench] = useState<WithId<TestBench> | null>(null);
   
   const [isNewSessionDialogOpen, setIsNewSessionDialogOpen] = useState(false);
-  const [newSessionData, setNewSessionData] = useState({ vesselTypeId: '', batchId: '', serialNumber: '', description: '', sensorConfigurationId: '' });
+  const [newSessionData, setNewSessionData] = useState<NewSessionData>({ vesselTypeId: '', batchId: '', serialNumber: '', description: '', sensorConfigurationId: '' });
   const [newBatchName, setNewBatchName] = useState('');
   
   const [comparisonSessions, setComparisonSessions] = useState<WithId<TestSession>[]>([]);
@@ -281,6 +288,10 @@ function TestingComponent() {
 
   const [displaySensorConfigId, setDisplaySensorConfigId] = useState<string | null>(null);
   const [testedBatchCounts, setTestedBatchCounts] = useState<number[]>([]);
+  
+  const [isOfflineConfirmOpen, setIsOfflineConfirmOpen] = useState(false);
+  const [sessionToStart, setSessionToStart] = useState<NewSessionData | null>(null);
+
 
   // Data fetching hooks
   const testBenchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'testbenches') : null, [firestore]);
@@ -419,16 +430,25 @@ function TestingComponent() {
     };
   }, [runningTestSession]);
 
-  const handleStartSession = async () => {
-    if (!user || !activeTestBench || !newSessionData.sensorConfigurationId || !newSessionData.vesselTypeId || !database || !firestore || !vesselTypes) {
+    const handleAttemptStartSession = () => {
+        if (!isConnected) {
+            setSessionToStart(newSessionData);
+            setIsOfflineConfirmOpen(true);
+        } else {
+            handleStartSession(newSessionData);
+        }
+    };
+
+  const handleStartSession = async (sessionData: NewSessionData) => {
+    if (!user || !activeTestBench || !sessionData.sensorConfigurationId || !sessionData.vesselTypeId || !database || !firestore || !vesselTypes) {
         toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select a test bench, sensor, and vessel type.' });
         return;
     }
-    if (newSessionData.batchId === '' && newBatchName.trim() === '') {
+    if (sessionData.batchId === '' && newBatchName.trim() === '') {
         toast({ variant: 'destructive', title: 'Missing Information', description: 'Please select or create a BatchID.' });
         return;
     }
-    if (!newSessionData.serialNumber.trim()) {
+    if (!sessionData.serialNumber.trim()) {
         toast({ variant: 'destructive', title: 'Missing Information', description: 'BatchCount is required.' });
         return;
     }
@@ -446,21 +466,21 @@ function TestingComponent() {
         return;
     }
     
-    const vesselType = vesselTypes.find(vt => vt.id === newSessionData.vesselTypeId);
+    const vesselType = vesselTypes.find(vt => vt.id === sessionData.vesselTypeId);
     if (!vesselType) {
         toast({ variant: 'destructive', title: 'Error', description: 'Selected vessel type not found. Please refresh and try again.' });
         return;
     }
     
-    let finalBatchId = newSessionData.batchId;
-    if (newSessionData.batchId === 'CREATE_NEW_BATCH') {
+    let finalBatchId = sessionData.batchId;
+    if (sessionData.batchId === 'CREATE_NEW_BATCH') {
         if (!newBatchName.trim()) {
             toast({ variant: 'destructive', title: 'Missing Information', description: 'Please enter a name for the new batch.' });
             return;
         }
         const batchCollectionRef = collection(firestore, 'batches');
         const newBatchId = doc(collection(firestore, '_')).id;
-        const newBatchDoc: Batch = { id: newBatchId, name: newBatchName.trim(), vesselTypeId: newSessionData.vesselTypeId };
+        const newBatchDoc: Batch = { id: newBatchId, name: newBatchName.trim(), vesselTypeId: sessionData.vesselTypeId };
         try {
             await setDoc(doc(batchCollectionRef, newBatchId), newBatchDoc);
             finalBatchId = newBatchId;
@@ -471,7 +491,7 @@ function TestingComponent() {
         }
     }
     
-    const serialNumberValue = parseInt(newSessionData.serialNumber.trim(), 10);
+    const serialNumberValue = parseInt(sessionData.serialNumber.trim(), 10);
     if (isNaN(serialNumberValue)) {
         toast({ variant: 'destructive', title: 'Invalid BatchCount', description: `BatchCount must be a numeric value.` });
         return;
@@ -485,15 +505,15 @@ function TestingComponent() {
     setComparisonSessions([]);
 
     const newSessionDocData: Omit<TestSession, 'id'> = {
-      vesselTypeId: newSessionData.vesselTypeId,
+      vesselTypeId: sessionData.vesselTypeId,
       vesselTypeName: vesselType.name,
       batchId: finalBatchId,
-      serialNumber: newSessionData.serialNumber.trim(),
-      description: newSessionData.description,
+      serialNumber: sessionData.serialNumber.trim(),
+      description: sessionData.description,
       startTime: new Date().toISOString(),
       status: 'RUNNING',
       testBenchId: activeTestBench.id,
-      sensorConfigurationId: newSessionData.sensorConfigurationId,
+      sensorConfigurationId: sessionData.sensorConfigurationId,
       measurementType: 'ARDUINO',
       userId: user.uid,
       username: user.displayName || user.email || 'Unknown User',
@@ -507,7 +527,7 @@ function TestingComponent() {
       
         startSessionInContext(newSessionWithId);
         
-        const sensorConfig = sensorConfigs?.find(sc => sc.id === newSessionData.sensorConfigurationId);
+        const sensorConfig = sensorConfigs?.find(sc => sc.id === sessionData.sensorConfigurationId);
         if (sensorConfig) {
           await sendMovingAverageCommand(sensorConfig.movingAverageLength || 10);
         }
@@ -1555,7 +1575,7 @@ function TestingComponent() {
                                     </div>
                                 </div>
                                 <DialogFooter>
-                                    <Button onClick={handleStartSession} disabled={isStartSessionDisabled}>Start Session</Button>
+                                    <Button onClick={handleAttemptStartSession} disabled={isStartSessionDisabled}>Start Session</Button>
                                 </DialogFooter>
                             </DialogContent>
                         </Dialog>
@@ -1972,6 +1992,28 @@ function TestingComponent() {
         </div>
       </main>
 
+        <AlertDialog open={isOfflineConfirmOpen} onOpenChange={setIsOfflineConfirmOpen}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Device Offline</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        The Arduino is currently offline. Starting a session now will likely result in an empty test with no data. Are you sure you want to proceed?
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => setSessionToStart(null)}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => {
+                        if (sessionToStart) {
+                            handleStartSession(sessionToStart);
+                            setSessionToStart(null);
+                        }
+                    }}>
+                        Start Anyway
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+
         <AlertDialog open={isUnclassifiedReportConfirmOpen} onOpenChange={setIsUnclassifiedReportConfirmOpen}>
             <AlertDialogContent>
                 <AlertDialogHeader>
@@ -2031,3 +2073,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
