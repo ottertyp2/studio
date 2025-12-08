@@ -414,7 +414,7 @@ export default function AdminPage() {
     }
     const sessionsGroup = collectionGroup(firestore, 'test_sessions');
     return query(sessionsGroup, orderBy('startTime', 'desc'));
-}, [firestore, user, isAuthReady]);
+}, [firestore, user, isAuthReady, user?.uid]);
 
   const { data: testSessions, isLoading: isTestSessionsLoading, error: testSessionsError } = useCollection<TestSession>(testSessionsCollectionRef);
   
