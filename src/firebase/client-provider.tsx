@@ -1,4 +1,3 @@
-
 'use client';
 
 import { ReactNode } from 'react';
@@ -30,6 +29,7 @@ export const FirebaseClientProvider: React.FC<FirebaseClientProviderProps> = ({
   storage,
   database,
 }) => {
+  console.log('[DEBUG ClientProvider]', { children });
   return (
     <FirebaseProvider
       firebaseApp={firebaseApp}
@@ -42,3 +42,4 @@ export const FirebaseClientProvider: React.FC<FirebaseClientProviderProps> = ({
     </FirebaseProvider>
   );
 };
+    

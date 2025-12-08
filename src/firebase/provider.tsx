@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect } from 'react';
@@ -89,7 +88,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
       database: servicesAvailable ? database : null,
     };
   }, [firebaseApp, firestore, auth, storage, database]);
-
+  console.log('[DEBUG FirebaseProvider]', { contextValue });
   return (
     <FirebaseContext.Provider value={contextValue}>
       <FirebaseErrorListener />
@@ -219,3 +218,4 @@ export const useUser = (): UserHookResult => {
 
   return { user, userRole, isUserLoading, isAuthReady, userError };
 };
+    

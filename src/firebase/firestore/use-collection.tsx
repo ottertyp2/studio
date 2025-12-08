@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -63,6 +62,12 @@ export function useCollection<T = any>(
   const [error, setError] = useState<FirestoreError | Error | null>(null);
 
   useEffect(() => {
+    console.log('[DEBUG useCollection IN]', {
+      targetRefOrQuery: memoizedTargetRefOrQuery,
+      type: typeof memoizedTargetRefOrQuery,
+      isNull: memoizedTargetRefOrQuery === null,
+      isUndefined: memoizedTargetRefOrQuery === undefined
+    });
     // This guard is the critical fix. If the query isn't ready, do nothing.
     if (!memoizedTargetRefOrQuery) {
       setData(null);
@@ -92,7 +97,9 @@ export function useCollection<T = any>(
           memoizedTargetRefOrQuery.type === 'collection'
             ? (memoizedTargetRefOrQuery as CollectionReference).path
             : (memoizedTargetRefOrQuery as unknown as InternalQuery)._query.path.canonicalString()
-
+        
+        console.log('[DEBUG useCollection PATH]', { path });
+        
         const contextualError = new FirestorePermissionError({
           operation: 'list',
           path,

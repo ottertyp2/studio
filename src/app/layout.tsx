@@ -1,4 +1,3 @@
-
 'use client';
 import './globals.css';
 import { Inter } from 'next/font/google';
@@ -19,6 +18,7 @@ export default function RootLayout({
 }>) {
   const { firebaseApp, firestore, auth, storage, database } = initializeFirebase();
   const version = packageJson.version;
+  console.log('[DEBUG Layout]', { children });
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -55,3 +55,4 @@ export default function RootLayout({
     </html>
   );
 }
+    
