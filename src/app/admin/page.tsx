@@ -1384,8 +1384,9 @@ export default function AdminPage() {
             const window = measurementWindows[session.id];
 
             let analysisData: SensorData[] = [];
-            if (window) {
-                analysisData = data.slice(window.startIndex, window.endIndex + 1);
+            if (window?.start) {
+              const endIndex = window.end?.isComplete ? window.end.endIndex : data.length - 1;
+              analysisData = data.slice(window.start.startIndex, endIndex + 1);
             }
             
             const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(session.startTime).getTime();
@@ -2400,8 +2401,10 @@ export default function AdminPage() {
                                 </DropdownMenu>
                                 </div>
                             </div>
-                        </Card>
-                    )})}
+                        </div>
+                    </Card>
+                    )
+                })}
                 </div>
               ) : (
                  <p className="text-sm text-muted-foreground text-center pt-10">No test sessions found.</p>
@@ -3123,7 +3126,7 @@ const renderAIModelManagement = () => {
                                                       <Button size="sm" variant="outline" onClick={() => setTempSensorConfig(c)}>Edit</Button>
                                                       <AlertDialog>
                                                           <AlertDialogTrigger asChild>
-                                                            <Button size="sm" variant="destructive" onClick={()={() => setDeleteConfirmationText('')}>Delete</Button>
+                                                            <Button size="sm" variant="destructive" onClick={()={() => setDeleteConfirmationText('')}}>Delete</Button>
                                                           </AlertDialogTrigger>
                                                           <AlertDialogContent>
                                                           <AlertDialogHeader>
@@ -3171,5 +3174,3 @@ const renderAIModelManagement = () => {
     </div>
   );
 }
-
-    
