@@ -393,7 +393,7 @@ export default function AdminPage() {
     return collection(firestore, 'testbenches');
 }, [firestore, user, isAuthReady]);
 
-  const { data: testBenches, isLoading: isTestBenchesLoading, error: isTestBenchesLoading } = useCollection<TestBench>(testBenchesCollectionRef);
+  const { data: testBenches, isLoading: isTestBenchesLoading, error: testBenchesError } = useCollection<TestBench>(testBenchesCollectionRef);
 
 
   const vesselTypesCollectionRef = useMemoFirebase(() => {
@@ -2393,7 +2393,7 @@ export default function AdminPage() {
                             </div>
                         </div>
                     </Card>
-                    )
+                  )
                 })}
                 </div>
               ) : (
