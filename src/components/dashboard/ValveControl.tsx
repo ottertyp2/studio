@@ -184,6 +184,9 @@ export default function ValveControl({ onStopSession }: { onStopSession: () => v
             )}
         </CardHeader>
         <CardContent className="p-4 pt-0 space-y-3">
+            <p className="text-xs text-center text-muted-foreground p-2 bg-muted/50 rounded-md">
+                Manual controls are for setup and debugging. For a recorded test, please use the "Start New Test Session" button.
+            </p>
             <ValveRow 
                 valveName="Valve 1"
                 valveId="VALVE1"
