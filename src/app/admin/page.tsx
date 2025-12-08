@@ -330,7 +330,7 @@ export default function AdminPage() {
         console.log('[NULL REF batches]');
         return null;
     }
-    return collectionGroup(firestore, 'batches');
+    return collection(firestore, 'batches');
 }, [firestore, user, isAuthReady]);
   const { data: batches, isLoading: isBatchesLoading, error: batchesError } = useCollection<Batch>(batchesCollectionRef);
   
@@ -396,7 +396,7 @@ export default function AdminPage() {
         console.log('[NULL REF sensorConfigs]');
         return null;
     }
-    return collectionGroup(firestore, `sensor_configurations`);
+    return collection(firestore, `sensor_configurations`);
   }, [firestore, user, isAuthReady]);
 
   const { data: sensorConfigs, isLoading: isSensorConfigsLoading, error: sensorConfigsError } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
@@ -412,9 +412,8 @@ export default function AdminPage() {
         console.log('[NULL REF testSessions]');
         return null;
     }
-    const sessionsGroup = collectionGroup(firestore, 'test_sessions');
-    return query(sessionsGroup, orderBy('startTime', 'desc'));
-}, [firestore, user, isAuthReady, user?.uid]);
+    return query(collection(firestore, 'test_sessions'), orderBy('startTime', 'desc'));
+}, [firestore, user, isAuthReady]);
 
   const { data: testSessions, isLoading: isTestSessionsLoading, error: testSessionsError } = useCollection<TestSession>(testSessionsCollectionRef);
   
@@ -489,7 +488,7 @@ export default function AdminPage() {
     const unsubscribers: (() => void)[] = [];
 
     testSessions.forEach(session => {
-        const sensorDataRef = collection(firestore, 'users', session.userId, 'test_sessions', session.id, 'sensor_data');
+        const sensorDataRef = collection(firestore, 'test_sessions', session.id, 'sensor_data');
         
         const unsubscribe = onSnapshot(sensorDataRef, (snapshot) => {
             setSessionDataCounts(prevCounts => ({
@@ -541,7 +540,7 @@ export default function AdminPage() {
     if (!firestore) return;
     const batch = writeBatch(firestore);
 
-    const configsQuery = query(collectionGroup(firestore, 'sensor_configurations'), where('testBenchId', '==', benchId));
+    const configsQuery = query(collection(firestore, 'sensor_configurations'), where('testBenchId', '==', benchId));
     const configsSnapshot = await getDocs(configsQuery);
 
     configsSnapshot.forEach(configDoc => {
@@ -644,7 +643,7 @@ export default function AdminPage() {
       movingAverageLength: typeof tempSensorConfig.movingAverageLength === 'number' ? tempSensorConfig.movingAverageLength : 10,
     };
 
-    const configRef = doc(firestore, `users/${user.uid}/sensor_configurations`, configId);
+    const configRef = doc(firestore, `sensor_configurations`, configId);
     await setDocumentNonBlocking(configRef, configToSave, { merge: true });
 
     // Also update the RTDB command value
@@ -697,7 +696,7 @@ export default function AdminPage() {
 
     const batch = writeBatch(firestore);
 
-    const sessionsQuery = query(collectionGroup(firestore, 'test_sessions'), where('sensorConfigurationId', '==', configId));
+    const sessionsQuery = query(collection(firestore, 'test_sessions'), where('sensorConfigurationId', '==', configId));
     const sessionsSnapshot = await getDocs(sessionsQuery);
 
     for (const sessionDoc of sessionsSnapshot.docs) {
@@ -709,7 +708,7 @@ export default function AdminPage() {
       batch.delete(sessionDoc.ref);
     }
 
-    const configRef = doc(firestore, `users/${ownerId}/sensor_configurations`, configId);
+    const configRef = doc(firestore, `sensor_configurations`, configId);
     batch.delete(configRef);
 
     try {
@@ -724,7 +723,7 @@ export default function AdminPage() {
   
   const handleStopTestSession = (session: TestSession) => {
       if (!firestore) return;
-      const sessionRef = doc(firestore, 'users', session.userId, 'test_sessions', session.id);
+      const sessionRef = doc(firestore, 'test_sessions', session.id);
       updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
       toast({title: 'Test Session Ended'});
   };
@@ -733,14 +732,14 @@ export default function AdminPage() {
     if (!firestore) return;
     const batch = writeBatch(firestore);
 
-    const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
+    const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
     try {
         const querySnapshot = await getDocs(sensorDataRef);
         querySnapshot.docs.forEach(doc => {
             batch.delete(doc.ref);
         });
         
-        const sessionRef = doc(firestore, `users/${session.userId}/test_sessions`, session.id);
+        const sessionRef = doc(firestore, `test_sessions`, session.id);
         batch.delete(sessionRef);
 
         await batch.commit();
@@ -759,7 +758,7 @@ export default function AdminPage() {
 
   const handleSetSessionClassification = (session: TestSession, classification: 'LEAK' | 'DIFFUSION' | 'UNCLASSIFIABLE' | null) => {
     if (!firestore) return;
-    const sessionRef = doc(firestore, 'users', session.userId, 'test_sessions', session.id);
+    const sessionRef = doc(firestore, 'test_sessions', session.id);
     const updateData: { classification: 'LEAK' | 'DIFFUSION' | 'UNCLASSIFIABLE' | null } = { classification };
     
     if (classification === null) {
@@ -772,7 +771,7 @@ export default function AdminPage() {
   const handleAssignSessionToBatch = (session: TestSession, newBatchId: string) => {
     if (!firestore) return;
     const batchName = batches?.find(b => b.id === newBatchId)?.name || 'Unknown';
-    const sessionRef = doc(firestore, 'users', session.userId, 'test_sessions', session.id);
+    const sessionRef = doc(firestore, 'test_sessions', session.id);
     
     if (newBatchId === '') {
        updateDocumentNonBlocking(sessionRef, { batchId: '' });
@@ -803,7 +802,7 @@ export default function AdminPage() {
     }
 
     try {
-        const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
+        const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
         const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
         const snapshot = await getDocs(q);
         const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
@@ -1129,7 +1128,7 @@ export default function AdminPage() {
     const batchCmd = writeBatch(firestore);
     
     // Find all test sessions that use this vessel type across all users
-    const sessionsQuery = query(collectionGroup(firestore, 'test_sessions'), where('vesselTypeId', '==', vesselTypeId));
+    const sessionsQuery = query(collection(firestore, 'test_sessions'), where('vesselTypeId', '==', vesselTypeId));
     const sessionsSnapshot = await getDocs(sessionsQuery);
     
     for (const sessionDoc of sessionsSnapshot.docs) {
@@ -1355,7 +1354,7 @@ export default function AdminPage() {
         const measurementWindows: Record<string, { startIndex: number; endIndex: number; }> = {};
 
         for (const session of relevantSessions) {
-            const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
+            const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
             const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
             const snapshot = await getDocs(q);
             const sensorData = snapshot.docs.map(doc => doc.data() as SensorData);
@@ -1596,7 +1595,7 @@ export default function AdminPage() {
       return;
     }
   
-    const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
+    const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
     const q = query(sensorDataRef, orderBy("timestamp", "asc"));
     const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
     
@@ -1652,7 +1651,7 @@ export default function AdminPage() {
     try {
       let allCsvData: any[] = [];
       for (const session of filteredAndSortedSessions) {
-        const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
+        const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
         const q = query(sensorDataRef, orderBy("timestamp", "asc"));
         const config = sensorConfigs.find(c => c.id === session.sensorConfigurationId);
         
@@ -1732,7 +1731,7 @@ export default function AdminPage() {
                         toast({ title: "Created New Vessel Type", description: `Created "${newVesselType.name}" from imported session.` });
                     }
 
-                    const sessionRef = doc(firestore, `users/${user.uid}/test_sessions`, firstRow.id);
+                    const sessionRef = doc(firestore, `test_sessions`, firstRow.id);
 
                     const sessionDoc: Omit<TestSession, 'classification'> & { classification?: 'LEAK' | 'DIFFUSION' | 'UNCLASSIFIABLE' | undefined } = {
                         id: firstRow.id,
@@ -1812,7 +1811,7 @@ export default function AdminPage() {
             const session = classifiedSessions[i];
             setAutomatedTrainingStatus({ step: 'Preparing Data', progress: (i / classifiedSessions.length) * 20, details: `Processing session ${i + 1}/${classifiedSessions.length}` });
 
-            const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
+            const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
             const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
             const snapshot = await getDocs(q);
             const dataPoints = snapshot.docs.map(d => d.data().value);
@@ -1914,7 +1913,7 @@ export default function AdminPage() {
         
         const model = await tf.models.modelFromJSON(activeModel.modelData.modelTopology as any, {weightData: weightData});
 
-        const sensorDataRef = collection(firestore, `users/${session.userId}/test_sessions/${session.id}/sensor_data`);
+        const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
         const q = query(sensorDataRef, orderBy('timestamp', 'asc'));
         const snapshot = await getDocs(q);
         const sensorDataValues = snapshot.docs.map(doc => doc.data().value);
@@ -3260,4 +3259,6 @@ const renderAIModelManagement = () => {
     </div>
   );
 }
+    
+
     

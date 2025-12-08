@@ -70,8 +70,8 @@ export function useCollection<T = any>(
     });
     // This guard is the critical fix. If the query isn't ready, do nothing.
     if (!memoizedTargetRefOrQuery) {
-      setData(null);
       setIsLoading(false);
+      setData(null);
       setError(null);
       return;
     }
@@ -122,4 +122,6 @@ export function useCollection<T = any>(
   }
   return { data, isLoading, error };
 }
+    
+
     
