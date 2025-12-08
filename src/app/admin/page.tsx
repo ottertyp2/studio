@@ -1,4 +1,3 @@
-
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -1261,6 +1260,7 @@ export default function AdminPage() {
             const vt = vesselTypes?.find(v => v.id === session.vesselTypeId);
             
             if (sensorData.length > 0 && config && vt) {
+                allSensorData[session.id] = sensorData;
                 const startResult = findMeasurementStart(sensorData, config, vt);
                 if (startResult) {
                     const { startIndex } = startResult;
@@ -1272,12 +1272,7 @@ export default function AdminPage() {
 
                     if (endIndex > startIndex) {
                        measurementWindows[session.id] = { startIndex, endIndex };
-                       allSensorData[session.id] = sensorData;
-                    } else {
-                       allSensorData[session.id] = [];
                     }
-                } else {
-                    allSensorData[session.id] = [];
                 }
             } else {
                 allSensorData[session.id] = [];
@@ -1398,10 +1393,10 @@ export default function AdminPage() {
 
             const decimalPlaces = config?.decimalPlaces || 2;
             let startValue = 'N/A', endValue = 'N/A', avgValue = 'N/A';
-            if (analysisData.length > 0) {
-                startValue = convertRawValue(analysisData[0].value, config || null).toFixed(decimalPlaces);
-                endValue = convertRawValue(analysisData[analysisData.length - 1].value, config || null).toFixed(decimalPlaces);
-                const sum = analysisData.reduce((acc, d) => acc + convertRawValue(d.value, config || null), 0);
+            if (analysisData.length > 0 && config) {
+                startValue = convertRawValue(analysisData[0].value, config).toFixed(decimalPlaces);
+                endValue = convertRawValue(analysisData[analysisData.length - 1].value, config).toFixed(decimalPlaces);
+                const sum = analysisData.reduce((acc, d) => acc + convertRawValue(d.value, config), 0);
                 avgValue = (sum / analysisData.length).toFixed(decimalPlaces);
             }
             
@@ -2404,9 +2399,8 @@ export default function AdminPage() {
                                 </DropdownMenu>
                                 </div>
                             </div>
-                        </div>
-                    </Card>
-                )})}
+                        </Card>
+                    )})}
                 </div>
               ) : (
                  <p className="text-sm text-muted-foreground text-center pt-10">No test sessions found.</p>
@@ -3153,31 +3147,26 @@ const renderAIModelManagement = () => {
                                                           </AlertDialogContent>
                                                       </AlertDialog>
                                                   </div>
-                                              </div>
-                                          </Card>
+                                              </div></Card>
                                       ))}
                                   </div>
                               </ScrollArea>
                               }
-                              {renderSensorConfigurator()}
                           </AccordionContent>
                       </AccordionItem>
                   </Accordion>
               </Card>
-               {renderAIModelManagement()}
+              {renderAIModelManagement()}
           </div>
-          <div className="lg:col-span-2 space-y-6">
-              {renderTestSessionManager()}
-          </div>
-          {userRole === 'superadmin' && (
-            <div className="lg:col-span-3">
-                {renderUserManagement()}
-            </div>
-          )}
+          {renderSensorConfigurator()}
+          {renderTestSessionManager()}
+          {renderUserManagement()}
       </main>
+      <footer className="w-full max-w-7xl mx-auto mt-8 text-center text-muted-foreground animate-in">
+        <p className="text-xs">
+          &copy; {new Date().getFullYear()} Pressure Test Solutions. All rights reserved.
+        </p>
+      </footer>
     </div>
   );
 }
-    
-
-    
