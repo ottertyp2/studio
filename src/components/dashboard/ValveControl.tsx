@@ -1,4 +1,5 @@
 
+      
 'use client';
 import { useTestBench, ValveStatus } from '@/context/TestBenchContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -114,26 +115,19 @@ const SessionTimer = ({
     const stopTriggeredRef = React.useRef(false);
 
     useEffect(() => {
-        console.log('[Timer Effect] Running. Session:', session, 'VesselType:', vesselType, 'Window:', measurementWindow);
-
         if (!session?.id || !vesselType?.id || !vesselType.durationSeconds || !measurementWindow?.start) {
-            console.log('[Timer Effect] Conditions not met, clearing timer.');
             setRemainingTime(null);
             return;
         }
-
-        console.log('[Timer Effect] Conditions met, setting up interval.');
 
         const interval = setInterval(() => {
             const measurementStartTime = measurementWindow.start!.absoluteStartTime;
             const elapsed = (Date.now() - measurementStartTime) / 1000;
             const remaining = Math.max(0, vesselType.durationSeconds! - elapsed);
-            console.log(`[Timer Tick] Remaining: ${remaining}`);
             setRemainingTime(remaining);
         }, 1000);
 
         return () => {
-            console.log('[Timer Effect] Cleanup.');
             clearInterval(interval);
         };
     }, [session?.id, vesselType?.id, vesselType?.durationSeconds, measurementWindow?.start?.absoluteStartTime]);
@@ -147,11 +141,13 @@ const SessionTimer = ({
                 description: 'Classifying results and stopping session...',
             });
             
+            // First, classify the session
             onClassify(session);
             
+            // Then, after a short delay, stop the session
             setTimeout(() => {
                 onStopSession();
-            }, 3000);
+            }, 3000); // 3-second delay to allow classification to potentially complete
         }
 
         // Reset the trigger flag if a new session starts with positive time
@@ -298,3 +294,5 @@ export default function ValveControl({ vesselTypes, measurementWindows, onClassi
     </Card>
   );
 }
+
+    

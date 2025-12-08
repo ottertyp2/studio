@@ -1,4 +1,5 @@
 
+      
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -49,7 +50,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
-import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle, Square, GaugeCircle, SlidersHorizontal, Filter, ListTree, Calendar as CalendarIcon, RotateCcw, Layers } from 'lucide-react';
+import { Cog, LogOut, Wifi, WifiOff, PlusCircle, FileText, Trash2, Search, XIcon, Download, Loader2, Timer, AlertCircle, Square, GaugeCircle, SlidersHorizontal, Filter, ListTree, Calendar as CalendarIcon, RotateCcw, Layers, HelpCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useUser, useCollection, useMemoFirebase, addDocumentNonBlocking, updateDocumentNonBlocking, WithId, addDocument, setDocument } from '@/firebase';
 import { signOut } from '@/firebase/non-blocking-login';
@@ -1397,90 +1398,145 @@ function TestingComponent() {
                     </div>
                 ) : (
                   <div className="text-center">
-                    <Dialog open={isNewSessionDialogOpen} onOpenChange={setIsNewSessionDialogOpen}>
-                        <DialogTrigger asChild>
-                            <Button className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
-                              <PlusCircle className="mr-2 h-4 w-4" />
-                              Start New Test Session
-                            </Button>
-                        </DialogTrigger>
-                        <DialogContent className="sm:max-w-[425px]">
-                            <DialogHeader>
-                                <DialogTitle>Start New Test Session</DialogTitle>
-                                <DialogDescription>
-                                    Fill in the details below to start a new test session.
-                                </DialogDescription>
-                            </DialogHeader>
-                            <div className="grid gap-4 py-4">
-                                <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="sensor-config" className="text-right">Sensor</Label>
-                                    <Select value={newSessionData.sensorConfigurationId} onValueChange={(value) => setNewSessionData(p => ({ ...p, sensorConfigurationId: value }))}>
-                                        <SelectTrigger id="sensor-config" className="col-span-3">
-                                            <SelectValue placeholder="Select a sensor" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {availableSensorsForBench.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.name}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="vessel-type" className="text-right">Vessel Type</Label>
-                                    <Select value={newSessionData.vesselTypeId} onValueChange={(value) => setNewSessionData(p => ({ ...p, vesselTypeId: value, batchId: '' }))}>
-                                        <SelectTrigger id="vessel-type" className="col-span-3">
-                                            <SelectValue placeholder="Select a vessel type" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {vesselTypes?.map(vt => <SelectItem key={vt.id} value={vt.id}>{vt.name}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="batch" className="text-right">BatchID</Label>
-                                    <Select value={newSessionData.batchId} onValueChange={(value) => setNewSessionData(p => ({...p, batchId: value}))} disabled={!newSessionData.vesselTypeId}>
-                                        <SelectTrigger id="batch" className="col-span-3">
-                                            <SelectValue placeholder="Select a batch" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="CREATE_NEW_BATCH">
-                                                <span className="flex items-center gap-2"><PlusCircle className="h-4 w-4" /> Create new batch...</span>
-                                            </SelectItem>
-                                            <DropdownMenuSeparator />
-                                            {batches?.filter(b => b.vesselTypeId === newSessionData.vesselTypeId).map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                {newSessionData.batchId === 'CREATE_NEW_BATCH' && (
-                                    <div className="grid grid-cols-4 items-center gap-4">
-                                        <Label htmlFor="new-batch-name" className="text-right">New BatchID</Label>
-                                        <Input
-                                            id="new-batch-name"
-                                            value={newBatchName}
-                                            onChange={(e) => setNewBatchName(e.target.value)}
-                                            className="col-span-3"
-                                            placeholder="Enter new batch name..."
-                                        />
+                    <div className="flex items-center gap-4">
+                        <Dialog>
+                            <DialogTrigger asChild>
+                                <Button variant="outline">
+                                    <HelpCircle className="mr-2 h-4 w-4" />
+                                    Testing Guide
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                                <DialogHeader>
+                                    <DialogTitle>Vessel Testing Guide</DialogTitle>
+                                    <DialogDescription>
+                                        Follow these steps for a successful test session.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div className="space-y-4 py-4">
+                                    <div className="flex items-start gap-4">
+                                        <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold">1</div>
+                                        <div>
+                                            <p className="font-semibold">Power On</p>
+                                            <p className="text-sm text-muted-foreground">Connect the pressure stand to power and turn it on. The dashboard should show the device as "Online".</p>
+                                        </div>
                                     </div>
-                                )}
-                                <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="serial-number" className="text-right">BatchCount</Label>
-                                    <Input id="serial-number" value={newSessionData.serialNumber} onChange={e => setNewSessionData(p => ({ ...p, serialNumber: e.target.value }))} className="col-span-3" />
-                                </div>
-                                {newSessionData.batchId && newSessionData.batchId !== 'CREATE_NEW_BATCH' && (
-                                    <div className="grid grid-cols-4 items-center gap-4">
-                                        <div />
-                                        <p className="col-span-3 text-xs text-muted-foreground">{availableBatchCountsText}</p>
+                                    <div className="flex items-start gap-4">
+                                        <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold">2</div>
+                                        <div>
+                                            <p className="font-semibold">Connect Air Pressure</p>
+                                            <p className="text-sm text-muted-foreground">Connect the stand to an air pressure source and turn the physical valve on.</p>
+                                        </div>
                                     </div>
-                                )}
-                                <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="description" className="text-right">Description</Label>
-                                    <Textarea id="description" value={newSessionData.description} onChange={e => setNewSessionData(p => ({ ...p, description: e.target.value }))} className="col-span-3" placeholder="Optional notes for this session..."/>
+                                    <div className="flex items-start gap-4">
+                                        <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold">3</div>
+                                        <div>
+                                            <p className="font-semibold">Monitor Pressure</p>
+                                            <p className="text-sm text-muted-foreground">Look at the barometer on the pressure stand itself. Ensure the pressure is not excessively high.</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-start gap-4">
+                                        <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold">4</div>
+                                        <div>
+                                            <p className="font-semibold">Start Session</p>
+                                            <p className="text-sm text-muted-foreground">After completing the checklist, click "Start New Test Session" and fill out the details.</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-start gap-4">
+                                        <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold">5</div>
+                                        <div>
+                                            <p className="font-semibold">Wait for Completion</p>
+                                            <p className="text-sm text-muted-foreground">Leave the device alone until the "Time Remaining" counter hits zero. The session will automatically stop and classify the results.</p>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                            <DialogFooter>
-                                <Button onClick={handleStartSession} disabled={isStartSessionDisabled}>Start Session</Button>
-                            </DialogFooter>
-                        </DialogContent>
-                    </Dialog>
+                            </DialogContent>
+                        </Dialog>
+                        <Dialog open={isNewSessionDialogOpen} onOpenChange={setIsNewSessionDialogOpen}>
+                            <DialogTrigger asChild>
+                                <Button className="btn-shine bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-md transition-transform transform hover:-translate-y-1">
+                                <PlusCircle className="mr-2 h-4 w-4" />
+                                Start New Test Session
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent className="sm:max-w-[425px]">
+                                <DialogHeader>
+                                    <DialogTitle>Start New Test Session</DialogTitle>
+                                    <DialogDescription>
+                                        Fill in the details below to start a new test session.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div className="grid gap-4 py-4">
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="sensor-config" className="text-right">Sensor</Label>
+                                        <Select value={newSessionData.sensorConfigurationId} onValueChange={(value) => setNewSessionData(p => ({ ...p, sensorConfigurationId: value }))}>
+                                            <SelectTrigger id="sensor-config" className="col-span-3">
+                                                <SelectValue placeholder="Select a sensor" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {availableSensorsForBench.map(sc => <SelectItem key={sc.id} value={sc.id}>{sc.name}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="vessel-type" className="text-right">Vessel Type</Label>
+                                        <Select value={newSessionData.vesselTypeId} onValueChange={(value) => setNewSessionData(p => ({ ...p, vesselTypeId: value, batchId: '' }))}>
+                                            <SelectTrigger id="vessel-type" className="col-span-3">
+                                                <SelectValue placeholder="Select a vessel type" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {vesselTypes?.map(vt => <SelectItem key={vt.id} value={vt.id}>{vt.name}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="batch" className="text-right">BatchID</Label>
+                                        <Select value={newSessionData.batchId} onValueChange={(value) => setNewSessionData(p => ({...p, batchId: value}))} disabled={!newSessionData.vesselTypeId}>
+                                            <SelectTrigger id="batch" className="col-span-3">
+                                                <SelectValue placeholder="Select a batch" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="CREATE_NEW_BATCH">
+                                                    <span className="flex items-center gap-2"><PlusCircle className="h-4 w-4" /> Create new batch...</span>
+                                                </SelectItem>
+                                                <DropdownMenuSeparator />
+                                                {batches?.filter(b => b.vesselTypeId === newSessionData.vesselTypeId).map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    {newSessionData.batchId === 'CREATE_NEW_BATCH' && (
+                                        <div className="grid grid-cols-4 items-center gap-4">
+                                            <Label htmlFor="new-batch-name" className="text-right">New BatchID</Label>
+                                            <Input
+                                                id="new-batch-name"
+                                                value={newBatchName}
+                                                onChange={(e) => setNewBatchName(e.target.value)}
+                                                className="col-span-3"
+                                                placeholder="Enter new batch name..."
+                                            />
+                                        </div>
+                                    )}
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="serial-number" className="text-right">BatchCount</Label>
+                                        <Input id="serial-number" value={newSessionData.serialNumber} onChange={e => setNewSessionData(p => ({ ...p, serialNumber: e.target.value }))} className="col-span-3" />
+                                    </div>
+                                    {newSessionData.batchId && newSessionData.batchId !== 'CREATE_NEW_BATCH' && (
+                                        <div className="grid grid-cols-4 items-center gap-4">
+                                            <div />
+                                            <p className="col-span-3 text-xs text-muted-foreground">{availableBatchCountsText}</p>
+                                        </div>
+                                    )}
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="description" className="text-right">Description</Label>
+                                        <Textarea id="description" value={newSessionData.description} onChange={e => setNewSessionData(p => ({ ...p, description: e.target.value }))} className="col-span-3" placeholder="Optional notes for this session..."/>
+                                    </div>
+                                </div>
+                                <DialogFooter>
+                                    <Button onClick={handleStartSession} disabled={isStartSessionDisabled}>Start Session</Button>
+                                </DialogFooter>
+                            </DialogContent>
+                        </Dialog>
+                    </div>
                   </div>
                 )}
               </CardContent>
@@ -1955,3 +2011,5 @@ export default function TestingPage() {
         </Suspense>
     )
 }
+
+    
