@@ -1,4 +1,5 @@
 
+
 'use client';
 import { ReactNode, useState, useRef, useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -67,7 +68,6 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     const unsubVesselTypes = onSnapshot(collection(firestore, 'vessel_types'), (snapshot) => {
         const types = snapshot.docs.map(doc => {
             const data = doc.data();
-            delete (data as any).id; // Remove the incorrect ID field from the data object
             return { 
               id: doc.id,
               ...data 
@@ -76,7 +76,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         setVesselTypes(types);
     }, (error) => console.error("[ERROR] Failed to load vessel types:", error));
     
-    const unsubSensorConfigs = onSnapshot(collectionGroup(firestore, 'sensor_configurations'), (snapshot) => {
+    const unsubSensorConfigs = onSnapshot(collection(firestore, 'sensor_configurations'), (snapshot) => {
         const configs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WithId<SensorConfig>));
         setSensorConfigs(configs);
     }, (error) => console.error("[ERROR] Failed to load sensor configs:", error));
@@ -110,7 +110,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
 
     if (runningTestSession && user) {
         if (firestore) {
-            const sessionRef = doc(firestore, 'users', user.uid, 'test_sessions', runningTestSession.id);
+            const sessionRef = doc(firestore, 'test_sessions', runningTestSession.id);
             updateDoc(sessionRef, { status: 'COMPLETED', endTime: new Date().toISOString() });
         }
         setRunningTestSession(null);
@@ -191,7 +191,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!user || !firestore) return;
     const q = query(
-      collection(firestore, 'users', user.uid, 'test_sessions'),
+      collection(firestore, 'test_sessions'),
       where('status', '==', 'RUNNING'),
       limit(1)
     );
@@ -324,7 +324,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
         });
 
         if (runningTestSession && firestore && user) {
-            const sessionDataRef = collection(firestore, 'users', user.uid, 'test_sessions', runningTestSession.id, 'sensor_data');
+            const sessionDataRef = collection(firestore, 'test_sessions', runningTestSession.id, 'sensor_data');
             const dataToSave = {
                 value: data.sensor,
                 timestamp: new Date(data.lastUpdate).toISOString(),
@@ -499,8 +499,8 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     sendMovingAverageCommand,
     deleteSession: async (sessionId: string) => {
         if (!firestore || !user) return;
-        const sessionRef = doc(firestore, 'users', user.uid, 'test_sessions', sessionId);
-        const dataQuery = query(collection(firestore, `users/${user.uid}/test_sessions/${sessionId}/sensor_data`));
+        const sessionRef = doc(firestore, 'test_sessions', sessionId);
+        const dataQuery = query(collection(firestore, `test_sessions/${sessionId}/sensor_data`));
         
         try {
             const dataSnapshot = await getDocs(dataQuery);
@@ -530,6 +530,7 @@ export const TestBenchProvider = ({ children }: { children: ReactNode }) => {
     isOverPressureWarning,
     overPressureDetails,
     clearOverPressureWarning,
+    vesselTypes,
   };
 
   return (

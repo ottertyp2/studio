@@ -1,8 +1,10 @@
 
+
 'use client';
 import { createContext, useContext, RefObject } from 'react';
 import type { DocumentData } from 'firebase/firestore';
 import type { WithId } from '@/firebase';
+import type { VesselType } from '@/lib/utils';
 
 
 export type SensorData = {
@@ -59,6 +61,7 @@ export interface TestBenchContextType {
   isOverPressureWarning: boolean;
   overPressureDetails: { limit: number } | null;
   clearOverPressureWarning: () => void;
+  vesselTypes: WithId<VesselType>[] | null;
 }
 
 export const TestBenchContext = createContext<TestBenchContextType | undefined>(undefined);

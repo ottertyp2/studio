@@ -1,4 +1,5 @@
 
+
       
 'use client';
 import { useTestBench, ValveStatus } from '@/context/TestBenchContext';
@@ -12,6 +13,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import React, { useState, useEffect } from 'react';
 import type { WithId } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { useUser } from '@/firebase';
+import type { DocumentData } from 'firebase/firestore';
+
 
 const ProtectedValveAction: React.FC<{
   isSessionRunning: boolean;
@@ -94,67 +98,38 @@ type VesselType = {
     durationSeconds?: number;
 }
 
-const SessionTimer = ({
-    session,
-    vesselType,
-    measurementWindow,
-    onStopSession,
-    onClassify
-}: {
-    session: WithId<any>;
-    vesselType: WithId<VesselType> | undefined;
-    measurementWindow: {
-        start: { absoluteStartTime: number; } | null;
-        end: { isComplete: boolean; } | null;
-    } | undefined;
-    onStopSession: () => void;
-    onClassify: (session: WithId<any>) => void;
-}) => {
+const SessionTimer = ({ onStopSession }: { onStopSession: () => void; }) => {
+    const { runningTestSession, vesselTypes } = useTestBench();
     const [remainingTime, setRemainingTime] = useState<number | null>(null);
-    const { toast } = useToast();
     const stopTriggeredRef = React.useRef(false);
 
+    const vesselType = runningTestSession && vesselTypes ? vesselTypes.find(vt => vt.id === runningTestSession.vesselTypeId) : undefined;
+    const sessionStartTime = runningTestSession ? new Date(runningTestSession.startTime).getTime() : null;
+
     useEffect(() => {
-        if (!session?.id || !vesselType?.id || !vesselType.durationSeconds || !measurementWindow?.start) {
+        if (!sessionStartTime || !vesselType?.durationSeconds) {
             setRemainingTime(null);
             return;
         }
 
         const interval = setInterval(() => {
-            const measurementStartTime = measurementWindow.start!.absoluteStartTime;
-            const elapsed = (Date.now() - measurementStartTime) / 1000;
+            const elapsed = (Date.now() - sessionStartTime) / 1000;
             const remaining = Math.max(0, vesselType.durationSeconds! - elapsed);
             setRemainingTime(remaining);
         }, 1000);
 
-        return () => {
-            clearInterval(interval);
-        };
-    }, [session?.id, vesselType?.id, vesselType?.durationSeconds, measurementWindow?.start?.absoluteStartTime]);
+        return () => clearInterval(interval);
+    }, [sessionStartTime, vesselType?.durationSeconds]);
 
     useEffect(() => {
         if (remainingTime !== null && remainingTime <= 0 && !stopTriggeredRef.current) {
             stopTriggeredRef.current = true;
-            
-            toast({
-                title: 'Session Automatically Completed',
-                description: 'Classifying results and stopping session...',
-            });
-            
-            // First, classify the session
-            onClassify(session);
-            
-            // Then, after a short delay, stop the session
-            setTimeout(() => {
-                onStopSession();
-            }, 3000); // 3-second delay to allow classification to potentially complete
+            onStopSession();
         }
-
-        // Reset the trigger flag if a new session starts with positive time
         if (remainingTime !== null && remainingTime > 0) {
             stopTriggeredRef.current = false;
         }
-    }, [remainingTime, onClassify, onStopSession, session, toast]);
+    }, [remainingTime, onStopSession]);
 
     const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
@@ -175,13 +150,11 @@ const SessionTimer = ({
 };
 
 
-export default function ValveControl({ vesselTypes, measurementWindows, onClassify, onStopSession }: { vesselTypes: WithId<VesselType>[] | null, measurementWindows: any, onClassify: (session: WithId<any>) => void, onStopSession: () => void }) {
+export default function ValveControl({ onStopSession }: { onStopSession: () => void }) {
   const { isConnected, valve1Status, valve2Status, sendValveCommand, lockedValves, sequence1Running, sequence2Running, sendSequenceCommand, lockedSequences, runningTestSession } = useTestBench();
   
   const isSessionRunning = !!runningTestSession;
-  const vesselType = isSessionRunning && vesselTypes ? vesselTypes.find(vt => vt.id === runningTestSession.vesselTypeId) : undefined;
-  const measurementWindow = isSessionRunning ? measurementWindows?.[runningTestSession.id] : undefined;
-
+  
   const handleToggle = (valve: 'VALVE1' | 'VALVE2', state: ValveStatus) => {
     if (!isConnected) return;
     sendValveCommand(valve, state);
@@ -199,18 +172,12 @@ export default function ValveControl({ vesselTypes, measurementWindows, onClassi
     <Card className="w-full backdrop-blur-sm border-slate-300/80 shadow-lg">
         <CardHeader className="p-4 text-center">
             <CardTitle className="text-xl">Valve Control</CardTitle>
-            {isSessionRunning && runningTestSession && vesselType ? (
+            {isSessionRunning ? (
                 <>
                     <CardDescription>
                         Time Remaining:
                     </CardDescription>
-                    <SessionTimer 
-                        session={runningTestSession} 
-                        vesselType={vesselType}
-                        measurementWindow={measurementWindow}
-                        onStopSession={onStopSession}
-                        onClassify={onClassify}
-                    />
+                    <SessionTimer onStopSession={onStopSession}/>
                 </>
             ) : !isConnected && (
                <CardDescription className="text-xs">Connect a device to enable controls.</CardDescription>
@@ -294,5 +261,3 @@ export default function ValveControl({ vesselTypes, measurementWindows, onClassi
     </Card>
   );
 }
-
-    

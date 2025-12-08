@@ -1,4 +1,5 @@
 
+
       
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, Suspense, useRef } from 'react';
@@ -194,6 +195,15 @@ const CHART_COLORS = [
   'hsl(var(--chart-5))',
 ];
 
+// Custom hook to track the previous value of a prop or state
+function usePrevious<T>(value: T) {
+  const ref = useRef<T>();
+  useEffect(() => {
+    ref.current = value;
+  });
+  return ref.current;
+}
+
 
 function TestingComponent() {
   const router = useRouter();
@@ -279,13 +289,13 @@ function TestingComponent() {
   const usersCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'users') : null, [firestore]);
   const { data: users } = useCollection<AppUser>(usersCollectionRef);
 
-  const sensorConfigsCollectionRef = useMemoFirebase(() => firestore ? collectionGroup(firestore, 'sensor_configurations') : null, [firestore]);
+  const sensorConfigsCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'sensor_configurations') : null, [firestore]);
   const { data: sensorConfigs } = useCollection<SensorConfig>(sensorConfigsCollectionRef);
   
   const vesselTypesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'vessel_types') : null, [firestore]);
   const { data: vesselTypes } = useCollection<VesselType>(vesselTypesCollectionRef);
   
-  const batchesCollectionRef = useMemoFirebase(() => firestore ? collectionGroup(firestore, 'batches') : null, [firestore]);
+  const batchesCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'batches') : null, [firestore]);
   const { data: batches } = useCollection<Batch>(batchesCollectionRef);
 
   const measurementWindows = useMemo(() => {
@@ -539,7 +549,7 @@ function TestingComponent() {
     toast({ title: 'Session Stopped', description: 'Data recording has ended and all valves have been closed.' });
   };
   
-  const handleClassifyByGuideline = async (session: WithId<TestSession>) => {
+  const handleClassifyByGuideline = useCallback(async (session: WithId<TestSession>) => {
     if (!firestore || !vesselTypes || !sensorConfigs) {
         toast({ variant: 'destructive', title: 'Prerequisites Missing', description: 'Vessel types or sensor configurations not loaded.' });
         return;
@@ -635,7 +645,20 @@ function TestingComponent() {
     } catch (e: any) {
         toast({ variant: 'destructive', title: `Guideline Classification Failed`, description: e.message });
     }
-  };
+  }, [firestore, sensorConfigs, toast, vesselTypes]);
+
+  const prevRunningTestSession = usePrevious(runningTestSession);
+  useEffect(() => {
+    if (prevRunningTestSession && !runningTestSession) {
+      const completedSession = prevRunningTestSession;
+      toast({
+          title: 'Session Completed',
+          description: `Automatically classifying results for ${completedSession.vesselTypeName} - ${completedSession.serialNumber}...`,
+      });
+      handleClassifyByGuideline(completedSession as WithId<TestSession>);
+    }
+  }, [runningTestSession, prevRunningTestSession, handleClassifyByGuideline, toast]);
+
 
   useEffect(() => {
     if (comparisonSessions.length === 0 || !firestore) {
@@ -1643,9 +1666,6 @@ function TestingComponent() {
                 </CardContent>
             </Card>
             {isConnected && <ValveControl 
-                                vesselTypes={vesselTypes} 
-                                measurementWindows={measurementWindows} 
-                                onClassify={handleClassifyByGuideline}
                                 onStopSession={handleStopSession}
                             />}
         </div>
@@ -2011,5 +2031,3 @@ export default function TestingPage() {
         </Suspense>
     )
 }
-
-    
