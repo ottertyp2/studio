@@ -1,3 +1,4 @@
+
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -27,8 +28,6 @@ export type VesselType = {
     minCurve: {x: number, y: number}[];
     maxCurve: {x: number, y: number}[];
     timeBufferInSeconds?: number;
-    preFlightLowerPressureLimit?: number;
-    preFlightUpperPressureLimit?: number;
 }
 
 
@@ -186,3 +185,5 @@ export const findMeasurementEnd = (data: { value: number; timestamp: string }[],
 
     return defaultEnd(true);
 };
+
+    

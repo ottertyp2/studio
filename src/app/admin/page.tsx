@@ -1,3 +1,4 @@
+
 'use client';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -224,8 +225,6 @@ type VesselType = {
     guidelineEditorMaxX?: number;
     guidelineEditorMaxY?: number;
     timeBufferInSeconds?: number;
-    preFlightLowerPressureLimit?: number;
-    preFlightUpperPressureLimit?: number;
 }
 
 type Batch = {
@@ -300,11 +299,11 @@ export default function AdminPage() {
   const [newTestBench, setNewTestBench] = useState<Partial<TestBench>>({ name: '', location: '', description: '' });
   
   // VesselType State
-  const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '', durationSeconds: 60, maxBatchCount: 10, timeBufferInSeconds: 5, preFlightLowerPressureLimit: 0.2, preFlightUpperPressureLimit: 1.0 });
+  const [newVesselType, setNewVesselType] = useState<Partial<VesselType>>({ name: '', durationSeconds: 60, maxBatchCount: 10, timeBufferInSeconds: 5 });
   const [editingVesselType, setEditingVesselType] = useState<VesselType | null>(null);
   const [minCurvePoints, setMinCurvePoints] = useState<{x: number, y: number}[]>([]);
   const [maxCurvePoints, setMaxCurvePoints] = useState<{x: number, y: number}[]>([]);
-  const guidelineImportRef = useRef<HTMLInputElement>(null);
+  const vesselTypeImportRef = useRef<HTMLInputElement>(null);
   const [guidelineEditorMaxX, setGuidelineEditorMaxX] = useState<number | string>(120);
   const [guidelineEditorMaxY, setGuidelineEditorMaxY] = useState<number | string>(1200);
 
@@ -317,11 +316,9 @@ export default function AdminPage() {
   // Batch State
   const [newBatch, setNewBatch] = useState<Partial<Batch>>({ name: '' });
   const batchesCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user || !isAuthReady) {
-        return null;
-    }
+    if (!firestore || !user || !isAuthReady) return null;
     return collection(firestore, 'batches');
-}, [firestore, user, isAuthReady]);
+  }, [firestore, user, isAuthReady]);
   const { data: batches, isLoading: isBatchesLoading, error: batchesError } = useCollection<Batch>(batchesCollectionRef);
   
 
@@ -335,20 +332,16 @@ export default function AdminPage() {
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
 
   const modelsCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user || !isAuthReady) {
-        return null;
-    }
+    if (!firestore || !user || !isAuthReady) return null;
     return collection(firestore, 'mlModels');
-}, [firestore, user, isAuthReady]);
+  }, [firestore, user, isAuthReady]);
   const { data: mlModels, isLoading: isMlModelsLoading, error: mlModelsError } = useCollection<MLModel>(modelsCollectionRef);
   
 
   const appSettingsDocRef = useMemoFirebase(() => {
-    if (!firestore || !user || !isAuthReady) {
-        return null;
-    }
+    if (!firestore) return null;
     return doc(firestore, 'app_settings', 'config');
-}, [firestore, user, isAuthReady]);
+  }, [firestore]);
   const { data: appSettings, isLoading: isAppSettingsLoading, error: appSettingsError } = useDoc<AppSettings>(appSettingsDocRef);
 
 
@@ -359,17 +352,17 @@ export default function AdminPage() {
   }, [mlModels, activeModel]);
 
   useEffect(() => {
-    if (!isUserLoading) {
+    if (!isUserLoading && isAuthReady) {
       if (!user) {
         router.replace('/login');
+      } else if (userRole !== 'superadmin') {
+        // Handled by the main return statement
       }
     }
-  }, [user, isUserLoading, router]);
+  }, [user, userRole, isUserLoading, isAuthReady, router]);
   
   const sensorConfigsCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user || !isAuthReady) {
-        return null;
-    }
+    if (!firestore || !user || !isAuthReady) return null;
     return collection(firestore, `sensor_configurations`);
   }, [firestore, user, isAuthReady]);
 
@@ -377,9 +370,7 @@ export default function AdminPage() {
 
 
   const testSessionsCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user || !isAuthReady) {
-        return null;
-    }
+    if (!firestore || !user || !isAuthReady) return null;
     return query(collection(firestore, 'test_sessions'), orderBy('startTime', 'desc'));
 }, [firestore, user, isAuthReady]);
 
@@ -387,9 +378,7 @@ export default function AdminPage() {
   
   
   const usersCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user || !isAuthReady) {
-        return null;
-    }
+    if (!firestore || !user || !isAuthReady) return null;
     return collection(firestore, 'users');
 }, [firestore, user, isAuthReady]);
 
@@ -397,9 +386,7 @@ export default function AdminPage() {
 
 
   const testBenchesCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user || !isAuthReady) {
-        return null;
-    }
+    if (!firestore || !user || !isAuthReady) return null;
     return collection(firestore, 'testbenches');
 }, [firestore, user, isAuthReady]);
 
@@ -407,9 +394,7 @@ export default function AdminPage() {
 
 
   const vesselTypesCollectionRef = useMemoFirebase(() => {
-    if (!firestore || !user || !isAuthReady) {
-        return null;
-    }
+    if (!firestore || !user || !isAuthReady) return null;
     return collection(firestore, 'vessel_types');
 }, [firestore, user, isAuthReady]);
 
@@ -677,19 +662,19 @@ export default function AdminPage() {
   
   const handleDeleteTestSession = async (session: TestSession) => {
     if (!firestore) return;
-    const batch = writeBatch(firestore);
+    const batchCmd = writeBatch(firestore);
 
     const sensorDataRef = collection(firestore, `test_sessions/${session.id}/sensor_data`);
     try {
         const querySnapshot = await getDocs(sensorDataRef);
         querySnapshot.docs.forEach(doc => {
-            batch.delete(doc.ref);
+            batchCmd.delete(doc.ref);
         });
         
         const sessionRef = doc(firestore, `test_sessions`, session.id);
-        batch.delete(sessionRef);
+        batchCmd.delete(sessionRef);
 
-        await batch.commit();
+        await batchCmd.commit();
         toast({
             title: 'Session Deleted',
             description: `Session and ${querySnapshot.size} data points deleted.`
@@ -1060,36 +1045,31 @@ export default function AdminPage() {
       durationSeconds: Number(newVesselType.durationSeconds) || 60,
       maxBatchCount: Number(newVesselType.maxBatchCount) || 10,
       timeBufferInSeconds: Number(newVesselType.timeBufferInSeconds) || 5,
-      preFlightLowerPressureLimit: Number(newVesselType.preFlightLowerPressureLimit) || 0.2,
-      preFlightUpperPressureLimit: Number(newVesselType.preFlightUpperPressureLimit) || 1.0,
       minCurve: [],
       maxCurve: []
     };
     setDoc(doc(vesselTypesCollectionRef, newId), docToSave);
     toast({ title: 'Vessel Type Added', description: `Added "${docToSave.name}" to the catalog.` });
-    setNewVesselType({ name: '', durationSeconds: 60, maxBatchCount: 10, timeBufferInSeconds: 5, preFlightLowerPressureLimit: 0.2, preFlightUpperPressureLimit: 1.0 });
+    setNewVesselType({ name: '', durationSeconds: 60, maxBatchCount: 10, timeBufferInSeconds: 5 });
   };
 
   const handleDeleteVesselType = async (vesselTypeId: string) => {
     if (!firestore) return;
     const batchCmd = writeBatch(firestore);
     
-    // Find all test sessions that use this vessel type across all users
     const sessionsQuery = query(collection(firestore, 'test_sessions'), where('vesselTypeId', '==', vesselTypeId));
     const sessionsSnapshot = await getDocs(sessionsQuery);
     
     for (const sessionDoc of sessionsSnapshot.docs) {
-        // For each session, find and delete its sensor_data subcollection
         const sensorDataQuery = collection(firestore, sessionDoc.ref.path, 'sensor_data');
         const sensorDataSnapshot = await getDocs(sensorDataQuery);
         sensorDataSnapshot.forEach(dataDoc => batchCmd.delete(dataDoc.ref));
         
-        // Delete the session itself
         batchCmd.delete(sessionDoc.ref);
     }
     
-    // Delete the vessel type
-    batchCmd.delete(doc(firestore, 'vessel_types', vesselTypeId));
+    const vesselTypeRef = doc(firestore, 'vessel_types', vesselTypeId);
+    batchCmd.delete(vesselTypeRef);
 
     try {
         await batchCmd.commit();
@@ -1137,8 +1117,6 @@ export default function AdminPage() {
         durationSeconds: Number(editingVesselType.durationSeconds) || 60,
         maxBatchCount: Number(editingVesselType.maxBatchCount) || 10,
         timeBufferInSeconds: Number(editingVesselType.timeBufferInSeconds) || 0,
-        preFlightLowerPressureLimit: Number(editingVesselType.preFlightLowerPressureLimit) || 0.2,
-        preFlightUpperPressureLimit: Number(editingVesselType.preFlightUpperPressureLimit) || 1.0,
         guidelineEditorMaxX: Number(guidelineEditorMaxX),
         guidelineEditorMaxY: Number(guidelineEditorMaxY),
     });
@@ -1146,126 +1124,92 @@ export default function AdminPage() {
     setEditingVesselType(null);
   };
   
-  const handleExportGuidelines = (profile?: VesselType) => {
-    const profilesToExport = profile ? [profile] : vesselTypes;
-
-    if (!profilesToExport || profilesToExport.length === 0) {
-        toast({ title: 'No Data', description: 'There are no vessel types to export.' });
-        return;
+  const handleExportVesselTypes = (vesselType?: VesselType) => {
+    const dataToExport = vesselType ? [vesselType] : vesselTypes;
+    if (!dataToExport || dataToExport.length === 0) {
+      toast({ title: 'No Data', description: 'There are no vessel types to export.' });
+      return;
     }
 
-    const allPoints: Record<string, Record<number, { min?: number, max?: number }>> = {};
-
-    profilesToExport.forEach(p => {
-        if (!allPoints[p.id]) allPoints[p.id] = {};
-        
-        p.minCurve?.forEach(point => {
-            if (!allPoints[p.id][point.x]) allPoints[p.id][point.x] = {};
-            allPoints[p.id][point.x].min = point.y;
-        });
-        p.maxCurve?.forEach(point => {
-            if (!allPoints[p.id][point.x]) allPoints[p.id][point.x] = {};
-            allPoints[p.id][point.x].max = point.y;
-        });
-    });
-    
-    const csvData: any[] = [];
-    for (const vesselTypeId in allPoints) {
-        const vesselTypeName = profilesToExport.find(p => p.id === vesselTypeId)?.name || vesselTypeId;
-        const sortedTimestamps = Object.keys(allPoints[vesselTypeId]).map(Number).sort((a,b) => a - b);
-        
-        sortedTimestamps.forEach(timestamp => {
-            csvData.push({
-                vesselType: vesselTypeName,
-                timestamp: timestamp,
-                minPressure: allPoints[vesselTypeId][timestamp].min ?? '',
-                maxPressure: allPoints[vesselTypeId][timestamp].max ?? '',
-            });
-        });
-    }
-
-    if (csvData.length === 0) {
-        toast({ title: 'No Guideline Data', description: 'The selected vessel type(s) have no guideline points to export.' });
-        return;
-    }
+    const csvData = dataToExport.map(vt => ({
+      ...vt,
+      minCurve: JSON.stringify(vt.minCurve),
+      maxCurve: JSON.stringify(vt.maxCurve),
+    }));
 
     const csv = Papa.unparse(csvData);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `${profile ? profile.name + '_' : ''}guidelines.csv`);
+    const fileName = vesselType ? `vessel-type_${vesselType.name}.csv` : 'vessel-types_export.csv';
+    link.setAttribute('download', fileName);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast({ title: 'Guidelines Exported' });
+    toast({ title: 'Vessel Types Exported' });
   };
   
-  const handleImportGuidelines = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportVesselTypes = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || !firestore || !vesselTypes) {
-        toast({ variant: 'destructive', title: 'Import Failed', description: 'Could not prepare for import.'});
-        return;
+    if (!file || !firestore || !vesselTypesCollectionRef) {
+      toast({ variant: 'destructive', title: 'Import Failed', description: 'Could not prepare for import.'});
+      return;
     }
-
+  
     Papa.parse(file, {
-        header: true,
-        skipEmptyLines: true,
-        complete: async (results) => {
-            if (results.errors.length > 0 || !results.data.length) {
-                toast({ variant: 'destructive', title: 'Import Error', description: 'Could not parse the CSV file.' });
-                return;
-            }
-
-            const dataByVesselTypeName: Record<string, { minCurve: {x:number, y:number}[], maxCurve: {x:number, y:number}[] }> = {};
-
-            for (const row of results.data as any[]) {
-                const vesselTypeName = row.vesselType;
-                if (!vesselTypeName) continue;
-
-                if (!dataByVesselTypeName[vesselTypeName]) {
-                    dataByVesselTypeName[vesselTypeName] = { minCurve: [], maxCurve: [] };
-                }
-
-                const timestamp = parseFloat(row.timestamp);
-                if (isNaN(timestamp)) continue;
-
-                if (row.minPressure) {
-                    const minPressure = parseFloat(row.minPressure);
-                    if (!isNaN(minPressure)) dataByVesselTypeName[vesselTypeName].minCurve.push({ x: timestamp, y: minPressure });
-                }
-                if (row.maxPressure) {
-                    const maxPressure = parseFloat(row.maxPressure);
-                    if (!isNaN(maxPressure)) dataByVesselTypeName[vesselTypeName].maxCurve.push({ x: timestamp, y: maxPressure });
-                }
-            }
-
-            const batch = writeBatch(firestore);
-            let updatedCount = 0;
-            for (const vesselTypeName in dataByVesselTypeName) {
-                const profile = vesselTypes.find(p => p.name === vesselTypeName);
-                if (profile) {
-                    const profileRef = doc(firestore, 'vessel_types', profile.id);
-                    batch.update(profileRef, {
-                        minCurve: dataByVesselTypeName[vesselTypeName].minCurve.sort((a,b) => a.x - b.x),
-                        maxCurve: dataByVesselTypeName[vesselTypeName].maxCurve.sort((a,b) => a.x - b.x),
-                    });
-                    updatedCount++;
-                } else {
-                    toast({ variant: 'warning', title: 'Skipped Vessel Type', description: `Vessel Type "${vesselTypeName}" not found in catalog.`});
-                }
-            }
-
-            try {
-                await batch.commit();
-                toast({ title: 'Import Successful', description: `Updated guidelines for ${updatedCount} vessel types.`});
-            } catch (e: any) {
-                toast({ variant: 'destructive', title: 'Import Failed', description: e.message });
-            } finally {
-                 if (guidelineImportRef.current) guidelineImportRef.current.value = '';
-            }
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        if (results.errors.length > 0 || !results.data.length) {
+          toast({ variant: 'destructive', title: 'Import Error', description: 'Could not parse the CSV file.' });
+          return;
         }
+  
+        const batch = writeBatch(firestore);
+        let updatedCount = 0;
+        let createdCount = 0;
+  
+        for (const row of results.data as any[]) {
+          try {
+            const vesselTypeId = row.id || doc(collection(firestore, '_')).id;
+            const vesselTypeRef = doc(vesselTypesCollectionRef, vesselTypeId);
+            
+            const docData: VesselType = {
+              id: vesselTypeId,
+              name: row.name || 'Unnamed Vessel Type',
+              durationSeconds: Number(row.durationSeconds) || 60,
+              maxBatchCount: Number(row.maxBatchCount) || 10,
+              timeBufferInSeconds: Number(row.timeBufferInSeconds) || 5,
+              minCurve: row.minCurve ? JSON.parse(row.minCurve) : [],
+              maxCurve: row.maxCurve ? JSON.parse(row.maxCurve) : [],
+              guidelineEditorMaxX: Number(row.guidelineEditorMaxX) || undefined,
+              guidelineEditorMaxY: Number(row.guidelineEditorMaxY) || undefined,
+            };
+  
+            const docSnapshot = await getDocs(query(vesselTypesCollectionRef, where('id', '==', vesselTypeId)));
+            if (docSnapshot.empty) {
+              batch.set(vesselTypeRef, docData);
+              createdCount++;
+            } else {
+              batch.update(vesselTypeRef, docData);
+              updatedCount++;
+            }
+          } catch(e: any) {
+             toast({ variant: 'destructive', title: 'Row Import Error', description: `Could not process a row: ${e.message}` });
+          }
+        }
+  
+        try {
+          await batch.commit();
+          toast({ title: 'Import Successful', description: `Created ${createdCount} and updated ${updatedCount} vessel types.`});
+        } catch (e: any) {
+          toast({ variant: 'destructive', title: 'Import Failed', description: e.message });
+        } finally {
+           if (vesselTypeImportRef.current) vesselTypeImportRef.current.value = '';
+        }
+      }
     });
   };
 
@@ -1664,7 +1608,7 @@ export default function AdminPage() {
                         throw new Error("CSV is missing required session headers (id, vesselTypeName).");
                     }
 
-                    const batch = writeBatch(firestore);
+                    const batchCmd = writeBatch(firestore);
                     
                     let vesselType = vesselTypes?.find(vt => vt.id === firstRow.vesselTypeId);
                     if (!vesselType) {
@@ -1674,7 +1618,7 @@ export default function AdminPage() {
                             minCurve: [],
                             maxCurve: [],
                         };
-                        batch.set(doc(firestore, 'vessel_types', newVesselType.id), newVesselType);
+                        batchCmd.set(doc(firestore, 'vessel_types', newVesselType.id), newVesselType);
                         toast({ title: "Created New Vessel Type", description: `Created "${newVesselType.name}" from imported session.` });
                     }
 
@@ -1701,17 +1645,17 @@ export default function AdminPage() {
                         sessionDoc.classification = firstRow.classification;
                     }
                     
-                    batch.set(sessionRef, sessionDoc as TestSession);
+                    batchCmd.set(sessionRef, sessionDoc as TestSession);
 
                     (results.data as any[]).forEach(row => {
                         const sensorDataRef = doc(collection(sessionRef, 'sensor_data'));
-                        batch.set(sensorDataRef, {
+                        batchCmd.set(sensorDataRef, {
                             timestamp: row.sensor_timestamp,
                             value: parseFloat(row.sensor_value_raw), // Always import the raw value
                         });
                     });
 
-                    await batch.commit();
+                    await batchCmd.commit();
                     toast({ title: `Import Successful`, description: `Imported session ${firstRow.id} for "${firstRow.vesselTypeName}".` });
 
                 } catch (e: any) {
@@ -2629,34 +2573,26 @@ export default function AdminPage() {
                                     <Label htmlFor="new-vessel-type-batch-size">Max Batch Size</Label>
                                     <Input id="new-vessel-type-batch-size" type="number" placeholder="10" value={newVesselType.maxBatchCount || ''} onChange={(e) => setNewVesselType(p => ({ ...p, maxBatchCount: Number(e.target.value) }))} />
                                 </div>
-                                <div className="space-y-2">
+                                <div className="space-y-2 col-span-2">
                                     <Label htmlFor="new-vessel-type-time-buffer">Time Buffer (s)</Label>
                                     <Input id="new-vessel-type-time-buffer" type="number" placeholder="5" value={newVesselType.timeBufferInSeconds || ''} onChange={(e) => setNewVesselType(p => ({ ...p, timeBufferInSeconds: Number(e.target.value) }))} />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="new-vessel-type-preflight-lower">Pre-Flight Lower Limit</Label>
-                                    <Input id="new-vessel-type-preflight-lower" type="number" placeholder="0.2" value={newVesselType.preFlightLowerPressureLimit || ''} onChange={(e) => setNewVesselType(p => ({ ...p, preFlightLowerPressureLimit: Number(e.target.value) }))} />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="new-vessel-type-preflight-upper">Pre-Flight Upper Limit</Label>
-                                    <Input id="new-vessel-type-preflight-upper" type="number" placeholder="1.0" value={newVesselType.preFlightUpperPressureLimit || ''} onChange={(e) => setNewVesselType(p => ({ ...p, preFlightUpperPressureLimit: Number(e.target.value) }))} />
                                 </div>
                             </div>
                             <Button onClick={handleAddVesselType} size="sm" className="w-full mt-2">Add Vessel Type</Button>
                         </div>
                     )}
                     <div className="flex justify-center gap-2 mb-4">
-                        <Button onClick={() => handleExportGuidelines()} variant="outline" size="sm">
+                        <Button onClick={() => handleExportVesselTypes()} variant="outline" size="sm">
                             <Download className="mr-2 h-4 w-4" />
-                            Export All Guidelines
+                            Export All
                         </Button>
                         {userRole === 'superadmin' && (
-                            <Button onClick={() => guidelineImportRef.current?.click()} variant="outline" size="sm">
+                            <Button onClick={() => vesselTypeImportRef.current?.click()} variant="outline" size="sm">
                                 <Upload className="mr-2 h-4 w-4" />
-                                Import Guidelines
+                                Import
                             </Button>
                         )}
-                        <input type="file" ref={guidelineImportRef} onChange={handleImportGuidelines} accept=".csv" className="hidden" />
+                        <input type="file" ref={vesselTypeImportRef} onChange={handleImportVesselTypes} accept=".csv" className="hidden" />
                     </div>
                     {isVesselTypesLoading ? <p className="text-center pt-10">Loading vessel types...</p> : (
                         <ScrollArea className="h-56">
@@ -2669,7 +2605,7 @@ export default function AdminPage() {
                                               <p className='text-xs text-muted-foreground'>Max BatchCount: {p.maxBatchCount ?? 'N/A'}</p>
                                             </div>
                                             <div className="flex flex-wrap items-center justify-end gap-2">
-                                                <Button size="sm" variant="outline" onClick={() => handleExportGuidelines(p)}>CSV</Button>
+                                                <Button size="sm" variant="outline" onClick={() => handleExportVesselTypes(p)}>CSV</Button>
                                                 <Button 
                                                     size="sm" 
                                                     variant="outline" 
@@ -2710,17 +2646,9 @@ export default function AdminPage() {
                                                                                 <Label>Max Batch Size</Label>
                                                                                 <Input type="number" value={editingVesselType?.maxBatchCount || ''} onChange={(e) => setEditingVesselType(p => p ? {...p, maxBatchCount: Number(e.target.value)} : null)} />
                                                                             </div>
-                                                                            <div className="space-y-2">
+                                                                            <div className="space-y-2 col-span-2">
                                                                                 <Label>Time Buffer (s)</Label>
                                                                                 <Input type="number" value={editingVesselType?.timeBufferInSeconds || ''} onChange={(e) => setEditingVesselType(p => p ? { ...p, timeBufferInSeconds: Number(e.target.value) } : null)} />
-                                                                            </div>
-                                                                            <div className="space-y-2">
-                                                                                <Label>Pre-Flight Lower</Label>
-                                                                                <Input type="number" value={editingVesselType?.preFlightLowerPressureLimit || ''} onChange={(e) => setEditingVesselType(p => p ? { ...p, preFlightLowerPressureLimit: Number(e.target.value) } : null)} />
-                                                                            </div>
-                                                                            <div className="space-y-2">
-                                                                                <Label>Pre-Flight Upper</Label>
-                                                                                <Input type="number" value={editingVesselType?.preFlightUpperPressureLimit || ''} onChange={(e) => setEditingVesselType(p => p ? { ...p, preFlightUpperPressureLimit: Number(e.target.value) } : null)} />
                                                                             </div>
                                                                         </div>
                                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
@@ -2956,15 +2884,35 @@ const renderAIModelManagement = () => {
     );
 };
 
-  if (isUserLoading || !user) {
+  if (isUserLoading || !isAuthReady) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950">
         <div className="text-center">
-            <p className="text-lg font-semibold">Loading Management Panel...</p>
+            <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
+            <p className="text-lg font-semibold mt-4">Loading Management Panel...</p>
             <p className="text-sm text-muted-foreground">Please wait a moment.</p>
         </div>
       </div>
     );
+  }
+
+  if (userRole !== 'superadmin') {
+    return (
+        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-blue-200 dark:to-blue-950">
+            <Card className="w-full max-w-md text-center p-8">
+                <CardHeader>
+                    <CardTitle className="text-2xl text-destructive">Access Denied</CardTitle>
+                    <CardDescription>
+                        You do not have permission to view this page.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <p className="text-muted-foreground mb-6">The management panel is restricted to superadmin users only.</p>
+                    <Button onClick={() => router.push('/testing')}>Go to Testing Dashboard</Button>
+                </CardContent>
+            </Card>
+        </div>
+    )
   }
 
 
