@@ -1064,13 +1064,14 @@ function TestingComponent() {
             if (data.length > 0 && config && vesselType) {
                 const startResult = findMeasurementStart(data, config, vesselType);
                 if (startResult) {
-                    // For unclassifiable sessions, still try to get a window for stats.
-                    // Fallback to the full available data range if `isComplete` is false.
                     const endResult = findMeasurementEnd(data, startResult.startIndex, config, vesselType);
-                    const endIndex = endResult.isComplete ? endResult.endIndex : data.length - 1;
-                    analysisData = data.slice(startResult.startIndex, endIndex + 1);
+                    analysisData = data.slice(startResult.startIndex, endResult.endIndex + 1);
+                } else {
+                    // Fallback: if no specific start is found, use the entire data log for stats.
+                    analysisData = data;
                 }
             }
+
 
             const sessionStartTime = analysisData.length > 0 ? new Date(analysisData[0].timestamp).getTime() : new Date(session.startTime).getTime();
             const sessionEndTime = analysisData.length > 0 ? new Date(analysisData[analysisData.length - 1].timestamp).getTime() : (session.endTime ? new Date(session.endTime).getTime() : sessionStartTime);
